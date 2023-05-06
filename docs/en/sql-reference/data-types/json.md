@@ -6,7 +6,7 @@ sidebar_label: JSON
 
 # JSON
 
-:::warning
+:::note
 This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
 :::
 
@@ -14,7 +14,7 @@ Stores JavaScript Object Notation (JSON) documents in a single column.
 
 `JSON` is an alias for `Object('json')`.
 
-:::warning
+:::note
 The JSON data type is an experimental feature. To use it, set `allow_experimental_object_type = 1`.
 :::
 

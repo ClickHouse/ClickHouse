@@ -145,7 +145,7 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     for (auto & [object_relative_path, size] : object_storage_relative_paths)
     {
         auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
-        StoredObject object{ object_path, size, path, [](const String & path_){ return path_; }};
+        StoredObject object{ object_path, size, path };
         object_storage_paths.push_back(object);
     }
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

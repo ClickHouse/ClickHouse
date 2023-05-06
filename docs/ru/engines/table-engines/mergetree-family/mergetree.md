@@ -752,7 +752,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Изменить политику хранения после создания таблицы можно при помощи запроса [ALTER TABLE ... MODIFY SETTING]. При этом необходимо учесть, что новая политика должна содержать все тома и диски предыдущей политики с теми же именами.
 
 
-Количество потоков для фоновых перемещений кусков между дисками можно изменить с помощью настройки [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size)
+Количество потоков для фоновых перемещений кусков между дисками можно изменить с помощью настройки [background_move_pool_size](../../../operations/server-configuration-parameters/settings.md#background_move_pool_size)
 
 ### Особенности работы {#details}
 

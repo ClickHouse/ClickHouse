@@ -253,9 +253,6 @@
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/intel/idxd-config
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -296,6 +293,9 @@
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide
+[submodule "contrib/libbcrypt"]
+	path = contrib/libbcrypt
+	url = https://github.com/rg3/libbcrypt.git
 [submodule "contrib/ulid-c"]
 	path = contrib/ulid-c
 	url = https://github.com/ClickHouse/ulid-c.git
@@ -335,3 +335,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/isa-l"]
+	path = contrib/isa-l
+	url = https://github.com/ClickHouse/isa-l.git

@@ -27,7 +27,7 @@ import argparse
 import logging
 import os
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from subprocess import CalledProcessError
 from typing import List, Optional
 
@@ -123,7 +123,9 @@ close it.
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
 
-    def process(self, dry_run: bool) -> None:
+    def process(  # pylint: disable=too-many-return-statements
+        self, dry_run: bool
+    ) -> None:
         if self.backported:
             return
         if not self.cherrypick_pr:
@@ -138,6 +140,11 @@ close it.
         if self.cherrypick_pr is not None:
             # Try to merge cherrypick instantly
             if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
+                if dry_run:
+                    logging.info(
+                        "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
+                    )
+                    return
                 self.cherrypick_pr.merge()
                 # The PR needs update, since PR.merge doesn't update the object
                 self.cherrypick_pr.update()
@@ -149,7 +156,7 @@ close it.
                     return
                 self.create_backport()
                 return
-            elif self.cherrypick_pr.state == "closed":
+            if self.cherrypick_pr.state == "closed":
                 logging.info(
                     "The cherrypick PR #%s for PR #%s is discarded",
                     self.cherrypick_pr.number,
@@ -162,6 +169,7 @@ close it.
                 self.cherrypick_pr.number,
                 self.pr.number,
             )
+            self.ping_cherry_pick_assignees(dry_run)
 
     def create_cherrypick(self):
         # First, create backport branch:
@@ -227,6 +235,7 @@ close it.
         assert self.cherrypick_pr is not None
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
+        logging.info("Creating backport for PR #%s", self.pr.number)
         git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
         git_runner(
             f"{self.git_prefix} pull --ff-only {self.REMOTE} {self.backport_branch}"
@@ -254,6 +263,40 @@ close it.
         )
         self.backport_pr.add_to_labels(Labels.BACKPORT)
         self._assign_new_pr(self.backport_pr)
+
+    def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
+        assert self.cherrypick_pr is not None
+        logging.info(
+            "Checking if cherry-pick PR #%s needs to be pinged",
+            self.cherrypick_pr.number,
+        )
+        since_updated = datetime.now() - self.cherrypick_pr.updated_at
+        since_updated_str = (
+            f"{since_updated.days}d{since_updated.seconds // 3600}"
+            f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
+        )
+        if since_updated < timedelta(days=1):
+            logging.info(
+                "The cherry-pick PR was updated at %s %s ago, "
+                "waiting for the next running",
+                self.cherrypick_pr.updated_at.isoformat(),
+                since_updated_str,
+            )
+            return
+        assignees = ", ".join(f"@{user.login}" for user in self.cherrypick_pr.assignees)
+        comment_body = (
+            f"Dear {assignees}, the PR is not updated for {since_updated_str}. "
+            "Please, either resolve the conflicts, or close it to finish "
+            f"the backport process of #{self.pr.number}"
+        )
+        if dry_run:
+            logging.info(
+                "DRY RUN: would comment the cherry-pick PR #%s:\n",
+                self.cherrypick_pr.number,
+            )
+            return
+
+        self.cherrypick_pr.create_issue_comment(comment_body)
 
     def _assign_new_pr(self, new_pr: PullRequest) -> None:
         """Assign `new_pr` to author, merger and assignees of an original PR"""

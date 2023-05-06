@@ -25,10 +25,10 @@ To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statem
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:
 
--   `user` — Specifies a user this user can grant privileges to.
--   `role` — Specifies a role this user can grant privileges to.
--   `ANY` — This user can grant privileges to anyone. It's the default setting.
--   `NONE` — This user can grant privileges to none.
+- `user` — Specifies a user this user can grant privileges to.
+- `role` — Specifies a role this user can grant privileges to.
+- `ANY` — This user can grant privileges to anyone. It's the default setting.
+- `NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 

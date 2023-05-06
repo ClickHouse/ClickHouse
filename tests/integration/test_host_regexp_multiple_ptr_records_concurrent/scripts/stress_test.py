@@ -13,7 +13,6 @@ number_of_iterations = 100
 
 
 def perform_request():
-
     buffer = BytesIO()
     crl = pycurl.Curl()
     crl.setopt(pycurl.INTERFACE, client_ip)

@@ -149,10 +149,10 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 
 [//]: # (<details open>)
 <details>
-    <summary><font color="black">
+    <summary><font color="white">
     DDL详情
     </font></summary>
-    <p><font color="black">
+    <p><font color="white">
 
 为了简化本文后面的讨论，并使图和结果可重现，使用DDL语句有如下说明：
 <ul>
@@ -164,7 +164,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 <li><font face = "monospace">index_granularity</font>: 显式设置为其默认值8192。这意味着对于每一组8192行，主索引将有一个索引条目，例如，如果表包含16384行，那么索引将有两个索引条目。
 </li>
 <br/>
-<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="blue">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
+<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="white">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
 <ul>
 <li>如果n小于8192，但n行的合并行数据大小大于或等于10MB (index_granularity_bytes的默认值)或</li>
 <li>n达到8192</li>
@@ -338,6 +338,12 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 :::note
 - 最后一个颗粒（1082颗粒）是少于8192行的。
 
+- 我们在本指南开头的“DDL 语句详细信息”中提到，我们禁用了自适应索引粒度（为了简化本指南中的讨论，并使图表和结果可重现）。
+
+  因此，示例表中所有颗粒（除了最后一个）都具有相同大小。
+
+- 对于具有自适应索引粒度的表（默认情况下索引粒度是自适应的），某些粒度的大小可以小于 8192 行，具体取决于行数据大小。
+
 - 我们将主键列(<font face = "monospace">UserID</font>, <font face = "monospace">URL</font>)中的一些列值标记为橙色。
 
   这些橙色标记的列值是每个颗粒中每个主键列的最小值。这里的例外是最后一个颗粒(上图中的颗粒1082)，最后一个颗粒我们标记的是最大的值。
@@ -446,10 +452,10 @@ ClickHouse客户端的输出显示，没有进行全表扫描，只有8.19千行
 我们可以在上面的跟踪日志中看到，1083个现有标记中有一个满足查询。
 
 <details>
-    <summary><font color="black">
+    <summary><font color="white">
     Trace Log详情
     </font></summary>
-    <p><font color="black">
+    <p><font color="white">
 
 Mark 176 was identified (the 'found left boundary mark' is inclusive, the 'found right boundary mark' is exclusive), and therefore all 8192 rows from granule 176 (which starts at row 1.441.792 - we will see that later on in this article) are then streamed into ClickHouse in order to find the actual rows with a UserID column value of <font face = "monospace">749927693</font>.
 </font></p>
@@ -520,10 +526,10 @@ LIMIT 10;
 如上所述，通过对索引的1083个UserID标记进行二分搜索，确定了第176个标记。因此，它对应的颗粒176可能包含UserID列值为749.927.693的行。
 
 <details>
-    <summary><font color="black">
+    <summary><font color="white">
     颗粒选择的具体过程
     </font></summary>
-    <p><font color="black">
+    <p><font color="white">
 
 上图显示，标记176是第一个UserID值小于749.927.693的索引条目，并且下一个标记(标记177)的颗粒177的最小UserID值大于该值的索引条目。因此，只有标记176对应的颗粒176可能包含UserID列值为749.927.693的行。
 </font></p>
@@ -671,15 +677,15 @@ Processed 8.81 million rows,
 为了说明，我们给出通用的排除搜索算法的工作原理：
 
 <details open>
-    <summary><font color="black">
+    <summary><font color="white">
     <a name="generic-exclusion-search-algorithm"></a>通用排除搜索算法
     </font></summary>
-    <p><font color="black">
+    <p><font color="white">
 
 
 
 
-下面将演示当通过第一个列之后的任何列选择颗粒时，当前一个键列具有或高或低的基数时，ClickHouse<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L14444" target="_blank" ><font color="blue">通用排除搜索算法</font></a> 是如何工作的。
+下面将演示当通过第一个列之后的任何列选择颗粒时，当前一个键列具有或高或低的基数时，ClickHouse<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L14444" target="_blank" ><font color="white">通用排除搜索算法</font></a> 是如何工作的。
 
 作为这两种情况的例子，我们将假设：
 - 搜索URL值为"W3"的行。
@@ -736,9 +742,9 @@ Processed 8.81 million rows,
 在我们的示例数据集中，两个键列(UserID、URL)都具有类似的高基数，并且，如前所述，当URL列的前一个键列具有较高基数时，通用排除搜索算法不是很有效。
 
 :::note 看下跳数索引
-因为UserID和URL具有较高的基数，[<font color="blue">根据URL过滤数据</font>](#query-on-url)不是特别有效，对URL列创建[<font color="blue">二级跳数索引</font>](./skipping-indexes.md)同样也不会有太多改善。
+因为UserID和URL具有较高的基数，[<font color="white">根据URL过滤数据</font>](#query-on-url)不是特别有效，对URL列创建[<font color="white">二级跳数索引</font>](./skipping-indexes.md)同样也不会有太多改善。
 
-例如，这两个语句在我们的表的URL列上创建并填充一个<a href="https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#primary-keys-and-indexes-in-queries" target="_blank"><font color="blue">minmax</font></a>跳数索引。
+例如，这两个语句在我们的表的URL列上创建并填充一个<a href="https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#primary-keys-and-indexes-in-queries" target="_blank"><font color="white">minmax</font></a>跳数索引。
 ```sql
 ALTER TABLE hits_UserID_URL ADD INDEX url_skipping_index URL TYPE minmax GRANULARITY 4;
 ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
@@ -907,10 +913,10 @@ ClickHouse只选择了39个索引标记，而不是使用通用排除搜索时�
 
 点击下面了解详情：
 <details>
-    <summary><font color="black">
+    <summary><font color="white">
     对UserID的查询过滤性能较差<a name="query-on-userid-slow"></a>
     </font></summary>
-    <p><font color="black">
+    <p><font color="white">
 
 ```sql
 SELECT URL, count(URL) AS Count

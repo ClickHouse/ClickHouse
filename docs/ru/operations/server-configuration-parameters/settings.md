@@ -225,6 +225,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ``` xml
 <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
 ```
+
 ## default_replica_name {#default_replica_name}
 
 Имя реплики в ZooKeeper.
@@ -915,6 +916,72 @@ ClickHouse использует потоки из глобального пул�
 ``` xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
+
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md).
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## background_move_pool_size {#background_move_pool_size}
+
+Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period).
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 128.
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8.
+
+## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md).
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Задает количество потоков для фонового потокового вывода сообщений.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+**Смотрите также**
+
+-   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
+-   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
 

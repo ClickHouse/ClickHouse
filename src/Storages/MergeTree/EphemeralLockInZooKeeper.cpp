@@ -24,7 +24,7 @@ template <typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path)
 {
-    constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
 
     String path;
 
@@ -42,16 +42,15 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         if constexpr (async_insert)
         {
             for (const auto & single_dedup_path : deduplication_path)
-            {
-                ops.emplace_back(zkutil::makeCreateRequest(single_dedup_path, "", zkutil::CreateMode::Persistent));
-                ops.emplace_back(zkutil::makeRemoveRequest(single_dedup_path, -1));
-            }
+                zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
         }
         else
         {
-            ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, deduplication_path);
         }
+
+        auto deduplication_path_ops_size = ops.size();
+
         ops.emplace_back(zkutil::makeCreateRequest(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
@@ -60,9 +59,10 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
             if constexpr (async_insert)
             {
                 auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
-                if (failed_idx < deduplication_path.size() * 2)
+
+                if (failed_idx < deduplication_path_ops_size)
                 {
-                    const String & failed_op_path = deduplication_path[failed_idx / 2];
+                    const String & failed_op_path = ops[failed_idx]->getPath();
                     LOG_DEBUG(
                         &Poco::Logger::get("createEphemeralLockInZooKeeper"),
                         "Deduplication path already exists: deduplication_path={}",

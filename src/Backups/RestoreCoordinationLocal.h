@@ -19,10 +19,10 @@ public:
     ~RestoreCoordinationLocal() override;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    void setStage(const String & current_host, const String & new_stage, const String & message) override;
-    void setError(const String & current_host, const Exception & exception) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    void setStage(const String & new_stage, const String & message) override;
+    void setError(const Exception & exception) override;
+    Strings waitForStage(const String & stage_to_wait) override;
+    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -42,6 +42,8 @@ public:
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
+    Poco::Logger * const log;
+
     std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases;
     std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables;
     mutable std::mutex mutex;

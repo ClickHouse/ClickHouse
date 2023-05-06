@@ -689,7 +689,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 `default` 存储策略意味着只使用一个卷，这个卷只包含一个在 `<path>` 中定义的磁盘。您可以使用[ALTER TABLE ... MODIFY SETTING]来修改存储策略，新的存储策略应该包含所有以前的磁盘和卷，并使用相同的名称。
 
-可以通过 [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
+可以通过 [background_move_pool_size](../../../operations/server-configuration-parameters/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
 
 ### 详细说明 {#details}
 

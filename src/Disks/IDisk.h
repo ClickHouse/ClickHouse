@@ -247,15 +247,15 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
+    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
 
     virtual bool supportsCache() const { return false; }
 
     virtual NameSet getCacheLayersNames() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method `getCacheLayersNames()` is not implemented for disk: {}",
-                        getDataSourceDescription().type);
+            "Method `getCacheLayersNames()` is not implemented for disk: {}",
+            toString(getDataSourceDescription().type));
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -263,7 +263,9 @@ public:
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method `getStorageObjects()` not implemented for disk: {}",
+            toString(getDataSourceDescription().type));
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -281,8 +283,8 @@ public:
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-                        getDataSourceDescription().type);
+            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+            toString(getDataSourceDescription().type));
     }
 
     /// Batch request to remove multiple files.
@@ -365,7 +367,13 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage() = 0;
+    virtual MetadataStoragePtr getMetadataStorage()
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getMetadataStorage() is not implemented for disk type: {}",
+            toString(getDataSourceDescription().type));
+    }
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -398,7 +406,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
+            toString(getDataSourceDescription().type));
     }
 
     /// Create disk object storage according to disk type.
@@ -409,7 +417,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
+            toString(getDataSourceDescription().type));
     }
 
     virtual bool supportsStat() const { return false; }
@@ -422,6 +430,8 @@ public:
     bool isCustomDisk() const { return is_custom_disk; }
 
     void markDiskAsCustom() { is_custom_disk = true; }
+
+    virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
 protected:
     friend class DiskDecorator;

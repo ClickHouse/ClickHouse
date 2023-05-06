@@ -3,13 +3,11 @@
 #include "config.h"
 
 #if USE_AWS_S3
+
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
-#    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
-
-#    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 
@@ -22,6 +20,7 @@ inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
+    static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
@@ -50,7 +49,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
+    virtual Aws::String getCurrentAvailabilityZone() const;
+
 private:
+    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
@@ -121,16 +124,23 @@ private:
     uint64_t expiration_window_seconds;
 };
 
+struct CredentialsConfiguration
+{
+    bool use_environment_credentials = false;
+    bool use_insecure_imds_request = false;
+    uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
+    bool no_sign_request = false;
+};
+
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
     S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds);
+        CredentialsConfiguration credentials_configuration);
 };
+
 }
 
 #endif

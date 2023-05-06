@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -18,6 +19,12 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB
 {
@@ -192,7 +199,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
@@ -1766,7 +1773,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false)));
+            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false, /* async_query_sending= */ false)));
     Block block = getBlockWithAllStreamData(std::move(builder));
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }

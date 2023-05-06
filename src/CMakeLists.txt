@@ -103,6 +103,7 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+add_headers_and_sources(dbms Storages/DataLakes)
 add_headers_and_sources(dbms Storages/MeiliSearch)
 add_headers_and_sources(dbms Common/NamedCollections)
 
@@ -135,6 +136,7 @@ if (TARGET ch_contrib::hdfs)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
@@ -200,14 +202,10 @@ add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_co
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-if (((SANITIZE STREQUAL "thread") OR (SANITIZE STREQUAL "address")) AND COMPILER_GCC)
-    message(WARNING "Memory tracking is disabled, due to gcc sanitizers")
-else()
-    add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
-    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    endif()
+add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
 endif()
 
 if (TARGET ch_contrib::jemalloc)
@@ -338,9 +336,9 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if (ENABLE_QPL)
-set_source_files_properties(
-        Compression/CompressionCodecDeflateQpl.cpp
-        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+    set_source_files_properties(
+            Compression/CompressionCodecDeflateQpl.cpp
+            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 
 target_link_libraries(clickhouse_common_io
@@ -508,6 +506,10 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
+if (TARGET ch_contrib::bcrypt)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::bcrypt)
+endif()
+
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
@@ -542,7 +544,8 @@ if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 endif ()
 
-dbms_target_link_libraries(PRIVATE _boost_context)
+target_link_libraries(clickhouse_common_io PUBLIC boost::context)
+dbms_target_link_libraries(PUBLIC boost::context)
 
 if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
@@ -608,7 +611,8 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils)
+        string_utils
+        hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -622,6 +626,9 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
     endif()
 
+    if (TARGET ch_contrib::parquet)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
 
     add_check(unit_tests_dbms)
 endif ()

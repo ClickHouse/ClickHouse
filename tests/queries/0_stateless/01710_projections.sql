@@ -7,7 +7,7 @@ insert into projection_test with rowNumberInAllBlocks() as id select 1, toDateTi
 set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
 select * from projection_test; -- { serverError 584 }
-select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x using (1) where domain = '1' group by dt_m order by dt_m; -- { serverError 584 }
+select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x on 1 where domain = '1' group by dt_m order by dt_m; -- { serverError 584 }
 
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((kbytes * 8) / duration) from projection_test where domain = '1' group by dt_m order by dt_m;
 
@@ -39,7 +39,7 @@ select toStartOfMinute(datetime) dt_m, domain, sum(retry_count) / sum(duration),
 select toStartOfHour(toStartOfMinute(datetime)) dt_h, uniqHLL12(x_id), uniqHLL12(y_id) from projection_test group by dt_h order by dt_h;
 
 -- found by fuzzer
-SET enable_positional_arguments = 0;
+SET enable_positional_arguments = 0, force_optimize_projection = 0;
 SELECT 2, -1 FROM projection_test PREWHERE domain_alias = 1. WHERE domain = NULL GROUP BY -9223372036854775808 ORDER BY countIf(first_time = 0) / count(-2147483649) DESC NULLS LAST, 1048576 DESC NULLS LAST;
 
 drop table if exists projection_test;
