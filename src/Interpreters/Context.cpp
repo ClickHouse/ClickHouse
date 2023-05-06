@@ -4178,20 +4178,20 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
         {
             if (!shared->asynchronous_remote_fs_reader)
-                shared->asynchronous_remote_fs_reader = getThreadPoolReaderImpl(type, getConfigRef());
+                shared->asynchronous_remote_fs_reader = createThreadPoolReader(type, getConfigRef());
             return *shared->asynchronous_remote_fs_reader;
         }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->asynchronous_local_fs_reader)
-                shared->asynchronous_local_fs_reader = getThreadPoolReaderImpl(type, getConfigRef());
+                shared->asynchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->asynchronous_local_fs_reader;
         }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->synchronous_local_fs_reader)
-                shared->synchronous_local_fs_reader = getThreadPoolReaderImpl(type, getConfigRef());
+                shared->synchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->synchronous_local_fs_reader;
         }
