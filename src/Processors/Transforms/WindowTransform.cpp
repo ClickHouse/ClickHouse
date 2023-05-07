@@ -19,6 +19,30 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
 
+/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
+template <>
+struct fmt::formatter<DB::RowNumber>
+{
+    static constexpr auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw fmt::format_error("Invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::RowNumber & x, FormatContext & ctx)
+    {
+        return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
+    }
+};
+
+
 namespace DB
 {
 
@@ -34,7 +58,7 @@ namespace ErrorCodes
 // Interface for true window functions. It's not much of an interface, they just
 // accept the guts of WindowTransform and do 'something'. Given a small number of
 // true window functions, and the fact that the WindowTransform internals are
-// pretty much well defined in domain terms (e.g. frame boundaries), this is
+// pretty much well-defined in domain terms (e.g. frame boundaries), this is
 // somewhat acceptable.
 class IWindowFunction
 {
@@ -483,9 +507,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
     return std::tuple<RowNumber, int64_t>{x, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & row_number, int64_t offset) const
 {
-    auto [x, o] = moveRowNumberNoCheck(_x, offset);
+    auto [x, o] = moveRowNumberNoCheck(row_number, offset);
 
 #ifndef NDEBUG
     // Check that it was reversible.

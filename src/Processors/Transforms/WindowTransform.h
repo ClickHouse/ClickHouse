@@ -8,6 +8,10 @@
 
 #include <deque>
 
+/// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+
 
 namespace DB
 {
@@ -51,25 +55,11 @@ struct RowNumber
     uint64_t block = 0;
     uint64_t row = 0;
 
-    bool operator < (const RowNumber & other) const
-    {
-        return block < other.block
-            || (block == other.block && row < other.row);
-    }
-
-    bool operator == (const RowNumber & other) const
-    {
-        return block == other.block && row == other.row;
-    }
-
-    bool operator <= (const RowNumber & other) const
-    {
-        return *this < other || *this == other;
-    }
+    auto operator <=>(const RowNumber &) const = default;
 };
 
-/*
- * Computes several window functions that share the same window. The input must
+
+/* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
  * We need to track the following pointers:
  * 1) boundaries of partition -- rows that compare equal w/PARTITION BY.
@@ -188,7 +178,7 @@ public:
         const auto block_rows = blockAt(x).rows;
         assert(x.row < block_rows);
 
-        x.row++;
+        ++x.row;
         if (x.row < block_rows)
         {
             return;
@@ -237,20 +227,16 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumber(const RowNumber & row_number, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & row_number, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {
         assert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-        {
             assert(x.row == 0);
-        }
         else
-        {
             assert(x.row < blockRowsNumber(x));
-        }
     }
 
     RowNumber blocksEnd() const
@@ -263,8 +249,7 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /*
-     * Data (formerly) inherited from ISimpleTransform, needed for the
+    /* Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
      */
     InputPort & input;
@@ -276,8 +261,7 @@ public:
     bool has_output = false;
     Port::Data output_data;
 
-    /*
-     * Data for window transform itself.
+    /* Data for window transform itself.
      */
     Block input_header;
 
@@ -353,34 +337,13 @@ public:
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
     // each row would be slow.
-    int (* compare_values_with_offset) (
+    std::function<int(
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
         const Field & offset,
-        bool offset_is_preceding);
+        bool offset_is_preceding)> compare_values_with_offset;
 };
 
 }
 
-/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
-template <>
-struct fmt::formatter<DB::RowNumber>
-{
-    static constexpr auto parse(format_parse_context & ctx)
-    {
-        const auto * it = ctx.begin();
-        const auto * end = ctx.end();
-
-        /// Only support {}.
-        if (it != end && *it != '}')
-            throw fmt::format_error("invalid format");
-
-        return it;
-    }
-
-    template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx)
-    {
-        return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
-    }
-};
+#pragma clang diagnostic pop
