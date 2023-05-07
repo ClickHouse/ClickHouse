@@ -427,8 +427,9 @@ WITH
 SELECT
     x;
 
+-- check str_to_map alias (it is case-insensitive)
 WITH
-    str_to_map('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
+    sTr_tO_mAp('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -438,6 +439,7 @@ WITH
 SELECT
     x;
 
+-- check mapFromString alias
 WITH
     mapFromString('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
     CAST(
