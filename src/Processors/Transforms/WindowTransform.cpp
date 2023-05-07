@@ -437,26 +437,26 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
 {
-    RowNumber x = _x;
+    RowNumber moved_row_number = original_row_number;
 
-    if (offset > 0 && x != blocksEnd())
+    if (offset > 0 && moved_row_number != blocksEnd())
     {
         for (;;)
         {
-            assertValid(x);
+            assertValid(moved_row_number);
             assert(offset >= 0);
 
-            const auto block_rows = blockRowsNumber(x);
-            x.row += offset;
-            if (x.row >= block_rows)
+            const auto block_rows = blockRowsNumber(moved_row_number);
+            moved_row_number.row += offset;
+            if (moved_row_number.row >= block_rows)
             {
-                offset = x.row - block_rows;
-                x.row = 0;
-                x.block++;
+                offset = moved_row_number.row - block_rows;
+                moved_row_number.row = 0;
+                ++moved_row_number.block;
 
-                if (x == blocksEnd())
+                if (moved_row_number == blocksEnd())
                 {
                     break;
                 }
@@ -472,54 +472,55 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
     {
         for (;;)
         {
-            assertValid(x);
+            assertValid(moved_row_number);
             assert(offset <= 0);
 
             // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
             assert(offset >= -INT64_MAX);
-            if (x.row >= static_cast<uint64_t>(-offset))
+            if (moved_row_number.row >= static_cast<UInt64>(-offset))
             {
-                x.row -= -offset;
+                moved_row_number.row -= -offset;
                 offset = 0;
                 break;
             }
 
             // Move to the first row in current block. Note that the offset is
             // negative.
-            offset += x.row;
-            x.row = 0;
+            offset += moved_row_number.row;
+            moved_row_number.row = 0;
 
             // Move to the last row of the previous block, if we are not at the
             // first one. Offset also is incremented by one, because we pass over
             // the first row of this block.
-            if (x.block == first_block_number)
+            if (moved_row_number.block == first_block_number)
             {
                 break;
             }
 
-            --x.block;
+            --moved_row_number.block;
             offset += 1;
-            x.row = blockRowsNumber(x) - 1;
+            moved_row_number.row = blockRowsNumber(moved_row_number) - 1;
         }
     }
 
-    return std::tuple<RowNumber, int64_t>{x, offset};
+    return std::tuple<RowNumber, Int64>{moved_row_number, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & row_number, int64_t offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
 {
-    auto [x, o] = moveRowNumberNoCheck(row_number, offset);
+    auto [moved_row_number, offset_after_move] = moveRowNumberNoCheck(original_row_number, offset);
 
 #ifndef NDEBUG
-    // Check that it was reversible.
-    auto [xx, oo] = moveRowNumberNoCheck(x, -(offset - o));
+    /// Check that it was reversible. If we move back, we get the original row number with zero offset.
+    const auto [original_row_number_to_validate, offset_after_move_back]
+        = moveRowNumberNoCheck(moved_row_number, -(offset - offset_after_move));
 
-    assert(xx == _x);
-    assert(oo == 0);
+    assert(original_row_number_to_validate == original_row_number);
+    assert(0 == offset_after_move_back);
 #endif
 
-    return std::tuple<RowNumber, int64_t>{x, o};
+    return std::tuple<RowNumber, Int64>{moved_row_number, offset_after_move};
 }
 
 
@@ -717,7 +718,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // We advance until the partition end. It's either in the current block or
     // in the next one, which is also the past-the-end block. Figure out how
     // many rows we have to process.
-    uint64_t rows_end;
+    UInt64 rows_end;
     if (partition_end.row == 0)
     {
         assert(partition_end == blocksEnd());
@@ -2165,7 +2166,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int64_t offset = 1;
+        Int64 offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[
@@ -2255,7 +2256,7 @@ struct WindowFunctionNthValue final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int64_t offset = (*current_block.input_columns[
+        Int64 offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
             transform->current_row.row].get<Int64>();
 

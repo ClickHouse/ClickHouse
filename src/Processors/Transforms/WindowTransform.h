@@ -38,7 +38,7 @@ struct WindowFunctionWorkspace
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
-    uint64_t cached_block_number = std::numeric_limits<uint64_t>::max();
+    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
 };
 
 struct WindowTransformBlock
@@ -52,8 +52,8 @@ struct WindowTransformBlock
 
 struct RowNumber
 {
-    uint64_t block = 0;
-    uint64_t row = 0;
+    UInt64 block = 0;
+    UInt64 row = 0;
 
     auto operator <=>(const RowNumber &) const = default;
 };
@@ -93,19 +93,16 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /*
-     * (former) Implementation of ISimpleTransform.
+    /* (former) Implementation of ISimpleTransform.
      */
     void appendChunk(Chunk & chunk) /*override*/;
 
-    /*
-     * Implementation of IProcessor;
+    /* Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
 
-    /*
-     * Implementation details.
+    /* Implementation details.
      */
     void advancePartitionEnd();
 
@@ -136,14 +133,14 @@ public:
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    auto & blockAt(const uint64_t block_number)
+    auto & blockAt(const UInt64 block_number)
     {
         assert(block_number >= first_block_number);
         assert(block_number - first_block_number < blocks.size());
         return blocks[block_number - first_block_number];
     }
 
-    const auto & blockAt(const uint64_t block_number) const
+    const auto & blockAt(const UInt64 block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
@@ -227,8 +224,8 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & row_number, int64_t offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & row_number, int64_t offset) const;
+    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const
     {
@@ -284,9 +281,9 @@ public:
     // have an always-incrementing index. The index of the first block is in
     // `first_block_number`.
     std::deque<WindowTransformBlock> blocks;
-    uint64_t first_block_number = 0;
+    UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
-    uint64_t next_output_block_number = 0;
+    UInt64 next_output_block_number = 0;
     // The first row for which we still haven't calculated the window functions.
     // Used to determine which resulting blocks we can pass to the consumer.
     RowNumber first_not_ready_row;
@@ -310,9 +307,9 @@ public:
     RowNumber peer_group_start;
 
     // Row and group numbers in partition for calculating rank() and friends.
-    uint64_t current_row_number = 1;
-    uint64_t peer_group_start_row_number = 1;
-    uint64_t peer_group_number = 1;
+    UInt64 current_row_number = 1;
+    UInt64 peer_group_start_row_number = 1;
+    UInt64 peer_group_number = 1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
