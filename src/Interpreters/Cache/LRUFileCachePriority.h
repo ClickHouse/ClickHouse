@@ -65,4 +65,4 @@ private:
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
 
-};
+}
