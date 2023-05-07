@@ -29,14 +29,14 @@ def test_in_memory_parts_still_read(start_cluster):
     node.query(
         "CREATE TABLE t (x UInt64, s String, a Array(Tuple(Map(String, LowCardinality(String)), Date32, DateTime64(3)))) ENGINE = MergeTree ORDER BY s SETTINGS min_rows_for_compact_part = 1000000, min_bytes_for_compact_part = '1G', in_memory_parts_enable_wal = 1"
     )
-    node.query("INSERT INTO t SELECT generateRandom() LIMIT 100")
+    node.query("INSERT INTO t SELECT * FROM generateRandom() LIMIT 100")
 
     assert node.query("SELECT count() FROM t WHERE NOT ignore(*)") == "100\n"
 
     node.restart_with_latest_version()
     assert node.query("SELECT count() FROM t WHERE NOT ignore(*)") == "100\n"
 
-    node.query("INSERT INTO t SELECT generateRandom() LIMIT 100")
+    node.query("INSERT INTO t SELECT * FROM generateRandom() LIMIT 100")
 
     assert node.query("SELECT count() FROM t WHERE NOT ignore(*)") == "200\n"
 
