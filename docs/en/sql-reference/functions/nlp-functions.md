@@ -187,7 +187,7 @@ detectLanguageMixed('text_to_be_analyzed')
 
 **Returned value**
 
-- `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a perentage of text found for that language
+- `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
 
 
 **Examples**
