@@ -604,7 +604,7 @@ public:
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
-      * Last reader will rename files according to specified patten if desctuctor of reader was called without uncaught exceptions
+      * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions
       */
     void beforeDestroy()
     {
@@ -623,7 +623,8 @@ public:
             if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
                 return;
 
-            for (auto & file_path_ref : storage->paths) {
+            for (auto & file_path_ref : storage->paths)
+            {
                 try
                 {
                     auto file_path = fs::path(file_path_ref);
