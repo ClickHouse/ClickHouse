@@ -1639,19 +1639,19 @@ private:
             const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
-            // const auto & chars = col_from->getChars();
-            // const auto & offsets = col_from->getOffsets();
-            // auto & out = col_to->getData();
+            const auto & chars = col_from->getChars();
+            const auto & offsets = col_from->getOffsets();
+            auto & out = col_to->getData();
 
-            // ColumnString::Offset current_offset = 0;
-            // for (size_t i = 0; i < size; ++i)
-            // {
-            //     out[i] = URLHashImpl::apply(
-            //         reinterpret_cast<const char *>(&chars[current_offset]),
-            //         offsets[i] - current_offset - 1);
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                out[i] = URLHashImpl::apply(
+                    reinterpret_cast<const char *>(&chars[current_offset]),
+                    offsets[i] - current_offset - 1);
 
-            //     current_offset = offsets[i];
-            // }
+                current_offset = offsets[i];
+            }
 
             return col_to;
         }
@@ -1666,7 +1666,7 @@ private:
         if (!isColumnConst(*level_col))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
 
-        // const auto level = level_col->get64(0);
+        const auto level = level_col->get64(0);
 
         const auto * col_untyped = arguments.front().column.get();
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
@@ -1674,20 +1674,20 @@ private:
             const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
-            // const auto & chars = col_from->getChars();
-            // const auto & offsets = col_from->getOffsets();
-            // auto & out = col_to->getData();
+            const auto & chars = col_from->getChars();
+            const auto & offsets = col_from->getOffsets();
+            auto & out = col_to->getData();
 
-            // ColumnString::Offset current_offset = 0;
-            // for (size_t i = 0; i < size; ++i)
-            // {
-            //     out[i] = URLHierarchyHashImpl::apply(
-            //         level,
-            //         reinterpret_cast<const char *>(&chars[current_offset]),
-            //         offsets[i] - current_offset - 1);
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                out[i] = URLHierarchyHashImpl::apply(
+                    level,
+                    reinterpret_cast<const char *>(&chars[current_offset]),
+                    offsets[i] - current_offset - 1);
 
-            //     current_offset = offsets[i];
-            // }
+                current_offset = offsets[i];
+            }
 
             return col_to;
         }
