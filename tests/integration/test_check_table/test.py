@@ -244,10 +244,13 @@ def test_check_replicated_table_corruption(started_cluster):
     )
 
     node1.query_with_retry("SYSTEM SYNC REPLICA replicated_mt_1")
-    assert node1.query(
-        "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
-    ) == "{}\t1\t\n".format(part_name)
+    assert (
+        node1.query(
+            "CHECK TABLE replicated_mt_1 PARTITION 201901",
+            settings={"check_query_single_value_result": 0},
+        )
+        == "{}\t1\t\n".format(part_name)
+    )
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
     remove_part_from_disk(node2, "replicated_mt_1", part_name)
@@ -259,8 +262,11 @@ def test_check_replicated_table_corruption(started_cluster):
     )
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt_1")
-    assert node1.query(
-        "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
-    ) == "{}\t1\t\n".format(part_name)
+    assert (
+        node1.query(
+            "CHECK TABLE replicated_mt_1 PARTITION 201901",
+            settings={"check_query_single_value_result": 0},
+        )
+        == "{}\t1\t\n".format(part_name)
+    )
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
