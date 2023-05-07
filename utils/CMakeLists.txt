@@ -25,13 +25,6 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (checksum-for-compressed-block)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
-
-    if (TARGET ch_contrib::nuraft)
-        add_subdirectory (keeper-data-dumper)
-    endif ()
-
-    # memcpy_jart.S contains position dependent code
-    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND OS_LINUX AND ARCH_AMD64)
-        add_subdirectory (memcpy-bench)
-    endif ()
+    add_subdirectory (keeper-data-dumper)
+    add_subdirectory (memcpy-bench)
 endif ()
