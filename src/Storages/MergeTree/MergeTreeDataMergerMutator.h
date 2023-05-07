@@ -68,8 +68,15 @@ public:
     };
     using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
 
+    using PartitionIdsHint = std::unordered_set<String>;
+
     /// The first step of selecting parts to merge: returns a list of all active/visible parts
     MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const;
+
+    /// Same as above, but filters partitions according to partitions_hint
+    MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(
+        const MergeTreeTransactionPtr & txn,
+        const PartitionIdsHint * partitions_hint) const;
 
     struct MergeSelectingInfo
     {
@@ -94,10 +101,19 @@ public:
         size_t max_total_size_to_merge,
         bool merge_with_ttl_allowed,
         const StorageMetadataPtr & metadata_snapshot,
-        const MergeSelectingInfo & info,
-        String * out_disable_reason = nullptr);
+        const IMergeSelector::PartsRanges & parts_ranges,
+        const time_t & current_time,
+        String * out_disable_reason = nullptr,
+        bool dry_run = false);
 
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
+
+    /// Useful to quickly get a list of partitions that contain parts that we may want to merge
+    PartitionIdsHint getPartitionsThatMayBeMerged(
+        size_t max_total_size_to_merge,
+        const AllowedMergingPredicate & can_merge_callback,
+        bool merge_with_ttl_allowed,
+        const MergeTreeTransactionPtr & txn) const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -113,7 +129,8 @@ public:
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
         const MergeTreeTransactionPtr & txn,
-        String * out_disable_reason = nullptr);
+        String * out_disable_reason = nullptr,
+        const PartitionIdsHint * partitions_hint = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",

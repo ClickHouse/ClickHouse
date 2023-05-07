@@ -3242,7 +3242,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, getAllPartitionIds());
+        std::optional<ReplicatedMergeTreeMergePredicate> merge_pred;
 
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
@@ -3272,8 +3272,22 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (storage_settings.get()->assign_part_uuids)
                 future_merged_part->uuid = UUIDHelpers::generateV4();
 
-            if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, NO_TRANSACTION_PTR, nullptr) == SelectPartsDecision::SELECTED)
+            bool can_assign_merge = max_source_parts_size_for_merge > 0;
+            PartitionIdsHint partitions_to_merge_in;
+            if (can_assign_merge)
+            {
+                auto lightweight_merge_pred = TrivialMergePredicate(queue);
+                partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
+                    max_source_parts_size_for_merge, lightweight_merge_pred, merge_with_ttl_allowed, NO_TRANSACTION_PTR);
+                if (partitions_to_merge_in.empty())
+                    can_assign_merge = false;
+                else
+                    merge_pred.emplace(queue.getMergePredicate(zookeeper, partitions_to_merge_in));
+            }
+
+            if (can_assign_merge &&
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, *merge_pred,
+                                                  merge_with_ttl_allowed, NO_TRANSACTION_PTR, nullptr, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
             {
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
@@ -3285,13 +3299,17 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate_by_columns,
                     cleanup,
                     nullptr,
-                    merge_pred.getVersion(),
+                    merge_pred->getVersion(),
                     future_merged_part->merge_type);
             }
             /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
                      && merges_and_mutations_queued.mutations < storage_settings_ptr->max_replicated_mutations_in_queue)
             {
+                /// We don't need the list of committing blocks to choose a part to mutate
+                if (!merge_pred)
+                    merge_pred.emplace(queue.getMergePredicate(zookeeper, PartitionIdsHint{}));
+
                 /// Choose a part to mutate.
                 DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
                 for (const auto & part : data_parts)
@@ -3299,7 +3317,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                         continue;
 
-                    std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
+                    std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred->getDesiredMutationVersion(part);
                     if (!desired_mutation_version)
                         continue;
 
@@ -3308,7 +3326,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         future_merged_part->uuid,
                         desired_mutation_version->first,
                         desired_mutation_version->second,
-                        merge_pred.getVersion());
+                        merge_pred->getVersion());
 
                     if (create_result == CreateMergeEntryResult::Ok ||
                         create_result == CreateMergeEntryResult::LogUpdated)
