@@ -54,6 +54,9 @@ public:
         bool created_from_ddl)>;
 
     bool isComplex(const std::string & layout_type) const;
+
+    /// if the argument `layout_type` is not complex layout and has corresponding complex layout,
+    /// change `layout_type` to corresponding complex and return true; otherwise do nothing and return false.
     bool convertToComplex(std::string & layout_type) const;
 
     void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
