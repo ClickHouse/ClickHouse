@@ -71,7 +71,7 @@ Key getPartialKey(const Key & key, const std::vector<size_t> & positions)
         if (position < key.size())
             result_key.push_back(key[position]);
     }
-    return Key(std::move(result_key));
+    return result_key;
 }
 
 IDsManager & IDsManager::instance()

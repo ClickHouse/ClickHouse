@@ -1639,19 +1639,19 @@ private:
             const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
-            const auto & chars = col_from->getChars();
-            const auto & offsets = col_from->getOffsets();
-            auto & out = col_to->getData();
+            // const auto & chars = col_from->getChars();
+            // const auto & offsets = col_from->getOffsets();
+            // auto & out = col_to->getData();
 
-            ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
-            {
-                out[i] = URLHashImpl::apply(
-                    reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+            // ColumnString::Offset current_offset = 0;
+            // for (size_t i = 0; i < size; ++i)
+            // {
+            //     out[i] = URLHashImpl::apply(
+            //         reinterpret_cast<const char *>(&chars[current_offset]),
+            //         offsets[i] - current_offset - 1);
 
-                current_offset = offsets[i];
-            }
+            //     current_offset = offsets[i];
+            // }
 
             return col_to;
         }
@@ -1666,7 +1666,7 @@ private:
         if (!isColumnConst(*level_col))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
 
-        const auto level = level_col->get64(0);
+        // const auto level = level_col->get64(0);
 
         const auto * col_untyped = arguments.front().column.get();
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
@@ -1674,20 +1674,20 @@ private:
             const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
-            const auto & chars = col_from->getChars();
-            const auto & offsets = col_from->getOffsets();
-            auto & out = col_to->getData();
+            // const auto & chars = col_from->getChars();
+            // const auto & offsets = col_from->getOffsets();
+            // auto & out = col_to->getData();
 
-            ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
-            {
-                out[i] = URLHierarchyHashImpl::apply(
-                    level,
-                    reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+            // ColumnString::Offset current_offset = 0;
+            // for (size_t i = 0; i < size; ++i)
+            // {
+            //     out[i] = URLHierarchyHashImpl::apply(
+            //         level,
+            //         reinterpret_cast<const char *>(&chars[current_offset]),
+            //         offsets[i] - current_offset - 1);
 
-                current_offset = offsets[i];
-            }
+            //     current_offset = offsets[i];
+            // }
 
             return col_to;
         }
@@ -1730,58 +1730,34 @@ public:
 
     String getName() const override { return name; }
 
-    // TODO What is it? I have to read what all these methods are being used to, maybe here: https://clickhouse.com/docs/en/development/architecture
-    bool isVariadic() const override { return true; }
-
-    // TODO Why URLHash returns 0 here?
+    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    // TODO What is it?
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    // TODO What is it?
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto arg_count = arguments.size();
-        if (arg_count != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 2.", getName(), arg_count);
+        const IColumn * id_col = arguments.back().column.get();
+        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
+        if (!isStringOrFixedString(id_col_const->getDataType()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of second argument of function {}, must be String or FixedString", getName());
 
-        // const auto * first_arg = arguments.front().get();
-        // if (!WhichDataType(first_arg).isString())
-        //     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
-
-        // if (arg_count == 2)
-        // {
-        //     const auto & second_arg = arguments.back();
-        //     if (!isInteger(second_arg))
-        //         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
-        // }
-
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    // TODO What is it?
     bool useDefaultImplementationForConstants() const override { return true; }
-    // TODO What is it?
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+ 
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
-        const auto arg_count = arguments.size();
-
-        if (arg_count != 2) {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "got into FunctionTrainEntropyLearnedHash::execute with unexpected number of arguments");
-        }
+        const IColumn * id_col = arguments.back().column.get();
+        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
+        String dataset_id = id_col_const->getValue<String>();
 
         const auto * col_untyped = arguments.front().column.get();
-        // TODO: how to extract the second argument, the id of the dataset? arguments variable consists from ColumnWithTypeAndName's, it is a some representation of column, not just string. For now I assume that it will be a column with a single row, contining the id.
-        const EntropyLearnedHashing::IDsManager::IDType dataset_id{checkAndGetColumn<ColumnString>(arguments.back().column.get())->getDataAt(0).data};
-
-        if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped)) {
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(col_untyped))
+        {
             const auto size = col_from->size();
-            // For now I will return an empty column
-            auto col_to = ColumnUInt64::create(0);
 
             std::vector<EntropyLearnedHashing::Key> train_data;
             for (size_t i = 0; i < size; ++i) 
@@ -1793,11 +1769,11 @@ public:
             auto positions = EntropyLearnedHashing::ChooseBytes(train_data).first;
             EntropyLearnedHashing::IDsManager::instance().positions_by_id[dataset_id] = positions;
 
-            return col_to;
+            return result_type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", 
-                arguments[0].column->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments.begin()->column->getName(), getName());
     }
 };
 
@@ -1810,27 +1786,16 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto arg_count = arguments.size();
-        if (arg_count != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 2.", getName(), arg_count);
-
-        // const auto * first_arg = arguments.front().get();
-        // if (!WhichDataType(first_arg).isString())
-        //     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
-
-        // if (arg_count == 2)
-        // {
-        //     const auto & second_arg = arguments.back();
-        //     if (!isInteger(second_arg))
-        //         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
-        // }
+        const IColumn * id_col = arguments.back().column.get();
+        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
+        if (!isStringOrFixedString(id_col_const->getDataType()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of second argument of function {}, must be String or FixedString", getName());
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -1840,15 +1805,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override 
     {
-        const auto arg_count = arguments.size();
-
-        if (arg_count != 2) {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "got into FunctionEntropyLearnedHash::execute with unexpected number of arguments");
-        }
+        const IColumn * id_col = arguments.back().column.get();
+        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
+        String dataset_id = id_col_const->getValue<String>();
 
         const auto * col_untyped = arguments.front().column.get();
-        // TODO: how to extract the second argument, the id of the dataset? arguments variable consists from ColumnWithTypeAndName's, it is a some representation of column, not just string. For now I assume that it will be a column with a single row, contining the id.
-        const EntropyLearnedHashing::IDsManager::IDType dataset_id{checkAndGetColumn<ColumnString>(arguments.back().column.get())->getDataAt(0).data};
         const auto& ids_manager = EntropyLearnedHashing::IDsManager::instance();
         const auto& positions = ids_manager.positions_by_id.at(dataset_id);
 
@@ -1869,28 +1830,10 @@ public:
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", 
-                arguments[0].column->getName(), getName());
+                arguments.begin()->column->getName(), getName());
     }
 };
 
-
-// struct ImplEntropyLearnedHash
-// {
-//     static constexpr auto name = "entropyLearnedHash";
-//     using ReturnType = UInt64;
-
-//     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(h1, h2)); }
-//     static auto apply(const char * s, [[maybe_unused]] const size_t len) 
-//     {
-//         const auto& ids_manager = EntropyLearnedHashing::IDsManager::instance();
-//         const auto& positions = ids_manager.positions_by_id[ids_manager.default_id];
-//         EntropyLearnedHashing::Key key(s);
-//         EntropyLearnedHashing::Key subkey = EntropyLearnedHashing::getPartialKey(key, positions);
-//         // TODO: replace hardcoded cityhash by specified hash function
-//         return CityHash_v1_0_2::CityHash64(subkey.data(), subkey.size());
-//     }
-//     static constexpr bool use_int_hash_for_pods = true;
-// };
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
