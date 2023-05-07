@@ -8,7 +8,6 @@
 #include <format>
 #include <map>
 #include <re2/re2.h>
-#include <sstream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -42,9 +41,7 @@ String FileRenamer::generateNewFilename(const String & filename) const
     if (rule.find("%t") != String::npos)
     {
         auto now = std::chrono::system_clock::now();
-        std::stringstream ss;
-        ss << timeInMicroseconds(now);
-        timestamp = ss.str();
+        timestamp = std::to_string(timeInMicroseconds(now));
     }
 
     // Define placeholders and their corresponding values
