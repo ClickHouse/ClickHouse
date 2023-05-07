@@ -244,7 +244,7 @@ namespace detail
                         return istr;
                     }
 
-                    char data_packet_size[5] = "";
+                    char data_packet_size[100] = "";
 
                     if (UDT::ERROR == UDT::recvmsg(client, data_packet_size, sizeof(data_packet_size)))
                     {
@@ -269,7 +269,7 @@ namespace detail
                     response.setVersion("HTTP/1.1");
                     response.set("Keep-Alive", "timeout=3");
 
-                    LOG_INFO(log, "Received UDT packet");
+                    LOG_INFO(log, "Received UDT packet with size {}", data.size());
 
                     for (auto [key, value]: resp.data)
                     {

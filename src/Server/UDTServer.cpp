@@ -39,7 +39,7 @@ UDTServer::UDTServer(IServer & iserver_, std::string listen_host, UInt16 port) :
 
 void UDTServer::start()
 {
-    logger = &Poco::Logger::get("UDTRelicationServer");
+    logger = &Poco::Logger::get("UDTReplicationServer");
     _stopped = false;
 
     serv = UDT::socket(AF_INET, SOCK_DGRAM, 0);
@@ -99,8 +99,6 @@ void UDTServer::run()
         if (endpoint->blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
-        LOG_INFO(logger, "Processing UDT replication query");
-
         if (compress)
         {
             CompressedWriteBuffer compressed_out(out);
@@ -120,23 +118,27 @@ void UDTServer::run()
         auto response_str = resp_pck.serialize();
         response_str += "\r" + out.res();
 
-        LOG_INFO(logger, "Sending UDT response");
+        LOG_TRACE(logger, "Data size UDT: {} {}", out.res().size(), response_str.size());
 
-        unsigned char response_cstr[response_str.size()];
-
-         std::copy(response_str.cbegin(), response_str.cend(), response_cstr);
+        LOG_INFO(logger, "Sending UDT packet size");
 
         auto packet_size = std::to_string(response_str.size() + 1);
+
+        LOG_INFO(logger, "Sending UDT response 3");
 
         if (UDT::ERROR == UDT::sendmsg(recver, packet_size.c_str(), static_cast<int>(packet_size.size() + 1)))
         {
             continue;
         }
 
-        if (UDT::ERROR == UDT::sendmsg(recver, reinterpret_cast<char *>(response_cstr), static_cast<int>(response_str.size() + 1)))
+        LOG_INFO(logger, "Sending UDT response 4");
+
+        if (UDT::ERROR == UDT::sendmsg(recver, reinterpret_cast<char *>(response_str.data()), static_cast<int>(response_str.size() + 1)))
         {
             continue;
         }
+
+        LOG_INFO(logger, "UDT response finished");
     }
 }
 
