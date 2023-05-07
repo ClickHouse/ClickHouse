@@ -57,7 +57,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # gcc10/gcc10/clang -fsanitize=memory is too heavy
+    # -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory")
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
@@ -286,7 +286,7 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+# Compiler-specific coverage flags e.g. -fcoverage-mapping
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
 if (COMPILER_CLANG)
