@@ -205,7 +205,8 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_size = 1000000;
+        UInt64 row_group_rows = 1000000;
+        UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
