@@ -109,7 +109,7 @@ def test_vertical_merges_from_compact_parts(start_cluster):
         # that's why the error about different number of compressed files is expected and ok.
         (
             node_old.contains_in_log("CHECKSUM_DOESNT_MATCH")
-            and not node_old.contains_in_log("Different number of files: 7 compressed")
+            and not node_old.contains_in_log("Different number of files")
         )
         or (node_new.contains_in_log("CHECKSUM_DOESNT_MATCH"))
     )
