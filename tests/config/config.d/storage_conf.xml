@@ -72,7 +72,7 @@
             <!-- multi layer cache -->
             <s3_cache_multi>
                 <type>cache</type>
-                <disk>s3_cache_5</disk>
+                <disk>s3_cache</disk>
                 <path>s3_cache_multi/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
