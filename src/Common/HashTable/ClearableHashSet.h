@@ -90,7 +90,8 @@ public:
         this->m_size = 0;
 
         /// clear ZeroValueStorage
-        this->clearHasZero();
+        if (this->hasZero())
+            this->clearHasZero();
     }
 };
 
@@ -113,7 +114,8 @@ public:
         this->m_size = 0;
 
         /// clear ZeroValueStorage
-        this->clearHasZero();
+        if (this->hasZero())
+            this->clearHasZero();
     }
 };
 

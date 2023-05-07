@@ -1,8 +1,8 @@
 set optimize_distinct_in_order=1;
 
-DROP TABLE IF EXISTS test;
+DROP TABLE IF EXISTS test_string;
 
-CREATE TABLE test
+CREATE TABLE test_string
 (
     `c1` String,
     `c2` String
@@ -10,6 +10,6 @@ CREATE TABLE test
 ENGINE = MergeTree
 ORDER BY c1;
 
-INSERT INTO test(c1, c2) VALUES ('1',  ''), ('2', '');
+INSERT INTO test_string(c1, c2) VALUES ('1',  ''), ('2', '');
 
-SELECT DISTINCT c2, c1 FROM test FORMAT TSV;
+SELECT DISTINCT c2, c1 FROM test_string;
