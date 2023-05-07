@@ -184,6 +184,15 @@ sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 ```
 
+For systems with `zypper` package manager (openSUSE, SUSE SLES):
+
+``` bash
+sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+```
+
+Later any `yum install` can be replaced by `zypper install`. To specify a particular version, add `-$VERSION` to the end of the package name, e.g. `clickhouse-client-22.2.2.22`.
+
 #### Install ClickHouse server and client
 
 ```bash
