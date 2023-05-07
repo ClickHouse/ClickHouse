@@ -12,7 +12,6 @@ namespace DB
 struct DictionaryStructure;
 class WriteBuffer;
 
-String removeWhereConditionPlaceholder(const String  & query);
 
 /** Builds a query to load data from external database.
   */

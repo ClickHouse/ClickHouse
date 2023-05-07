@@ -1,6 +1,6 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
