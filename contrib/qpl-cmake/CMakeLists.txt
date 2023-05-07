@@ -10,20 +10,40 @@ if (NOT ENABLE_QPL)
     return()
 endif()
 
+## QPL has build dependency on libaccel-config. Here is to build libaccel-config which is required by QPL.
+## libaccel-config is the utility library for controlling and configuring Intel® In-Memory Analytics Accelerator (Intel® IAA).
+set (LIBACCEL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/idxd-config")
+set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
+set (LIBACCEL_HEADER_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake/idxd-header")
+set (SRCS
+    "${LIBACCEL_SOURCE_DIR}/accfg/lib/libaccfg.c"
+    "${LIBACCEL_SOURCE_DIR}/util/log.c"
+    "${LIBACCEL_SOURCE_DIR}/util/sysfs.c"
+)
+
+add_library(accel-config ${SRCS})
+
+target_compile_options(accel-config PRIVATE "-D_GNU_SOURCE")
+
+target_include_directories(accel-config BEFORE
+    PRIVATE ${UUID_DIR}
+    PRIVATE ${LIBACCEL_HEADER_DIR}
+    PRIVATE ${LIBACCEL_SOURCE_DIR})
+
+## QPL build start here.
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
 set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/build/contrib/qpl")
-set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
-
 set (EFFICIENT_WAIT OFF)
 set (BLOCK_ON_FAULT ON)
 set (LOG_HW_INIT OFF)
 set (SANITIZE_MEMORY OFF)
 set (SANITIZE_THREADS OFF)
 set (LIB_FUZZING_ENGINE OFF)
+set (DYNAMIC_LOADING_LIBACCEL_CONFIG OFF)
 
 function(GetLibraryVersion _content _outputVar)
-    string(REGEX MATCHALL "Qpl VERSION (.+) LANGUAGES" VERSION_REGEX "${_content}")
+    string(REGEX MATCHALL "QPL VERSION (.+) LANGUAGES" VERSION_REGEX "${_content}")
     SET(${_outputVar} ${CMAKE_MATCH_1} PARENT_SCOPE)
 endfunction()
 
@@ -167,7 +187,9 @@ target_include_directories(qplcore_avx512
 set_target_properties(qplcore_avx512 PROPERTIES
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
-target_link_libraries(qplcore_avx512 ${CMAKE_DL_LIBS} isal)
+target_link_libraries(qplcore_avx512
+        PRIVATE isal
+        PRIVATE ${CMAKE_DL_LIBS})
 
 target_compile_options(qplcore_avx512
                         PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
@@ -197,7 +219,9 @@ target_include_directories(qplcore_px
 set_target_properties(qplcore_px PROPERTIES
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
-target_link_libraries(qplcore_px isal ${CMAKE_DL_LIBS})
+target_link_libraries(qplcore_px
+        PRIVATE isal
+        PRIVATE ${CMAKE_DL_LIBS})
 
 target_compile_options(qplcore_px
                         PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
@@ -221,7 +245,9 @@ add_library(core_iaa OBJECT ${HW_PATH_SRC})
 target_include_directories(core_iaa
         PRIVATE ${UUID_DIR}
         PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/include>
-        PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
+        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
+        PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include>  # status.h in own_checkers.h
+        PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/sources/c_api> # own_checkers.h
         PRIVATE $<TARGET_PROPERTY:qplcore_avx512,INTERFACE_INCLUDE_DIRECTORIES>)
 
 target_compile_options(core_iaa
@@ -315,14 +341,13 @@ target_compile_definitions(_qpl
         PRIVATE -DQPL_BADARG_CHECK
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
-find_library(LIBACCEL accel-config)
-if(NOT LIBACCEL)
-    message(FATAL_ERROR "Please install QPL dependency library:libaccel-config from https://github.com/intel/idxd-config")
-endif()
-
 target_link_libraries(_qpl
-        PRIVATE ${LIBACCEL}
+        PRIVATE accel-config
+        PRIVATE ch_contrib::isal
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
-target_include_directories(_qpl SYSTEM BEFORE PUBLIC "${QPL_PROJECT_DIR}/include")
+target_include_directories(_qpl SYSTEM BEFORE
+        PUBLIC "${QPL_PROJECT_DIR}/include"
+        PUBLIC "${LIBACCEL_SOURCE_DIR}/accfg"
+        PUBLIC ${UUID_DIR})

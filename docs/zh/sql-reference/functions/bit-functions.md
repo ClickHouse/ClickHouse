@@ -438,6 +438,3 @@ SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat
 │                                                                            5 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
-
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/bit_functions/) <!--hide-->

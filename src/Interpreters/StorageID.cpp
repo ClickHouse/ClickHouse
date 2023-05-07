@@ -40,7 +40,7 @@ StorageID::StorageID(const ASTPtr & node)
     else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
         *this = StorageID(*simple_query);
     else
-        throw Exception("Unexpected AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST");
 }
 
 String StorageID::getTableName() const
@@ -53,7 +53,7 @@ String StorageID::getDatabaseName() const
 {
     assertNotEmpty();
     if (database_name.empty())
-        throw Exception("Database name is empty", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database name is empty");
     return database_name;
 }
 

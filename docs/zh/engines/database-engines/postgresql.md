@@ -136,5 +136,3 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/database-engines/postgresql/) <!--hide-->

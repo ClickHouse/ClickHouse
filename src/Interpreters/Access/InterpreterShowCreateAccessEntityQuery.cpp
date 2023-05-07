@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -62,7 +63,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data;
+            query->auth_data = user.auth_data.toAST();
 
         if (!user.settings.empty())
         {
@@ -227,7 +228,7 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
 }
 
@@ -254,7 +255,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     for (const auto & create_query : create_queries)
-        column->insert(create_query->formatWithSecretsHidden());
+        column->insert(format({getContext(), *create_query}));
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
@@ -409,6 +410,6 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
 }

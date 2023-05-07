@@ -36,15 +36,17 @@ void ColumnMapping::addColumns(
             }
 
             throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unknown field found in format header: '{}' at position {}\nSet the 'input_format_skip_unknown_fields' parameter explicitly to ignore and proceed",
-                name, column_indexes_for_input_fields.size());
+                            ErrorCodes::INCORRECT_DATA,
+                            "Unknown field found in format header: "
+                            "'{}' at position {}\nSet the 'input_format_skip_unknown_fields' parameter explicitly "
+                            "to ignore and proceed",
+                            name, column_indexes_for_input_fields.size());
         }
 
         const auto column_index = column_it->getMapped();
 
         if (read_columns[column_index])
-            throw Exception("Duplicate field found while parsing format header: " + name, ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing format header: {}", name);
 
         read_columns[column_index] = true;
         column_indexes_for_input_fields.emplace_back(column_index);

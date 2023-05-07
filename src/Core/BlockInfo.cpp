@@ -53,7 +53,7 @@ void BlockInfo::read(ReadBuffer & in)
 
         #undef READ_FIELD
             default:
-                throw Exception("Unknown BlockInfo field number: " + toString(field_num), ErrorCodes::UNKNOWN_BLOCK_INFO_FIELD);
+                throw Exception(ErrorCodes::UNKNOWN_BLOCK_INFO_FIELD, "Unknown BlockInfo field number: {}", field_num);
         }
     }
 }

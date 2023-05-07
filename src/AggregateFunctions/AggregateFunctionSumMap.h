@@ -18,7 +18,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
-#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -214,7 +213,7 @@ public:
 
             // Expect key and value arrays to be of same length
             if (keys_vec_size != values_vec_size)
-                throw Exception("Sizes of keys and values arrays do not match", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of keys and values arrays do not match");
 
             // Insert column values for all keys
             for (size_t i = 0; i < keys_vec_size; ++i)
@@ -428,10 +427,7 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return getNameImpl(); }
-
-private:
-    static String getNameImpl() { return Derived::getNameImpl(); }
+    String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
@@ -468,6 +464,7 @@ public:
     bool keepKey(const T &) const { return true; }
 };
 
+
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
     public AggregateFunctionMapBase<T,
@@ -502,6 +499,8 @@ public:
                 "Aggregate function {} requires an Array as a parameter",
                 getNameImpl());
 
+        this->parameters = params_;
+
         keys_to_keep.reserve(keys_to_keep_values.size());
 
         for (const Field & f : keys_to_keep_values)
@@ -509,7 +508,16 @@ public:
     }
 
     static String getNameImpl()
-    { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
+    {
+        if constexpr (overflow)
+        {
+            return "sumMapFilteredWithOverflow";
+        }
+        else
+        {
+            return "sumMapFiltered";
+        }
+    }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
@@ -545,7 +553,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -586,7 +594,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }

@@ -3,10 +3,11 @@
 #include <base/types.h>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 #include <utility>
 #include <base/range.h>
 #include <base/unaligned.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
@@ -17,6 +18,7 @@ constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byt
 namespace DB
 {
 
+extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string_lookup_table;
 
 /** Rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
   *  performs significantly faster than the reference implementation due to the absence of sprintf calls,
@@ -30,17 +32,38 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * which should be long enough.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
- * In case of failure returns false and doesn't modify buffer pointed by `dst`.
+ * In case of failure doesn't modify buffer pointed by `dst`.
  *
- * @param src - input string, expected to be non-null and null-terminated right after the IPv4 string value.
- * @param dst - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
- * @return false if parsing failed, true otherwise.
+ * WARNING - this function is adapted to work with ReadBuffer, where src is the position reference (ReadBuffer::position())
+ *           and eof is the ReadBuffer::eof() - therefore algorithm below does not rely on buffer's continuity.
+ *           To parse strings use overloads below.
+ *
+ * @param src         - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
+ * @param eof         - function returning true if iterator riched the end - warning - can break iterator's continuity.
+ * @param dst         - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
+ * @param first_octet - preparsed first octet
+ * @return            - true if parsed successfully, false otherwise.
  */
-inline bool parseIPv4(const char * src, unsigned char * dst)
+template <typename T, typename EOFfunction>
+requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
 {
+    if (src == nullptr || first_octet > 255)
+        return false;
+
     UInt32 result = 0;
-    for (int offset = 24; offset >= 0; offset -= 8)
+    int offset = 24;
+    if (first_octet >= 0)
     {
+        result |= first_octet << offset;
+        offset -= 8;
+    }
+
+    for (; true; offset -= 8, ++src)
+    {
+        if (eof())
+            return false;
+
         UInt32 value = 0;
         size_t len = 0;
         while (isNumericASCII(*src) && len <= 3)
@@ -48,135 +71,330 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
             value = value * 10 + (*src - '0');
             ++len;
             ++src;
+            if (eof())
+                break;
         }
-        if (len == 0 || value > 255 || (offset > 0 && *src != '.'))
+        if (len == 0 || value > 255 || (offset > 0 && (eof() || *src != '.')))
             return false;
         result |= value << offset;
-        ++src;
+
+        if (offset == 0)
+            break;
     }
-    if (*(src - 1) != '\0')
-        return false;
 
     memcpy(dst, &result, sizeof(result));
     return true;
 }
 
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, const char * end, unsigned char * dst)
+{
+    if (parseIPv4(src, [&src, end](){ return src == end; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole buffer was parsed successfully
+inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
+{
+    return parseIPv4(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, unsigned char * dst)
+{
+    if (parseIPv4(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole null-terminated string was parsed successfully
+inline bool parseIPv4whole(const char * src, unsigned char * dst)
+{
+    const char * end = parseIPv4(src, dst);
+    return end != nullptr && *end == '\0';
+}
+
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
-* Slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
 * Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
-* which should be long enough. In case of failure zeroes
-* IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
+* which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
-* @param src - input string, expected to be non-null and null-terminated right after the IPv6 string value.
-* @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
-* @return false if parsing failed, true otherwise.
+* WARNING - this function is adapted to work with ReadBuffer, where src is the position reference (ReadBuffer::position())
+*           and eof is the ReadBuffer::eof() - therefore algorithm below does not rely on buffer's continuity.
+*           To parse strings use overloads below.
+*
+* @param src         - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
+* @param eof         - function returning true if iterator riched the end - warning - can break iterator's continuity.
+* @param dst         - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
+* @param first_block - preparsed first block
+* @return            - true if parsed successfully, false otherwise.
 */
-inline bool parseIPv6(const char * src, unsigned char * dst)
+template <typename T, typename EOFfunction>
+requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
     {
-        memset(dst, '\0', IPV6_BINARY_LENGTH);
+        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
         return false;
     };
 
-    /// Leading :: requires some special handling.
-    if (*src == ':')
-        if (*++src != ':')
-            return clear_dst();
+    if (src == nullptr || eof())
+        return clear_dst();
 
-    unsigned char tmp[IPV6_BINARY_LENGTH]{};
-    unsigned char * tp = tmp;
-    unsigned char * endp = tp + IPV6_BINARY_LENGTH;
-    const char * curtok = src;
-    bool saw_xdigit = false;
-    UInt32 val{};
-    unsigned char * colonp = nullptr;
+    int groups = 0;                 /// number of parsed groups
+    unsigned char * iter = dst;     /// iterator over dst buffer
+    unsigned char * zptr = nullptr; /// pointer into dst buffer array where all-zeroes block ("::") is started
 
-    /// Assuming zero-terminated string.
-    while (char ch = *src++)
+    std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+
+    if (first_block >= 0)
     {
-        UInt8 num = unhex(ch);
-
-        if (num != 0xFF)
+        *iter++ = static_cast<unsigned char>((first_block >> 8) & 0xffu);
+        *iter++ = static_cast<unsigned char>(first_block & 0xffu);
+        if (*src == ':')
         {
-            val <<= 4;
-            val |= num;
-            if (val > 0xffffu)
+            zptr = iter;
+            ++src;
+        }
+        ++groups;
+    }
+
+    bool group_start = true;
+
+    while (!eof() && groups < 8)
+    {
+        if (*src == ':')
+        {
+            ++src;
+            if (eof()) /// trailing colon is not allowed
                 return clear_dst();
 
-            saw_xdigit = true;
-            continue;
-        }
+            group_start = true;
 
-        if (ch == ':')
-        {
-            curtok = src;
-            if (!saw_xdigit)
+            if (*src == ':')
             {
-                if (colonp)
+                if (zptr != nullptr) /// multiple all-zeroes blocks are not allowed
                     return clear_dst();
-
-                colonp = tp;
+                zptr = iter;
+                ++src;
                 continue;
             }
-
-            if (tp + sizeof(UInt16) > endp)
+            if (groups == 0) /// leading colon is not allowed
                 return clear_dst();
-
-            *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
-            *tp++ = static_cast<unsigned char>(val & 0xffu);
-            saw_xdigit = false;
-            val = 0;
-            continue;
         }
 
-        if (ch == '.' && (tp + IPV4_BINARY_LENGTH) <= endp)
+        if (*src == '.') /// mixed IPv4 parsing
         {
-            if (!parseIPv4(curtok, tp))
+            if (groups <= 1 && zptr == nullptr) /// IPv4 block can't be the first
+                return clear_dst();
+
+            if (group_start) /// first octet of IPv4 should be already parsed as an IPv6 group
+                return clear_dst();
+
+            ++src;
+            if (eof())
+                return clear_dst();
+
+            /// last parsed group should be reinterpreted as a decimal value - it's the first octet of IPv4
+            --groups;
+            iter -= 2;
+
+            UInt16 num = 0;
+            for (int i = 0; i < 2; ++i)
+            {
+                unsigned char first = (iter[i] >> 4) & 0x0fu;
+                unsigned char second = iter[i] & 0x0fu;
+                if (first > 9 || second > 9)
+                    return clear_dst();
+                (num *= 100) += first * 10 + second;
+            }
+            if (num > 255)
+                return clear_dst();
+
+            /// parse IPv4 with known first octet
+            if (!parseIPv4(src, eof, iter, num))
                 return clear_dst();
 
             if constexpr (std::endian::native == std::endian::little)
-                std::reverse(tp, tp + IPV4_BINARY_LENGTH);
+                std::reverse(iter, iter + IPV4_BINARY_LENGTH);
 
-            tp += IPV4_BINARY_LENGTH;
-            saw_xdigit = false;
-            break;    /* '\0' was seen by ipv4_scan(). */
+            iter += 4;
+            groups += 2;
+            break; /// IPv4 block is the last - end of parsing
         }
 
-        return clear_dst();
+        if (!group_start) /// end of parsing
+            break;
+        group_start = false;
+
+        UInt16 val = 0;   /// current decoded group
+        int xdigits = 0;  /// number of decoded hex digits in current group
+
+        for (; !eof() && xdigits < 4; ++src, ++xdigits)
+        {
+            UInt8 num = unhex(*src);
+            if (num == 0xFF)
+                break;
+            (val <<= 4) |= num;
+        }
+
+        if (xdigits == 0) /// end of parsing
+            break;
+
+        *iter++ = static_cast<unsigned char>((val >> 8) & 0xffu);
+        *iter++ = static_cast<unsigned char>(val & 0xffu);
+        ++groups;
     }
 
-    if (saw_xdigit)
+    /// either all 8 groups or all-zeroes block should be present
+    if (groups < 8 && zptr == nullptr)
+        return clear_dst();
+
+    if (zptr != nullptr) /// process all-zeroes block
     {
-        if (tp + sizeof(UInt16) > endp)
+        size_t msize = iter - zptr;
+        std::memmove(dst + IPV6_BINARY_LENGTH - msize, zptr, msize);
+        std::memset(zptr, '\0', IPV6_BINARY_LENGTH - (iter - dst));
+    }
+
+    return true;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, const char * end, unsigned char * dst)
+{
+    if (parseIPv6(src, [&src, end](){ return src == end; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole buffer was parsed successfully
+inline bool parseIPv6whole(const char * src, const char * end, unsigned char * dst)
+{
+    return parseIPv6(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, unsigned char * dst)
+{
+    if (parseIPv6(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
+}
+
+/// returns true if whole null-terminated string was parsed successfully
+inline bool parseIPv6whole(const char * src, unsigned char * dst)
+{
+    const char * end = parseIPv6(src, dst);
+    return end != nullptr && *end == '\0';
+}
+
+/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
+*
+* Parses the input string `src` IPv6 or possible IPv4 into IPv6 and stores binary big-endian value into buffer pointed by `dst`,
+* which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
+*
+* WARNING - this function is adapted to work with ReadBuffer, where src is the position reference (ReadBuffer::position())
+*           and eof is the ReadBuffer::eof() - therefore algorithm below does not rely on buffer's continuity.
+*
+* @param src - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
+* @param eof - function returning true if iterator riched the end - warning - can break iterator's continuity.
+* @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
+* @return    - true if parsed successfully, false otherwise.
+*/
+template <typename T, typename EOFfunction>
+requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
+{
+    const auto clear_dst = [dst]()
+    {
+        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        return false;
+    };
+
+    if (src == nullptr)
+        return clear_dst();
+
+    bool leading_zero = false;
+    uint16_t val = 0;
+    int digits = 0;
+    /// parse up to 4 first digits as hexadecimal
+    for (; !eof() && digits < 4; ++src, ++digits)
+    {
+        if (*src == ':' || *src == '.')
+            break;
+
+        if (digits == 0 && *src == '0')
+            leading_zero = true;
+
+        UInt8 num = unhex(*src);
+        if (num == 0xFF)
+            return clear_dst();
+        (val <<= 4) |= num;
+    }
+
+    if (eof())
+        return clear_dst();
+
+    if (*src == ':') /// IPv6
+    {
+        if (digits == 0) /// leading colon - no preparsed group
+            return parseIPv6(src, eof, dst);
+        ++src;
+        return parseIPv6(src, eof, dst, val); /// parse with first preparsed group
+    }
+
+    if (*src == '.') /// IPv4
+    {
+        /// should has some digits
+        if (digits == 0)
+            return clear_dst();
+        /// should not has leading zeroes, should has no more than 3 digits
+        if ((leading_zero && digits > 1) || digits > 3)
             return clear_dst();
 
-        *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
-        *tp++ = static_cast<unsigned char>(val & 0xffu);
-    }
-
-    if (colonp)
-    {
-        /*
-         * Since some memmove()'s erroneously fail to handle
-         * overlapping regions, we'll do the shift by hand.
-         */
-        const auto n = tp - colonp;
-
-        for (int i = 1; i <= n; ++i)
+        /// recode first group as decimal
+        UInt16 num = 0;
+        for (int exp = 1; exp < 1000; exp *= 10)
         {
-            endp[- i] = colonp[n - i];
-            colonp[n - i] = 0;
+            int n = val & 0x0fu;
+            if (n > 9)
+                return clear_dst();
+            num += n * exp;
+            val >>= 4;
         }
-        tp = endp;
+        if (num > 255)
+            return clear_dst();
+
+        ++src;
+        if (!parseIPv4(src, eof, dst, num)) /// try to parse as IPv4 with preparsed first octet
+            return clear_dst();
+
+        /// convert into IPv6
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            dst[15] = dst[0]; dst[0] = 0;
+            dst[14] = dst[1]; dst[1] = 0;
+            dst[13] = dst[2]; dst[2] = 0;
+            dst[12] = dst[3]; dst[3] = 0;
+        }
+        else
+        {
+            dst[15] = dst[3]; dst[3] = 0;
+            dst[14] = dst[2]; dst[2] = 0;
+            dst[13] = dst[1]; dst[1] = 0;
+            dst[12] = dst[0]; dst[0] = 0;
+        }
+
+        dst[11] = 0xff;
+        dst[10] = 0xff;
+
+        return true;
     }
 
-    if (tp != endp)
-        return clear_dst();
-
-    memcpy(dst, tmp, sizeof(tmp));
-    return true;
+    return clear_dst();
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
@@ -198,22 +416,27 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
   *     formatIPv4(&0x7f000001, dst, mask_tail_octets = 1, "0");
   *         > dst == "127.0.0.0"
   */
-inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
+inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
 {
-    extern const char one_byte_to_string_lookup_table[256][4];
-
     const size_t mask_length = mask_string ? strlen(mask_string) : 0;
     const size_t limit = std::min(IPV4_BINARY_LENGTH, IPV4_BINARY_LENGTH - mask_tail_octets);
-    for (size_t octet = 0; octet < limit; ++octet)
+    const size_t padding = std::min(4 - src_size, limit);
+
+    for (size_t octet = 0; octet < padding; ++octet)
+    {
+        *dst++ = '0';
+        *dst++ = '.';
+    }
+
+    for (size_t octet = 4 - src_size; octet < limit; ++octet)
     {
         uint8_t value = 0;
         if constexpr (std::endian::native == std::endian::little)
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
-        const auto * rep = one_byte_to_string_lookup_table[value];
-        const uint8_t len = rep[0];
-        const char* str = rep + 1;
+        const uint8_t len = one_byte_to_string_lookup_table[value].second;
+        const char* str = one_byte_to_string_lookup_table[value].first;
 
         memcpy(dst, str, len);
         dst += len;
@@ -229,6 +452,11 @@ inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail
     }
 
     dst[-1] = '\0';
+}
+
+inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
+{
+    formatIPv4(src, 4, dst, mask_tail_octets, mask_string);
 }
 
 }

@@ -26,7 +26,7 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
                                  natsLibuv_Read,
                                  natsLibuv_Write,
                                  natsLibuv_Detach);
-    natsOptions_SetIOBufSize(opts, INT_MAX);
+    natsOptions_SetIOBufSize(opts, DBMS_DEFAULT_BUFFER_SIZE);
     natsOptions_SetSendAsap(opts, true);
 }
 

@@ -9,7 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Core/IResolvedFunction.h>
 
 #include "config.h"
@@ -65,9 +65,9 @@ class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunctio
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : result_type(result_type_)
-        , argument_types(argument_types_)
+        : argument_types(argument_types_)
         , parameters(parameters_)
+        , result_type(result_type_)
     {}
 
     /// Get main function name.
@@ -95,7 +95,7 @@ public:
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
     {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
     }
 
     virtual bool isVersioned() const { return false; }
@@ -199,7 +199,7 @@ public:
         size_t /*limit*/,
         ContextPtr /*context*/) const
     {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
     }
 
     /** Returns true for aggregate functions of type -State
@@ -345,6 +345,14 @@ public:
         return nullptr;
     }
 
+    /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
+    /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
+    /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
+    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
+    {
+        return {};
+    }
+
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
       */
@@ -401,9 +409,9 @@ public:
 #endif
 
 protected:
-    DataTypePtr result_type;
     DataTypes argument_types;
     Array parameters;
+    DataTypePtr result_type;
 };
 
 
@@ -828,6 +836,9 @@ struct AggregateFunctionProperties
       * Some may also name this property as "non-commutative".
       */
     bool is_order_dependent = false;
+
+    /// Indicates if it's actually window function.
+    bool is_window_function = false;
 };
 
 

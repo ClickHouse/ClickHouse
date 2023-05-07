@@ -1,6 +1,5 @@
 #pragma once
 
-#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -8,7 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/logger_useful.h>
+#include <Common/SharedMutex.h>
 
 
 namespace DB
@@ -55,6 +54,8 @@ public:
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
 
+    void checkIsCreated() const;
+
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
@@ -68,7 +69,7 @@ public:
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
-    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
+    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -131,7 +132,7 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
 
     template <typename Method>
     void insertFromBlockImpl(

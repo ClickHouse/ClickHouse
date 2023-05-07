@@ -54,8 +54,8 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 
 Main use-cases for `Join`-engine tables are following:
 
--   Place the table to the right side in a `JOIN` clause.
--   Call the [joinGet](/docs/en/sql-reference/functions/other-functions.md/#joinget) function, which lets you extract data from the table the same way as from a dictionary.
+- Place the table to the right side in a `JOIN` clause.
+- Call the [joinGet](/docs/en/sql-reference/functions/other-functions.md/#joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Deleting Data {#deleting-data}
 
@@ -86,7 +86,18 @@ When creating a table, the following settings are applied:
 [join_any_take_last_row](/docs/en/operations/settings/settings.md/#settings-join_any_take_last_row)
 #### join_use_nulls
 
-[persistent](/docs/en/operations/settings/settings.md/#persistent)
+#### persistent
+
+Disables persistency for the Join and [Set](/docs/en/engines/table-engines/special/set.md) table engines.
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
@@ -151,4 +162,3 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 │  1 │  21 │
 └────┴─────┘
 ```
-

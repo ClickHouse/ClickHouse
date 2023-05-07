@@ -9,6 +9,9 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
     ],
+    user_configs=[
+        "configs/zookeeper_retries.xml",
+    ],
     with_minio=True,
 )
 
@@ -34,7 +37,7 @@ def new_backup_name():
 def check_backup_and_restore(storage_policy, backup_destination, size=1000):
     node.query(
         f"""
-    DROP TABLE IF EXISTS data NO DELAY;
+    DROP TABLE IF EXISTS data SYNC;
     CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
     INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size};
     BACKUP TABLE data TO {backup_destination};
@@ -44,8 +47,8 @@ def check_backup_and_restore(storage_policy, backup_destination, size=1000):
         (SELECT count(), sum(sipHash64(*)) FROM data_restored),
         'Data does not matched after BACKUP/RESTORE'
     );
-    DROP TABLE data NO DELAY;
-    DROP TABLE data_restored NO DELAY;
+    DROP TABLE data SYNC;
+    DROP TABLE data_restored SYNC;
     """
     )
 
@@ -121,6 +124,16 @@ def test_backup_to_s3_named_collection():
     check_backup_and_restore(storage_policy, backup_destination)
 
 
+def test_backup_to_s3_multipart():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination, size=1000000)
+    assert node.contains_in_log(
+        f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+    )
+
+
 def test_backup_to_s3_native_copy():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
@@ -128,8 +141,11 @@ def test_backup_to_s3_native_copy():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("using native copy")
-    assert node.contains_in_log("single-operation copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log(
+        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    )
 
 
 def test_backup_to_s3_native_copy_other_bucket():
@@ -139,14 +155,20 @@ def test_backup_to_s3_native_copy_other_bucket():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("using native copy")
-    assert node.contains_in_log("single-operation copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log(
+        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    )
 
 
-def test_backup_to_s3_native_copy_multipart_upload():
+def test_backup_to_s3_native_copy_multipart():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart_upload_copy/{backup_name}', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination, size=1000000)
-    assert node.contains_in_log("using native copy")
-    assert node.contains_in_log("multipart upload copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log(
+        f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
+    )

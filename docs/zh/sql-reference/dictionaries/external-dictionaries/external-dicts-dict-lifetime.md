@@ -88,5 +88,3 @@ LIFETIME(MIN 300 MAX 360)
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

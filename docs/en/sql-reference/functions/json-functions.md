@@ -1,12 +1,16 @@
 ---
 slug: /en/sql-reference/functions/json-functions
-sidebar_position: 56
+sidebar_position: 105
 sidebar_label: JSON
 ---
 
-# Functions for Working with JSON
+There are two sets of functions to parse JSON. 
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
+   - `JSONExtract*` is made to parse normal JSON.
 
-ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+# visitParam functions
+
+ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
@@ -75,7 +79,9 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+# JSONExtract functions
+
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
 
 ## isValidJSON(json)
 
@@ -103,9 +109,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 
 `indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
 
--   String = access object member by key.
--   Positive integer = access the n-th member/key from the beginning.
--   Negative integer = access the n-th member/key from the end.
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
 
 Minimum index of the element is 1. Thus the element 0 does not exist.
 
@@ -200,6 +206,7 @@ Examples:
 ``` sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
+SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(String, String)') = map('a',  'hello', 'b', 'world');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(Int64)') = NULL
 SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
@@ -229,8 +236,8 @@ JSONExtractKeys(json[, a, b, c...])
 
 **Arguments**
 
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned value**
 
@@ -291,13 +298,13 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Arguments**
 
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned values**
 
--   Array with `('key', 'value')` tuples. Both tuple members are strings.
--   Empty array if the requested object does not exist, or input JSON is invalid.
+- Array with `('key', 'value')` tuples. Both tuple members are strings.
+- Empty array if the requested object does not exist, or input JSON is invalid.
 
 Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
 
@@ -395,7 +402,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned.
+If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
 
 Example:
 
@@ -404,6 +411,8 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
+select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
+select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:
@@ -434,11 +443,11 @@ toJSONString(value)
 
 **Arguments**
 
--   `value` — Value to serialize. Value may be of any data type.
+- `value` — Value to serialize. Value may be of any data type.
 
 **Returned value**
 
--   JSON representation of the value.
+- JSON representation of the value.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -463,5 +472,40 @@ Result:
 
 **See Also**
 
--   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
--   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+
+
+## JSONArrayLength
+
+Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
+
+**Syntax**
+
+``` sql
+JSONArrayLength(json)
+```
+
+Alias: `JSON_ARRAY_LENGTH(json)`.
+
+**Arguments**
+
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
+
+Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]')
+
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+```

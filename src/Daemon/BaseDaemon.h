@@ -15,9 +15,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Version.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -162,7 +160,6 @@ protected:
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
     std::atomic_size_t terminate_signals_counter{0};
-    std::atomic_size_t sigint_signals_counter{0};
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;

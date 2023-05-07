@@ -120,9 +120,14 @@ insert into rmt1 values (100);
 insert into rmt2 values (100);
 insert into rmt1 values (200);
 insert into rmt2 values (200);
+
+-- otherwise we can get exception on drop part
+system sync replica rmt2;
+system sync replica rmt1;
+
 detach table rmt1;
 
--- create a gap in block numbers buy dropping part
+-- create a gap in block numbers by dropping part
 insert into rmt2 values (300);
 alter table rmt2 drop part 'all_19_19_0';   -- remove 200
 insert into rmt2 values (400);

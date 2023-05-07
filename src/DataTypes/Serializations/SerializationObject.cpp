@@ -231,7 +231,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     auto kind = magic_enum::enum_cast<BinarySerializationKind>(kind_raw);
     if (!kind)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
 
     auto state_object = std::make_shared<DeserializeStateObject>();
     state_object->kind = *kind;
@@ -255,7 +255,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     else
     {
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
     }
 
     settings.path.push_back(Substream::ObjectData);
@@ -422,8 +422,9 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
 }
 
 template <typename Parser>
+template <bool pretty_json>
 void SerializationObject<Parser>::serializeTextFromSubcolumn(
-    const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+    const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
     const auto & least_common_type = subcolumn.getLeastCommonType();
 
@@ -432,7 +433,10 @@ void SerializationObject<Parser>::serializeTextFromSubcolumn(
         const auto & finalized_column = subcolumn.getFinalizedColumn();
         auto info = least_common_type->getSerializationInfo(finalized_column);
         auto serialization = least_common_type->getSerialization(*info);
-        serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
+        if constexpr (pretty_json)
+            serialization->serializeTextJSONPretty(finalized_column, row_num, ostr, settings, indent);
+        else
+            serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
         return;
     }
 
@@ -445,7 +449,10 @@ void SerializationObject<Parser>::serializeTextFromSubcolumn(
 
         auto info = least_common_type->getSerializationInfo(*tmp_column);
         auto serialization = least_common_type->getSerialization(*info);
-        serialization->serializeTextJSON(*tmp_column, 0, ostr, settings);
+        if constexpr (pretty_json)
+            serialization->serializeTextJSONPretty(*tmp_column, 0, ostr, settings, indent);
+        else
+            serialization->serializeTextJSON(*tmp_column, 0, ostr, settings);
         return;
     }
 
@@ -457,7 +464,10 @@ void SerializationObject<Parser>::serializeTextFromSubcolumn(
             auto part_type = getDataTypeByColumn(*part);
             auto info = part_type->getSerializationInfo(*part);
             auto serialization = part_type->getSerialization(*info);
-            serialization->serializeTextJSON(*part, ind, ostr, settings);
+            if constexpr (pretty_json)
+                serialization->serializeTextJSONPretty(*part, ind, ostr, settings, indent);
+            else
+                serialization->serializeTextJSON(*part, ind, ostr, settings);
             return;
         }
 
@@ -502,6 +512,30 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
     serializeTextImpl(column, row_num, ostr_str, settings);
     writeCSVString(ostr_str.str(), ostr);
 }
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    const auto & subcolumns = column_object.getSubcolumns();
+
+    writeCString("{\n", ostr);
+    for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
+    {
+        const auto & entry = *it;
+        if (it != subcolumns.begin())
+            writeCString(",\n", ostr);
+
+        writeChar(' ', (indent + 1) * 4, ostr);
+        writeDoubleQuoted(entry->path.getPath(), ostr);
+        writeCString(": ", ostr);
+        serializeTextFromSubcolumn<true>(entry->data, row_num, ostr, settings, indent + 1);
+    }
+    writeChar('\n', ostr);
+    writeChar(' ', indent * 4, ostr);
+    writeChar('}', ostr);
+}
+
 
 SerializationPtr getObjectSerialization(const String & schema_format)
 {

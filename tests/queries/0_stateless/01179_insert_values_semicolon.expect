@@ -1,27 +1,27 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
 exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+set history_file $env(CLICKHOUSE_TMP)/$basename.history
 
 log_user 0
 set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
-    eof { exp_continue }
+    -i $any_spawn_id eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
 expect ":) "
 
 send -- "DROP TABLE IF EXISTS test_01179\r"
 expect "Ok."
 
-send -- "CREATE TABLE test_01179 (date DateTime) ENGINE=Memory()\r"
+send -- "CREATE TABLE test_01179 (date DateTime64(3)) ENGINE=Memory()\r"
 expect "Ok."
 
 send -- "INSERT INTO test_01179 values ('2020-01-01')\r"
@@ -30,14 +30,14 @@ expect "Ok."
 send -- "INSERT INTO test_01179 values ('2020-01-01'); \r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('2020-01-01'); (1) \r"
+send -- "INSERT INTO test_01179 values ('2020-01-01 0'); (1) \r"
 expect "Cannot read data after semicolon"
 
 send -- "SELECT date, count() FROM test_01179 GROUP BY date FORMAT TSV\r"
-expect "2020-01-01 00:00:00\t3"
+expect "2020-01-01 00:00:00.000\t2"
 
 send -- "DROP TABLE test_01179\r"
 expect "Ok."
 
-send -- "\4"
+send -- "exit\r"
 expect eof

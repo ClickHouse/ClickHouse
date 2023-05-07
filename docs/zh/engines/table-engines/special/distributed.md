@@ -45,7 +45,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
  - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 查看示例
- 
+
  **分布式设置**
 
 - `fsync_after_insert` - 对异步插入到分布式的文件数据执行`fsync`。确保操作系统将所有插入的数据刷新到启动节点**磁盘上的一个文件**中。
@@ -66,19 +66,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 - `monitor_max_sleep_time_ms` - 等同于 [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
 
-!!! note "备注"
+::note
+**稳定性设置** (`fsync_...`):
 
-    **稳定性设置** (`fsync_...`):
+- 只影响异步插入(例如:`insert_distributed_sync=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
+— 可能会显著降低`insert`的性能
+- 影响将存储在分布式表文件夹中的数据写入 **接受您插入的节点** 。如果你需要保证写入数据到底层的MergeTree表中，请参阅 `system.merge_tree_settings` 中的持久性设置(`...fsync...`)
 
-    - 只影响异步插入(例如:`insert_distributed_sync=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
-    — 可能会显著降低`insert`的性能
-    - 影响将存储在分布式表文件夹中的数据写入 **接受您插入的节点** 。如果你需要保证写入数据到底层的MergeTree表中，请参阅 `system.merge_tree_settings` 中的持久性设置(`...fsync...`)
+**插入限制设置** (`..._insert`) 请见:
 
-    **插入限制设置** (`..._insert`) 请见:
+- [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+- [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) 设置
+- `bytes_to_throw_insert` 在 `bytes_to_delay_insert` 之前处理，所以你不应该设置它的值小于 `bytes_to_delay_insert`
+:::
 
-    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
-    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) 设置
-    - `bytes_to_throw_insert` 在 `bytes_to_delay_insert` 之前处理，所以你不应该设置它的值小于 `bytes_to_delay_insert`
 **示例**
 
 ``` sql
@@ -214,7 +215,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 
 
 ## 读取数据 {#distributed-reading-data}
- 
+
 当查询一个`Distributed`表时，`SELECT`查询被发送到所有的分片，不管数据是如何分布在分片上的(它们可以完全随机分布)。当您添加一个新分片时，您不必将旧数据传输到它。相反，您可以使用更重的权重向其写入新数据——数据的分布会稍微不均匀，但查询将正确有效地工作。
 
 当启用`max_parallel_replicas`选项时，查询处理将在单个分片中的所有副本之间并行化。更多信息，请参见[max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas)。
@@ -225,13 +226,11 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 
 -   `_shard_num` — 表`system.clusters` 中的  `shard_num` 值 . 数据类型: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
-!!! note "备注"
-    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.mdx) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
+:::note
+因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.mdx) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
+:::
 
 **详见**
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns) 描述
 -   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) 设置
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) 和 [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) 方法
-
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->

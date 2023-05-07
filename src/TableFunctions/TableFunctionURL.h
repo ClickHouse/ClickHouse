@@ -1,7 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageURL.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 
@@ -12,7 +12,7 @@ class Context;
 
 /* url(source, format[, structure, compression]) - creates a temporary storage from url.
  */
-class TableFunctionURL : public ITableFunctionFileLike
+class TableFunctionURL final: public ITableFunctionFileLike
 {
 public:
     static constexpr auto name = "url";
@@ -23,20 +23,20 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
-protected:
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
 private:
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    void parseArguments(const ASTPtr & ast, ContextPtr context) override;
+
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_) const override;
+
     const char * getStorageTypeName() const override { return "URL"; }
 
     String getFormatFromFirstArgument() override;
 
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
-
-    URLBasedDataSourceConfiguration configuration;
+    StorageURL::Configuration configuration;
 };
 
 }

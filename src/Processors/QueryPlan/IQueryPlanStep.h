@@ -23,11 +23,6 @@ class DataStream
 public:
     Block header;
 
-    /// Tuples with those columns are distinct.
-    /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list breaks this invariant.
-    NameSet distinct_columns = {};
-
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
@@ -51,8 +46,7 @@ public:
 
     bool hasEqualPropertiesWith(const DataStream & other) const
     {
-        return distinct_columns == other.distinct_columns
-            && has_single_port == other.has_single_port
+        return has_single_port == other.has_single_port
             && sort_description == other.sort_description
             && (sort_description.empty() || sort_scope == other.sort_scope);
     }
@@ -110,12 +104,19 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
+
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 
     /// Text description about what current step does.
     std::string step_description;
+
+    /// This field is used to store added processors from this step.
+    /// It is used only for introspection (EXPLAIN PIPELINE).
+    Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };

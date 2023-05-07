@@ -7,6 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Common/logger_useful.h>
 
 #include <set>
 
@@ -47,7 +48,7 @@ StoragePolicy::StoragePolicy(
     if (!config.has(volumes_prefix))
     {
         if (name != DEFAULT_STORAGE_POLICY_NAME)
-            throw Exception("Storage policy " + backQuote(name) + " must contain at least one volume (.volumes)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one volume (.volumes)", backQuote(name));
     }
     else
     {
@@ -57,8 +58,9 @@ StoragePolicy::StoragePolicy(
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
-            throw Exception(
-                "Volume name can contain only alphanumeric and '_' in storage policy " + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
+                            backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
     }
 
@@ -74,12 +76,14 @@ StoragePolicy::StoragePolicy(
     }
 
     if (volumes.empty())
-        throw Exception("Storage policy " + backQuote(name) + " must contain at least one volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one volume.", backQuote(name));
 
     const double default_move_factor = volumes.size() > 1 ? 0.1 : 0.0;
     move_factor = config.getDouble(config_prefix + ".move_factor", default_move_factor);
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -93,10 +97,12 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     if (volumes.empty())
-        throw Exception("Storage policy " + backQuote(name) + " must contain at least one Volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one Volume.", backQuote(name));
 
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -174,12 +180,12 @@ DiskPtr StoragePolicy::getAnyDisk() const
     /// StoragePolicy must contain at least one Volume
     /// Volume must contain at least one Disk
     if (volumes.empty())
-        throw Exception("Storage policy " + backQuote(name) + " has no volumes. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage policy {} has no volumes. It's a bug.", backQuote(name));
 
     for (const auto & volume : volumes)
     {
         if (volume->getDisks().empty())
-            throw Exception("Volume '" + volume->getName() + "' has no disks. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Volume '{}' has no disks. It's a bug", volume->getName());
         for (const auto & disk : volume->getDisks())
         {
             if (!disk->isBroken())
@@ -256,9 +262,8 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
         }
     }
     if (!max_disk)
-        throw Exception(
-            "There is no space on any disk in storage policy: " + name + ". It's likely all disks are broken",
-            ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
+            "It's likely all disks are broken", name);
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {
@@ -275,7 +280,7 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
     if (index < volume_index_by_volume_name.size())
         return volumes[index];
     else
-        throw Exception("No volume with index " + std::to_string(index) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
+        throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
 }
 
 
@@ -297,7 +302,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     for (const auto & volume : getVolumes())
     {
         if (!new_volume_names.contains(volume->getName()))
-            throw Exception("New storage policy " + backQuote(name) + " shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "New storage policy {} shall contain volumes of old one", backQuote(name));
 
         std::unordered_set<String> new_disk_names;
         for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
@@ -305,7 +310,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
         for (const auto & disk : volume->getDisks())
             if (!new_disk_names.contains(disk->getName()))
-                throw Exception("New storage policy " + backQuote(name) + " shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "New storage policy {} shall contain disks of old one", backQuote(name));
     }
 }
 
@@ -326,9 +331,9 @@ void StoragePolicy::buildVolumeIndices()
         const VolumePtr & volume = volumes[index];
 
         if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
-            throw Exception("Volume names must be unique in storage policy "
-                    + backQuote(name) + " (" + backQuote(volume->getName()) + " is duplicated)"
-                , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Volume names must be unique in storage policy {} ({} "
+                            "is duplicated)" , backQuote(name), backQuote(volume->getName()));
 
         volume_index_by_volume_name[volume->getName()] = index;
 
@@ -337,9 +342,9 @@ void StoragePolicy::buildVolumeIndices()
             const String & disk_name = disk->getName();
 
             if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-                throw Exception("Disk names must be unique in storage policy "
-                        + backQuote(name) + " (" + backQuote(disk_name) + " is duplicated)"
-                    , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+                throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                "Disk names must be unique in storage policy {} ({} "
+                                "is duplicated)" , backQuote(name), backQuote(disk_name));
 
             volume_index_by_disk_name[disk_name] = index;
         }
@@ -370,8 +375,8 @@ StoragePolicySelector::StoragePolicySelector(
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception(
-                "Storage policy name can contain only alphanumeric and '_' (" + backQuote(name) + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                            "Storage policy name can contain only alphanumeric and '_' ({})", backQuote(name));
 
         /*
          * A customization point for StoragePolicy, here one can add his own policy, for example, based on policy's name
@@ -400,8 +405,11 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            continue;
+
         if (!result->policies.contains(name))
-            throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
         policy->checkCompatibleWith(result->policies[name]);
     }
@@ -409,20 +417,39 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// Second pass, load.
     for (const auto & [name, policy] : policies)
     {
-        result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
+        /// Do not reload from config temporary storage policy, because it is not present in config.
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            result->policies[name] = policy;
+        else
+            result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
     }
 
     return result;
 }
 
-
-StoragePolicyPtr StoragePolicySelector::get(const String & name) const
+StoragePolicyPtr StoragePolicySelector::tryGet(const String & name) const
 {
     auto it = policies.find(name);
     if (it == policies.end())
-        throw Exception("Unknown storage policy " + backQuote(name), ErrorCodes::UNKNOWN_POLICY);
+        return nullptr;
 
     return it->second;
+}
+
+StoragePolicyPtr StoragePolicySelector::get(const String & name) const
+{
+    auto policy = tryGet(name);
+    if (!policy)
+        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Unknown storage policy {}", backQuote(name));
+
+    return policy;
+}
+
+void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
+{
+    auto [_, inserted] = policies.emplace(storage_policy->getName(), storage_policy);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");
 }
 
 }

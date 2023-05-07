@@ -42,10 +42,10 @@ IntersectOrExceptStep::IntersectOrExceptStep(
 QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
-    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     if (pipelines.empty())
     {
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         processors = collector.detachProcessors();
         return pipeline;
@@ -56,6 +56,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         /// Just in case.
         if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header))
         {
+            QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputStream().header.getColumnsWithTypeAndName(),
@@ -66,16 +67,20 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
+
+            auto added_processors = collector.detachProcessors();
+            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
 
         /// For the case of union.
         cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(header, cur_pipeline->getNumStreams(), 1));
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads);
-    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, current_operator));
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    auto transform = std::make_shared<IntersectOrExceptTransform>(header, current_operator);
+    processors.push_back(transform);
+    pipeline->addTransform(std::move(transform));
 
-    processors = collector.detachProcessors();
     return pipeline;
 }
 

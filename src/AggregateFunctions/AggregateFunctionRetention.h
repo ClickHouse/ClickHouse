@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ArenaAllocator.h>
 #include <base/range.h>
 #include <bitset>
 
@@ -82,9 +81,9 @@ public:
         {
             const auto * cond_arg = arguments[i].get();
             if (!isUInt8(cond_arg))
-                throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i) + " of aggregate function "
-                        + getName() + ", must be UInt8",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument {} of aggregate function {}, must be UInt8",
+                                cond_arg->getName(), i, getName());
         }
 
         events_size = static_cast<UInt8>(arguments.size());

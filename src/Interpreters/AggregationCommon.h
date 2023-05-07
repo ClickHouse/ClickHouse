@@ -3,8 +3,6 @@
 #include <array>
 
 #include <Common/SipHash.h>
-#include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -24,6 +22,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class Arena;
 
 using Sizes = std::vector<size_t>;
 
@@ -139,7 +139,7 @@ static inline T ALWAYS_INLINE packFixed(
                     case sizeof(UInt16): index = assert_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
                     case sizeof(UInt32): index = assert_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
                     case sizeof(UInt64): index = assert_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
-                    default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+                    default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
                 }
             }
         }

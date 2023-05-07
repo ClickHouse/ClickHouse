@@ -26,7 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
@@ -35,6 +34,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <Common/CurrentMetrics.h>
 #include <filesystem>
 
 
@@ -43,6 +43,12 @@ namespace fs = std::filesystem;
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
   */
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB
 {
@@ -104,7 +110,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -277,7 +283,7 @@ private:
             }
 
             if (queries.empty())
-                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
+                throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty list of queries.");
         }
         else
         {
@@ -474,7 +480,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.read())
+        while (Block block = executor.readBlock())
             info.update(block);
 
         executor.finish();
@@ -683,7 +689,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
-            ("continue_on_errors", "continue testing even if a query fails")
+            ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
@@ -738,7 +744,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
-            options.count("continue_on_errors"),
+            options.count("ignore-error"),
             options.count("reconnect"),
             options.count("client-side-time"),
             print_stacktrace,
