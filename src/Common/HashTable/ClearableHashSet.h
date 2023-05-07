@@ -88,6 +88,9 @@ public:
     {
         ++this->version;
         this->m_size = 0;
+
+        /// clear ZeroValueStorage
+        this->clearHasZero();
     }
 };
 
@@ -108,6 +111,9 @@ public:
     {
         ++this->version;
         this->m_size = 0;
+
+        /// clear ZeroValueStorage
+        this->clearHasZero();
     }
 };
 
