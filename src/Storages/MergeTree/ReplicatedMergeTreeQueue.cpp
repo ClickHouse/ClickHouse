@@ -1758,7 +1758,8 @@ size_t ReplicatedMergeTreeQueue::countUnfinishedMutations() const
 }
 
 
-ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint)
+ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
+                                                                              std::optional<PartitionIdsHint> && partition_ids_hint)
 {
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
@@ -2094,9 +2095,15 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
     return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
 }
 
-ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint_)
+TrivialMergePredicate::TrivialMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : queue(queue_)
+{
+}
+
+ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
+    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
+    : nested_pred(queue_)
+    , queue(queue_)
     , partition_ids_hint(std::move(partition_ids_hint_))
     , prev_virtual_parts(queue.format_version)
 {
@@ -2113,10 +2120,10 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     /// Dropped (or cleaned up by TTL) partitions are never removed from ZK,
     /// so without hint it can do a few thousands requests (if not using MultiRead).
     Strings partitions;
-    if (partition_ids_hint.empty())
+    if (!partition_ids_hint)
         partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
     else
-        std::copy(partition_ids_hint.begin(), partition_ids_hint.end(), std::back_inserter(partitions));
+        std::copy(partition_ids_hint->begin(), partition_ids_hint->end(), std::back_inserter(partitions));
 
     std::vector<std::string> paths;
     paths.reserve(partitions.size());
@@ -2160,6 +2167,18 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
     else
         inprogress_quorum_part.clear();
+}
+
+bool TrivialMergePredicate::operator()(
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    const MergeTreeTransaction *,
+    String * out_reason) const
+{
+    if (left)
+        return canMergeTwoParts(left, right, out_reason);
+    else
+        return canMergeSinglePart(right, out_reason);
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(
@@ -2249,7 +2268,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     if (left_max_block + 1 < right_min_block)
     {
-        if (!partition_ids_hint.empty() && !partition_ids_hint.contains(left->info.partition_id))
+        if (partition_ids_hint && !partition_ids_hint->contains(left->info.partition_id))
         {
             if (out_reason)
                 *out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
@@ -2272,6 +2291,17 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
             }
         }
     }
+
+    return nested_pred.canMergeTwoParts(left, right, out_reason);
+}
+
+bool TrivialMergePredicate::canMergeTwoParts(
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
+{
+    Int64 left_max_block = left->info.max_block;
+    Int64 right_min_block = right->info.min_block;
 
     std::lock_guard lock(queue.state_mutex);
 
@@ -2350,6 +2380,11 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
         return false;
     }
 
+    return nested_pred.canMergeSinglePart(part, out_reason);
+}
+
+bool TrivialMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+{
     std::lock_guard lock(queue.state_mutex);
 
     /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
@@ -2481,7 +2516,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         const String & partition_id = kv.first;
         Int64 block_num = kv.second;
 
-        if (!partition_ids_hint.empty() && !partition_ids_hint.contains(partition_id))
+        if (partition_ids_hint && !partition_ids_hint->contains(partition_id))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition id {} was not provided as hint, it's a bug", partition_id);
 
         auto partition_it = committing_blocks.find(partition_id);
