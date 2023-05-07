@@ -94,6 +94,8 @@
 #include <typeindex>
 #include <unordered_set>
 #include <filesystem>
+#include <ranges>
+
 
 #include <fmt/format.h>
 #include <Poco/Logger.h>
@@ -2421,6 +2423,103 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
     }
 }
 
+namespace
+{
+
+class PartRemovalTree
+{
+public:
+    struct Node
+    {
+        Node(MergeTreeDataPartPtr data_part_)
+            : data_part(data_part_)
+        {
+        }
+
+        MergeTreeDataPartPtr data_part;
+        std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
+    };
+
+    using NodePtr = std::shared_ptr<Node>;
+
+    /// Builds a tree from the list of part infos.
+    static PartRemovalTree build(DataPartsVector parts)
+    {
+        std::sort(parts.begin(), parts.end(), [](const auto & lhs, const auto & rhs)
+        {
+            return std::tie(lhs->info.level, lhs->info.mutation) > std::tie(rhs->info.level, rhs->info.mutation);
+        });
+
+        PartRemovalTree tree;
+        for (const auto & part : parts)
+            tree.add(part);
+
+        return tree;
+    }
+
+    template <typename Func>
+    void traverse(Func && func)
+    {
+        std::function<void(const NodePtr &, int64_t)> traverse_impl = [&](const auto & node, int64_t level)
+        {
+            func(node->data_part, level);
+            for (const auto & [_, child] : node->children)
+                traverse_impl(child, level + 1);
+        };
+
+        for (const auto & elem : root_by_partition)
+        {
+            for (const auto & [_, node] : elem.second->children)
+                traverse_impl(node, 0);
+        }
+    }
+
+private:
+    /// NOTE: Parts should be added in descending order of their levels
+    /// because rearranging tree to the new root is not supported.
+    void add(MergeTreeDataPartPtr data_part)
+    {
+        auto info = data_part->info;
+        auto & current_ptr = root_by_partition[info.partition_id];
+        if (!current_ptr)
+            current_ptr = std::make_shared<Node>(data_part);
+
+        auto * current = current_ptr.get();
+        while (true)
+        {
+            auto it = current->children.lower_bound(info);
+            if (it != current->children.begin())
+            {
+                auto prev = std::prev(it);
+                const auto & prev_info = prev->first;
+
+                if (prev_info.contains(info))
+                {
+                    current = prev->second.get();
+                    continue;
+                }
+            }
+
+            if (it != current->children.end())
+            {
+                const auto & next_info = it->first;
+
+                if (next_info.contains(info))
+                {
+                    current = it->second.get();
+                    continue;
+                }
+            }
+
+            current->children.emplace(info, std::make_shared<Node>(data_part));
+            break;
+        }
+    }
+    std::unordered_map<String, NodePtr> root_by_partition;
+};
+
+}
+
 void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
     if (parts_to_remove.empty())
@@ -2507,58 +2606,39 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     /// The problem is that it's not trivial to divide Outdated parts into disjoint subsets,
     /// because Outdated parts legally can be intersecting (but intersecting parts must be separated by a DROP_RANGE).
     /// So we ignore level and version and use block numbers only.
-    ActiveDataPartSet independent_ranges_set(format_version);
-    for (const auto & part : parts_to_remove)
+    PartRemovalTree removal_tree = PartRemovalTree::build(parts_to_remove);
+    std::map<int64_t, DataPartsVector> parts_by_level;
+    auto func = [&parts_by_level] (const DataPartPtr & data_part, int64_t level)
     {
-        MergeTreePartInfo range_info = part->info;
-        range_info.level = static_cast<UInt32>(range_info.max_block - range_info.min_block);
-        range_info.mutation = 0;
-        independent_ranges_set.add(range_info, range_info.getPartNameV1());
-    }
+        parts_by_level[level].emplace_back(data_part);
+    };
 
-    auto independent_ranges_infos = independent_ranges_set.getPartInfos();
-    size_t sum_of_ranges = 0;
-    for (auto range : independent_ranges_infos)
+    removal_tree.traverse(func);
+
+    for (const auto & [level, data_parts] : parts_by_level | std::views::reverse)
     {
-        range.level = MergeTreePartInfo::MAX_LEVEL;
-        range.mutation = MergeTreePartInfo::MAX_BLOCK_NUMBER;
-
-        DataPartsVector parts_in_range;
-        for (const auto & part : parts_to_remove)
-            if (range.contains(part->info))
-                parts_in_range.push_back(part);
-        sum_of_ranges += parts_in_range.size();
-
-        pool.scheduleOrThrowOnError(
-            [this, range, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
+        for (const auto & part : data_parts)
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-
-            LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
-
-            for (const auto & part : batch)
+            pool.scheduleOrThrowOnError([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachFromGroupIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
                 asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
                     part_names_succeed->insert(part->name);
                 }
-            }
-        });
+            });
+        }
+        pool.wait();
     }
-
-    pool.wait();
-
-    if (parts_to_remove.size() != sum_of_ranges)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of removed parts is not equal to number of parts in independent ranges "
-                                                   "({} != {}), it's a bug", parts_to_remove.size(), sum_of_ranges);
-}
+};
 
 size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
 {
