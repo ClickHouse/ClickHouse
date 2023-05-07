@@ -478,7 +478,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
         Block block;
-        while (executor.pull(block))
+        while (executor.pull(block, 0))
         {
             if (block.rows() == 0)
                 continue;

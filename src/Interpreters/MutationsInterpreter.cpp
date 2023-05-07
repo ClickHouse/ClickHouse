@@ -268,7 +268,7 @@ bool isStorageTouchedByMutations(
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (block.rows() == 0 && executor.pull(block));
+    while (block.rows() == 0 && executor.pull(block, 0));
 
     if (!block.rows())
         return false;
@@ -276,7 +276,7 @@ bool isStorageTouchedByMutations(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
-    while (executor.pull(tmp_block));
+    while (executor.pull(tmp_block, 0));
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;

@@ -288,7 +288,8 @@ public:
         : ISource(pipeline_.getHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
-    {}
+    {
+    }
 
     std::string getName() const override
     {
@@ -310,6 +311,7 @@ public:
 private:
     QueryPipeline pipeline;
     TExecutor executor;
+    bool concurrency_control;
 };
 
 template <DictionaryKeyType dictionary_key_type>

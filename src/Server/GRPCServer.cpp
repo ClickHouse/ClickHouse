@@ -1134,7 +1134,7 @@ namespace
                     });
 
                     auto executor = cur_pipeline.execute();
-                    executor->execute(1);
+                    executor->execute(1, false);
                 }
             }
 

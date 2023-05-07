@@ -99,7 +99,7 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-void PipelineExecutor::execute(size_t num_threads)
+void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
     if (num_threads < 1)
@@ -110,7 +110,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
     try
     {
-        executeImpl(num_threads);
+        executeImpl(num_threads, concurrency_control);
 
         /// Execution can be stopped because of exception. Check and rethrow if any.
         for (auto & node : graph->nodes)
@@ -137,7 +137,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {
-        initializeExecution(1);
+        initializeExecution(1, false);
 
         // Acquire slot until we are done
         single_thread_slot = slots->tryAcquire();
@@ -297,14 +297,19 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 }
 
-void PipelineExecutor::initializeExecution(size_t num_threads)
+void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
 
-    /// Allocate CPU slots from concurrency control
-    constexpr size_t min_threads = 1;
-    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    size_t use_threads = slots->grantedCount();
+    size_t use_threads = num_threads;
+
+    if (concurrency_control)
+    {
+        /// Allocate CPU slots from concurrency control
+        constexpr size_t min_threads = 1;
+        slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+        use_threads = slots->grantedCount();
+    }
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -352,9 +357,9 @@ void PipelineExecutor::spawnThreads()
     }
 }
 
-void PipelineExecutor::executeImpl(size_t num_threads)
+void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
-    initializeExecution(num_threads);
+    initializeExecution(num_threads, concurrency_control);
 
     bool finished_flag = false;
 
