@@ -47,7 +47,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
-    T value;
+    T value = T{};
 
 public:
     static constexpr bool is_nullable = false;
@@ -481,7 +481,7 @@ struct Compatibility
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString //-V730
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
@@ -554,7 +554,8 @@ public:
         if (capacity < size_to_reserve)
         {
             if (unlikely(MAX_STRING_SIZE < size_to_reserve))
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
+                                size_to_reserve, MAX_STRING_SIZE);
 
             size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
             chassert(rounded_capacity <= MAX_STRING_SIZE + 1);  /// rounded_capacity <= 2^31
@@ -624,7 +625,8 @@ public:
     void changeImpl(StringRef value, Arena * arena)
     {
         if (unlikely(MAX_STRING_SIZE < value.size))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", value.size);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
+                            value.size, MAX_STRING_SIZE);
 
         UInt32 value_size = static_cast<UInt32>(value.size);
 

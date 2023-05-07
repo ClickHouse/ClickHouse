@@ -178,7 +178,7 @@ bool XDBCDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (invalidate_query_response == response) //-V1051
+        if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
     }

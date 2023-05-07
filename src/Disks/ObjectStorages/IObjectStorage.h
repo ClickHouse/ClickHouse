@@ -16,7 +16,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Disks/WriteMode.h>
 
 
@@ -155,8 +155,7 @@ public:
 
     virtual ~IObjectStorage() = default;
 
-    /// Path to directory with objects cache
-    virtual const std::string & getCacheBasePath() const;
+    virtual const std::string & getCacheName() const;
 
     static IAsynchronousReader & getThreadPoolReader();
 
@@ -185,15 +184,12 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+    virtual std::string generateBlobNameForPath(const std::string & path);
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
-    virtual bool supportsAppend() const { return false; }
-
-    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
-    /// which is used to define a cache key for the source object path.
+    /// Remove filesystem cache.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
@@ -207,13 +203,13 @@ public:
 
     virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
+    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);
-
-    /// Should be used by implementation of read* and write* methods
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:
     mutable std::mutex throttlers_mutex;

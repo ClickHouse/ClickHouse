@@ -41,7 +41,7 @@ BlockIO InterpreterWatchQuery::execute()
         const Settings & settings = getContext()->getSettingsRef();
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;

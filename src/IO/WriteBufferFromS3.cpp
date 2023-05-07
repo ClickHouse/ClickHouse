@@ -23,6 +23,8 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Microseconds;
+    extern const Event WriteBufferFromS3RequestsErrors;
     extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
@@ -83,7 +85,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_settings(request_settings.getUploadSettings())
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , upload_part_size(upload_settings.min_upload_part_size)
+    , strict_upload_part_size(upload_settings.strict_upload_part_size)
+    , current_upload_part_size(upload_settings.min_upload_part_size)
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
@@ -98,28 +101,79 @@ void WriteBufferFromS3::nextImpl()
     /// Buffer in a bad state after exception
     if (temporary_buffer->tellp() == -1)
         allocateBuffer();
+    else
+        chassert(temporary_buffer->tellp() == static_cast<std::streamoff>(last_part_size));
+
+    if (strict_upload_part_size)
+        processWithStrictParts();
+    else
+        processWithDynamicParts();
+
+    waitForReadyBackGroundTasks();
+}
+
+void WriteBufferFromS3::processWithStrictParts()
+{
+    chassert(strict_upload_part_size > 0);
+
+    size_t buffer_size = offset();
+    size_t left_in_buffer = buffer_size;
+    size_t new_size = last_part_size + buffer_size;
+    size_t buffer_offset = 0;
+
+    if (new_size > strict_upload_part_size)
+    {
+        /// Data size will exceed fixed part size threshold for multipart upload, need to use multipart upload.
+        if (multipart_upload_id.empty())
+            createMultipartUpload();
+
+        while (new_size > strict_upload_part_size)
+        {
+            size_t to_write = strict_upload_part_size - last_part_size;
+            temporary_buffer->write(working_buffer.begin() + buffer_offset, to_write);
+            buffer_offset += to_write;
+
+            writePart();
+            allocateBuffer();
+
+            new_size -= strict_upload_part_size;
+            left_in_buffer -= to_write;
+        }
+    }
+
+    if (left_in_buffer)
+    {
+        temporary_buffer->write(working_buffer.begin() + buffer_offset, left_in_buffer);
+        last_part_size += left_in_buffer;
+    }
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, buffer_size);
+
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(buffer_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+}
+
+void WriteBufferFromS3::processWithDynamicParts()
+{
+    chassert(current_upload_part_size > 0);
 
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, size);
+    last_part_size += size;
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
-    last_part_size += offset();
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > upload_settings.max_single_part_upload_size)
         createMultipartUpload();
 
-    chassert(upload_part_size > 0);
-    if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
+    if (!multipart_upload_id.empty() && last_part_size > current_upload_part_size)
     {
         writePart();
-
         allocateBuffer();
     }
-
-    waitForReadyBackGroundTasks();
 }
 
 void WriteBufferFromS3::allocateBuffer()
@@ -184,9 +238,8 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
-void WriteBufferFromS3::createMultipartUpload()
+void WriteBufferFromS3::fillCreateMultipartRequest(DB::S3::CreateMultipartUploadRequest & req)
 {
-    DB::S3::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
@@ -196,11 +249,23 @@ void WriteBufferFromS3::createMultipartUpload()
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
+    client_ptr->setKMSHeaders(req);
+}
+
+void WriteBufferFromS3::createMultipartUpload()
+{
+    DB::S3::CreateMultipartUploadRequest req;
+    fillCreateMultipartRequest(req);
+
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
     if (write_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
+    watch.stop();
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
     if (outcome.IsSuccess())
     {
@@ -208,7 +273,10 @@ void WriteBufferFromS3::createMultipartUpload()
         LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
     }
     else
+    {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+    }
 }
 
 void WriteBufferFromS3::writePart()
@@ -326,14 +394,17 @@ void WriteBufferFromS3::fillUploadRequest(S3::UploadPartRequest & req)
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
-    auto threshold = upload_settings.upload_part_size_multiply_parts_count_threshold;
-    if (!multipart_upload_id.empty() && (part_number % threshold == 0))
+    if (!strict_upload_part_size)
     {
-        auto max_upload_part_size = upload_settings.max_upload_part_size;
-        auto upload_part_size_multiply_factor = upload_settings.upload_part_size_multiply_factor;
-        upload_part_size *= upload_part_size_multiply_factor;
-        upload_part_size = std::min(upload_part_size, max_upload_part_size);
+        /// Maybe increase `current_upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
+        auto threshold = upload_settings.upload_part_size_multiply_parts_count_threshold;
+        if (!multipart_upload_id.empty() && (part_number % threshold == 0))
+        {
+            auto max_upload_part_size = upload_settings.max_upload_part_size;
+            auto upload_part_size_multiply_factor = upload_settings.upload_part_size_multiply_factor;
+            current_upload_part_size *= upload_part_size_multiply_factor;
+            current_upload_part_size = std::min(current_upload_part_size, max_upload_part_size);
+        }
     }
 }
 
@@ -345,8 +416,12 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 
     ResourceCost cost = task.req.GetContentLength();
     ResourceGuard rlock(write_settings.resource_link, cost);
+    Stopwatch watch;
     auto outcome = client_ptr->UploadPart(task.req);
+    watch.stop();
     rlock.unlock(); // Avoid acquiring other locks under resource lock
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
     if (outcome.IsSuccess())
     {
@@ -356,6 +431,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
     {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
         write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
@@ -391,27 +467,41 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (write_settings.for_object_storage)
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+        Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
+        watch.stop();
+
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-            break;
-        }
-        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        {
-            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
-            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+            return;
         }
         else
         {
-            throw S3Exception(
-                outcome.GetError().GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+
+            if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            {
+                /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+                /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+                LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+            }
+            else
+            {
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                    outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+            }
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Multipart upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload()
@@ -488,6 +578,8 @@ void WriteBufferFromS3::fillPutRequest(S3::PutObjectRequest & req)
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
+
+    client_ptr->setKMSHeaders(req);
 }
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
@@ -501,30 +593,43 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 
         ResourceCost cost = task.req.GetContentLength();
         ResourceGuard rlock(write_settings.resource_link, cost);
+        Stopwatch watch;
         auto outcome = client_ptr->PutObject(task.req);
+        watch.stop();
         rlock.unlock();
+
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         bool with_pool = static_cast<bool>(schedule);
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
-            break;
-        }
-        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        {
-            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+            return;
         }
         else
         {
-            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            throw S3Exception(
-                outcome.GetError().GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
-                outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            {
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+                /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+                LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+            }
+            else
+            {
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+                    outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+            }
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Single part upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()

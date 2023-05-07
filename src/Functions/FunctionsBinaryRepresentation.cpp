@@ -51,7 +51,7 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
                 continue;
 
             was_nonzero = true;
@@ -144,7 +144,7 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
                 continue;
 
             was_nonzero = true;
@@ -299,6 +299,7 @@ public:
             tryExecuteDecimal<Decimal32>(column, res_column) ||
             tryExecuteDecimal<Decimal64>(column, res_column) ||
             tryExecuteDecimal<Decimal128>(column, res_column) ||
+            tryExecuteDecimal<Decimal256>(column, res_column) ||
             tryExecuteUUID(column, res_column) ||
             tryExecuteIPv4(column, res_column) ||
             tryExecuteIPv6(column, res_column))

@@ -56,4 +56,17 @@ SELECT fromUnixTimestampInJodaSyntax(1669804872, 's', 'UTC');
 SELECT fromUnixTimestampInJodaSyntax(1669804872, 'ss', 'UTC');
 SELECT fromUnixTimestampInJodaSyntax(1669804872, 'sss', 'UTC');
 SELECT fromUnixTimestampInJodaSyntax(1669804872, 'zzzz', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'x', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'w', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'S', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1669804872, 'SS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'S', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSSSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSSSSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSSSSSS', 'UTC');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT fromUnixTimestampInJodaSyntax(datetime64, 'SSSSSSSSS', 'UTC');
 -- { echoOff }

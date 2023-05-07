@@ -41,8 +41,19 @@ public:
             return descriptor;
 
         const auto * file_descriptor = importer.Import(schema_path);
-        // If there are parsing errors, AddError() throws an exception and in this case the following line
-        // isn't executed.
+        if (error)
+        {
+            auto info = error.value();
+            error.reset();
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA,
+                "Cannot parse '{}' file, found an error at line {}, column {}, {}",
+                info.filename,
+                std::to_string(info.line),
+                std::to_string(info.column),
+                info.message);
+        }
+
         assert(file_descriptor);
 
         if (with_envelope == WithEnvelope::No)
@@ -74,14 +85,24 @@ private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
     void AddError(const String & filename, int line, int column, const String & message) override
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA,
-                        "Cannot parse '{}' file, found an error at line {}, column {}, {}",
-                        filename, std::to_string(line), std::to_string(column), message);
+        /// Protobuf library code is not exception safe, we should
+        /// remember the error and throw it later from our side.
+        error = ErrorInfo{filename, line, column, message};
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;
     google::protobuf::compiler::Importer importer;
     const WithEnvelope with_envelope;
+
+    struct ErrorInfo
+    {
+        String filename;
+        int line;
+        int column;
+        String message;
+    };
+
+    std::optional<ErrorInfo> error;
 };
 
 

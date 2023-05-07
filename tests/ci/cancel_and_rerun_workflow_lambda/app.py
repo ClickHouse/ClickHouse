@@ -2,11 +2,11 @@
 
 from base64 import b64decode
 from collections import namedtuple
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 from threading import Thread
 from queue import Queue
 import json
-import os
+import re
 import time
 
 import jwt
@@ -20,13 +20,129 @@ NEED_RERUN_ON_EDITED = {
 }
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    "DocsReleaseChecks",
     "BackportPR",
 }.union(NEED_RERUN_ON_EDITED)
 
 MAX_RETRY = 5
 
 DEBUG_INFO = {}  # type: Dict[str, Any]
+
+# Descriptions are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
+# The following lists are append only, try to avoid editing them
+# They still could be cleaned out after the decent time though.
+LABELS = {
+    "pr-backward-incompatible": ["Backward Incompatible Change"],
+    "pr-bugfix": [
+        "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
+    ],
+    "pr-build": [
+        "Build/Testing/Packaging Improvement",
+        "Build Improvement",
+        "Build/Testing Improvement",
+        "Build",
+        "Packaging Improvement",
+    ],
+    "pr-documentation": [
+        "Documentation (changelog entry is not required)",
+        "Documentation",
+    ],
+    "pr-feature": ["New Feature"],
+    "pr-improvement": ["Improvement"],
+    "pr-not-for-changelog": [
+        "Not for changelog (changelog entry is not required)",
+        "Not for changelog",
+    ],
+    "pr-performance": ["Performance Improvement"],
+}
+
+CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
+
+
+def check_pr_description(pr_body: str) -> Tuple[str, str]:
+    """The function checks the body to being properly formatted according to
+    .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
+    then there is an error."""
+    lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
+    lines = [re.sub(r"\s+", " ", line) for line in lines]
+
+    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+    if [
+        True
+        for line in lines
+        if re.match(r"\AReverts {GITHUB_REPOSITORY}#[\d]+\Z", line)
+    ]:
+        return "", LABELS["pr-not-for-changelog"][0]
+
+    category = ""
+    entry = ""
+    description_error = ""
+
+    i = 0
+    while i < len(lines):
+        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
+            i += 1
+            if i >= len(lines):
+                break
+            # Can have one empty line between header and the category
+            # itself. Filter it out.
+            if not lines[i]:
+                i += 1
+                if i >= len(lines):
+                    break
+            category = re.sub(r"^[-*\s]*", "", lines[i])
+            i += 1
+
+            # Should not have more than one category. Require empty line
+            # after the first found category.
+            if i >= len(lines):
+                break
+            if lines[i]:
+                second_category = re.sub(r"^[-*\s]*", "", lines[i])
+                description_error = (
+                    "More than one changelog category specified: "
+                    f"'{category}', '{second_category}'"
+                )
+                return description_error, category
+
+        elif re.match(
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+        ):
+            i += 1
+            # Can have one empty line between header and the entry itself.
+            # Filter it out.
+            if i < len(lines) and not lines[i]:
+                i += 1
+            # All following lines until empty one are the changelog entry.
+            entry_lines = []
+            while i < len(lines) and lines[i]:
+                entry_lines.append(lines[i])
+                i += 1
+            entry = " ".join(entry_lines)
+            # Don't accept changelog entries like '...'.
+            entry = re.sub(r"[#>*_.\- ]", "", entry)
+            # Don't accept changelog entries like 'Close #12345'.
+            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
+        else:
+            i += 1
+
+    if not category:
+        description_error = "Changelog category is empty"
+    # Filter out the PR categories that are not for changelog.
+    elif re.match(
+        r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        category,
+    ):
+        pass  # to not check the rest of the conditions
+    elif category not in CATEGORY_TO_LABEL:
+        description_error, category = f"Category '{category}' is not valid", ""
+    elif not entry:
+        description_error = f"Changelog entry required for category '{category}'"
+
+    return description_error, category
 
 
 class Worker(Thread):
@@ -269,11 +385,11 @@ def get_workflow_description(workflow_url: str, token: str) -> WorkflowDescripti
     )
 
 
-def _exec_post_with_retry(url, token):
+def _exec_post_with_retry(url: str, token: str, json: Optional[Any] = None) -> Any:
     headers = {"Authorization": f"token {token}"}
     for i in range(MAX_RETRY):
         try:
-            response = requests.post(url, headers=headers)
+            response = requests.post(url, headers=headers, json=json)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
@@ -302,10 +418,20 @@ def main(event):
     action = event_data["action"]
     print("Got action", event_data["action"])
     pull_request = event_data["pull_request"]
-    labels = {label["name"] for label in pull_request["labels"]}
-    print("PR has labels", labels)
-    if action == "closed" or (action == "labeled" and "do not test" in labels):
-        print("PR merged/closed or manually labeled 'do not test' will kill workflows")
+    label = ""
+    if action == "labeled":
+        label = event_data["label"]["name"]
+        print("Added label:", label)
+
+    print("PR has labels", {label["name"] for label in pull_request["labels"]})
+    if action == "opened" or (
+        action == "labeled" and pull_request["created_at"] == pull_request["updated_at"]
+    ):
+        print("Freshly opened PR, nothing to do")
+        return
+
+    if action == "closed" or label == "do not test":
+        print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
         )
@@ -323,48 +449,8 @@ def main(event):
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
         return
-    elif action == "edited":
-        print("PR is edited, check if it needs to rerun")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
-        most_recent_workflow = workflow_descriptions[-1]
-        if (
-            most_recent_workflow.status == "completed"
-            and most_recent_workflow.name in NEED_RERUN_ON_EDITED
-        ):
-            print(
-                "The PR's body is changed and workflow is finished. "
-                "Rerun to check the description"
-            )
-            exec_workflow_url([most_recent_workflow.rerun_url], token)
-            print("Rerun finished, exiting")
-            return
-    elif action == "synchronize":
-        print("PR is synchronized, going to stop old actions")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        urls_to_cancel = []
-        for workflow_description in workflow_descriptions:
-            if (
-                workflow_description.status != "completed"
-                and workflow_description.conclusion != "cancelled"
-                and workflow_description.head_sha != pull_request["head"]["sha"]
-            ):
-                urls_to_cancel.append(workflow_description.cancel_url)
-        print(f"Found {len(urls_to_cancel)} workflows to cancel")
-        exec_workflow_url(urls_to_cancel, token)
-    elif action == "labeled" and event_data["label"]["name"] == "can be tested":
+
+    if label == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -401,9 +487,46 @@ def main(event):
                 break
             print("Still have strange status")
             time.sleep(3)
+        return
 
-    else:
-        print("Nothing to do")
+    if action == "edited":
+        print("PR is edited, check if the body is correct")
+        error, category = check_pr_description(pull_request["body"])
+        if error:
+            print(
+                f"The PR's body is wrong, is going to comment it. The error is: {error}"
+            )
+            post_json = {
+                "body": "This is an automatic comment. The PR descriptions does not "
+                f"match the [template]({pull_request['base']['repo']['html_url']}/"
+                "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
+                f"Please, edit it accordingly.\n\nThe error is: {error}"
+            }
+            _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
+        return
+
+    if action == "synchronize":
+        print("PR is synchronized, going to stop old actions")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        urls_to_cancel = []
+        for workflow_description in workflow_descriptions:
+            if (
+                workflow_description.status != "completed"
+                and workflow_description.conclusion != "cancelled"
+                and workflow_description.head_sha != pull_request["head"]["sha"]
+            ):
+                urls_to_cancel.append(workflow_description.cancel_url)
+        print(f"Found {len(urls_to_cancel)} workflows to cancel")
+        exec_workflow_url(urls_to_cancel, token)
+        return
+
+    print("Nothing to do")
 
 
 def handler(event, _):

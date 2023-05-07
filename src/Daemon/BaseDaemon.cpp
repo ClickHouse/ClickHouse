@@ -1,10 +1,7 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -65,7 +62,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -134,6 +131,8 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 }
 
 
+static std::atomic_flag fatal_error_printed;
+
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
@@ -159,7 +158,16 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        /// Under MSan full stack unwinding with DWARF info about inline functions takes 101 seconds in one case.
+        for (size_t i = 0; i < 300; ++i)
+        {
+            /// We will synchronize with the thread printing the messages with an atomic variable to finish earlier.
+            if (fatal_error_printed.test())
+                break;
+
+            /// This coarse method of synchronization is perfectly ok for fatal signals.
+            sleepForSeconds(1);
+        }
         call_default_signal_handler(sig);
     }
 
@@ -301,15 +309,13 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = std::string(thread_ptr->getQueryId());
-
-            if (auto thread_group = thread_ptr->getThreadGroup())
-            {
-                query = DB::toOneLineQuery(thread_group->query);
-            }
+            query_id = thread_ptr->getQueryId();
+            query = thread_ptr->getQueryForLog();
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+            {
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+            }
         }
 
         std::string signal_description = "Unknown signal";
@@ -352,16 +358,19 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            bare_stacktrace << "Stack trace:";
+            DB::WriteBufferFromOwnString bare_stacktrace;
+            DB::writeString("Stack trace:", bare_stacktrace);
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
+            {
+                DB::writeChar(' ', bare_stacktrace);
+                DB::writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            }
 
             LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
+        stack_trace.toStringEveryLine([&](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -407,6 +416,8 @@ private:
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
+
+        fatal_error_printed.test_and_set();
     }
 };
 
@@ -994,6 +1005,11 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
+
     while (true)
     {
         /// This pipe is used to synchronize notifications to the service manager from the child process
@@ -1118,9 +1134,13 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
+        int exit_code;
+
         if (WIFSIGNALED(status))
         {
             int sig = WTERMSIG(status);
+
+            exit_code = 128 + sig;
 
             if (sig == SIGKILL)
             {
@@ -1133,22 +1153,24 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(128 + sig);
+                    _exit(exit_code);
             }
         }
         else
         {
+            // According to POSIX, this should never happen.
             logger().fatal("Child process was not exited normally by unknown reason.");
+            exit_code = 42;
         }
 
-        /// Automatic restart is not enabled but you can play with it.
-#if 1
-        _exit(WEXITSTATUS(status));
-#else
-        logger().information("Will restart.");
-        if (argv0)
-            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
-#endif
+        if (restart)
+        {
+            logger().information("Will restart.");
+            if (argv0)
+                memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+        }
+        else
+            _exit(exit_code);
     }
 }
 

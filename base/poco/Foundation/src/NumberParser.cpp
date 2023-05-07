@@ -19,9 +19,6 @@
 #include <cstdio>
 #include <cctype>
 #include <stdlib.h>
-#if !defined(POCO_NO_LOCALE)
-	#include <locale>
-#endif
 
 
 #if defined(POCO_LONG_IS_64_BIT)
@@ -44,7 +41,7 @@ int NumberParser::parse(const std::string& s, char thSep)
 	if (tryParse(s, result, thSep))
 		return result;
 	else
-		throw SyntaxException("Not a valid integer", s);
+		throw SyntaxException("Not a valid integer", "'" + s + "'");
 }
 
 
@@ -60,7 +57,7 @@ unsigned NumberParser::parseUnsigned(const std::string& s, char thSep)
 	if (tryParseUnsigned(s, result, thSep))
 		return result;
 	else
-		throw SyntaxException("Not a valid unsigned integer", s);
+		throw SyntaxException("Not a valid unsigned integer", "'" + s + "'");
 }
 
 
@@ -76,7 +73,7 @@ unsigned NumberParser::parseHex(const std::string& s)
 	if (tryParseHex(s, result))
 		return result;
 	else
-		throw SyntaxException("Not a valid hexadecimal integer", s);
+		throw SyntaxException("Not a valid hexadecimal integer", "'" + s + "'");
 }
 
 
@@ -94,7 +91,7 @@ unsigned NumberParser::parseOct(const std::string& s)
 	if (tryParseOct(s, result))
 		return result;
 	else
-		throw SyntaxException("Not a valid hexadecimal integer", s);
+		throw SyntaxException("Not a valid hexadecimal integer", "'" + s + "'");
 }
 
 
@@ -104,7 +101,6 @@ bool NumberParser::tryParseOct(const std::string& s, unsigned& value)
 }
 
 
-#if defined(POCO_HAVE_INT64)
 
 
 Int64 NumberParser::parse64(const std::string& s, char thSep)
@@ -113,7 +109,7 @@ Int64 NumberParser::parse64(const std::string& s, char thSep)
 	if (tryParse64(s, result, thSep))
 		return result;
 	else
-		throw SyntaxException("Not a valid integer", s);
+		throw SyntaxException("Not a valid integer", "'" + s + "'");
 }
 
 
@@ -129,7 +125,7 @@ UInt64 NumberParser::parseUnsigned64(const std::string& s, char thSep)
 	if (tryParseUnsigned64(s, result, thSep))
 		return result;
 	else
-		throw SyntaxException("Not a valid unsigned integer", s);
+		throw SyntaxException("Not a valid unsigned integer", "'" + s + "'");
 }
 
 
@@ -145,7 +141,7 @@ UInt64 NumberParser::parseHex64(const std::string& s)
 	if (tryParseHex64(s, result))
 		return result;
 	else
-		throw SyntaxException("Not a valid hexadecimal integer", s);
+		throw SyntaxException("Not a valid hexadecimal integer", "'" + s + "'");
 }
 
 
@@ -163,7 +159,7 @@ UInt64 NumberParser::parseOct64(const std::string& s)
 	if (tryParseOct64(s, result))
 		return result;
 	else
-		throw SyntaxException("Not a valid hexadecimal integer", s);
+		throw SyntaxException("Not a valid hexadecimal integer", "'" + s + "'");
 }
 
 
@@ -173,7 +169,6 @@ bool NumberParser::tryParseOct64(const std::string& s, UInt64& value)
 }
 
 
-#endif // defined(POCO_HAVE_INT64)
 
 
 double NumberParser::parseFloat(const std::string& s, char decSep, char thSep)
@@ -182,7 +177,7 @@ double NumberParser::parseFloat(const std::string& s, char decSep, char thSep)
 	if (tryParseFloat(s, result, decSep, thSep))
 		return result;
 	else
-		throw SyntaxException("Not a valid floating-point number", s);
+		throw SyntaxException("Not a valid floating-point number", "'" + s + "'");
 }
 
 
@@ -198,7 +193,7 @@ bool NumberParser::parseBool(const std::string& s)
 	if (tryParseBool(s, result))
 		return result;
 	else
-		throw SyntaxException("Not a valid bool number", s);
+		throw SyntaxException("Not a valid bool number", "'" + s + "'");
 }
 
 	

@@ -18,9 +18,6 @@
 
 
 // Note: cygwin is missing RTLD_LOCAL, set it to 0
-#if defined(__CYGWIN__) && !defined(RTLD_LOCAL)
-#define RTLD_LOCAL 0
-#endif
 
 
 namespace Poco {
@@ -110,12 +107,6 @@ std::string SharedLibraryImpl::suffixImpl()
 		return "d.sl";
 	#else
 		return ".sl";
-	#endif
-#elif defined(__CYGWIN__)
-	#if defined(_DEBUG) && !defined(POCO_NO_SHARED_LIBRARY_DEBUG_SUFFIX)
-		return "d.dll";
-	#else
-		return ".dll";
 	#endif
 #else
 	#if defined(_DEBUG) && !defined(POCO_NO_SHARED_LIBRARY_DEBUG_SUFFIX)
