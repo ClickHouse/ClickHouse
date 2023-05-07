@@ -13,11 +13,11 @@ groupBitAnd(expr)
 
 **Arguments**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` or `Int*` type.
 
 **Return value**
 
-Value of the `UInt*` type.
+Value of the `UInt*` or `Int*` type.
 
 **Example**
 

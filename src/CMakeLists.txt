@@ -136,6 +136,7 @@ if (TARGET ch_contrib::hdfs)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
@@ -505,6 +506,10 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
+if (TARGET ch_contrib::bcrypt)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::bcrypt)
+endif()
+
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
@@ -539,7 +544,8 @@ if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 endif ()
 
-dbms_target_link_libraries(PRIVATE _boost_context)
+target_link_libraries(clickhouse_common_io PUBLIC boost::context)
+dbms_target_link_libraries(PUBLIC boost::context)
 
 if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)

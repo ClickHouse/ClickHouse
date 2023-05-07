@@ -2102,6 +2102,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
+    size_t rows_in_current_block = 0;
 
     auto init_out_cols = [&]()
     {
@@ -2116,6 +2117,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 for (size_t i = 0; i < params.aggregates_size; ++i)
                     out_cols->aggregate_columns_data[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
 
+                ++rows_in_current_block;
                 data.getNullKeyData() = nullptr;
                 data.hasNullKeyData() = false;
             }
@@ -2126,8 +2128,6 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
-
-    size_t rows_in_current_block = 0;
 
     data.forEachValue(
         [&](const auto & key, auto & mapped)

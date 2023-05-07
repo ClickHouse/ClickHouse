@@ -205,7 +205,8 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_size = 1000000;
+        UInt64 row_group_rows = 1000000;
+        UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
@@ -226,6 +227,7 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
+        UInt64 squash_milliseconds = 100;
         bool color = true;
 
         bool output_format_pretty_row_numbers = false;
