@@ -138,6 +138,7 @@ void collectSymbolsFromProgramHeaders(
      * (first call is for the executable itself)
      */
     __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         /* Further processing is only needed if the dynamic section is reached
@@ -280,6 +281,7 @@ void collectSymbolsFromProgramHeaders(
 String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 {
     __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         const ElfPhdr & phdr = info->dlpi_phdr[header_index];
