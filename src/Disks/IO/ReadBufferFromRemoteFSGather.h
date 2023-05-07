@@ -20,7 +20,7 @@ class ReadBufferFromRemoteFSGather final : public ReadBuffer
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::shared_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,

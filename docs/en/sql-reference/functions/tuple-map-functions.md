@@ -449,7 +449,7 @@ mapExtractKeyLike(map, pattern)
 
 **Returned value**
 
-- A map contained elements the key of which matchs the specified pattern. If there are no elements matched the pattern, it will return an empty map.
+- A map contained elements the key of which matches the specified pattern. If there are no elements matched the pattern, it will return an empty map.
 
 **Example**
 
