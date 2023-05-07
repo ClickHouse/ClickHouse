@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS mt_compact"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE mt_compact(a Int, s String) ENGINE = MergeTree ORDER BY a
                         SETTINGS min_rows_for_wide_part = 1000,
-                        index_granularity = 14;"
+                        index_granularity = 14, ratio_of_defaults_for_sparse_serialization = 1;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES mt_compact"
 
