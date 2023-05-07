@@ -3,16 +3,13 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
-#include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
@@ -137,12 +134,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {
-        initializeExecution(1, false);
+        initializeExecution(1, true);
 
         // Acquire slot until we are done
         single_thread_slot = slots->tryAcquire();
-        if (!single_thread_slot)
-            abort(); // Unable to allocate slot for the first thread, but we just allocated at least one slot
+        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -303,13 +299,10 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     size_t use_threads = num_threads;
 
-    if (concurrency_control)
-    {
-        /// Allocate CPU slots from concurrency control
-        constexpr size_t min_threads = 1;
-        slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-        use_threads = slots->grantedCount();
-    }
+    /// Allocate CPU slots from concurrency control
+    size_t min_threads = concurrency_control ? 1uz : num_threads;
+    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+    use_threads = slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -325,7 +318,8 @@ void PipelineExecutor::spawnThreads()
 {
     while (auto slot = slots->tryAcquire())
     {
-        size_t thread_num = threads++;
+        size_t thread_num = threads;
+        ++threads;
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
