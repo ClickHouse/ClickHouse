@@ -121,6 +121,10 @@ A key-value pair consists of a key, followed by a `key_value_delimiter` and a va
 extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character]]])
 ```
 
+Alias:
+- `str_to_map`
+- `mapFromString`
+
 **Arguments**
 
 - `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
