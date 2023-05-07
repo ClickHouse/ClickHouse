@@ -43,7 +43,7 @@ def test_memory_usage():
 
     response = node.get_query_request(
         "SELECT groupArray(number) FROM numbers(1000000) SETTINGS max_memory_usage_for_user={}".format(
-            30 * (2 ** 23)
+            30 * (2**23)
         ),
         user="A",
     )
