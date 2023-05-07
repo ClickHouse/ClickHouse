@@ -712,6 +712,7 @@ class IColumn;
     M(String, additional_result_filter, "", "Additional filter expression which would be applied to query result", 0) \
     \
     M(String, workload, "default", "Name of workload to be used to access resources", 0) \
+    M(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, "Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.", 0) \
     \
     M(Bool, parallelize_output_from_storages, true, "Parallelize output for reading step from storage. It allows parallelizing query processing right after reading from storage if possible", 0) \
     \
