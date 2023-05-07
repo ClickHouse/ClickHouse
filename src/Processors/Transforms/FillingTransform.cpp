@@ -665,7 +665,6 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (sort_prefix.empty())
     {
-        constexpr bool new_sort_prefix = true;
         transformRange(
             input_fill_columns,
             input_interpolate_columns,
@@ -677,7 +676,7 @@ void FillingTransform::transform(Chunk & chunk)
             res_sort_prefix_columns,
             res_other_columns,
             {0, num_rows},
-            new_sort_prefix);
+            last_row.empty());
 
         saveLastRow(result_columns);
         size_t num_output_rows = result_columns[0]->size();
