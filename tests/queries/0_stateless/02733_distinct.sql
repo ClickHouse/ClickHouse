@@ -1,3 +1,6 @@
+-- Tags: no-random-settings
+-- there is a bug if `optimize_distinct_in_order` is true
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
