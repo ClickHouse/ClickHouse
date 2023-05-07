@@ -4,7 +4,7 @@ DROP DICTIONARY IF EXISTS dict_hashed_complex;
 DROP DICTIONARY IF EXISTS dict_hashed_simple_auto_convert;
 DROP TABLE IF EXISTS dict_data;
 
-CREATE TABLE dict_data (v0 UInt16, v1 UInt16, v2 UInt16, v3 UInt16, v4 UInt16) engine=Memory() AS SELECT number, number%65535, number%65535, number%6553, number%655355 FROM numbers(100);
+CREATE TABLE dict_data (v0 UInt16, v1 UInt16, v2 UInt16, v3 UInt16, v4 UInt16) engine=Memory();
 
 CREATE DICTIONARY dict_flat_simple (v0 UInt16, v1 UInt16, v2 UInt16) PRIMARY KEY v0 SOURCE(CLICKHOUSE(TABLE 'dict_data')) LIFETIME(0) LAYOUT(flat());
 SYSTEM RELOAD DICTIONARY dict_flat_simple;
