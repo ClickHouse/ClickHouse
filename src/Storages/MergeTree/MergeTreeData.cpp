@@ -2453,17 +2453,17 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     /// This flag disallow straightforward concurrent parts removal. It's required only in case
     /// when we have parts on zero-copy disk + at least some of them were mutated.
-    bool has_zero_copy_parts = false;
+    bool remove_parts_in_order = false;
     if (settings->allow_remote_fs_zero_copy_replication && dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
     {
-        has_zero_copy_parts = std::any_of(
+        remove_parts_in_order = std::any_of(
             parts_to_remove.begin(), parts_to_remove.end(),
             [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport() && data_part->info.getMutationVersion() > 0; }
         );
     }
 
 
-    if (!has_zero_copy_parts)
+    if (!remove_parts_in_order)
     {
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         LOG_DEBUG(
