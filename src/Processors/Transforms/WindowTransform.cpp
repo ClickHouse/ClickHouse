@@ -323,8 +323,6 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
-//    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
-
     // If we're at the total end of data, we must end the partition. This is one
     // of the few places in calculations where we need special handling for end
     // of data, other places will work as usual based on
@@ -383,9 +381,6 @@ void WindowTransform::advancePartitionEnd()
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
-//        fmt::print(stderr, "compare reference '{}' to compared '{}'\n",
-//            prev_frame_start, partition_end);
-
         size_t i = 0;
         for (; i < partition_by_columns; ++i)
         {
@@ -394,9 +389,6 @@ void WindowTransform::advancePartitionEnd()
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
-//            fmt::print(stderr, "reference '{}', compared '{}'\n",
-//                (*reference_column)[prev_frame_start.row],
-//                (*compared_column)[partition_end.row]);
             if (compared_column->compareAt(partition_end.row,
                     prev_frame_start.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
@@ -499,8 +491,6 @@ auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
     // Check that it was reversible.
     auto [xx, oo] = moveRowNumberNoCheck(x, -(offset - o));
 
-//    fmt::print(stderr, "{} -> {}, result {}, {}, new offset {}, twice {}, {}\n",
-//        _x, offset, x, o, -(offset - o), xx, oo);
     assert(xx == _x);
     assert(oo == 0);
 #endif
@@ -519,9 +509,6 @@ void WindowTransform::advanceFrameStartRowsOffset()
     frame_start = moved_row;
 
     assertValid(frame_start);
-
-//    fmt::print(stderr, "frame start {} left {} partition start {}\n",
-//        frame_start, offset_left, partition_start);
 
     if (frame_start <= partition_start)
     {
@@ -685,8 +672,6 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 
 void WindowTransform::advanceFrameEndCurrentRow()
 {
-//    fmt::print(stderr, "starting from frame_end {}\n", frame_end);
-
     // We only process one block here, and frame_end must be already in it: if
     // we didn't find the end in the previous block, frame_end is now the first
     // row of the current block. We need this knowledge to write a simpler loop
@@ -722,14 +707,11 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Equality would mean "no data to process", for which we checked above.
     assert(frame_end.row < rows_end);
 
-//    fmt::print(stderr, "first row {} last {}\n", frame_end.row, rows_end);
-
     // Advance frame_end while it is still peers with the current row.
     for (; frame_end.row < rows_end; ++frame_end.row)
     {
         if (!arePeers(current_row, frame_end))
         {
-//            fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
             frame_ended = true;
             return;
         }
@@ -852,8 +834,6 @@ void WindowTransform::advanceFrameEnd()
             break;
     }
 
-//    fmt::print(stderr, "frame_end {} -> {}\n", frame_end_before, frame_end);
-
     // We might not have advanced the frame end if we found out we reached the
     // end of input or the partition, or if we still don't know the frame start.
     if (frame_end_before == frame_end)
@@ -865,9 +845,6 @@ void WindowTransform::advanceFrameEnd()
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
-//    fmt::print(stderr, "update agg states [{}, {}) -> [{}, {})\n",
-//        prev_frame_start, prev_frame_end, frame_start, frame_end);
-
     // Assert that the frame boundaries are known, have proper order wrt each
     // other, and have not gone back wrt the previous frame.
     assert(frame_started);
@@ -915,7 +892,6 @@ void WindowTransform::updateAggregationState()
 
         if (reset_aggregation)
         {
-//            fmt::print(stderr, "(2) reset aggregation\n");
             a->destroy(buf);
             a->create(buf);
         }
@@ -991,9 +967,6 @@ void WindowTransform::writeOutCurrentRow()
             a->insertMergeResultInto(buf, *result_column, arena.get());
         }
     }
-
-//    fmt::print(stderr, "wrote out aggregation state for current row '{}'\n",
-//        current_row);
 }
 
 static void assertSameColumns(const Columns & left_all,
@@ -1030,10 +1003,6 @@ static void assertSameColumns(const Columns & left_all,
 
 void WindowTransform::appendChunk(Chunk & chunk)
 {
-//    fmt::print(stderr, "new chunk, {} rows, finished={}\n", chunk.getNumRows(),
-//        input_is_finished);
-//    fmt::print(stderr, "chunk structure '{}'\n", chunk.dumpStructure());
-
     // First, prepare the new input block and add it to the queue. We might not
     // have it if it's end of data, though.
     if (!input_is_finished)
@@ -1093,9 +1062,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
     for (;;)
     {
         advancePartitionEnd();
-//        fmt::print(stderr, "partition [{}, {}), {}\n",
-//            partition_start, partition_end, partition_ended);
-
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
         assert(partition_ended || partition_end == blocksEnd());
@@ -1109,10 +1075,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // which is precisely the definition of `partition_end`.
         while (current_row < partition_end)
         {
-//            fmt::print(stderr, "(1) row {} frame [{}, {}) {}, {}\n",
-//                current_row, frame_start, frame_end,
-//                frame_started, frame_ended);
-
             // We now know that the current row is valid, so we can update the
             // peer group start.
             if (!arePeers(peer_group_start, current_row))
@@ -1151,10 +1113,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 assert(!partition_ended);
                 return;
             }
-
-//            fmt::print(stderr, "(2) row {} frame [{}, {}) {}, {}\n",
-//                current_row, frame_start, frame_end,
-//                frame_started, frame_ended);
 
             // The frame can be empty sometimes, e.g. the boundaries coincide
             // or the start is after the partition end. But hopefully start is
@@ -1236,8 +1194,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_start_row_number = 1;
         peer_group_number = 1;
 
-//        fmt::print(stderr, "reinitialize agg data at start of {}\n",
-//            partition_start);
         // Reinitialize the aggregate function states because the new partition
         // has started.
         for (auto & ws : workspaces)
@@ -1278,10 +1234,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
 IProcessor::Status WindowTransform::prepare()
 {
-//    fmt::print(stderr, "prepare, next output {}, not ready row {}, first block {}, hold {} blocks\n",
-//        next_output_block_number, first_not_ready_row, first_block_number,
-//        blocks.size());
-
     if (output.isFinished() || isCancelled())
     {
         // The consumer asked us not to continue (or we decided it ourselves),
@@ -1324,10 +1276,6 @@ IProcessor::Status WindowTransform::prepare()
                 columns.push_back(ColumnPtr(std::move(res)));
             }
             output_data.chunk.setColumns(columns, block.rows);
-
-//            fmt::print(stderr, "output block {} as chunk '{}'\n",
-//                next_output_block_number,
-//                output_data.chunk.dumpStructure());
 
             ++next_output_block_number;
 
@@ -1428,9 +1376,6 @@ void WindowTransform::work()
         std::min(prev_frame_start.block, current_row.block));
     if (first_block_number < first_used_block)
     {
-//        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
-//            first_used_block);
-
         blocks.erase(blocks.begin(),
             blocks.begin() + (first_used_block - first_block_number));
         first_block_number = first_used_block;
