@@ -86,7 +86,7 @@ sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 ```
 
-Для систем с пакетным менеджером `zypper` (openSUSE, SUSE SLES):
+Для систем с пакетным менеджером `zypper` (openSUSE, SLES):
 
 ``` bash
 sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g

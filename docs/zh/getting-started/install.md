@@ -84,7 +84,7 @@ sudo /etc/init.d/clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
-For systems with `zypper` package manager (openSUSE, SUSE SLES):
+For systems with `zypper` package manager (openSUSE, SLES):
 
 ``` bash
 sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
