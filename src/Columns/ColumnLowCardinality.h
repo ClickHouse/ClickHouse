@@ -160,7 +160,9 @@ public:
 
     void reserve(size_t n) override { idx.reserve(n); }
 
-    size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
+    /// Don't count the dictionary size as it can be shared between different blocks.
+    size_t byteSize() const override { return idx.getPositions()->byteSize(); }
+
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
@@ -199,6 +201,11 @@ public:
         return getIndexes().getRatioOfDefaultRows(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getIndexes().getNumberOfDefaultRows();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -219,6 +226,9 @@ public:
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    MutableColumnPtr cloneNullable() const;
+
+    ColumnPtr cloneWithDefaultOnNull() const;
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
@@ -242,7 +252,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 
@@ -293,8 +303,8 @@ public:
 
         void checkSizeOfType();
 
-        ColumnPtr detachPositions() { return std::move(positions); }
-        void attachPositions(ColumnPtr positions_);
+        MutableColumnPtr detachPositions() { return IColumn::mutate(std::move(positions)); }
+        void attachPositions(MutableColumnPtr positions_);
 
         void countKeys(ColumnUInt64::Container & counts) const;
 
@@ -342,7 +352,9 @@ private:
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
-        void compact(ColumnPtr & positions);
+        void compact(MutableColumnPtr & positions);
+
+        static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & positions);
 
     private:
         WrappedPtr column_unique;
@@ -359,6 +371,8 @@ private:
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
 };
+
+bool isColumnLowCardinalityNullable(const IColumn & column);
 
 
 }

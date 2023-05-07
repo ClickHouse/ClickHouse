@@ -15,7 +15,7 @@ class Context;
 /**
  * hdfsCluster(cluster, URI, format, structure, compression_method)
  * A table function, which allows to process many files from HDFS on a specific cluster
- * On initiator it creates a connection to _all_ nodes in cluster, discloses asterics
+ * On initiator it creates a connection to _all_ nodes in cluster, discloses asterisks
  * in HDFS file path and dispatch each file dynamically.
  * On worker node it asks initiator about next task to process, processes it.
  * This is repeated until the tasks are finished.
@@ -28,7 +28,6 @@ public:
     {
         return name;
     }
-    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr getStorage(

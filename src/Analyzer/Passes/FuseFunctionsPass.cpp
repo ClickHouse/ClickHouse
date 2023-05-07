@@ -26,16 +26,22 @@ namespace ErrorCodes
 namespace
 {
 
-class FuseFunctionsVisitor : public InDepthQueryTreeVisitor<FuseFunctionsVisitor>
+class FuseFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>
 {
 public:
+    using Base = InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>;
+    using Base::Base;
 
-    explicit FuseFunctionsVisitor(const std::unordered_set<String> names_to_collect_)
-        : names_to_collect(names_to_collect_)
+    explicit FuseFunctionsVisitor(const std::unordered_set<String> names_to_collect_, ContextPtr context)
+        : Base(std::move(context))
+        , names_to_collect(names_to_collect_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_syntax_fuse_functions)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || !names_to_collect.contains(function_node->getFunctionName()))
             return;
@@ -65,7 +71,7 @@ QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String
 
     auto function = FunctionFactory::instance().get(name, context);
     function_node->getArguments().getNodes() = std::move(arguments);
-    function_node->resolveAsFunction(function->build(function_node->getArgumentTypes()));
+    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     return function_node;
 }
 
@@ -88,7 +94,7 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
         { argument->getResultType() },
         parameters,
         properties);
-    function_node->resolveAsAggregateFunction(aggregate_function);
+    function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
 }
@@ -201,7 +207,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
 
 void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    FuseFunctionsVisitor visitor({"sum", "count", "avg"});
+    FuseFunctionsVisitor visitor({"sum", "count", "avg"}, context);
     visitor.visit(query_tree_node);
 
     for (auto & [argument, nodes] : visitor.argument_to_functions_mapping)
@@ -220,7 +226,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
 void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    FuseFunctionsVisitor visitor_quantile({"quantile"});
+    FuseFunctionsVisitor visitor_quantile({"quantile"}, context);
     visitor_quantile.visit(query_tree_node);
 
     for (auto & [argument, nodes_set] : visitor_quantile.argument_to_functions_mapping)

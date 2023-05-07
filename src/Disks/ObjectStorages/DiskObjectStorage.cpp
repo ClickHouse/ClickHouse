@@ -10,12 +10,21 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/CurrentMetrics.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskObjectStorageAsyncThreads;
+    extern const Metric DiskObjectStorageAsyncThreadsActive;
+}
+
 
 namespace DB
 {
@@ -38,7 +47,8 @@ class AsyncThreadPoolExecutor : public Executor
 public:
     AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
         : name(name_)
-        , pool(ThreadPool(thread_pool_size)) {}
+        , pool(CurrentMetrics::DiskObjectStorageAsyncThreads, CurrentMetrics::DiskObjectStorageAsyncThreadsActive, thread_pool_size)
+    {}
 
     std::future<void> execute(std::function<void()> task) override
     {
@@ -287,7 +297,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].absolute_path;
+        id = blobs_paths[0].remote_path;
     return id;
 }
 
@@ -299,7 +309,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
+    auto object = StoredObject(id);
     return object_storage->exists(object);
 }
 
@@ -525,14 +535,6 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
-FileCachePtr DiskObjectStorage::getCache() const
-{
-    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
-    if (!cached_object_storage)
-        return nullptr;
-    return cached_object_storage->getCache();
-}
-
 NameSet DiskObjectStorage::getCacheLayersNames() const
 {
     NameSet cache_layers;
@@ -577,6 +579,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
+void DiskObjectStorage::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
+{
+    LOG_TEST(log, "Write file: {}", path);
+    auto transaction = createObjectStorageTransaction();
+    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+}
+
 void DiskObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
@@ -616,7 +629,7 @@ UInt64 DiskObjectStorage::getRevision() const
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
-        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
     return disk;
 }
 

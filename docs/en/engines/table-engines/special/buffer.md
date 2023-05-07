@@ -86,7 +86,7 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
-:::warning
+:::note
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
 :::
 
@@ -105,5 +105,3 @@ Due to these disadvantages, we can only recommend using a Buffer table in rare c
 A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time, and data can’t be buffered before insertion, which means the INSERTs can’t run fast enough.
 
 Note that it does not make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second while inserting larger blocks of data can produce over a million rows per second.
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/buffer/) <!--hide-->

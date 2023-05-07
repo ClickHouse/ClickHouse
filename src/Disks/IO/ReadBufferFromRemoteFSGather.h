@@ -20,7 +20,7 @@ class ReadBufferFromRemoteFSGather final : public ReadBuffer
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::shared_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
@@ -47,8 +47,10 @@ public:
 
     size_t getImplementationBufferOffset() const;
 
+    const StoredObject & getCurrentObject() const { return current_object; }
+
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -68,8 +70,7 @@ private:
 
     size_t read_until_position = 0;
 
-    String current_file_path;
-    size_t current_file_size = 0;
+    StoredObject current_object;
 
     bool with_cache;
 

@@ -8,17 +8,20 @@ import shutil
 import subprocess
 import time
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, get_commit, post_commit_status
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 NAME = "Push to Dockerhub"
@@ -84,7 +87,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
             images_dict = json.load(dict_file)
     else:
         logging.info(
-            "Image file %s doesnt exists in repo %s", image_file_path, repo_path
+            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
         )
 
     return images_dict
@@ -93,7 +96,6 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
 def get_changed_docker_images(
     pr_info: PRInfo, images_dict: ImagesDict
 ) -> Set[DockerImage]:
-
     if not images_dict:
         return set()
 
@@ -182,26 +184,26 @@ def build_and_push_dummy_image(
     image: DockerImage,
     version_string: str,
     push: bool,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, Path]:
     dummy_source = "ubuntu:20.04"
     logging.info("Building docker image %s as %s", image.repo, dummy_source)
-    build_log = os.path.join(
-        TEMP_PATH, f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}"
+    build_log = (
+        Path(TEMP_PATH)
+        / f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}.log"
     )
-    with open(build_log, "wb") as bl:
-        cmd = (
-            f"docker pull {dummy_source}; "
-            f"docker tag {dummy_source} {image.repo}:{version_string}; "
-        )
-        if push:
-            cmd += f"docker push {image.repo}:{version_string}"
+    cmd = (
+        f"docker pull {dummy_source}; "
+        f"docker tag {dummy_source} {image.repo}:{version_string}; "
+    )
+    if push:
+        cmd += f"docker push {image.repo}:{version_string}"
 
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -210,10 +212,10 @@ def build_and_push_dummy_image(
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, Path]:
     if image.only_amd64 and platform.machine() not in ["amd64", "x86_64"]:
         return build_and_push_dummy_image(image, version_string, push)
     logging.info(
@@ -222,8 +224,9 @@ def build_and_push_one_image(
         version_string,
         image.full_path,
     )
-    build_log = os.path.join(
-        TEMP_PATH, f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}"
+    build_log = (
+        Path(TEMP_PATH)
+        / f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}.log"
     )
     push_arg = ""
     if push:
@@ -237,31 +240,28 @@ def build_and_push_one_image(
         f"--cache-from type=registry,ref={image.repo}:{version_string} "
         f"--cache-from type=registry,ref={image.repo}:latest"
     )
-    if additional_cache:
-        cache_from = (
-            f"{cache_from} "
-            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
-        )
+    for tag in additional_cache:
+        assert tag
+        cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
-    with open(build_log, "wb") as bl:
-        cmd = (
-            "docker buildx build --builder default "
-            f"--label build-url={GITHUB_RUN_URL} "
-            f"{from_tag_arg}"
-            # A hack to invalidate cache, grep for it in docker/ dir
-            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
-            f"--tag {image.repo}:{version_string} "
-            f"{cache_from} "
-            f"--cache-to type=inline,mode=max "
-            f"{push_arg}"
-            f"--progress plain {image.full_path}"
-        )
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    cmd = (
+        "docker buildx build --builder default "
+        f"--label build-url={GITHUB_RUN_URL} "
+        f"{from_tag_arg}"
+        # A hack to invalidate cache, grep for it in docker/ dir
+        f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+        f"--tag {image.repo}:{version_string} "
+        f"{cache_from} "
+        f"--cache-to type=inline,mode=max "
+        f"{push_arg}"
+        f"--progress plain {image.full_path}"
+    )
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -270,73 +270,66 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
-) -> List[Tuple[str, str, str]]:
+) -> TestResults:
     logging.info("Image will be pushed with versions %s", ", ".join(versions))
-    result = []
+    results = []  # type: TestResults
     for ver in versions:
+        stopwatch = Stopwatch()
         for i in range(5):
             success, build_log = build_and_push_one_image(
                 image, ver, additional_cache, push, child
             )
             if success:
-                result.append((image.repo + ":" + ver, build_log, "OK"))
+                results.append(
+                    TestResult(
+                        image.repo + ":" + ver,
+                        "OK",
+                        stopwatch.duration_seconds,
+                        [build_log],
+                    )
+                )
                 break
             logging.info(
                 "Got error will retry %s time and sleep for %s seconds", i, i * 5
             )
             time.sleep(i * 5)
         else:
-            result.append((image.repo + ":" + ver, build_log, "FAIL"))
+            results.append(
+                TestResult(
+                    image.repo + ":" + ver,
+                    "FAIL",
+                    stopwatch.duration_seconds,
+                    [build_log],
+                )
+            )
 
     logging.info("Processing finished")
     image.built = True
-    return result
+    return results
 
 
 def process_image_with_parents(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool = False,
-) -> List[Tuple[str, str, str]]:
-    result = []  # type: List[Tuple[str,str,str]]
+) -> TestResults:
+    results = []  # type: TestResults
     if image.built:
-        return result
+        return results
 
     if image.parent is not None:
-        result += process_image_with_parents(
+        results += process_image_with_parents(
             image.parent, versions, additional_cache, push, False
         )
         child = True
 
-    result += process_single_image(image, versions, additional_cache, push, child)
-    return result
-
-
-def process_test_results(
-    s3_client: S3Helper, test_results: List[Tuple[str, str, str]], s3_path_prefix: str
-) -> Tuple[str, List[Tuple[str, str]]]:
-    overall_status = "success"
-    processed_test_results = []
-    for image, build_log, status in test_results:
-        if status != "OK":
-            overall_status = "failure"
-        url_part = ""
-        if build_log is not None and os.path.exists(build_log):
-            build_url = s3_client.upload_test_report_to_s3(
-                build_log, s3_path_prefix + "/" + os.path.basename(build_log)
-            )
-            url_part += f'<a href="{build_url}">build_log</a>'
-        if url_part:
-            test_name = image + " (" + url_part + ")"
-        else:
-            test_name = image
-        processed_test_results.append((test_name, status))
-    return overall_status, processed_test_results
+    results += process_single_image(image, versions, additional_cache, push, child)
+    return results
 
 
 def parse_args() -> argparse.Namespace:
@@ -440,15 +433,19 @@ def main():
     image_versions, result_version = gen_versions(pr_info, args.suffix)
 
     result_images = {}
-    images_processing_result = []
-    additional_cache = ""
-    if pr_info.release_pr or pr_info.merged_pr:
-        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+    test_results = []  # type: TestResults
+    additional_cache = []  # type: List[str]
+    if pr_info.release_pr:
+        logging.info("Use %s as additional cache tag", pr_info.release_pr)
+        additional_cache.append(str(pr_info.release_pr))
+    if pr_info.merged_pr:
+        logging.info("Use %s as additional cache tag", pr_info.merged_pr)
+        additional_cache.append(str(pr_info.merged_pr))
 
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined
         # We use it as tag to reduce rebuilding time
-        images_processing_result += process_image_with_parents(
+        test_results += process_image_with_parents(
             image, image_versions, additional_cache, args.push
         )
         result_images[image.repo] = result_version
@@ -458,31 +455,27 @@ def main():
     else:
         description = "Nothing to update"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    description = format_description(description)
 
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
     s3_helper = S3Helper()
 
-    s3_path_prefix = (
-        str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(" ", "_")
-    )
-    status, test_results = process_test_results(
-        s3_helper, images_processing_result, s3_path_prefix
-    )
+    status = "success"
+    if [r for r in test_results if r.status != "OK"]:
+        status = "failure"
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     print(f"::notice ::Report url: {url}")
-    print(f'::set-output name=url_output::"{url}"')
 
     if not args.reports:
         return
 
     gh = Github(get_best_robot_token(), per_page=100)
-    post_commit_status(gh, pr_info.sha, NAME, description, status, url)
+    commit = get_commit(gh, pr_info.sha)
+    post_commit_status(commit, status, url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -496,7 +489,7 @@ def main():
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if status == "error":
+    if status == "failure":
         sys.exit(1)
 
 

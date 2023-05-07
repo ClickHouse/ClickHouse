@@ -7,19 +7,22 @@ Contains information about clusters available in the config file and the servers
 
 Columns:
 
--   `cluster` ([String](../../sql-reference/data-types/string.md)) — The cluster name.
--   `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1.
--   `shard_weight` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The relative weight of the shard when writing data.
--   `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The replica number in the shard, starting from 1.
--   `host_name` ([String](../../sql-reference/data-types/string.md)) — The host name, as specified in the config.
--   `host_address` ([String](../../sql-reference/data-types/string.md)) — The host IP address obtained from DNS.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port to use for connecting to the server.
--   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the host is local.
--   `user` ([String](../../sql-reference/data-types/string.md)) — The name of the user for connecting to the server.
--   `default_database` ([String](../../sql-reference/data-types/string.md)) — The default database name.
--   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of times this host failed to reach replica.
--   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of slowdowns that led to changing replica when establishing a connection with hedged requests.
--   `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
+- `cluster` ([String](../../sql-reference/data-types/string.md)) — The cluster name.
+- `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1.
+- `shard_weight` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The relative weight of the shard when writing data.
+- `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The replica number in the shard, starting from 1.
+- `host_name` ([String](../../sql-reference/data-types/string.md)) — The host name, as specified in the config.
+- `host_address` ([String](../../sql-reference/data-types/string.md)) — The host IP address obtained from DNS.
+- `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port to use for connecting to the server.
+- `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the host is local.
+- `user` ([String](../../sql-reference/data-types/string.md)) — The name of the user for connecting to the server.
+- `default_database` ([String](../../sql-reference/data-types/string.md)) — The default database name.
+- `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of times this host failed to reach replica.
+- `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of slowdowns that led to changing replica when establishing a connection with hedged requests.
+- `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
+- `database_shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database).
+- `database_replica_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
+- `is_active` ([Nullable(UInt8)](../../sql-reference/data-types/int-uint.md)) — The status of the `Replicated` database replica (for clusters that belong to a `Replicated` database): 1 means "replica is online", 0 means "replica is offline", `NULL` means "unknown".
 
 **Example**
 
@@ -47,6 +50,9 @@ default_database:
 errors_count:            0
 slowdowns_count:         0
 estimated_recovery_time: 0
+database_shard_name:
+database_replica_name:
+is_active:               NULL
 
 Row 2:
 ──────
@@ -63,12 +69,13 @@ default_database:
 errors_count:            0
 slowdowns_count:         0
 estimated_recovery_time: 0
+database_shard_name:
+database_replica_name:
+is_active:               NULL
 ```
 
 **See Also**
 
--   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
--   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/clusters) <!--hide-->
+- [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+- [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)

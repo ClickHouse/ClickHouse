@@ -23,7 +23,7 @@ void NormalizeAndEvaluateConstants::visit(const ASTFunction & function, Data & d
 {
     /// Replace expressions like "dictGet(currentDatabase() || '.dict', 'value', toUInt32(1))"
     /// with "dictGet('db_name.dict', 'value', toUInt32(1))"
-    ssize_t table_name_arg_idx = getPositionOfTableNameArgument(function);
+    ssize_t table_name_arg_idx = getPositionOfTableNameArgumentToEvaluate(function);
     if (table_name_arg_idx < 0)
         return;
 

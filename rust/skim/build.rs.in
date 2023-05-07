@@ -5,4 +5,5 @@ fn main() {
     }
     build.compile("skim");
     println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=.cargo/config.toml");
 }

@@ -2,17 +2,13 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 namespace
 {
@@ -23,122 +19,9 @@ namespace
     }
 
 
-    void formatAuthenticationData(const AuthenticationData & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
     {
-        auto auth_type = auth_data.getType();
-        if (auth_type == AuthenticationType::NO_PASSWORD)
-        {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
-                          << (settings.hilite ? IAST::hilite_none : "");
-            return;
-        }
-
-        String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        String prefix; /// "BY" or "SERVER" or "REALM"
-        std::optional<String> password; /// either a password or hash
-        std::optional<String> salt;
-        std::optional<String> parameter;
-        const boost::container::flat_set<String> * parameters = nullptr;
-
-        switch (auth_type)
-        {
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            {
-                prefix = "BY";
-                password = auth_data.getPassword();
-                break;
-            }
-            case AuthenticationType::SHA256_PASSWORD:
-            {
-                auth_type_name = "sha256_hash";
-                prefix = "BY";
-                password = auth_data.getPasswordHashHex();
-                if (!auth_data.getSalt().empty())
-                    salt = auth_data.getSalt();
-                break;
-            }
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            {
-                auth_type_name = "double_sha1_hash";
-                prefix = "BY";
-                password = auth_data.getPasswordHashHex();
-                break;
-            }
-            case AuthenticationType::LDAP:
-            {
-                prefix = "SERVER";
-                parameter = auth_data.getLDAPServerName();
-                break;
-            }
-            case AuthenticationType::KERBEROS:
-            {
-                const auto & realm = auth_data.getKerberosRealm();
-                if (!realm.empty())
-                {
-                    prefix = "REALM";
-                    parameter = realm;
-                }
-                break;
-            }
-
-            case AuthenticationType::SSL_CERTIFICATE:
-            {
-                prefix = "CN";
-                parameters = &auth_data.getSSLCertificateCommonNames();
-                break;
-            }
-
-            case AuthenticationType::NO_PASSWORD: [[fallthrough]];
-            case AuthenticationType::MAX:
-                throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
-        }
-
-        if (password && !settings.show_secrets)
-        {
-            prefix = "";
-            password.reset();
-            salt.reset();
-            auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        }
-
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
-
-        if (!auth_type_name.empty())
-        {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH " << auth_type_name
-                          << (settings.hilite ? IAST::hilite_none : "");
-        }
-
-        if (!prefix.empty())
-        {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
-        }
-
-        if (password)
-        {
-            settings.ostr << " " << quoteString(*password);
-        }
-
-        if (salt)
-        {
-            settings.ostr << " SALT " << quoteString(*salt);
-        }
-
-        if (parameter)
-        {
-            settings.ostr << " " << quoteString(*parameter);
-        }
-        else if (parameters)
-        {
-            settings.ostr << " ";
-            bool need_comma = false;
-            for (const auto & param : *parameters)
-            {
-                if (std::exchange(need_comma, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(param);
-            }
-        }
+        auth_data.format(settings);
     }
 
 
@@ -276,6 +159,7 @@ String ASTCreateUserQuery::getID(char) const
 ASTPtr ASTCreateUserQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateUserQuery>(*this);
+    res->children.clear();
 
     if (names)
         res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
@@ -291,6 +175,12 @@ ASTPtr ASTCreateUserQuery::clone() const
 
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    if (auth_data)
+    {
+        res->auth_data = std::static_pointer_cast<ASTAuthenticationData>(auth_data->clone());
+        res->children.push_back(res->auth_data);
+    }
 
     return res;
 }
@@ -344,19 +234,6 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (grantees)
         formatGrantees(*grantees, format);
-}
-
-bool ASTCreateUserQuery::hasSecretParts() const
-{
-    if (auth_data)
-    {
-        auto auth_type = auth_data->getType();
-        if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
-            || (auth_type == AuthenticationType::SHA256_PASSWORD)
-            || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
-            return true;
-    }
-    return childrenHaveSecretParts();
 }
 
 }

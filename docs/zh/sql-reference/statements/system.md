@@ -124,10 +124,9 @@ ClickHouse可以管理 [MergeTree](../../engines/table-engines/mergetree-family/
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
 
-
-!!! note "Note"
-    `DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
-
+:::note
+`DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
+:::
 
 ### START MERGES {#query_language-system-start-merges}
 
@@ -241,7 +240,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
 ```
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
@@ -257,5 +256,3 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
 重置所有 `ReplicatedMergeTree`表的ZooKeeper会话状态。该操作会以Zookeeper为参照，对比当前状态，有需要的情况下将任务添加到ZooKeeper队列。
-
-[原始文档](https://clickhouse.com/docs/en/query_language/system/) <!--hide-->

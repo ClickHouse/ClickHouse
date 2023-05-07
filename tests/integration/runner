@@ -243,6 +243,21 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--no-random",
+        action="store",
+        dest="no_random",
+        help="Disable tests order randomization",
+    )
+
+    parser.add_argument(
+        "--pre-pull",
+        action="store_true",
+        default=False,
+        dest="pre_pull",
+        help="Pull images for docker_compose before all other actions",
+    )
+
+    parser.add_argument(
         "-t",
         "--tests_list",
         action="store",
@@ -293,6 +308,10 @@ if __name__ == "__main__":
     if args.parallel:
         parallel_args += "--dist=loadfile"
         parallel_args += " -n {}".format(args.parallel)
+
+    rand_args = ""
+    # if not args.no_random:
+    #     rand_args += f"--random-seed={os.getpid()}"
 
     net = ""
     if args.network:
@@ -374,7 +393,7 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
+    cmd_base = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
@@ -383,7 +402,7 @@ if __name__ == "__main__":
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
         -e XTABLES_LOCKFILE=/run/host/xtables.lock \
         -e PYTHONUNBUFFERED=1 \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} {rand} -vvv' {img}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -395,12 +414,18 @@ if __name__ == "__main__":
         env_tags=env_tags,
         env_cleanup=env_cleanup,
         parallel=parallel_args,
+        rand=rand_args,
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
-        command=args.command,
+    )
+
+    cmd = cmd_base + " " + args.command
+    cmd_pre_pull = (
+        cmd_base
+        + " find /compose -name docker_compose_*.yml -exec docker-compose -f '{}' pull \;"
     )
 
     containers = subprocess.check_output(
@@ -413,11 +438,9 @@ if __name__ == "__main__":
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
 
-    # Avoid overlaps with previous runs
-    subprocess.check_call("dmesg --clear", shell=True)
+    if args.pre_pull:
+        print(("Running pre pull as: '" + cmd_pre_pull + "'."))
+        subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
-
-    # Dump dmesg (to capture possible OOMs)
-    subprocess.check_call("dmesg -T", shell=True)

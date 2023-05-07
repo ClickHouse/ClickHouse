@@ -37,7 +37,7 @@ MemoryTracker * getMemoryTracker()
 
 using DB::current_thread;
 
-AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
+void CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
     if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
@@ -55,9 +55,8 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
             if (will_be > current_thread->untracked_memory_limit)
             {
-                auto res = memory_tracker->allocImpl(will_be, throw_if_memory_exceeded);
+                memory_tracker->allocImpl(will_be, throw_if_memory_exceeded);
                 current_thread->untracked_memory = 0;
-                return res;
             }
             else
             {
@@ -69,40 +68,36 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         /// total_memory_tracker only, ignore untracked_memory
         else
         {
-            return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
+            memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
-
-        return AllocationTrace(memory_tracker->getSampleProbability());
     }
-
-    return AllocationTrace(0);
 }
 
 void CurrentMemoryTracker::check()
 {
     if (auto * memory_tracker = getMemoryTracker())
-        std::ignore = memory_tracker->allocImpl(0, true);
+        memory_tracker->allocImpl(0, true);
 }
 
-AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
+void CurrentMemoryTracker::alloc(Int64 size)
 {
     bool throw_if_memory_exceeded = true;
-    return allocImpl(size, throw_if_memory_exceeded);
+    allocImpl(size, throw_if_memory_exceeded);
 }
 
-AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
+void CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
     bool throw_if_memory_exceeded = false;
-    return allocImpl(size, throw_if_memory_exceeded);
+    allocImpl(size, throw_if_memory_exceeded);
 }
 
-AllocationTrace CurrentMemoryTracker::realloc(Int64 old_size, Int64 new_size)
+void CurrentMemoryTracker::realloc(Int64 old_size, Int64 new_size)
 {
     Int64 addition = new_size - old_size;
-    return addition > 0 ? alloc(addition) : free(-addition);
+    addition > 0 ? alloc(addition) : free(-addition);
 }
 
-AllocationTrace CurrentMemoryTracker::free(Int64 size)
+void CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -111,20 +106,21 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             current_thread->untracked_memory -= size;
             if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
             {
-                Int64 untracked_memory = current_thread->untracked_memory;
+                memory_tracker->free(-current_thread->untracked_memory);
                 current_thread->untracked_memory = 0;
-                return memory_tracker->free(-untracked_memory);
             }
         }
         /// total_memory_tracker only, ignore untracked_memory
         else
         {
-            return memory_tracker->free(size);
+            memory_tracker->free(size);
         }
-
-        return AllocationTrace(memory_tracker->getSampleProbability());
     }
+}
 
-    return AllocationTrace(0);
+void CurrentMemoryTracker::injectFault()
+{
+    if (auto * memory_tracker = getMemoryTracker())
+        memory_tracker->injectFault();
 }
 

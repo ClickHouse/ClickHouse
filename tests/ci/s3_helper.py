@@ -40,11 +40,11 @@ def _flatten_list(lst):
 
 
 class S3Helper:
-    def __init__(self, host=S3_URL, download_host=S3_DOWNLOAD):
+    def __init__(self):
         self.session = boto3.session.Session(region_name="us-east-1")
-        self.client = self.session.client("s3", endpoint_url=host)
-        self.host = host
-        self.download_host = download_host
+        self.client = self.session.client("s3", endpoint_url=S3_URL)
+        self.host = S3_URL
+        self.download_host = S3_DOWNLOAD
 
     def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
         logging.debug(
@@ -89,16 +89,16 @@ class S3Helper:
                 logging.info("No content type provied for %s", file_path)
         else:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
-                r"\.log\..*(?<!\.gz)$", s3_path
+                r"\.log\..*(?<!\.zst)$", s3_path
             ):
                 logging.info(
                     "Going to compress file log file %s to %s",
                     file_path,
-                    file_path + ".gz",
+                    file_path + ".zst",
                 )
-                compress_file_fast(file_path, file_path + ".gz")
-                file_path += ".gz"
-                s3_path += ".gz"
+                compress_file_fast(file_path, file_path + ".zst")
+                file_path += ".zst"
+                s3_path += ".zst"
             else:
                 logging.info("Processing file without compression")
             logging.info("File is too large, do not provide content type")

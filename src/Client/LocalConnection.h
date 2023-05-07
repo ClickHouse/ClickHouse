@@ -7,6 +7,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -110,7 +111,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 

@@ -34,7 +34,7 @@ jobs:
       run: |
         echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
         ref: master
         fetch-depth: 0

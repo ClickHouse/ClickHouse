@@ -11,61 +11,13 @@ import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
+from helpers.s3_tools import prepare_s3_bucket
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-# Creates S3 bucket for tests and allows anonymous read-write access to it.
-def prepare_s3_bucket(started_cluster):
-    # Allows read-write access for bucket without authorization.
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
-
-    minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
-
-    started_cluster.minio_restricted_bucket = "{}-with-auth".format(
-        started_cluster.minio_bucket
-    )
-    if minio_client.bucket_exists(started_cluster.minio_restricted_bucket):
-        minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
-
-    minio_client.make_bucket(started_cluster.minio_restricted_bucket)
 
 
 def put_s3_file_content(started_cluster, bucket, filename, data):
@@ -694,47 +646,17 @@ def test_s3_glob_scheherazade(started_cluster):
 
 
 def run_s3_mocks(started_cluster):
-    logging.info("Starting s3 mocks")
-    mocks = (
-        ("mock_s3.py", "resolver", "8080"),
-        ("unstable_server.py", "resolver", "8081"),
-        ("echo.py", "resolver", "8082"),
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        started_cluster,
+        script_dir,
+        [
+            ("mock_s3.py", "resolver", "8080"),
+            ("unstable_server.py", "resolver", "8081"),
+            ("echo.py", "resolver", "8082"),
+            ("no_list_objects.py", "resolver", "8083"),
+        ],
     )
-    for mock_filename, container, port in mocks:
-        container_id = started_cluster.get_container_id(container)
-        current_dir = os.path.dirname(__file__)
-        started_cluster.copy_file_to_container(
-            container_id,
-            os.path.join(current_dir, "s3_mocks", mock_filename),
-            mock_filename,
-        )
-        started_cluster.exec_in_container(
-            container_id, ["python", mock_filename, port], detach=True
-        )
-
-    # Wait for S3 mocks to start
-    for mock_filename, container, port in mocks:
-        num_attempts = 100
-        for attempt in range(num_attempts):
-            ping_response = started_cluster.exec_in_container(
-                started_cluster.get_container_id(container),
-                ["curl", "-s", f"http://localhost:{port}/"],
-                nothrow=True,
-            )
-            if ping_response != "OK":
-                if attempt == num_attempts - 1:
-                    assert ping_response == "OK", 'Expected "OK", but got "{}"'.format(
-                        ping_response
-                    )
-                else:
-                    time.sleep(1)
-            else:
-                logging.debug(
-                    f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}"
-                )
-                break
-
-    logging.info("S3 mocks started")
 
 
 def replace_config(path, old, new):
@@ -1085,13 +1007,13 @@ def test_seekable_formats(started_cluster):
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
     )
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
     instance.query(f"SELECT * FROM {table_function} FORMAT Null")
 
@@ -1102,7 +1024,7 @@ def test_seekable_formats(started_cluster):
     result = result.strip()
     assert result.endswith("MiB")
     result = result[: result.index(".")]
-    assert int(result) > 80
+    assert int(result) > 150
 
 
 def test_seekable_formats_url(started_cluster):
@@ -1112,23 +1034,23 @@ def test_seekable_formats_url(started_cluster):
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
     )
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
 
 def test_empty_file(started_cluster):
@@ -1728,7 +1650,6 @@ def test_ast_auth_headers(started_cluster):
 
 
 def test_environment_credentials(started_cluster):
-    filename = "test.csv"
     bucket = started_cluster.minio_restricted_bucket
 
     instance = started_cluster.instances["s3_with_environment_credentials"]
@@ -1741,3 +1662,54 @@ def test_environment_credentials(started_cluster):
             f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
         ).strip()
     )
+
+    # manually defined access key should override from env
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')"
+        )
+
+        assert ei.value.returncode == 243
+        assert "HTTP response code: 403" in ei.value.stderr
+
+
+def test_s3_list_objects_failure(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    filename = "test_no_list_{_partition_id}.csv"
+
+    put_query = f"""
+        INSERT INTO TABLE FUNCTION
+        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32')
+        PARTITION BY c1 % 20
+        SELECT number FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+    """
+
+    run_query(instance, put_query)
+
+    T = 10
+    for _ in range(0, T):
+        started_cluster.exec_in_container(
+            started_cluster.get_container_id("resolver"),
+            [
+                "curl",
+                "-X",
+                "POST",
+                f"http://localhost:8083/reset_counters?max={random.randint(1, 15)}",
+            ],
+        )
+
+        get_query = """
+            SELECT sleep({seconds}) FROM s3('http://resolver:8083/{bucket}/test_no_list_*', 'CSV', 'c1 UInt32')
+            SETTINGS s3_list_object_keys_size = 1, max_threads = {max_threads}, enable_s3_requests_logging = 1
+            """.format(
+            bucket=bucket, seconds=random.random(), max_threads=random.randint(2, 20)
+        )
+
+        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+            result = run_query(instance, get_query)
+            print(result)
+
+        assert ei.value.returncode == 243
+        assert "Could not list objects" in ei.value.stderr

@@ -613,7 +613,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
 
-                const auto & func = inverted_dag.addFunction(FunctionFactory::instance().get(node.function_base->getName(), context), children, "");
+                const auto & func = inverted_dag.addFunction(node.function_base, children, "");
                 to_inverted[&node] = &func;
                 return func;
             }
@@ -706,8 +706,12 @@ Block KeyCondition::getBlockWithConstants(
 
     if (syntax_analyzer_result)
     {
-        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-        expr_for_constant_folding->execute(result);
+        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
+        for (const auto & action_node : actions->getOutputs())
+        {
+            if (action_node->column)
+                result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
+        }
     }
 
     return result;
@@ -739,11 +743,15 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
+    size_t key_index = 0;
+    for (const auto & name : key_column_names)
     {
-        const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
-            key_columns[name] = i;
+        {
+            key_columns[name] = key_columns.size();
+            key_indices.push_back(key_index);
+        }
+        ++key_index;
     }
 
     auto filter_node = buildFilterNode(query, additional_filter_asts);
@@ -807,11 +815,15 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
+    size_t key_index = 0;
+    for (const auto & name : key_column_names)
     {
-        const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
-            key_columns[name] = i;
+        {
+            key_columns[name] = key_columns.size();
+            key_indices.push_back(key_index);
+        }
+        ++key_index;
     }
 
     if (!filter_dag)
@@ -1410,10 +1422,8 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
     }
     catch (...)
     {
-        throw Exception("Key expression contains comparison between inconvertible types: " +
-            desired_type->getName() + " and " + src_type->getName() +
-            " inside " + node_column_name,
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
     }
 }
 
@@ -1445,7 +1455,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 return false;
 
             if (key_column_num == static_cast<size_t>(-1))
-                throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
         }
         else if (num_args == 2)
         {
@@ -1544,7 +1554,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 return false;
 
             if (key_column_num == static_cast<size_t>(-1))
-                throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
             /// Replace <const> <sign> <data> on to <data> <-sign> <const>
             if (key_arg_pos == 1)
@@ -1844,11 +1854,11 @@ KeyCondition::Description KeyCondition::getDescription() const
             rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
 
     std::vector<std::string_view> key_names(key_columns.size());
     std::vector<bool> is_key_used(key_columns.size(), false);
@@ -1989,9 +1999,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
 
         return callback(hyperrectangle);
     }
@@ -2276,7 +2286,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             || element.function == RPNElement::FUNCTION_NOT_IN_SET)
         {
             if (!element.set_index)
-                throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
 
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
@@ -2315,11 +2325,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
 
     return rpn_stack[0];
 }
@@ -2481,11 +2491,11 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             rpn_stack.back() = arg1 | arg2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::unknownOrAlwaysTrue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::unknownOrAlwaysTrue");
 
     return rpn_stack[0];
 }
@@ -2556,32 +2566,13 @@ bool KeyCondition::alwaysFalse() const
                 rpn_stack.back() = 2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::alwaysFalse", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
-}
-
-size_t KeyCondition::getMaxKeyColumn() const
-{
-    size_t res = 0;
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
-        {
-            if (element.key_column > res)
-                res = element.key_column;
-        }
-    }
-    return res;
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSelectQuery.h>
 
 #include <iostream>
 
@@ -90,6 +91,27 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
     return set_of_modes.contains(SelectUnionMode::UNION_DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT_DISTINCT)
         || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
+}
+
+bool ASTSelectWithUnionQuery::hasQueryParameters() const
+{
+    if (!has_query_parameters.has_value())
+    {
+        for (const auto & child : list_of_selects->children)
+        {
+            if (auto * select_node = child->as<ASTSelectQuery>())
+            {
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
+            }
+        }
+        has_query_parameters = false;
+    }
+
+    return  has_query_parameters.value();
 }
 
 }

@@ -19,8 +19,8 @@ namespace ErrorCodes
 class MergedData
 {
 public:
-    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_)
-        : columns(std::move(columns_)), max_block_size(max_block_size_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
+        : columns(std::move(columns_)), max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
     {
     }
 
@@ -57,11 +57,22 @@ public:
     void insertChunk(Chunk && chunk, size_t rows_size)
     {
         if (merged_rows)
-            throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to MergedData from Chunk because MergedData is not empty.");
 
         UInt64 num_rows = chunk.getNumRows();
-        columns = chunk.mutateColumns();
+        UInt64 num_columns = chunk.getNumColumns();
+        auto chunk_columns = chunk.mutateColumns();
+
+        /// Here is a special code for constant columns.
+        /// Currently, 'columns' will contain constants, but 'chunk_columns' will not.
+        /// We want to keep constants in the result, so just re-create them carefully.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (isColumnConst(*columns[i]))
+                columns[i] = columns[i]->cloneResized(num_rows);
+            else
+                columns[i] = std::move(chunk_columns[i]);
+        }
 
         if (rows_size < num_rows)
         {
@@ -106,6 +117,16 @@ public:
         if (merged_rows >= max_block_size)
             return true;
 
+        /// Never return more than max_block_size_bytes
+        if (max_block_size_bytes)
+        {
+            size_t merged_bytes = 0;
+            for (const auto & column : columns)
+                merged_bytes += column->allocatedBytes();
+            if (merged_bytes >= max_block_size_bytes)
+                return true;
+        }
+
         if (!use_average_block_size)
             return false;
 
@@ -132,8 +153,9 @@ protected:
     UInt64 total_chunks = 0;
     UInt64 total_allocated_bytes = 0;
 
-    const UInt64 max_block_size;
-    const bool use_average_block_size;
+    const UInt64 max_block_size = 0;
+    const UInt64 max_block_size_bytes = 0;
+    const bool use_average_block_size = false;
 
     bool need_flush = false;
 };

@@ -26,7 +26,7 @@ def tx(session, query):
 
 def test_rollback_unfinished_on_restart1(start_cluster):
     node.query(
-        "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2"
+        "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
     )
     node.query("insert into mt values (1, 10), (2, 20)")
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
@@ -82,6 +82,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
     ).strip()
 
     node.restart_clickhouse(kill=True)
+    node.query("SYSTEM WAIT LOADING PARTS mt")
 
     assert (
         node.query("select *, _part from mt order by n")
@@ -116,7 +117,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
 
 def test_rollback_unfinished_on_restart2(start_cluster):
     node.query(
-        "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2"
+        "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
     )
     node.query("insert into mt2 values (1, 10), (2, 20)")
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
@@ -171,6 +172,7 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     ).strip()
 
     node.restart_clickhouse(kill=True)
+    node.query("SYSTEM WAIT LOADING PARTS mt2")
 
     assert (
         node.query("select *, _part from mt2 order by n")
