@@ -55,7 +55,7 @@ public:
 
     bool isComplex(const std::string & layout_type) const;
 
-    /// if the argument `layout_type` is not complex layout and has corresponding complex layout,
+    /// If the argument `layout_type` is not complex layout and has corresponding complex layout,
     /// change `layout_type` to corresponding complex and return true; otherwise do nothing and return false.
     bool convertToComplex(std::string & layout_type) const;
 
