@@ -51,7 +51,7 @@ while :; do
 
     insert_query_id="insert-$(random_str 10)"
     # 20 seconds sleep
-    $CLICKHOUSE_CLIENT --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
+    $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 20000000 --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
     if ! wait_query_by_id_started "$insert_query_id"; then
         wait
         continue
