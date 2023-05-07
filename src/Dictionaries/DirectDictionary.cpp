@@ -311,7 +311,6 @@ public:
 private:
     QueryPipeline pipeline;
     TExecutor executor;
-    bool concurrency_control;
 };
 
 template <DictionaryKeyType dictionary_key_type>

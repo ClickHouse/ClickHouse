@@ -1456,7 +1456,7 @@ try
     }
 
     Block block;
-    while (executor.pull(block, 0))
+    while (executor.pull(block))
     {
         if (!cancelled && QueryInterruptHandler::cancelled())
         {

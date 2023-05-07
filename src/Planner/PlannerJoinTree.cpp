@@ -746,6 +746,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                   */
                 if (!query_plan.getMaxThreads() || is_remote)
                     query_plan.setMaxThreads(max_threads_execute_query);
+
+                query_plan.setConcurrencyControl(settings.use_concurrency_control);
             }
             else
             {
