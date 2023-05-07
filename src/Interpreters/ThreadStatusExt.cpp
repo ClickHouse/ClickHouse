@@ -223,7 +223,8 @@ void ThreadStatus::detachFromGroup()
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
-    memory_tracker.setParent(thread_group->memory_tracker.getParent());
+    /// Extract MemoryTracker out from query and user context
+    memory_tracker.setParent(&total_memory_tracker);
 
     thread_group.reset();
 
