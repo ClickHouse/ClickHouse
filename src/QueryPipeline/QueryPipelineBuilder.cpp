@@ -299,8 +299,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         if (pipeline.max_threads > max_threads_limit)
             max_threads_limit = pipeline.max_threads;
 
-        if (pipeline.useConcurrencyControl())
-            concurrency_control = true;
+        concurrency_control = pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -311,9 +310,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
-
-        if (concurrency_control)
-            pipeline.enableConcurrencyControl();
+        pipeline.setConcurrencyControl(concurrency_control);
     }
 
     pipeline.setCollectedProcessors(nullptr);
@@ -646,7 +643,7 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
-    res.setConcurrencyControl(builder.useConcurrencyControl());
+    res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
     return res;

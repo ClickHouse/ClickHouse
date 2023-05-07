@@ -457,7 +457,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
         PullingAsyncPipelineExecutor executor(pipeline);
         Block this_block;
 
-        while (executor.pull(this_block, 0))
+        while (executor.pull(this_block))
             new_mergeable_blocks->push_back(this_block);
 
         if (new_mergeable_blocks->empty())
@@ -478,7 +478,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().max_threads_use_concurrency_control);
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageLiveView::refresh()
@@ -593,7 +593,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     PullingAsyncPipelineExecutor executor(pipeline);
     Block this_block;
 
-    while (executor.pull(this_block, 0))
+    while (executor.pull(this_block))
         base_blocks->push_back(this_block);
 
     new_blocks->push_back(base_blocks);
@@ -698,7 +698,7 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
 
     PullingAsyncPipelineExecutor executor(pipeline);
     Block block;
-    while (executor.pull(block, 0))
+    while (executor.pull(block))
     {
         if (block.rows() == 0)
             continue;

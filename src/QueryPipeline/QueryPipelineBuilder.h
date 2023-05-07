@@ -172,12 +172,12 @@ public:
             max_threads = max_threads_;
     }
 
-    void enableConcurrencyControl()
+    void setConcurrencyControl(bool concurrency_control_)
     {
-        concurrency_control = true;
+        concurrency_control = concurrency_control_;
     }
 
-    bool useConcurrencyControl()
+    bool getConcurrencyControl()
     {
         return concurrency_control;
     }
