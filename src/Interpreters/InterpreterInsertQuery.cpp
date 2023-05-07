@@ -554,6 +554,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = QueryPipeline(std::move(out_chains.at(0)));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
+        res.pipeline.setConcurrencyControl(settings.max_threads_use_concurrency_control);
 
         if (query.hasInlinedData() && !async_insert)
         {

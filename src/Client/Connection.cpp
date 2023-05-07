@@ -866,7 +866,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             return sink;
         });
         executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1);
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;

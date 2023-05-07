@@ -630,7 +630,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
 
-    while (executor.pull(block))
+    while (executor.pull(block, 0))
     {
         if (block.rows() == 0)
             continue;
@@ -1571,7 +1571,7 @@ void StorageWindowView::writeIntoWindowView(
     });
 
     auto executor = builder.execute();
-    executor->execute(builder.getNumThreads());
+    executor->execute(builder.getNumThreads(), local_context->getSettingsRef().max_threads_use_concurrency_control);
 }
 
 void StorageWindowView::startup()
