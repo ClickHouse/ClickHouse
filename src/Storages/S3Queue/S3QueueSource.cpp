@@ -7,51 +7,51 @@
 
 #if USE_AWS_S3
 
-#include <Common/isValidUTF8.h>
+#    include <Common/isValidUTF8.h>
 
-#include <Functions/FunctionsConversion.h>
+#    include <Functions/FunctionsConversion.h>
 
-#include <IO/S3/Requests.h>
-#include <IO/S3Common.h>
+#    include <IO/S3/Requests.h>
+#    include <IO/S3Common.h>
 
-#include <Interpreters/TreeRewriter.h>
+#    include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTInsertQuery.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTInsertQuery.h>
 
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/PartitionedSink.h>
-#include <Storages/ReadFromStorageProgress.h>
-#include <Storages/S3Queue/S3QueueSource.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageS3Settings.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/getVirtualsForStorage.h>
+#    include <Storages/NamedCollectionsHelpers.h>
+#    include <Storages/PartitionedSink.h>
+#    include <Storages/ReadFromStorageProgress.h>
+#    include <Storages/S3Queue/S3QueueSource.h>
+#    include <Storages/StorageS3.h>
+#    include <Storages/StorageS3Settings.h>
+#    include <Storages/VirtualColumnUtils.h>
+#    include <Storages/getVirtualsForStorage.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#    include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#    include <Disks/ObjectStorages/StoredObject.h>
 
-#include <IO/ReadBufferFromS3.h>
+#    include <IO/ReadBufferFromS3.h>
 
-#include <Formats/FormatFactory.h>
+#    include <Formats/FormatFactory.h>
 
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#    include <Processors/Formats/IInputFormat.h>
+#    include <Processors/Formats/IOutputFormat.h>
+#    include <Processors/Transforms/AddingDefaultsTransform.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeString.h>
 
-#include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Common/parseGlobs.h>
+#    include <Common/CurrentMetrics.h>
+#    include <Common/NamedCollections/NamedCollections.h>
+#    include <Common/parseGlobs.h>
 
-#include <filesystem>
-#include <Processors/ISource.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Pipe.h>
+#    include <filesystem>
+#    include <Processors/ISource.h>
+#    include <Processors/Sinks/SinkToStorage.h>
+#    include <QueryPipeline/Pipe.h>
 
 namespace fs = std::filesystem;
 
@@ -104,9 +104,11 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
+    UInt64 & max_poll_size_,
     StorageS3QueueSource::KeysWithInfo * read_keys_,
     const S3Settings::RequestSettings & request_settings_)
-    : bucket(globbed_uri_.bucket)
+    : max_poll_size(max_poll_size_)
+    , bucket(globbed_uri_.bucket)
     , glob_iterator(std::make_unique<StorageS3QueueSource::DisclosedGlobIterator>(
           client_, globbed_uri_, query, virtual_header, context, read_keys_, request_settings_))
 {
@@ -121,7 +123,8 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     }
 }
 
-Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file)
+Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
+    const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file)
 {
     for (KeyWithInfo val : keys_buf)
     {
@@ -131,11 +134,11 @@ Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(S3QueueMode & eng
             LOG_INFO(log, "Found in exclude keys {}", val.key);
             continue;
         }
-        if (engine_mode == S3QueueMode::ORDERED && full_path.compare(max_file) <= 0)
+        if ((engine_mode == S3QueueMode::ORDERED) && (full_path.compare(max_file) <= 0))
         {
             continue;
         }
-        if (processing_keys.size() < max_poll_size)
+        if ((processing_keys.size() < max_poll_size) || (engine_mode == S3QueueMode::ORDERED))
         {
             processing_keys.push_back(val);
         }
@@ -150,7 +153,11 @@ Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(S3QueueMode & eng
         std::sort(
             processing_keys.begin(),
             processing_keys.end(),
-            [](const KeyWithInfo & lhs, const KeyWithInfo & rhs) { return lhs.key < rhs.key; });
+            [](const KeyWithInfo & lhs, const KeyWithInfo & rhs) { return lhs.key.compare(rhs.key) < 0; });
+        if (processing_keys.size() > max_poll_size)
+        {
+            processing_keys.erase(processing_keys.begin() + max_poll_size, processing_keys.end());
+        }
     }
 
     Strings keys;
@@ -207,8 +214,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     std::shared_ptr<IIterator> file_iterator_,
     std::shared_ptr<S3QueueHolder> queue_holder_,
     const S3QueueAction & action_,
-    zkutil::ZooKeeperPtr current_zookeeper,
-    const String & zookeeper_path_,
     const size_t download_thread_num_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
@@ -228,8 +233,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     , file_iterator(file_iterator_)
     , action(action_)
     , download_thread_num(download_thread_num_)
-    , zookeeper(current_zookeeper)
-    , zookeeper_path(zookeeper_path_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3QReader"))
 {
