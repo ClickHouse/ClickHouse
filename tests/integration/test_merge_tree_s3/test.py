@@ -138,7 +138,7 @@ def clear_minio(cluster):
 
 def check_no_objects_after_drop(cluster, table_name="s3_test", node_name="node"):
     node = cluster.instances[node_name]
-    node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
     wait_for_delete_s3_objects(cluster, 0, timeout=0)
 
 
@@ -506,7 +506,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
-    node.query("DROP TABLE s3_clone NO DELAY")
+    node.query("DROP TABLE s3_clone SYNC")
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
 
@@ -528,7 +528,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
-    node.query("DROP TABLE s3_test NO DELAY")
+    node.query("DROP TABLE s3_test SYNC")
     # Backup data should remain in S3.
 
     wait_for_delete_s3_objects(
@@ -592,7 +592,7 @@ def test_freeze_system_unfreeze(cluster, node_name):
     node.query("TRUNCATE TABLE s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
-    node.query("DROP TABLE s3_test_removed NO DELAY")
+    node.query("DROP TABLE s3_test_removed SYNC")
     assert (
         len(list_objects(cluster, "data/"))
         == FILES_OVERHEAD
@@ -682,7 +682,7 @@ def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3';"
     )
@@ -698,7 +698,7 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
     )
@@ -753,7 +753,7 @@ def test_store_cleanup_disk_s3(cluster, node_name):
 def test_cache_setting_compatibility(cluster, node_name):
     node = cluster.instances[node_name]
 
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
 
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
