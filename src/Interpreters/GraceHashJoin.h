@@ -43,7 +43,6 @@ class HashJoin;
 class GraceHashJoin final : public IJoin
 {
     class FileBucket;
-    class NonJoinedBlocksStream;
     class DelayedBlocks;
     using InMemoryJoin = HashJoin;
 
