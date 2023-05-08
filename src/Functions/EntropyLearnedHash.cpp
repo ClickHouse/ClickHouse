@@ -11,7 +11,7 @@
 
 /// Implementation of entropy-learned hashing: https://dl.acm.org/doi/10.1145/3514221.3517894
 /// TODOs for future work:
-/// - allow to specify an arbitrary hash funtion (currently always CityHash is used)
+/// - allow to specify an arbitrary hash function (currently always CityHash is used)
 /// - allow function chaining a la entropyLearnedHash(trainEntropyLearnedHash())
 
 
