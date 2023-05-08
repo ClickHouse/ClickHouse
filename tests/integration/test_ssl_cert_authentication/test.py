@@ -167,9 +167,7 @@ def execute_query_https(
     retries = 10
     while True:
         try:
-            url = (
-            f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
-            )
+            url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
             request = urllib.request.Request(url)
             request.add_header("X-ClickHouse-User", user)
             if enable_ssl_auth:
