@@ -34,40 +34,37 @@ TraceCollector::~TraceCollector()
 {
     try
     {
-        if (!thread.joinable())
-            LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        if (thread.joinable())
+        {
+            /** Sends TraceCollector stop message
+            *
+            * Each sequence of data for TraceCollector thread starts with a boolean flag.
+            * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
+            * This function sends flag with a true value to stop TraceCollector gracefully.
+            */
+            WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
+            writeChar(true, out);
+            out.next();
+        }
         else
-            stop();
+            LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
+    }
 
+    try
+    {
         TraceSender::pipe.close();
     }
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
     }
-}
 
-
-/** Sends TraceCollector stop message
-  *
-  * Each sequence of data for TraceCollector thread starts with a boolean flag.
-  * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
-  * This function sends flag with a true value to stop TraceCollector gracefully.
-  */
-void TraceCollector::stop()
-{
-    try
-    {
-        WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
-        writeChar(true, out);
-        out.next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("TraceCollector");
-    }
-
-    thread.join();
+    if (thread.joinable())
+        thread.join();
 }
 
 
