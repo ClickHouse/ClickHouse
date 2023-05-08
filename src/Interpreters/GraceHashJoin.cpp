@@ -571,9 +571,10 @@ public:
                 if (!block)
                 {
                     is_left_reader_finished = true;
+                    return non_joined_blocks_iter.next();
                 }
             }
-            if (is_left_reader_finished && !block)
+            else
             {
                 return non_joined_blocks_iter.next();
             }
