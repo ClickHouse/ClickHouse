@@ -92,10 +92,9 @@ private:
         public:
             String bytes;
             const String query_id;
-            MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -106,18 +105,7 @@ private:
             std::atomic_bool finished = false;
         };
 
-        ~InsertData()
-        {
-            auto it = entries.begin();
-            // Entries must be destroyed in context of user who runs async insert.
-            // Each entry in the list may correspond to a different user,
-            // so we need to switch current thread's MemoryTracker parent on each iteration.
-            while (it != entries.end())
-            {
-                UserMemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
-                it = entries.erase(it);
-            }
-        }
+        ~InsertData() = default;
 
         using EntryPtr = std::shared_ptr<Entry>;
 

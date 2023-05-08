@@ -368,6 +368,23 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             level == VariableContext::Process ? this : query_tracker);
 }
 
+void MemoryTracker::adjustOnQueryEnd(const MemoryTracker * child)
+{
+    auto query_memory_consumption = child->amount.load(std::memory_order_relaxed);
+    amount.fetch_sub(query_memory_consumption, std::memory_order_relaxed);
+
+    // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::sub(metric_loaded, query_memory_consumption);
+
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
+        "Adjust memory tracker{} counter on the end of query by {}.",
+        (description ? " " + std::string(description) : ""),
+        ReadableSize(query_memory_consumption));
+}
+
 void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
     if (untracked_memory > 0)

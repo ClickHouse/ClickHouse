@@ -13,12 +13,6 @@ IInputFormat::IInputFormat(Block header, ReadBuffer * in_)
     column_mapping = std::make_shared<ColumnMapping>();
 }
 
-IInputFormat::~IInputFormat()
-{
-    LOG_DEBUG(&Poco::Logger::get("IInputFormat"), "InputFormat is being desctructed. It has {} owned buffer.", owned_buffers.size());
-    CurrentThread::getGroup()->memory_tracker.getParent()->logCurrentMemoryUsage();
-}
-
 void IInputFormat::resetParser()
 {
     chassert(in);

@@ -103,6 +103,12 @@ public:
 
     VariableContext level;
 
+    // After the execution some queries (i.e. inserts or background merges) can have non-zero memory counter on PROCESS level.
+    // This method is intended to fix the counter inside of USER level tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
+    void adjustOnQueryEnd(const MemoryTracker * child);
+
     void adjustWithUntrackedMemory(Int64 untracked_memory);
 
     Int64 get() const
