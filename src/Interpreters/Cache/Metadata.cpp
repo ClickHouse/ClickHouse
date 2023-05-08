@@ -299,7 +299,7 @@ LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
 
 LockedKey::~LockedKey()
 {
-    if (!key_metadata->empty())
+    if (!key_metadata->empty() || getKeyState() != KeyMetadata::KeyState::ACTIVE)
         return;
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
