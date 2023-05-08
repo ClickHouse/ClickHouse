@@ -10,7 +10,7 @@ namespace DB::S3
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {
     auto headers = Model::CopyObjectRequest::GetRequestSpecificHeaders();
-    if (provider_type != ProviderType::GCS)
+    if (api_mode != ApiMode::GCS)
         return headers;
 
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz

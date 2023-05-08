@@ -240,7 +240,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext
+class StorageS3 : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -366,6 +366,10 @@ private:
     bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const KeysWithInfo::const_iterator & begin,
