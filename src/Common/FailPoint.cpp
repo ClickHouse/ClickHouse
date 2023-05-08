@@ -2,6 +2,7 @@
 #include <Common/FailPoint.h>
 
 #include <boost/core/noncopyable.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -24,50 +25,38 @@ static struct InitFiu
 } init_fiu;
 #endif
 
-#define APPLY_FOR_FAILPOINTS_ONCE(M) \
-    M(rmt_commit_zk_fail_after_op)
-
-#define APPLY_FOR_FAILPOINTS(M) \
-    M(dummy_failpoint)
-
-#define APPLY_FOR_PAUSEABLE_FAILPOINTS_ONCE(M) \
-    M(dummy_pausable_failpoint_once)
-
-#define APPLY_FOR_PAUSEABLE_FAILPOINTS(M) \
-    M(dummy_pausable_failpoint)
+#define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
+    ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
+    REGULAR(dummy_failpoint) \
+    PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
+    PAUSEABLE(dummy_pausable_failpoint)
 
 namespace FailPoints
 {
 #define M(NAME) extern const char(NAME)[] = #NAME "";
-APPLY_FOR_FAILPOINTS_ONCE(M)
-APPLY_FOR_FAILPOINTS(M)
-APPLY_FOR_PAUSEABLE_FAILPOINTS_ONCE(M)
-APPLY_FOR_PAUSEABLE_FAILPOINTS(M)
+APPLY_FOR_FAILPOINTS(M, M, M, M)
 #undef M
 }
 
-std::unordered_map<String, std::any> FailPointHelper::fail_point_val;
-std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointHelper::fail_point_wait_channels;
+std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
+std::mutex FailPointInjection::mu;
 class FailPointChannel : private boost::noncopyable
 {
 public:
-    // wake up all waiting threads when destroy
-    ~FailPointChannel() { notifyAll(); }
-
     explicit FailPointChannel(UInt64 timeout_)
-        : timeout(timeout_)
+        : timeout_ms(timeout_)
     {}
     FailPointChannel()
-        : timeout(0)
+        : timeout_ms(0)
     {}
 
     void wait()
     {
         std::unique_lock lock(m);
-        if (timeout == 0)
+        if (timeout_ms == 0)
             cv.wait(lock);
         else
-            cv.wait_for(lock, std::chrono::seconds(timeout));
+            cv.wait_for(lock, std::chrono::milliseconds(timeout_ms));
     }
 
     void notifyAll()
@@ -77,95 +66,69 @@ public:
     }
 
 private:
-    UInt64 timeout;
+    UInt64 timeout_ms;
     std::mutex m;
     std::condition_variable cv;
 };
 
-void FailPointHelper::enablePauseFailPoint(const String & fail_point_name, UInt64 time)
+void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UInt64 time_ms)
 {
 #define SUB_M(NAME, flags)                                                                                  \
     if (fail_point_name == FailPoints::NAME)                                                                \
     {                                                                                                       \
         /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/ \
         fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                    \
-        fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>(time));   \
+        std::lock_guard lock(mu);                                                                           \
+        fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>(time_ms));   \
         return;                                                                                             \
     }
-
-#define M(NAME) SUB_M(NAME, FIU_ONETIME)
-    APPLY_FOR_PAUSEABLE_FAILPOINTS_ONCE(M)
-#undef M
-
-#define M(NAME) SUB_M(NAME, 0)
-    APPLY_FOR_PAUSEABLE_FAILPOINTS(M)
-#undef M
+#define ONCE(NAME)
+#define REGULAR(NAME)
+#define PAUSEABLE_ONCE(NAME) SUB_M(NAME, FIU_ONETIME)
+#define PAUSEABLE(NAME) SUB_M(NAME, 0)
+    APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE)
 #undef SUB_M
+#undef ONCE
+#undef REGULAR
+#undef PAUSEABLE_ONCE
+#undef PAUSEABLE
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
 }
 
-void FailPointHelper::enableFailPoint(const String & fail_point_name, std::optional<std::any> v)
+void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
 #if FIU_ENABLE
-#define SUB_M(NAME, flags)                                                                                  \
-    if (fail_point_name == FailPoints::NAME)                                                                \
-    {                                                                                                       \
-        /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/ \
-        fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                    \
-        if (v.has_value())                                                                                  \
-        {                                                                                                   \
-            fail_point_val.try_emplace(FailPoints::NAME, v.value());                                        \
-        }                                                                                                   \
-        return;                                                                                             \
+#define SUB_M(NAME, flags, pause)                                                                               \
+    if (fail_point_name == FailPoints::NAME)                                                                    \
+    {                                                                                                           \
+        /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/     \
+        fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                        \
+        if (pause)                                                                                               \
+        {                                                                                                       \
+            std::lock_guard lock(mu);                                                                           \
+            fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>());       \
+        }                                                                                                       \
+        return;                                                                                                 \
     }
-
-#define M(NAME) SUB_M(NAME, FIU_ONETIME)
-    APPLY_FOR_FAILPOINTS_ONCE(M)
-#undef M
-#define M(NAME) SUB_M(NAME, 0)
-    APPLY_FOR_FAILPOINTS(M)
-#undef M
+#define ONCE(NAME) SUB_M(NAME, FIU_ONETIME, 0)
+#define REGULAR(NAME) SUB_M(NAME, 0, 0)
+#define PAUSEABLE_ONCE(NAME) SUB_M(NAME, FIU_ONETIME, 1)
+#define PAUSEABLE(NAME) SUB_M(NAME, 0, 1)
+    APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE)
 #undef SUB_M
-
-#define SUB_M(NAME, flags)                                                                                  \
-    if (fail_point_name == FailPoints::NAME)                                                                \
-    {                                                                                                       \
-        /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/ \
-        fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                    \
-        fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>());       \
-        if (v.has_value())                                                                                  \
-        {                                                                                                   \
-            fail_point_val.try_emplace(FailPoints::NAME, v.value());                                        \
-        }                                                                                                   \
-        return;                                                                                             \
-    }
-
-#define M(NAME) SUB_M(NAME, FIU_ONETIME)
-    APPLY_FOR_PAUSEABLE_FAILPOINTS_ONCE(M)
-#undef M
-
-#define M(NAME) SUB_M(NAME, 0)
-    APPLY_FOR_PAUSEABLE_FAILPOINTS(M)
-#undef M
-#undef SUB_M
+#undef ONCE
+#undef REGULAR
+#undef PAUSEABLE_ONCE
+#undef PAUSEABLE
 
 #endif
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
 }
 
-std::optional<std::any>
-FailPointHelper::getFailPointVal(const String & fail_point_name)
+void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
-    if (auto iter = fail_point_val.find(fail_point_name); iter != fail_point_val.end())
-    {
-        return iter->second;
-    }
-    return std::nullopt;
-}
-
-void FailPointHelper::disableFailPoint(const String & fail_point_name)
-{
+    std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// can not rely on deconstruction to do the notify_all things, because
@@ -173,12 +136,12 @@ void FailPointHelper::disableFailPoint(const String & fail_point_name)
         iter->second->notifyAll();
         fail_point_wait_channels.erase(iter);
     }
-    fail_point_val.erase(fail_point_name);
     fiu_disable(fail_point_name.c_str());
 }
 
-void FailPointHelper::wait(const String & fail_point_name)
+void FailPointInjection::wait(const String & fail_point_name)
 {
+    std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter == fail_point_wait_channels.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
     else
@@ -186,6 +149,6 @@ void FailPointHelper::wait(const String & fail_point_name)
         auto ptr = iter->second;
         ptr->wait();
     }
-}
+};
 
 }

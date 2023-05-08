@@ -586,13 +586,13 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::ENABLE_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointHelper::enableFailPoint(query.fail_point_name);
+            FailPointInjection::enableFailPoint(query.fail_point_name);
             break;
         }
         case Type::DISABLE_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointHelper::disableFailPoint(query.fail_point_name);
+            FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
         default:

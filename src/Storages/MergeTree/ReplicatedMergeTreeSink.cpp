@@ -23,7 +23,7 @@ namespace DB
 
 namespace FailPoints
 {
-    extern const char rmt_commit_zk_fail_after_op[];
+    extern const char replicated_merge_tree_commit_zk_fail_after_op[];
 }
 
 namespace ErrorCodes
@@ -946,7 +946,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
         ThreadFuzzer::maybeInjectSleep();
 
-        fiu_do_on(FailPoints::rmt_commit_zk_fail_after_op,
+        fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op,
         {
             if (!zookeeper->fault_policy)
             {
