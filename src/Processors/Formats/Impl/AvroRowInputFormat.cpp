@@ -940,23 +940,18 @@ private:
                 {
                     Poco::Net::HTTPCredentials http_credentials;
                     Poco::Net::HTTPBasicCredentials http_basic_credentials;
-                    std::string decoded_username;
-                    std::string decoded_password;
 
                     http_credentials.fromUserInfo(url.getUserInfo());
 
+                    std::string decoded_username;
+                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                    http_basic_credentials.setUsername(decoded_username);
+
                     if (!http_credentials.getPassword().empty())
                     {
-                        Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                        std::string decoded_password;
                         Poco::URI::decode(http_credentials.getPassword(), decoded_password);
-
-                        http_basic_credentials.setUsername(decoded_username);
                         http_basic_credentials.setPassword(decoded_password);
-                    }
-                    else
-                    {
-                        Poco::URI::decode(http_credentials.getUsername(), decoded_username);
-                        http_basic_credentials.setUsername(decoded_username);
                     }
 
                     http_basic_credentials.authenticate(request);
