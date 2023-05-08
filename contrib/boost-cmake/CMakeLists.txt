@@ -167,15 +167,7 @@ endif()
 set (SRCS_FIBER
     "${LIBRARY_DIR}/libs/fiber/src/context.cpp"
     "${LIBRARY_DIR}/libs/fiber/src/fiber.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/barrier.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/condition_variable.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/future.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/mutex.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/properties.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/recursive_mutex.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/recursive_timed_mutex.cpp"
     "${LIBRARY_DIR}/libs/fiber/src/scheduler.cpp"
-    "${LIBRARY_DIR}/libs/fiber/src/timed_mutex.cpp"
     "${LIBRARY_DIR}/libs/fiber/src/waker.cpp"
     "${LIBRARY_DIR}/libs/fiber/src/algo/round_robin.cpp"
 )
