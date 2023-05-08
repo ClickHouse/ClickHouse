@@ -275,7 +275,7 @@ private:
     const String user_name;
 };
 
-REGISTER_FUNCTION(Hashing)
+REGISTER_FUNCTION(EntropyLearnedHash)
 {
     factory.registerFunction<FunctionTrainEntropyLearnedHash>();
     factory.registerFunction<FunctionEntropyLearnedHash>();
