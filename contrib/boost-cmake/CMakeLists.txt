@@ -151,6 +151,7 @@ add_library (_boost_context ${SRCS_CONTEXT})
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
+
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
 endif()
@@ -160,6 +161,28 @@ if (SANITIZE STREQUAL "address")
 elseif (SANITIZE STREQUAL "thread")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
 endif()
+
+# fiber
+
+set (SRCS_FIBER
+    "${LIBRARY_DIR}/libs/fiber/src/context.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/fiber.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/barrier.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/condition_variable.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/future.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/mutex.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/properties.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/recursive_mutex.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/recursive_timed_mutex.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/scheduler.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/timed_mutex.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/waker.cpp"
+    "${LIBRARY_DIR}/libs/fiber/src/algo/round_robin.cpp"
+)
+
+add_library (_boost_fiber ${SRCS_FIBER})
+add_library (boost::fiber ALIAS _boost_fiber)
+target_include_directories (_boost_fiber PRIVATE ${LIBRARY_DIR})
 
 # coroutine
 
