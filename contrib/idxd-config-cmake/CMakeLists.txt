@@ -1,17 +1,4 @@
 ## accel_config is the utility library required by QPL-Deflate codec for controlling and configuring Intel® In-Memory Analytics Accelerator (Intel® IAA).
-option(ENABLE_ACCEL_CONFIG "Enable accel-config library" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_QPL)
-    # Disable accel-config aligned with QPL.
-    set (ENABLE_ACCEL_CONFIG OFF)
-endif ()
-if (NOT ENABLE_ACCEL_CONFIG)
-    message(STATUS "Not using accel-config")
-    return()
-else()
-    message(STATUS "Enable accel-config")
-endif()
-
 set (LIBACCEL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/idxd-config")
 set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
 set (LIBACCEL_HEADER_DIR "${ClickHouse_SOURCE_DIR}/contrib/idxd-config-cmake/include")
