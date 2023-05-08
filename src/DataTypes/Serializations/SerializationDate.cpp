@@ -77,7 +77,7 @@ void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num,
 void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     DayNum value;
-    readCSV(value, istr);
+    readCSV(value, istr, time_zone);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
 }
 SerializationDate::SerializationDate(const TimezoneMixin & time_zone_) : TimezoneMixin(time_zone_)

@@ -760,14 +760,14 @@ inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
 template <typename ReturnType = void>
@@ -1160,7 +1160,7 @@ inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatTe
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(DayNum & x, ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readDateText(x, buf, time_zone); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 inline void readText(IPv4 & x, ReadBuffer & buf) { readIPv4Text(x, buf); }
@@ -1171,6 +1171,10 @@ inline void readText(IPv6 & x, ReadBuffer & buf) { readIPv6Text(x, buf); }
 template <typename T>
 requires is_arithmetic_v<T>
 inline void readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+
+template <typename T>
+requires is_arithmetic_v<T>
+inline void readQuoted(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readText(x, buf, time_zone); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
@@ -1214,6 +1218,10 @@ template <typename T>
 requires is_arithmetic_v<T>
 inline void readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
+template <typename T>
+    requires is_arithmetic_v<T>
+inline void readDoubleQuoted(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readText(x, buf, time_zone); }
+
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
@@ -1230,7 +1238,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
     assertChar('"', buf);
 }
 
-/// CSV, for numbers, dates: quotes are optional, no special escaping rules.
+/// CSV for numbers: quotes are optional, no special escaping rules.
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
@@ -1248,6 +1256,24 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
         assertChar(maybe_quote, buf);
 }
 
+// standalone overload for dates: to avoid instantiating DateLUTs while parsing other types
+template <typename T>
+inline void readCSVSimple(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone)
+{
+    if (buf.eof()) [[unlikely]]
+        throwReadAfterEOF();
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    readText(x, buf, time_zone);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, buf);
+}
+
 template <typename T>
 requires is_arithmetic_v<T>
 inline void readCSV(T & x, ReadBuffer & buf)
@@ -1257,7 +1283,7 @@ inline void readCSV(T & x, ReadBuffer & buf)
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(DayNum & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readCSVSimple(x, buf, time_zone); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(IPv4 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
