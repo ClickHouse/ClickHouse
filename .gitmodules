@@ -338,3 +338,6 @@
 [submodule "contrib/isa-l"]
 	path = contrib/isa-l
 	url = https://github.com/ClickHouse/isa-l.git
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/intel/idxd-config
