@@ -19,10 +19,6 @@ void BackupCoordinationLocal::setStage(const String &, const String &)
 {
 }
 
-void BackupCoordinationLocal::setStageForCluster(const String &)
-{
-}
-
 void BackupCoordinationLocal::setError(const Exception &)
 {
 }

@@ -368,7 +368,7 @@ void BackupsWorker::doBackup(
 
             /// Wait until all the hosts have written their backup entries.
             backup_coordination->waitForStage(Stage::COMPLETED);
-            backup_coordination->setStageForCluster(Stage::COMPLETED);
+            backup_coordination->setStage(Stage::COMPLETED);
         }
         else
         {
@@ -386,7 +386,7 @@ void BackupsWorker::doBackup(
             writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
-            backup_coordination->setStage(Stage::COMPLETED, "");
+            backup_coordination->setStage(Stage::COMPLETED);
         }
 
         size_t num_files = 0;
@@ -709,7 +709,7 @@ void BackupsWorker::doRestore(
 
             /// Wait until all the hosts have written their backup entries.
             restore_coordination->waitForStage(Stage::COMPLETED);
-            restore_coordination->setStageForCluster(Stage::COMPLETED);
+            restore_coordination->setStage(Stage::COMPLETED);
         }
         else
         {

@@ -18,8 +18,7 @@ public:
     virtual ~IRestoreCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & new_stage, const String & message) = 0;
-    virtual void setStageForCluster(const String & new_stage) = 0; /// Sets stage for cluster
+    virtual void setStage(const String & new_stage, const String & message = "") = 0;
     virtual void setError(const Exception & exception) = 0;
     virtual Strings waitForStage(const String & stage_to_wait) = 0;
     virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;

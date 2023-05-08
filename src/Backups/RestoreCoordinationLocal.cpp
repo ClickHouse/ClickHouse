@@ -15,10 +15,6 @@ void RestoreCoordinationLocal::setStage(const String &, const String &)
 {
 }
 
-void RestoreCoordinationLocal::setStageForCluster(const String &)
-{
-}
-
 void RestoreCoordinationLocal::setError(const Exception &)
 {
 }
