@@ -940,7 +940,8 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
                 {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
+                    auto set = column_set->getData();
+                    if (set && set->isCreated() && set->getTotalRowCount() == 0)
                         return true;
                 }
             }
@@ -1111,12 +1112,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

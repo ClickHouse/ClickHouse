@@ -203,7 +203,7 @@ def test_remove_table_from_replication(started_cluster):
     table_name = "postgresql_replica_4"
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
     result = instance.query_and_get_error(f"SELECT * FROM test_database.{table_name}")
-    assert "doesn't exist" in result
+    assert "UNKNOWN_TABLE" in result
 
     result = instance.query("SHOW TABLES FROM test_database")
     assert (
@@ -624,7 +624,7 @@ def test_table_override(started_cluster):
     time.sleep(5)
     query = f"select * from {materialized_database}.{table_name} order by key"
     expected = instance.query(f"select * from {table_name} order by key")
-    instance.query(f"drop table {table_name} no delay")
+    instance.query(f"drop table {table_name} sync")
     assert_eq_with_retry(instance, query, expected)
 
 

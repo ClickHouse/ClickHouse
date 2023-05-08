@@ -25,6 +25,13 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
+void CurrentThread::updatePerformanceCountersIfNeeded()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->updatePerformanceCountersIfNeeded();
+}
+
 bool CurrentThread::isInitialized()
 {
     return current_thread;
@@ -83,7 +90,7 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 }
 
 
-ThreadGroupStatusPtr CurrentThread::getGroup()
+ThreadGroupPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;
@@ -97,6 +104,25 @@ std::string_view CurrentThread::getQueryId()
         return {};
 
     return current_thread->getQueryId();
+}
+
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
+
+    return tracker;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->flushUntrackedMemory();
 }
 
 }

@@ -517,7 +517,7 @@ size_t HashJoin::getTotalByteCount() const
 
     res += data->blocks_allocated_size;
     res += data->blocks_nullmaps_allocated_size;
-    res += data->pool.size();
+    res += data->pool.allocatedBytes();
 
     if (data->type != Type::CROSS)
     {
@@ -1022,7 +1022,6 @@ private:
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
-
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
@@ -1049,7 +1048,6 @@ struct JoinFeatures
     static constexpr bool add_missing = (left || full) && !is_semi_join;
 
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS>::flagged;
-
 };
 
 template <bool multiple_disjuncts>
@@ -1203,7 +1201,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> jf;
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
     size_t rows = added_columns.rows_to_add;
     IColumn::Filter filter;
@@ -1212,7 +1210,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     Arena pool;
 
-    if constexpr (jf.need_replication)
+    if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
     IColumn::Offset current_offset = 0;
@@ -1243,7 +1241,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
             {
                 right_row_found = true;
                 auto & mapped = find_result.getMapped();
-                if constexpr (jf.is_asof_join)
+                if constexpr (join_features.is_asof_join)
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
@@ -1252,62 +1250,62 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)
-                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(row_ref.block, row_ref.row_num, 0);
+                            used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(row_ref.block, row_ref.row_num, 0);
                         else
-                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
+                            used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
 
-                        added_columns.appendFromBlock<jf.add_missing>(*row_ref.block, row_ref.row_num);
+                        added_columns.appendFromBlock<join_features.add_missing>(*row_ref.block, row_ref.row_num);
                     }
                     else
-                        addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);
+                        addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
                 }
-                else if constexpr (jf.is_all_join)
+                else if constexpr (join_features.is_all_join)
                 {
                     setUsed<need_filter>(filter, i);
-                    used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
-                    auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
-                    addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                    used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
+                    auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+                    addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                 }
-                else if constexpr ((jf.is_any_join || jf.is_semi_join) && jf.right)
+                else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
                 {
                     /// Use first appeared left key + it needs left columns replication
-                    bool used_once = used_flags.template setUsedOnce<jf.need_flags, multiple_disjuncts>(find_result);
+                    bool used_once = used_flags.template setUsedOnce<join_features.need_flags, multiple_disjuncts>(find_result);
                     if (used_once)
                     {
-                        auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
+                        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(filter, i);
-                        addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                     }
                 }
-                else if constexpr (jf.is_any_join && KIND == JoinKind::Inner)
+                else if constexpr (join_features.is_any_join && KIND == JoinKind::Inner)
                 {
-                    bool used_once = used_flags.template setUsedOnce<jf.need_flags, multiple_disjuncts>(find_result);
+                    bool used_once = used_flags.template setUsedOnce<join_features.need_flags, multiple_disjuncts>(find_result);
 
                     /// Use first appeared left key only
                     if (used_once)
                     {
                         setUsed<need_filter>(filter, i);
-                        added_columns.appendFromBlock<jf.add_missing>(*mapped.block, mapped.row_num);
+                        added_columns.appendFromBlock<join_features.add_missing>(*mapped.block, mapped.row_num);
                     }
 
                     break;
                 }
-                else if constexpr (jf.is_any_join && jf.full)
+                else if constexpr (join_features.is_any_join && join_features.full)
                 {
                     /// TODO
                 }
-                else if constexpr (jf.is_anti_join)
+                else if constexpr (join_features.is_anti_join)
                 {
-                    if constexpr (jf.right && jf.need_flags)
-                        used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
+                    if constexpr (join_features.right && join_features.need_flags)
+                        used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
                 }
                 else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
                 {
                     setUsed<need_filter>(filter, i);
-                    used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
-                    added_columns.appendFromBlock<jf.add_missing>(*mapped.block, mapped.row_num);
+                    used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
+                    added_columns.appendFromBlock<join_features.add_missing>(*mapped.block, mapped.row_num);
 
-                    if (jf.is_any_or_semi_join)
+                    if (join_features.is_any_or_semi_join)
                     {
                         break;
                     }
@@ -1319,9 +1317,9 @@ NO_INLINE IColumn::Filter joinRightColumns(
         {
             if (!right_row_found && null_element_found)
             {
-                addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);
+                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
 
-                if constexpr (jf.need_replication)
+                if constexpr (join_features.need_replication)
                 {
                    (*added_columns.offsets_to_replicate)[i] = current_offset;
                 }
@@ -1331,12 +1329,12 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
         if (!right_row_found)
         {
-            if constexpr (jf.is_anti_join && jf.left)
+            if constexpr (join_features.is_anti_join && join_features.left)
                 setUsed<need_filter>(filter, i);
-            addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);
+            addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
         }
 
-        if constexpr (jf.need_replication)
+        if constexpr (join_features.need_replication)
         {
            (*added_columns.offsets_to_replicate)[i] = current_offset;
         }
@@ -1442,7 +1440,7 @@ void HashJoin::joinBlockImpl(
     const std::vector<const Maps *> & maps_,
     bool is_join_get) const
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> jf;
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
     std::vector<JoinOnKeyColumns> join_on_keys;
     const auto & onexprs = table_join->getClauses();
@@ -1457,7 +1455,7 @@ void HashJoin::joinBlockImpl(
       * Because if they are constants, then in the "not joined" rows, they may have different values
       *  - default values, which can differ from the values of these constants.
       */
-    if constexpr (jf.right || jf.full)
+    if constexpr (join_features.right || join_features.full)
     {
         materializeBlockInplace(block);
     }
@@ -1473,11 +1471,11 @@ void HashJoin::joinBlockImpl(
         savedBlockSample(),
         *this,
         std::move(join_on_keys),
-        jf.is_asof_join,
+        join_features.is_asof_join,
         is_join_get);
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
-    added_columns.need_filter = jf.need_filter || has_required_right_keys;
+    added_columns.need_filter = join_features.need_filter || has_required_right_keys;
 
     IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
 
@@ -1486,7 +1484,7 @@ void HashJoin::joinBlockImpl(
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
-    if constexpr (jf.need_filter)
+    if constexpr (join_features.need_filter)
     {
         /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
@@ -1502,7 +1500,7 @@ void HashJoin::joinBlockImpl(
                 const auto & left_name = required_right_keys_sources[i];
 
                 /// asof column is already in block.
-                if (jf.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
                 const auto & col = block.getByName(left_name);
@@ -1534,7 +1532,7 @@ void HashJoin::joinBlockImpl(
                 const auto & left_name = required_right_keys_sources[i];
 
                 /// asof column is already in block.
-                if (jf.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
                 const auto & col = block.getByName(left_name);
@@ -1548,13 +1546,13 @@ void HashJoin::joinBlockImpl(
                 correctNullabilityInplace(right_col, is_nullable, null_map_filter);
                 block.insert(std::move(right_col));
 
-                if constexpr (jf.need_replication)
+                if constexpr (join_features.need_replication)
                     right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
             }
         }
     }
 
-    if constexpr (jf.need_replication)
+    if constexpr (join_features.need_replication)
     {
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
 

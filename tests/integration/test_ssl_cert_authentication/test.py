@@ -38,6 +38,116 @@ def started_cluster():
         cluster.shutdown()
 
 
+config = """<clickhouse>
+    <openSSL>
+        <client>
+            <verificationMode>none</verificationMode>
+
+            <certificateFile>{certificateFile}</certificateFile>
+            <privateKeyFile>{privateKeyFile}</privateKeyFile>
+            <caConfig>{caConfig}</caConfig>
+
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+
+def execute_query_native(node, query, user, cert_name, password=None):
+    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+
+    formatted = config.format(
+        certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
+        privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
+        caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
+    )
+
+    file = open(config_path, "w")
+    file.write(formatted)
+    file.close()
+
+    client = Client(
+        node.ip_address,
+        9440,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=config_path,
+    )
+
+    try:
+        result = client.query(query, user=user, password=password)
+        remove(config_path)
+        return result
+    except:
+        remove(config_path)
+        raise
+
+
+def test_native():
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client1"
+        )
+        == "john\n"
+    )
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="lucy", cert_name="client2"
+        )
+        == "lucy\n"
+    )
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="lucy", cert_name="client3"
+        )
+        == "lucy\n"
+    )
+
+
+def test_native_wrong_cert():
+    # Wrong certificate: different user's certificate
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client2"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+    # Wrong certificate: self-signed certificate.
+    # In this case clickhouse-client itself will throw an error
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="wrong"
+        )
+    assert "UNKNOWN_CA" in str(err.value)
+
+
+def test_native_fallback_to_password():
+    # Unrelated certificate, correct password
+    assert (
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="jane",
+            cert_name="client2",
+            password="qwe123",
+        )
+        == "jane\n"
+    )
+
+    # Unrelated certificate, wrong password
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="jane",
+            cert_name="client2",
+            password="wrong",
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+
 def get_ssl_context(cert_name):
     context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
@@ -69,54 +179,6 @@ def execute_query_https(
     return response.decode("utf-8")
 
 
-config = """<clickhouse>
-    <openSSL>
-        <client>
-            <verificationMode>none</verificationMode>
-
-            <certificateFile>{certificateFile}</certificateFile>
-            <privateKeyFile>{privateKeyFile}</privateKeyFile>
-            <caConfig>{caConfig}</caConfig>
-
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
-        </client>
-    </openSSL>
-</clickhouse>"""
-
-
-def execute_query_native(node, query, user, cert_name):
-
-    config_path = f"{SCRIPT_DIR}/configs/client.xml"
-
-    formatted = config.format(
-        certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
-        privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
-        caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
-    )
-
-    file = open(config_path, "w")
-    file.write(formatted)
-    file.close()
-
-    client = Client(
-        node.ip_address,
-        9440,
-        command=cluster.client_bin_path,
-        secure=True,
-        config=config_path,
-    )
-
-    try:
-        result = client.query(query, user=user)
-        remove(config_path)
-        return result
-    except:
-        remove(config_path)
-        raise
-
-
 def test_https():
     assert (
         execute_query_https("SELECT currentUser()", user="john", cert_name="client1")
@@ -128,27 +190,6 @@ def test_https():
     )
     assert (
         execute_query_https("SELECT currentUser()", user="lucy", cert_name="client3")
-        == "lucy\n"
-    )
-
-
-def test_native():
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="john", cert_name="client1"
-        )
-        == "john\n"
-    )
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="lucy", cert_name="client2"
-        )
-        == "lucy\n"
-    )
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="lucy", cert_name="client3"
-        )
         == "lucy\n"
     )
 
@@ -177,23 +218,6 @@ def test_https_wrong_cert():
             enable_ssl_auth=False,
             cert_name="client1",
         )
-
-
-def test_native_wrong_cert():
-    # Wrong certificate: different user's certificate
-    with pytest.raises(Exception) as err:
-        execute_query_native(
-            instance, "SELECT currentUser()", user="john", cert_name="client2"
-        )
-    assert "AUTHENTICATION_FAILED" in str(err.value)
-
-    # Wrong certificate: self-signed certificate.
-    # In this case clickhouse-client itself will throw an error
-    with pytest.raises(Exception) as err:
-        execute_query_native(
-            instance, "SELECT currentUser()", user="john", cert_name="wrong"
-        )
-    assert "UNKNOWN_CA" in str(err.value)
 
 
 def test_https_non_ssl_auth():

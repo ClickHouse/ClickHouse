@@ -90,7 +90,7 @@ Process 1 stopped
 
 ## Visual Studio Code integration
 
-- (CodeLLDB extension)[https://github.com/vadimcn/vscode-lldb] is required for visual debugging, the (Command Variable)[https://github.com/rioj7/command-variable] extension can help dynamic launches if using (cmake variants)[https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md].
+- [CodeLLDB extension](https://github.com/vadimcn/vscode-lldb) is required for visual debugging, the [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [cmake variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
 - Make sure to set the backend to your llvm installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
 - Launcher:
 ```json

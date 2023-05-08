@@ -121,7 +121,7 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
-    for (topic, e) in result.topic_error_codes:
+    for topic, e in result.topic_error_codes:
         if e == 0:
             logging.debug(f"Topic {topic} deleted")
         else:
@@ -917,9 +917,7 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["client_id"] = client_id
         member_info["client_host"] = client_host
         member_topics_assignment = []
-        for (topic, partitions) in MemberAssignment.decode(
-            member_assignment
-        ).assignment:
+        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
             member_topics_assignment.append({"topic": topic, "partitions": partitions})
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
@@ -1537,7 +1535,6 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
 
 def test_kafka_materialized_view(kafka_cluster):
-
     instance.query(
         """
         DROP TABLE IF EXISTS test.view;
@@ -2315,7 +2312,6 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2444,7 +2440,6 @@ def test_kafka_insert_avro(kafka_cluster):
 
 
 def test_kafka_produce_consume_avro(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -4031,7 +4026,6 @@ def test_kafka_predefined_configuration(kafka_cluster):
 
 # https://github.com/ClickHouse/ClickHouse/issues/26643
 def test_issue26643(kafka_cluster):
-
     # for backporting:
     # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
     admin_client = KafkaAdminClient(
@@ -4313,7 +4307,6 @@ def test_row_based_formats(kafka_cluster):
         "RowBinaryWithNamesAndTypes",
         "MsgPack",
     ]:
-
         print(format_name)
 
         kafka_create_topic(admin_client, format_name)
@@ -4438,7 +4431,6 @@ def test_block_based_formats_2(kafka_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-
         kafka_create_topic(admin_client, format_name)
 
         instance.query(
