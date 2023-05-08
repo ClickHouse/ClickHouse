@@ -215,6 +215,8 @@ public:
         }
     };
 
+
+
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
@@ -811,6 +813,8 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+
+    void sanityCheckSourcePartition(const ASTPtr & ast, MergeTreeData::DataPartsLock * acquired_lock = nullptr) const;
 
     struct HardlinkedFiles
     {

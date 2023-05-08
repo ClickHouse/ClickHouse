@@ -4587,6 +4587,67 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 }
 
+void MergeTreeData::sanityCheckSourcePartition(const ASTPtr & ast, DataPartsLock * acquired_lock) const
+{
+    const auto & partition_ast = ast->as<ASTPartition &>();
+
+    if (partition_ast.all)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only Support DETACH PARTITION ALL currently");
+
+    if (!partition_ast.value)
+    {
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
+
+        // re-think below return
+        return;
+    }
+
+    /// Re-parse partition key fields using the information about expected field types.
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    size_t fields_count = key_sample_block.columns();
+    if (partition_ast.fields_count != fields_count)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Wrong number of fields in the partition expression: {}, must be: {}",
+                        partition_ast.fields_count, fields_count);
+
+
+
+    // this one does not seem necessary, but well... not sure it's going to be harmful, because it would fail later if there are no arguments
+    if (fields_count == 0)
+    {
+        /// Function tuple(...) requires at least one argument, so empty key is a special case
+        assert(!partition_ast.fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
+        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
+        assert(partition_ast.value->as<ASTFunction>()->arguments);
+        auto args = partition_ast.value->as<ASTFunction>()->arguments;
+        if (!args)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
+        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        if (!empty_tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+    }
+
+
+    Row partition_row(fields_count);
+    MergeTreePartition partition(std::move(partition_row));
+    String partition_id = partition.getID(*this);
+
+    {
+        auto data_parts_lock = (acquired_lock) ? DataPartsLock() : lockParts();
+        DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
+        if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
+        {
+            WriteBufferFromOwnString buf;
+            partition.serializeText(*this, buf, FormatSettings{});
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
+                                                       "doesn't match partition value for an existing part with the same partition ID: {}",
+                            buf.str(), existing_part_in_partition->name);
+        }
+    }
+}
+
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
 {
@@ -4616,7 +4677,9 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                         throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DETACH PARTITION ALL currently");
                 }
                 else
-                    getPartitionIDFromQuery(command.partition, getContext());
+                {
+                    sanityCheckSourcePartition(command.partition);
+                }
             }
         }
     }
@@ -7027,6 +7090,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
+    if (src_snapshot->getColumnsRequiredForPartitionKey() != my_snapshot->getColumnsRequiredForPartitionKey())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different columns required for partition expression");
 
     return *src_data;
 }

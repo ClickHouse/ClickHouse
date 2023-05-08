@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Core/Field.h>
 
 namespace DB

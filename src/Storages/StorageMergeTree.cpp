@@ -48,6 +48,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <fmt/core.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
+#include <Storages/MergeTree/MergeTreePartitionGlobalMinMaxIdxCalculator.h>
 
 namespace DB
 {
@@ -1885,6 +1888,12 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     String partition_id = src_data.getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+
+    // TODO should this error out instead?
+    /// ATTACH empty part set
+    if (!replace && src_parts.empty())
+        return;
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -1896,6 +1905,18 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     };
 
     const auto is_partition_exp_different = query_to_string(my_metadata_snapshot->getPartitionKeyAST()) != query_to_string(source_metadata_snapshot->getPartitionKeyAST());
+
+    if (is_partition_exp_different)
+    {
+        auto [src_min_idx, src_max_idx] = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts);
+
+        if (src_min_idx.isNull() || src_max_idx.isNull())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "min_max_idx should never be null if part exist");
+        }
+
+        MergeTreePartitionCompatibilityVerifier::verify(src_data, src_min_idx, src_max_idx, my_metadata_snapshot, getContext());
+    }
 
     for (DataPartPtr & src_part : src_parts)
     {
@@ -1909,11 +1930,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
             IMergeTreeDataPart::MinMaxIndex min_max_index;
 
-            min_max_index.load(src_part->storage, metadata_manager);
+            min_max_index.load(src_data, metadata_manager);
 
             MergeTreePartition new_partition;
 
-            new_partition.createAndValidateMinMaxPartitionIds(my_metadata_snapshot, min_max_index.getBlock(src_part->storage), getContext());
+            new_partition.create(my_metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
 
             /// This will generate unique name in scope of current server process.
             Int64 temp_index = insert_increment.get();
@@ -1938,10 +1959,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
     }
-
-    /// ATTACH empty part set
-    if (!replace && dst_parts.empty())
-        return;
 
     MergeTreePartInfo drop_range;
     if (replace)
