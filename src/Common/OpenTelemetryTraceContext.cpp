@@ -16,7 +16,7 @@ namespace OpenTelemetry
 static TracingContextOnThread & getCurrentThreadTraceContext()
 {
     static boost::fibers::fiber_specific_ptr<TracingContextOnThread> current_thread_trace_context;
-    
+
     auto * ptr = current_thread_trace_context.get();
     if (unlikely(!ptr))
     {
@@ -421,8 +421,6 @@ TracingContextHolder::~TracingContextHolder()
     {
         getCurrentThreadTraceContext().span_id = this->root_span.parent_span_id;
     }
-
-
 }
 
 }
