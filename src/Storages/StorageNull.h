@@ -2,11 +2,11 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
-
+#include <mutex>
+#include <condition_variable>
 namespace DB
 {
 
@@ -15,6 +15,7 @@ namespace DB
   */
 class StorageNull final : public IStorage
 {
+friend class NullSource;
 public:
     StorageNull(
         const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
@@ -25,29 +26,30 @@ public:
         storage_metadata.setConstraints(constraints_);
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
+
+        blocks_ptr = std::make_shared<BlocksPtr>();
     }
+    ~StorageNull() override;
+    void drop() override;
+    void shutdown() override;
+    bool getNewBlocks();
+    void refresh(bool grab_lock = true);
 
     std::string getName() const override { return "Null"; }
 
     Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        return Pipe(
-            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
-    }
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams) override;
+
 
     bool supportsParallelInsert() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
-    {
-        return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
-    }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -61,6 +63,12 @@ public:
     {
         return {0};
     }
+private:
+    std::atomic<bool> shutdown_called = false;
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool is_stream_{false};
+    std::shared_ptr<BlocksPtr> blocks_ptr;
 
 };
 

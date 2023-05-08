@@ -18,7 +18,7 @@ limitations under the License. */
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -54,6 +54,7 @@ BlockIO InterpreterWatchQuery::execute()
 
 QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
 {
+    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterWatchQuery");
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 

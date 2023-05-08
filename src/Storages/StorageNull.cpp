@@ -1,13 +1,16 @@
 #include <Storages/StorageNull.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
-
+#include <Storages/SelectQueryInfo.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
-
+#include <Processors/Sources/NullSource.h>
 #include <IO/WriteHelpers.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -19,11 +22,99 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
+void StorageNull::shutdown()
+{
+    shutdown_called = true;
+}
+
+
+StorageNull::~StorageNull()
+{
+    shutdown();
+}
+
+void StorageNull::drop()
+{
+    std::lock_guard lock(mutex);
+    condition.notify_all();
+}
+bool StorageNull::getNewBlocks()
+{
+    BlocksPtr new_blocks = std::make_shared<Blocks>();
+    // for (int i = 0; i < 1; ++i) {
+    //     Block block;
+    //     new_blocks->push_back(block);
+    // }
+    (*blocks_ptr) = new_blocks;
+    return true;
+}
+
+void StorageNull::refresh(bool grab_lock)
+{
+
+    if (grab_lock)
+    {
+        std::lock_guard lock(mutex);
+        if (getNewBlocks())
+            condition.notify_all();
+    }
+    else
+    {
+        if (getNewBlocks())
+            condition.notify_all();
+    }
+}
+
+Pipe StorageNull::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr /*context*/,
+    QueryProcessingStage::Enum /*processing_stage*/,
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
+{
+    SelectQueryInfo modified_query_info = query_info;
+    modified_query_info.query = query_info.query->clone();
+    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+    if (modified_select.is_stream) {
+        if (!(*blocks_ptr))
+            refresh(false);
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM");
+        return Pipe(
+        std::make_shared<NullSource>(
+            storage_snapshot->getSampleBlockForColumns(column_names),
+        std::static_pointer_cast<StorageNull>(shared_from_this()), blocks_ptr));
+    } else {
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "NOT STREAM");
+    }
+    return Pipe(
+            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+}
+
+SinkToStoragePtr StorageNull::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+{
+    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
+    bool is_stream = insert_query && insert_query->is_stream;
+    if (is_stream) {
+        BlocksPtr new_blocks = std::make_shared<Blocks>();
+        Block block;
+        block.insert({DataTypeUInt64().createColumnConst(
+            block.rows(), 1)->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt64>(),
+            "_version"});
+        new_blocks->push_back(block);
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM INSERT");
+        (*blocks_ptr) = new_blocks;
+    }
+    return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+}
 
 void registerStorageNull(StorageFactory & factory)
 {
     factory.registerStorage("Null", [](const StorageFactory::Arguments & args)
     {
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM");
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());

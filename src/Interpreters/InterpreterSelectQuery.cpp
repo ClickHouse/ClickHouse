@@ -94,7 +94,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
-
+#include <Common/logger_useful.h>
 #include "config_version.h"
 
 namespace DB
@@ -2344,6 +2344,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterSelectQuery");
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)

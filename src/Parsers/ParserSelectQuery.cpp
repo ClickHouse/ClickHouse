@@ -65,6 +65,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_first("FIRST");
     ParserKeyword s_next("NEXT");
     ParserKeyword s_interpolate("INTERPOLATE");
+    ParserKeyword s_stream("STREAM");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -106,6 +107,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (with_expression_list->children.empty())
                 return false;
         }
+    }
+
+    if (s_stream.ignore(pos, expected)) {
+        select_query->is_stream = true;
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
