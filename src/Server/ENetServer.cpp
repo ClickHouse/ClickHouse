@@ -18,6 +18,8 @@
 
 #if USE_ENET
 
+#include <random>
+
 #include <enet.h>
 
 namespace DB
@@ -39,7 +41,7 @@ void ENetServer::start()
     {
         throw 1;
     }
-    logger = &Poco::Logger::get("enet");
+    logger = &Poco::Logger::get("ENetReplication");
     _stopped = false;
 
     enet_address_set_host(&address, host.c_str());
@@ -86,6 +88,18 @@ void ENetServer::run()
 
                         enet_packet_destroy (event.packet);
 
+                        // Testing for client-side in case of packet 'drop'
+                        /*std::random_device rd;
+                        std::mt19937 gen(rd());
+                        std::uniform_int_distribution<> distr(1, 100);
+
+                        auto r = distr(gen);
+                        LOG_INFO(logger, "ENet random drop {}", r);
+                        if (r < 50)
+                        {
+                            break;
+                        }*/
+
                         auto endpoint_name = pck.get("endpoint");
 
                         bool compress = pck.get("compress") == "true";
@@ -122,11 +136,7 @@ void ENetServer::run()
 
                         response_str += "\r" + out.res();
 
-                        unsigned char response_cstr[response_str.size()];
-
-                        std::copy(response_str.cbegin(), response_str.cend(), response_cstr);
-
-                        ENetPacket * resp = enet_packet_create (response_cstr,
+                        ENetPacket * resp = enet_packet_create (response_str.data(),
                                             response_str.size() + 1,
                                             ENET_PACKET_FLAG_RELIABLE);
 

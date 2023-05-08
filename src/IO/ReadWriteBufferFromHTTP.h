@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+    extern const int ABORTED;
 }
 
 template <typename TSessionFactory>
@@ -270,9 +271,11 @@ namespace detail
 
                     UDPReplicationPack resp;
 
-                    std::string data;
+                    std::string data = "";
 
-                    while (enet_host_service(client, &event, 1000) > 0)
+                    bool received_resp = false;
+
+                    while (enet_host_service(client, &event, 1000) > 0 && !received_resp)
                     {
                         switch (event.type)
                         {
@@ -283,18 +286,26 @@ namespace detail
                                     {
                                         response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
                                         enet_deinitialize();
-                                        throw 1;
+                                        throw Exception(ErrorCodes::ABORTED, "Received no data from peer");
                                     }
                                     data = resp.deserialize(reinterpret_cast<char*>(event.packet->data), event.packet->dataLength);
                                     response.setVersion("HTTP/1.1");
                                     response.set("Keep-Alive", "timeout=3");
-                                    LOG_INFO(log, "ENET RECEIVED \n{}", data);
+                                    LOG_INFO(log, "ENET RECEIVED");
                                     enet_packet_destroy(event.packet);
+                                    received_resp = true;
                                 }
                                 break;
                             default:
                                 break;
                         }
+                    }
+
+                    if (data.size() == 0)
+                    {
+                        response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                        enet_peer_disconnect(peer, 0);
+                        throw Exception(ErrorCodes::ABORTED, "Received no data from peer");
                     }
 
                     for (auto [key, value]: resp.data)
