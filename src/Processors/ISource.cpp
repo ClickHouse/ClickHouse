@@ -72,7 +72,7 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
-    if (finished && read_progress.read_bytes == 0 && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
+    if (finished && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
         return {};
 
     ReadProgressCounters res_progress;
@@ -124,7 +124,7 @@ std::optional<Chunk> ISource::tryGenerate()
 {
     auto chunk = generate();
     if (!chunk)
-        return {};
+        return std::nullopt;
 
     return chunk;
 }

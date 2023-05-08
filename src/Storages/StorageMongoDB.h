@@ -3,7 +3,6 @@
 #include <Poco/MongoDB/Connection.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {

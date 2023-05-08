@@ -18,6 +18,7 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -28,6 +29,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -123,6 +125,12 @@ namespace ProfileEvents
     extern const Event DistributedRejectedInserts;
     extern const Event DistributedDelayedInserts;
     extern const Event DistributedDelayedInsertsMilliseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageDistributedThreads;
+    extern const Metric StorageDistributedThreadsActive;
 }
 
 namespace DB
@@ -1020,6 +1028,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
+    removeGroupingFunctionSpecializations(query_tree_to_modify);
+
     return query_tree_to_modify;
 }
 
@@ -1263,7 +1273,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, Block{}, query_context);
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
@@ -1331,7 +1341,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 QueryProcessingStage::Complete,
                 extension);
 
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
@@ -1391,7 +1401,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    auto name_deps = getDependentViewsByColumn(local_context);
+    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1403,7 +1413,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
 
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
-            const auto & deps_mv = name_deps[command.column_name];
+            if (!name_deps)
+                name_deps = getDependentViewsByColumn(local_context);
+            const auto & deps_mv = name_deps.value()[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -1433,7 +1445,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
 
     for (const DiskPtr & disk : disks)
     {

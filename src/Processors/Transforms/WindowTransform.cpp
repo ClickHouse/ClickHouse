@@ -44,6 +44,8 @@ public:
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) = 0;
+
+    virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -221,6 +223,15 @@ WindowTransform::WindowTransform(const Block & input_header_,
 
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
+
+        /// Some functions may have non-standard default frame.
+        /// Use it if it's the only function over the current window.
+        if (window_description.frame.is_default && functions.size() == 1 && workspace.window_function_impl)
+        {
+            auto custom_default_frame = workspace.window_function_impl->getDefaultFrame();
+            if (custom_default_frame)
+                window_description.frame = *custom_default_frame;
+        }
 
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
@@ -1977,17 +1988,22 @@ struct WindowFunctionNtile final : public WindowFunction
         : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one parameter", name_);
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one argument", name_);
+
         auto type_id = argument_types[0]->getTypeId();
-        if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument type must be an unsigned integer (not larger then 64-bit), but got {}", argument_types[0]->getName());
-        }
+        if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' argument type must be an unsigned integer (not larger than 64-bit), got {}", name_, argument_types[0]->getName());
     }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        return frame;
+    }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1999,7 +2015,7 @@ struct WindowFunctionNtile final : public WindowFunction
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
             if (!isColumnConst(arg_col))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be a constant");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
                 buckets = arg_col[transform->current_row.row].get<UInt8>();
@@ -2012,7 +2028,7 @@ struct WindowFunctionNtile final : public WindowFunction
 
             if (!buckets)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' funtcion must be greater than zero");
             }
         }
         // new partition
@@ -2090,22 +2106,16 @@ private:
     static void checkWindowFrameType(const WindowTransform * transform)
     {
         if (transform->order_by_indices.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
-        if (transform->window_description.frame.type != WindowFrame::FrameType::ROWS)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be ROWS");
-        }
-        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be UNBOUNDED PRECEDING");
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for 'ntile' function must have ORDER BY clause");
 
-        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        // We must wait all for the partition end and get the total rows number in this
+        // partition. So before the end of this partition, there is no any block could be
+        // dropped out.
+        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
+        if (!is_frame_supported)
         {
-            // We must wait all for the partition end and get the total rows number in this
-            // partition. So before the end of this partition, there is no any block could be
-            // dropped out.
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be UNBOUNDED FOLLOWING");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function 'ntile' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
         }
     }
 };

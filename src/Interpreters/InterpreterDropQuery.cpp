@@ -282,11 +282,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
-                table->flushAndShutdown();
-                auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-                /// Delete table data
-                table->drop();
-                table->is_dropped = true;
             }
             else if (kind == ASTDropQuery::Kind::Detach)
             {
@@ -360,19 +355,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
                 /// see DatabaseMaterializedMySQL::getTablesIterator()
-                for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-                {
-                    iterator->table()->flush();
-                }
-
                 auto table_context = Context::createCopy(getContext());
                 table_context->setInternalQuery(true);
+                /// Do not hold extra shared pointers to tables
+                std::vector<std::pair<String, bool>> tables_to_drop;
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
+                    iterator->table()->flush();
+                    tables_to_drop.push_back({iterator->name(), iterator->table()->isDictionary()});
+                }
+
+                for (const auto & table : tables_to_drop)
+                {
+                    query_for_table.setTable(table.first);
+                    query_for_table.is_dictionary = table.second;
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
-                    query_for_table.setTable(iterator->name());
-                    query_for_table.is_dictionary = iterator->table()->isDictionary();
                     executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }
@@ -433,7 +431,8 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     return required_access;
 }
 
-void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
+void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
@@ -450,6 +449,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+        if (ignore_sync_setting)
+            drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
