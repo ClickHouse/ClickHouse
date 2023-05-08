@@ -10,6 +10,8 @@
 #include <Interpreters/Context.h>
 
 /// Implementation of entropy-learned hashing: https://doi.org/10.1145/3514221.3517894
+/// If you change something in this file, please don't deviate too much from the pseudocode in the paper!
+
 /// TODOs for future work:
 /// - allow to specify an arbitrary hash function (currently always CityHash is used)
 /// - allow function chaining a la entropyLearnedHash(trainEntropyLearnedHash())
@@ -61,23 +63,24 @@ bool allPartialKeysAreUnique(const std::vector<Key> & data, const PartialKeyPosi
 }
 
 // NextByte returns position of byte which adds the most entropy and the new entropy
-std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len, std::vector<size_t> & chosen_bytes)
+std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len, PartialKeyPositions & partial_key_positions)
 {
     size_t min_collisions = std::numeric_limits<size_t>::max();
     size_t best_position = 0;
 
     std::unordered_map<Key, size_t> count_table;
     Key partial_key;
+
     for (size_t i = 0; i < max_len; ++i)
     {
         count_table.clear();
         count_table.reserve(keys.size());
 
-        chosen_bytes.push_back(i);
+        partial_key_positions.push_back(i);
         size_t collisions = 0;
         for (const auto & key : keys)
         {
-            getPartialKey(key, chosen_bytes, partial_key);
+            getPartialKey(key, partial_key_positions, partial_key);
             collisions += count_table[partial_key]++;
         }
 
@@ -86,18 +89,19 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
             min_collisions = collisions;
             best_position = i;
         }
-        chosen_bytes.pop_back();
+        partial_key_positions.pop_back();
     }
+
     return {best_position, min_collisions};
 }
 
-// std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, std::vector<size_t> & chosen_bytes)
+// std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, PartialKeyPositions & partial_key_positions)
 // {
 //     size_t max_len = 0;
 //     for (const auto & key : keys)
 //         max_len = std::max(max_len, key.size());
 
-//     return nextByte(keys, max_len, chosen_bytes);
+//     return nextByte(keys, max_len, partial_key_positions);
 // }
 
 std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<Key> & train_data)
