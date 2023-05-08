@@ -1,6 +1,6 @@
-#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
+#include <Storages/KeyDescriptionMonotonicityChecker.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/ASTFunctionMonotonicityChecker.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 
 namespace DB
 {
@@ -39,36 +39,40 @@ namespace
     }
 }
 
-void MergeTreePartitionCompatibilityVerifier::verify(const MergeTreeData & storage, Field min_idx, Field max_idx, const StorageMetadataPtr & metadata, ContextPtr context)
+void MergeTreePartitionCompatibilityVerifier::verify(
+    const SourceTableInfo & source_table_info,
+    const StorageMetadataPtr & destination_table_metadata,
+    ContextPtr context
+)
 {
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(min_idx, max_idx, metadata, context))
+    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(source_table_info, destination_table_metadata, context))
     {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(storage, min_idx, max_idx, metadata, context);
+    validatePartitionIds(source_table_info, destination_table_metadata, context);
 }
 
 bool MergeTreePartitionCompatibilityVerifier::isDestinationPartitionExpressionMonotonicallyIncreasing(
-    Field min,
-    Field max,
-    const StorageMetadataPtr & metadata,
-    ContextPtr context)
+    const SourceTableInfo & source_table_info,
+    const StorageMetadataPtr & destination_table_metadata,
+    ContextPtr context
+)
 {
-    auto monotonicity_info = ASTFunctionMonotonicityChecker::getMonotonicityInfo(metadata->getPartitionKey(), Range(min, true, max, true), context);
+    auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
+
+    auto monotonicity_info = KeyDescriptionMonotonicityChecker::getMonotonicityInfo(destination_table_metadata->getPartitionKey(), range, context);
 
     return monotonicity_info.is_monotonic && monotonicity_info.is_positive;
 }
 
 void MergeTreePartitionCompatibilityVerifier::validatePartitionIds(
-    const MergeTreeData & storage,
-    Field min_idx,
-    Field max_idx,
+    const SourceTableInfo & source_table_info,
     const StorageMetadataPtr & metadata,
     ContextPtr context
 )
 {
-    auto block_with_min_and_max_idx = buildBlockWithMinAndMaxIdx(storage, min_idx, max_idx);
+    auto block_with_min_and_max_idx = buildBlockWithMinAndMaxIdx(source_table_info.storage, source_table_info.min_idx, source_table_info.max_idx);
 
     MergeTreePartition().createAndValidateMinMaxPartitionIds(metadata, block_with_min_and_max_idx, context);
 }

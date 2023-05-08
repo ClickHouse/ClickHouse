@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class ASTFunctionMonotonicityChecker
+class KeyDescriptionMonotonicityChecker
 {
 public:
     static IFunction::Monotonicity getMonotonicityInfo(const KeyDescription & key_description, const Range & range, ContextPtr context);

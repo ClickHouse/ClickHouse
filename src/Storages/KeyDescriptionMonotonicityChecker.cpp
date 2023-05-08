@@ -1,4 +1,4 @@
-#include "ASTFunctionMonotonicityChecker.h"
+#include "KeyDescriptionMonotonicityChecker.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -150,7 +150,8 @@ namespace
     }
 }
 
-IFunction::Monotonicity ASTFunctionMonotonicityChecker::getMonotonicityInfo(
+IFunction::Monotonicity
+KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
     const KeyDescription & key_description,
     const Range & range,
     ContextPtr context
@@ -219,7 +220,7 @@ IFunction::Monotonicity ASTFunctionMonotonicityChecker::getMonotonicityInfo(
     return applyMonotonicFunctionsChainToRange(range, functions, key_column_type);
 }
 
-std::vector<RPNBuilderFunctionTreeNode> ASTFunctionMonotonicityChecker::buildFunctionList(const KeyDescription & key_description,
+std::vector<RPNBuilderFunctionTreeNode> KeyDescriptionMonotonicityChecker::buildFunctionList(const KeyDescription & key_description,
                                                                                           DataTypePtr & key_expr_type,
                                                                                           ContextPtr context)
 {

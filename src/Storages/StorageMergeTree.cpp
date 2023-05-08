@@ -1915,7 +1915,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "min_max_idx should never be null if part exist");
         }
 
-        MergeTreePartitionCompatibilityVerifier::verify(src_data, src_min_idx, src_max_idx, my_metadata_snapshot, getContext());
+        auto source_table_info = MergeTreePartitionCompatibilityVerifier::SourceTableInfo {src_data, src_min_idx, src_max_idx};
+        MergeTreePartitionCompatibilityVerifier::verify(source_table_info, my_metadata_snapshot, getContext());
     }
 
     for (DataPartPtr & src_part : src_parts)

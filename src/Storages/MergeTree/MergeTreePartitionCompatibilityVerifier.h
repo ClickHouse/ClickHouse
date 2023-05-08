@@ -20,25 +20,24 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    /*
-     * // TODO IMPROVE DOCS
-     * parameters a bit confusing, but here's the breakdown:
-     *  storage - storage containing source table info
-     *  min/max idx - source global min_max idx
-     *  metadata - destination table metadata
-     * */
-    static void verify(const MergeTreeData & storage, Field min_idx, Field max_idx, const StorageMetadataPtr & metadata, ContextPtr context);
+    struct SourceTableInfo
+    {
+        const MergeTreeData & storage;
+        const Field & min_idx;
+        const Field & max_idx;
+    };
+
+    static void verify(const SourceTableInfo & source_table_info, const StorageMetadataPtr & destination_table_metadata, ContextPtr context);
 
 private:
-    static bool isDestinationPartitionExpressionMonotonicallyIncreasing(Field min,
-                                                          Field max,
-                                                          const StorageMetadataPtr & metadata,
-                                                          ContextPtr context);
+    static bool isDestinationPartitionExpressionMonotonicallyIncreasing(
+        const SourceTableInfo & source_table_info,
+        const StorageMetadataPtr & destination_table_metadata,
+        ContextPtr context
+    );
 
     static void validatePartitionIds(
-        const MergeTreeData & storage,
-        Field min,
-        Field max,
+        const SourceTableInfo & source_table_info,
         const StorageMetadataPtr & metadata,
         ContextPtr context
     );
