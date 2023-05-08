@@ -116,7 +116,7 @@ The column description can specify a default value expression in the form of `DE
 
 The expression `expr` is optional. If it is omitted, the column type must be specified explicitly and the default value will be `0` for numeric columns, `''` (the empty string) for string columns, `[]` (the empty array) for array columns, `1970-01-01` for date columns, or `NULL` for nullable columns.
 
-The column type of a default value column can be omitted in which case it is infered from `expr`'s type. For example the type of column `EventDate DEFAULT toDate(EventTime)` will be date.
+The column type of a default value column can be omitted in which case it is inferred from `expr`'s type. For example the type of column `EventDate DEFAULT toDate(EventTime)` will be date.
 
 If both a data type and a default value expression are specified, an implicit type casting function inserted which converts the expression to the specified type. Example: `Hits UInt32 DEFAULT 0` is internally represented as `Hits UInt32 DEFAULT toUInt32(0)`.
 
@@ -285,7 +285,7 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-:::warning
+:::tip
 You can't combine both ways in one query.
 :::
 
@@ -313,7 +313,9 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs
 
-By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+
+For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
 
 You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -341,16 +343,16 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-:::warning
+:::tip
 You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 :::
 
 Compression is supported for the following table engines:
 
--   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) settings.
--   [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
--   [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
--   [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) settings.
+- [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
+- [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
 
 ClickHouse supports general purpose codecs and specialized codecs.
 
@@ -378,10 +380,10 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
 
--   DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
--   DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions
--   DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device
--   DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with support for AVX2/AVX512
+- DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
+- DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions. Refer to [Build Clickhouse with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Build-Clickhouse-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Run-Benchmark-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with support for AVX2/AVX512
 
 ### Specialized Codecs
 
@@ -393,15 +395,15 @@ These codecs are designed to make compression more effective by using specific f
 
 #### DoubleDelta
 
-`DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
 #### Gorilla
 
-`Gorilla` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+`Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
 #### FPC
 
-`FPC` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+`FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it’s 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
 #### T64
 
@@ -436,11 +438,11 @@ Encryption codecs:
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
 
-:::warning
+:::note
 Most engines including the "\*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
 :::
 
-:::warning
+:::note
 If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
 :::
 
@@ -472,12 +474,12 @@ ENGINE = MergeTree ORDER BY x;
 
 ClickHouse supports temporary tables which have the following characteristics:
 
--   Temporary tables disappear when the session ends, including if the connection is lost.
--   A temporary table uses the Memory engine only.
--   The DB can’t be specified for a temporary table. It is created outside of databases.
--   Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
--   If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
--   For distributed query processing, temporary tables used in a query are passed to remote servers.
+- Temporary tables disappear when the session ends, including if the connection is lost.
+- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+- The DB can’t be specified for a temporary table. It is created outside of databases.
+- Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
+- If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
+- For distributed query processing, temporary tables used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 
@@ -487,7 +489,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-)
+) [ENGINE = engine]
 ```
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections

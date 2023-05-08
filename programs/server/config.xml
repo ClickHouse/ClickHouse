@@ -476,6 +476,14 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', 'double_sha1_password', 'bcrypt_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
+    <!-- Work factor for bcrypt_password authentication type-->
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>
@@ -703,6 +711,9 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+
+        <!-- Number of seconds since last access a role is stored in the Role Cache -->
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
@@ -1288,6 +1299,10 @@
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 
+    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
+     If not specified they will be stored locally. -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
@@ -1510,10 +1525,10 @@
 
     <!-- Configuration for the query cache -->
     <!-- <query_cache> -->
-    <!--     <size>1073741824</size> -->
+    <!--     <max_size_in_bytes>1073741824</max_size_in_bytes> -->
     <!--     <max_entries>1024</max_entries> -->
-    <!--     <max_entry_size>1048576</max_entry_size> -->
-    <!--     <max_entry_rows>30000000</max_entry_rows> -->
+    <!--     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes> -->
+    <!--     <max_entry_size_in_rows>30000000</max_entry_size_in_rows> -->
     <!-- </query_cache> -->
 
     <!-- Uncomment if enable merge tree metadata cache -->

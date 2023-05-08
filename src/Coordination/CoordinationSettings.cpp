@@ -140,6 +140,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
+    writeText("max_requests_batch_bytes_size=", buf);
+    write_int(coordination_settings->max_requests_batch_bytes_size);
     writeText("max_request_queue_size=", buf);
     write_int(coordination_settings->max_request_queue_size);
     writeText("max_requests_quick_batch_size=", buf);

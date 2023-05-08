@@ -1429,10 +1429,12 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
+    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
+
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word)
+    if (!has_as_word && !is_quoted)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
@@ -2151,8 +2153,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set("SET");
     ParserKeyword s_recompress("RECOMPRESS");
     ParserKeyword s_codec("CODEC");
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_eq(TokenType::Equals);
+    ParserKeyword s_materialize("MATERIALIZE");
+    ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_modify("MODIFY");
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -2160,8 +2163,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    ParserList parser_assignment_list(
-        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+    if (s_materialize.checkWithoutMoving(pos, expected) ||
+        s_remove.checkWithoutMoving(pos, expected) ||
+        s_modify.checkWithoutMoving(pos, expected))
+
+        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2219,6 +2225,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_set.ignore(pos))
         {
+            ParserList parser_assignment_list(
+                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
         }

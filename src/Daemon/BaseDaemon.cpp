@@ -1,10 +1,7 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -65,7 +62,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -312,12 +309,8 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = std::string(thread_ptr->getQueryId());
-
-            if (auto thread_group = thread_ptr->getThreadGroup())
-            {
-                query = DB::toOneLineQuery(thread_group->query);
-            }
+            query_id = thread_ptr->getQueryId();
+            query = thread_ptr->getQueryForLog();
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
             {
@@ -365,10 +358,13 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            bare_stacktrace << "Stack trace:";
+            DB::WriteBufferFromOwnString bare_stacktrace;
+            DB::writeString("Stack trace:", bare_stacktrace);
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
+            {
+                DB::writeChar(' ', bare_stacktrace);
+                DB::writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            }
 
             LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }
@@ -1131,15 +1127,20 @@ void BaseDaemon::setupWatchdog()
             logger().information("Child process no longer exists.");
             _exit(WEXITSTATUS(status));
         }
-        else if (WIFEXITED(status))
+
+        if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
             _exit(WEXITSTATUS(status));
         }
 
+        int exit_code;
+
         if (WIFSIGNALED(status))
         {
             int sig = WTERMSIG(status);
+
+            exit_code = 128 + sig;
 
             if (sig == SIGKILL)
             {
@@ -1152,12 +1153,14 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(128 + sig);
+                    _exit(exit_code);
             }
         }
         else
         {
+            // According to POSIX, this should never happen.
             logger().fatal("Child process was not exited normally by unknown reason.");
+            exit_code = 42;
         }
 
         if (restart)
@@ -1167,7 +1170,7 @@ void BaseDaemon::setupWatchdog()
                 memcpy(argv0, original_process_name.c_str(), original_process_name.size());
         }
         else
-            _exit(WEXITSTATUS(status));
+            _exit(exit_code);
     }
 }
 

@@ -7,9 +7,6 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -36,6 +33,15 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     copyData(*in, *out);
     out->finalize();
+}
+
+void IDisk::writeFileUsingCustomWriteObject(
+    const String &, WriteMode, std::function<size_t(const StoredObject &, WriteMode, const std::optional<ObjectAttributes> &)>)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Method `writeFileUsingCustomWriteObject()` is not implemented for disk: {}",
+        getDataSourceDescription().type);
 }
 
 

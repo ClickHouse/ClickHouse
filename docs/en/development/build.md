@@ -9,27 +9,27 @@ description: How to build ClickHouse on Linux
 
 Supported platforms:
 
--   x86_64
--   AArch64
--   Power9 (experimental)
+- x86_64
+- AArch64
+- Power9 (experimental)
 
-## Normal Build for Development on Ubuntu
+## Building on Ubuntu
 
-The following tutorial is based on the Ubuntu Linux system. With appropriate changes, it should also work on any other Linux distribution.
+The following tutorial is based on Ubuntu Linux.
+With appropriate changes, it should also work on any other Linux distribution.
+The minimum recommended Ubuntu version for development is 22.04 LTS.
 
 ### Install Prerequisites {#install-prerequisites}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build yasm gawk
+sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk
 ```
 
-Or cmake3 instead of cmake on older systems.
+### Install and Use the Clang compiler
 
-### Install the latest clang (recommended)
+On Ubuntu/Debian you can use LLVM's automatic installation script, see [here](https://apt.llvm.org/).
 
-On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
-
-```bash
+``` bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
@@ -40,18 +40,16 @@ sudo apt-get install software-properties-common
 sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 ```
 
-For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
+For other Linux distribution - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-#### Use the latest clang for Builds
+As of April 2023, any version of Clang >= 15 will work.
+GCC as a compiler is not supported
+To build with a specific Clang version:
 
 ``` bash
 export CC=clang-15
 export CXX=clang++-15
 ```
-
-In this example we use version 15 that is the latest as of Sept 2022.
-
-Gcc cannot be used.
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
@@ -70,79 +68,46 @@ git clone --recursive --shallow-submodules https://github.com/ClickHouse/ClickHo
 ``` bash
 cd ClickHouse
 mkdir build
-cd build
-cmake ..
-ninja
+cmake -S . -B build
+cmake --build build  # or: `cd build; ninja`
 ```
 
-To create an executable, run `ninja clickhouse`.
-This will create the `programs/clickhouse` executable, which can be used with `client` or `server` arguments.
+To create an executable, run `cmake --build build --target clickhouse` (or: `cd build; ninja clickhouse`).
+This will create executable `build/programs/clickhouse` which can be used with `client` or `server` arguments.
 
-## How to Build ClickHouse on Any Linux {#how-to-build-clickhouse-on-any-linux}
+## Building on Any Linux {#how-to-build-clickhouse-on-any-linux}
 
 The build requires the following components:
 
--   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.15 or newer
--   Ninja
--   C++ compiler: clang-14 or newer
--   Linker: lld
--   Yasm
--   Gawk
+- Git (used to checkout the sources, not needed for the build)
+- CMake 3.20 or newer
+- Compiler: Clang 15 or newer
+- Linker: lld 15 or newer
+- Ninja
+- Yasm
+- Gawk
 
 If all the components are installed, you may build in the same way as the steps above.
 
-Example for Ubuntu Eoan:
-``` bash
-sudo apt update
-sudo apt install git cmake ninja-build clang++ python yasm gawk
-git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-mkdir build && cd build
-cmake ../ClickHouse
-ninja
-```
-
 Example for OpenSUSE Tumbleweed:
+
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld yasm gawk
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-mkdir build && cd build
-cmake ../ClickHouse
-ninja
+mkdir build
+cmake -S . -B build
+cmake --build build
 ```
 
 Example for Fedora Rawhide:
+
 ``` bash
 sudo yum update
-sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
+sudo yum --nogpg install git cmake make clang python3 ccache nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-mkdir build && cd build
-cmake ../ClickHouse
-make -j $(nproc)
-```
-
-Here is an example of how to build `clang` and all the llvm infrastructure from sources:
-
-```
-git clone git@github.com:llvm/llvm-project.git
-mkdir llvm-build && cd llvm-build
-cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all ../llvm-project/llvm/
-make -j16
-sudo make install
-hash clang
-clang --version
-```
-
-You can install the older clang like clang-11 from packages and then use it to build the new clang from sources.
-
-Here is an example of how to install the new `cmake` from the official website:
-
-```
-wget https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.sh
-chmod +x cmake-3.22.2-linux-x86_64.sh
-./cmake-3.22.2-linux-x86_64.sh
-export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
-hash cmake
+mkdir build
+cmake -S . -B build
+cmake --build build
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
@@ -159,4 +124,3 @@ The CI checks build the binaries on each commit to [ClickHouse](https://github.c
 1. Find the type of package for your operating system that you need and download the files.
 
 ![build artifact check](images/find-build-artifact.png)
-
