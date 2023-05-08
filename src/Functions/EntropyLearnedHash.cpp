@@ -31,23 +31,31 @@ namespace
 using Key = String;
 using PartialKeyPositions = std::vector<size_t>;
 
-Key getPartialKey(const Key & key, const PartialKeyPositions & partial_key_positions)
+Key getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, Key & result)
 {
-    Key result_key;
-    result_key.reserve(partial_key_positions.size());
+    result.clear();
+    result.reserve(partial_key_positions.size());
+
     for (auto partial_key_position : partial_key_positions)
         if (partial_key_position < key.size())
-            result_key.push_back(key[partial_key_position]);
-    return result_key;
+            result.push_back(key[partial_key_position]);
+
+    return result;
 }
 
 bool allPartialKeysAreUnique(const std::vector<Key> & data, const PartialKeyPositions & partial_key_positions)
 {
     std::unordered_set<Key> partial_keys;
     partial_keys.reserve(data.size());
+    Key partial_key;
+
     for (const auto & key : data)
-        if (!partial_keys.insert(getPartialKey(key, partial_key_positions)).second)
+    {
+        getPartialKey(key, partial_key_positions, partial_key);
+        if (!partial_keys.insert(partial_key).second)
             return false;
+    }
+
     return true;
 }
 
@@ -58,6 +66,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
     size_t best_position = 0;
 
     std::unordered_map<Key, size_t> count_table;
+    Key partial_key;
     for (size_t i = 0; i < max_len; ++i)
     {
         count_table.clear();
@@ -67,7 +76,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
         size_t collisions = 0;
         for (const auto & key : keys)
         {
-            auto partial_key = getPartialKey(key, chosen_bytes);
+            getPartialKey(key, chosen_bytes, partial_key);
             collisions += count_table[partial_key]++;
         }
 
@@ -254,11 +263,11 @@ public:
             auto col_res = ColumnUInt64::create(num_rows);
 
             auto & col_res_vec = col_res->getData();
+            Key partial_key;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 std::string_view string_ref = col_data_string->getDataAt(i).toView();
-                Key key(string_ref.data(), string_ref.size());
-                Key partial_key = getPartialKey(key, partial_key_positions);
+                getPartialKey(string_ref, partial_key_positions, partial_key);
                 col_res_vec[i] = CityHash_v1_0_2::CityHash64(partial_key.data(), partial_key.size());
             }
 
