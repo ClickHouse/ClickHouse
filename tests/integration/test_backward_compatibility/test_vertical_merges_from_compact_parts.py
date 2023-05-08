@@ -111,7 +111,10 @@ def test_vertical_merges_from_compact_parts(start_cluster):
             node_old.contains_in_log("CHECKSUM_DOESNT_MATCH")
             and not node_old.contains_in_log("Different number of files")
         )
-        or (node_new.contains_in_log("CHECKSUM_DOESNT_MATCH"))
+        or (
+            node_new.contains_in_log("CHECKSUM_DOESNT_MATCH")
+            and not node_new.contains_in_log("Different number of files")
+        )
     )
 
     assert node_new.query(check_query.format("all_0_3_3")) == "Vertical\tWide\n"
