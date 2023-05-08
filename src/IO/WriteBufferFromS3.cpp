@@ -615,6 +615,13 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
                 /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
                 LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
             }
+            else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::REQUEST_TIMEOUT)
+            {
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+                /// For unknown reason, AWS S3 can respond with REQUEST_TIMEOUT for put requests.
+                LOG_INFO(log, "Single part upload failed with REQUEST_TIMEOUT error: {}, Bucket: {}, Key: {}, Object size: {}, WithPool: {}. Will retry",
+                         outcome.GetError().GetMessage(), bucket, key, task.req.GetContentLength(), with_pool);
+            }
             else
             {
                 write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure

@@ -524,6 +524,14 @@ namespace
                     continue; /// will retry
                 }
 
+                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::REQUEST_TIMEOUT) && (retries < max_retries))
+                {
+                    /// For unknown reason, AWS S3 can respond with REQUEST_TIMEOUT for put requests.
+                    LOG_INFO(log, "Single part upload failed with REQUEST_TIMEOUT error: {}, Bucket: {}, Key: {}, Object size: {}. Will retry",
+                             outcome.GetError().GetMessage(), dest_bucket, dest_key, request.GetContentLength());
+                    continue; /// will retry
+                }
+
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Object size: {}",
