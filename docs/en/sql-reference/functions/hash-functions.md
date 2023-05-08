@@ -558,6 +558,54 @@ Result:
 └───────────────────────────┘
 ```
 
+## Entropy-learned hashing
+
+Entropy-learned hashing is not a standalone hash function like `metroHash64`, `cityHash64`, `sipHash64` etc. Instead, it aims to preprocess
+the data to be hashed in a way that a standalone hash function can be computed more efficiently while not compromising the hash quality,
+i.e. the randomness of the hashes. For that, entropy-based hashing chooses a subset of the bytes in a training data set of Strings which has
+the same randomness (entropy) as the original Strings. For example, if the Strings are in average 100 bytes long, and we pick a subset of 5
+bytes, then a hash function will be 95% less expensive to evaluate. For details of the method, refer to [Entropy-Learned Hashing: Constant
+Time Hashing with Controllable Uniformity](https://doi.org/10.1145/3514221.3517894).
+
+Entropy-learned hashing has two phases:
+1. A training phase on a representative but typically small set of Strings to be hashed. Function `trainEntropyLearnedHash(data, id)`
+   calculates a minimal partial sub-key of `data` and stores it as `id`.
+2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
+   hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
+
+**Syntax**
+
+``` sql
+trainEntropyLearnedHash(data, id);
+entropyLearnedHash(data, id);
+```
+
+**Example**
+
+```sql
+CREATE TABLE tab (col String) ENGINE=Memory;
+INSERT INTO tab VALUES ('aa'), ('ba'), ('ca');
+
+SELECT trainEntropyLearnedHash(col, 'id1') AS trained FROM tab;
+SELECT entropyLearnedHash(col, 'id1') as hashes FROM tab;
+```
+
+Result:
+
+``` response
+┌─trained─┐ 
+│       0 │ 
+│       0 │ 
+│       0 │ 
+└─────────┘ 
+
+┌───────────────hashes─┐
+│  2603192927274642682 │
+│  4947675599669400333 │
+│ 10783339242466472992 │
+└──────────────────────┘
+```
+
 ## metroHash64
 
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
