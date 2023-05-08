@@ -547,6 +547,9 @@ endif ()
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 dbms_target_link_libraries(PUBLIC boost::context)
 
+target_link_libraries(clickhouse_common_io PUBLIC boost::fiber)
+dbms_target_link_libraries(PUBLIC boost::fiber)
+
 if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
