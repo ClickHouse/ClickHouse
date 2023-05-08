@@ -52,7 +52,6 @@
 01681_bloom_filter_nullable_column
 01700_system_zookeeper_path_in
 01710_projection_additional_filters
-01721_join_implicit_cast_long
 01739_index_hint
 02880_indexHint__partition_id
 01747_join_view_filter_dictionary

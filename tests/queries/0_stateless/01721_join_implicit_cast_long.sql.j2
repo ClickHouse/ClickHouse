@@ -12,6 +12,10 @@ INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers
 {% macro is_implemented(join_algorithm) -%}
 {% endmacro -%}
 
+{% for allow_experimental_analyzer in [0, 1] -%}
+
+SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
+
 {% for join_algorithm in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
 
 SELECT '=== {{ join_algorithm }} ===';
@@ -61,10 +65,10 @@ SELECT '= inner =';
 SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
 
 -- Int64 and UInt64 has no supertype
-SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
 
 SELECT '= agg =';
 SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204; {{ is_implemented(join_algorithm) }}
@@ -142,10 +146,10 @@ SELECT '= inner =';
 SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
 
 -- Int64 and UInt64 has no supertype
-SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
-SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53 }
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError 53,386 }
 
 SELECT '= agg =';
 SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204; {{ is_implemented(join_algorithm) }}
@@ -163,7 +167,13 @@ SELECT a > 0, sum(a), sum(t2.a), sum(b), sum(t2.b) FROM t1 FULL JOIN t2 ON (t1.a
 SELECT '= types =';
 SELECT any(toTypeName(a)) == 'Nullable(Int32)' AND any(toTypeName(t2.a)) == 'Nullable(Int32)' FROM t1 FULL JOIN t2 USING (a); {{ is_implemented(join_algorithm) }}
 SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Nullable(Int32)' FROM t1 LEFT JOIN t2 USING (a);
+
+{% if allow_experimental_analyzer -%}
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 RIGHT JOIN t2 USING (a); {{ is_implemented(join_algorithm) }}
+{% else -%}
 SELECT any(toTypeName(a)) == 'Nullable(Int32)' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 RIGHT JOIN t2 USING (a); {{ is_implemented(join_algorithm) }}
+{% endif -%}
+
 SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 INNER JOIN t2 USING (a);
 
 SELECT toTypeName(any(a)) == 'Nullable(Int32)' AND toTypeName(any(t2.a)) == 'Nullable(Int32)' FROM t1 FULL JOIN t2 USING (a); {{ is_implemented(join_algorithm) }}
@@ -178,6 +188,7 @@ SELECT toTypeName(any(a)) == 'Nullable(UInt16)' AND toTypeName(any(t2.a)) == 'Nu
 SET join_use_nulls = 0;
 {% endif -%}
 
+{% endfor -%}
 {% endfor -%}
 
 DROP TABLE IF EXISTS t1;

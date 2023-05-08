@@ -1,3 +1,4 @@
+{% for allow_experimental_analyzer in [0, 1] -%}
 {% for join_algorithm in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
 === {{ join_algorithm }} ===
 = full =
@@ -72,10 +73,17 @@
 9	9	0
 10	10	0
 = right =
+{% if allow_experimental_analyzer -%}
+-4	0	-4
+-3	0	-3
+-2	0	-2
+-1	0	-1
+{% else -%}
 0	0	-4
 0	0	-3
 0	0	-2
 0	0	-1
+{% endif -%}
 0	0	0
 1	1	1
 2	2	2
@@ -279,11 +287,19 @@
 3	3	3
 4	4	4
 5	5	5
+{% if allow_experimental_analyzer -%}
+-4	\N	-4
+-3	\N	-3
+-2	\N	-2
+-1	\N	-1
+0	\N	0
+{% else -%}
 \N	\N	-4
 \N	\N	-3
 \N	\N	-2
 \N	\N	-1
 \N	\N	0
+{% endif -%}
 = inner =
 1	1	1
 2	2	2
@@ -403,4 +419,5 @@
 1
 1
 {% endif -%}
+{% endfor -%}
 {% endfor -%}
