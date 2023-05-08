@@ -32,7 +32,8 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        bool structure_argument_was_provided_);
+        bool structure_argument_was_provided_,
+        bool format_argument_was_provided_);
 
     std::string getName() const override { return "S3Cluster"; }
 
@@ -59,6 +60,7 @@ private:
     NamesAndTypesList virtual_columns;
     Block virtual_block;
     bool structure_argument_was_provided;
+    bool format_argument_was_provided;
 };
 
 
