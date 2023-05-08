@@ -9,7 +9,7 @@ namespace DB
 class Context;
 
 
-/** Implements `zookeeper_connection` system table, which allows you to get information about the queries that are currently executing.
+/** Implements `zookeeper_connection` system table, which allows you to get information about the connected zookeeper info.
   */
 class StorageSystemZooKeeperConnection final : public IStorageSystemOneBlock<StorageSystemZooKeeperConnection> 
 {
