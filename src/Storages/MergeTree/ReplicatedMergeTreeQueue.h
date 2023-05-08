@@ -547,7 +547,8 @@ public:
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
     std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
-    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers) const;
+    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
+                            std::unordered_set<String> & checked_partitions_cache) const;
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }

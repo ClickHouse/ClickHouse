@@ -87,7 +87,7 @@ public:
     };
 
     /// The second step of selecting parts to merge: splits parts list into a set of ranges according to can_merge_callback.
-    /// All parts withing a range can be merged without violating some invariants.
+    /// All parts within a range can be merged without violating some invariants.
     MergeSelectingInfo getPossibleMergeRanges(
         const MergeTreeData::DataPartsVector & data_parts,
         const AllowedMergingPredicate & can_merge_callback,
