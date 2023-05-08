@@ -22,8 +22,7 @@ public:
     BackupCoordinationLocal(bool plain_backup_);
     ~BackupCoordinationLocal() override;
 
-    void setStage(const String & new_stage, const String & message) override;
-    void setStageForCluster(const String & new_stage) override; /// Sets stage for cluster
+    void setStage(const String & new_stage, const String & message = "") override;
     void setError(const Exception & exception) override;
     Strings waitForStage(const String & stage_to_wait) override;
     Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;

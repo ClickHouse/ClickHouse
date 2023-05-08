@@ -93,17 +93,14 @@ void RestoreCoordinationRemote::createRootNodes()
 
 void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
-    stage_sync->set(current_host, new_stage, message);
-}
-
-void RestoreCoordinationRemote::setStageForCluster(const String & new_stage)
-{
-    stage_sync->setStageForCluster(new_stage);
+    if (is_internal)
+        stage_sync->set(current_host, new_stage, message);
+    else
+        stage_sync->set(current_host, new_stage, /* message */ "", /* all_hosts */ true);
 }
 
 void RestoreCoordinationRemote::setError(const Exception & exception)
 {
-    stage_sync->setStageForCluster(Stage::ERROR);
     stage_sync->setError(current_host, exception);
 }
 
