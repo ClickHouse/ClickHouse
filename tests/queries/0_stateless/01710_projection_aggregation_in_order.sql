@@ -1,3 +1,5 @@
+-- Tags: disabled
+-- FIXME https://github.com/ClickHouse/ClickHouse/issues/49552
 -- Test that check the correctness of the result for optimize_aggregation_in_order and projections,
 -- not that this optimization will take place.
 
@@ -21,7 +23,7 @@ ENGINE = MergeTree
 ORDER BY (key, ts);
 
 INSERT INTO normal SELECT
-    1,
+    number,
     toDateTime('2021-12-06 00:00:00') + number,
     number
 FROM numbers(100000);

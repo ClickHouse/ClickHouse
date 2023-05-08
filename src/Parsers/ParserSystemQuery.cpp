@@ -159,6 +159,14 @@ enum class SystemQueryTargetType
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
         return false;
     res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (ParserKeyword{"FROM SHARD"}.ignore(pos, expected))
+    {
+        if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            return false;
+        res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
+    }
+
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
     {
         // way 1. parse replica database
@@ -259,6 +267,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
+            if (res->type == Type::SYNC_REPLICA)
+            {
+                if (ParserKeyword{"STRICT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::STRICT;
+                else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
+                else if (ParserKeyword{"PULL"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::PULL;
+            }
             break;
         }
 
@@ -378,7 +395,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
+                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;

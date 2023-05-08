@@ -154,3 +154,64 @@ def test_dependency_via_dictionary_database(node):
         node.query(f"DROP DICTIONARY IF EXISTS {d_name} SYNC")
     node.query("DROP DATABASE dict_db SYNC")
     node.restart_clickhouse()
+
+
+@pytest.mark.parametrize("node", nodes)
+def test_dependent_dict_table_distr(node):
+    query = node.query
+    query("CREATE DATABASE test_db;")
+    query(
+        "CREATE TABLE test_db.test(id UInt32,data UInt32,key1 UInt8,key2 UInt8) ENGINE=MergeTree  ORDER BY id;"
+    )
+    query(
+        "INSERT INTO test_db.test SELECT  abs(rand32())%100, rand32()%1000, abs(rand32())%1, abs(rand32())%1  FROM numbers(100);"
+    )
+    query(
+        "CREATE TABLE test_db.dictback (key1 UInt8,key2 UInt8, value UInt8) ENGINE=MergeTree  ORDER BY key1;"
+    )
+    query("INSERT INTO test_db.dictback VALUES (0,0,0);")
+
+    query(
+        "CREATE DICTIONARY test_db.mdict (key1 UInt8,key2 UInt8, value UInt8) PRIMARY KEY key1,key2"
+        " SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test_db' TABLE 'dictback'))"
+        " LIFETIME(MIN 100 MAX 100)  LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000));"
+    )
+
+    query(
+        "CREATE TABLE test_db.distr (id UInt32, data UInt32, key1 UInt8, key2 UInt8)"
+        " ENGINE = Distributed('test_shard_localhost', test_db, test, dictGetOrDefault('test_db.mdict','value',(key1,key2),0));"
+    )
+
+    # Tables should load in the correct order.
+    node.restart_clickhouse()
+
+    query("DETACH TABLE test_db.distr;")
+    query("ATTACH TABLE test_db.distr;")
+
+    node.restart_clickhouse()
+
+    query("DROP DATABASE IF EXISTS test_db;")
+
+
+def test_no_lazy_load():
+    node2.query("create database no_lazy")
+    node2.query(
+        "create table no_lazy.src (n int, m int) engine=MergeTree order by n partition by n % 100"
+    )
+    node2.query("insert into no_lazy.src select number, number from numbers(0, 99)")
+    node2.query("insert into no_lazy.src select number, number from numbers(100, 99)")
+    node2.query(
+        "create dictionary no_lazy.dict (n int, mm int) primary key n "
+        "source(clickhouse(query 'select n, m + sleepEachRow(0.1) as mm from no_lazy.src')) "
+        "lifetime(min 0 max 0) layout(complex_key_hashed_array(shards 10))"
+    )
+
+    node2.restart_clickhouse()
+
+    assert "42\n" == node2.query("select dictGet('no_lazy.dict', 'mm', 42)")
+
+    assert "some tables depend on it" in node2.query_and_get_error(
+        "drop table no_lazy.src", settings={"check_referential_table_dependencies": 1}
+    )
+
+    node2.query("drop database no_lazy")

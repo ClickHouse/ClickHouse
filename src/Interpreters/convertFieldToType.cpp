@@ -149,6 +149,8 @@ Field convertDecimalType(const Field & from, const To & type)
         return convertDecimalToDecimalType<Decimal64>(from, type);
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
+    if (from.getType() == Field::Types::Decimal256)
+        return convertDecimalToDecimalType<Decimal256>(from, type);
 
     if (from.getType() == Field::Types::Float64)
         return convertFloatToDecimalType<Float64>(from, type);
@@ -233,6 +235,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Already in needed type.
             return src;
+        }
+
+        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
+        /// produce wrong result in some special cases.
+        if (which_type.isDate() && src.getType() == Field::Types::Int64)
+        {
+            return convertNumericType<UInt64>(src, type);
+        }
+
+        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
+        /// produce wrong result in some special cases.
+        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
+        {
+            return convertNumericType<Int64>(src, type);
         }
 
         if (which_type.isDateTime64()

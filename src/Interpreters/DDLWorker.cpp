@@ -31,14 +31,22 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
+#include <memory>
 #include <random>
 #include <pcg_random.hpp>
 #include <Common/scope_guard_safe.h>
+#include <Common/ThreadPool.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
 namespace fs = std::filesystem;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric DDLWorkerThreads;
+    extern const Metric DDLWorkerThreadsActive;
+}
 
 namespace DB
 {
@@ -85,7 +93,7 @@ DDLWorker::DDLWorker(
     {
         LOG_WARNING(log, "DDLWorker is configured to use multiple threads. "
                          "It's not recommended because queries can be reordered. Also it may cause some unknown issues to appear.");
-        worker_pool = std::make_unique<ThreadPool>(pool_size);
+        worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
     }
 
     queue_dir = zk_root_dir;
@@ -115,8 +123,8 @@ void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
-    main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
-    cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
+    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
 
 void DDLWorker::shutdown()
@@ -126,8 +134,10 @@ void DDLWorker::shutdown()
     {
         queue_updated_event->set();
         cleanup_event->set();
-        main_thread.join();
-        cleanup_thread.join();
+        if (main_thread)
+            main_thread->join();
+        if (cleanup_thread)
+            cleanup_thread->join();
         worker_pool.reset();
     }
 }
@@ -1016,10 +1026,10 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Metric id;
-        readText(id, in);
-        id = std::max(*max_pushed_entry_metric, id);
-        CurrentMetrics::set(*max_pushed_entry_metric, id);
+        CurrentMetrics::Value pushed_entry;
+        readText(pushed_entry, in);
+        pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
+        CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);
     }
 
     /// We cannot create status dirs in a single transaction with previous request,
@@ -1084,7 +1094,7 @@ void DDLWorker::runMainThread()
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
         if (1 < pool_size)
-            worker_pool = std::make_unique<ThreadPool>(pool_size);
+            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
         last_skipped_entry_name.reset();
@@ -1123,7 +1133,7 @@ void DDLWorker::runMainThread()
                 initialized = false;
                 /// Wait for pending async tasks
                 if (1 < pool_size)
-                    worker_pool = std::make_unique<ThreadPool>(pool_size);
+                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else

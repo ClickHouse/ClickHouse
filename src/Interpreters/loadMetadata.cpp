@@ -16,15 +16,23 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Common/escapeForFileName.h>
 
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+
+#include <filesystem>
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric StartupSystemTablesThreads;
+    extern const Metric StartupSystemTablesThreadsActive;
+}
 
 namespace DB
 {
@@ -366,7 +374,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool;
+            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
             DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
@@ -461,7 +469,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
 void startupSystemTables()
 {
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
     DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
