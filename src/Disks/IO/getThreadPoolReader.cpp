@@ -21,12 +21,7 @@ namespace ErrorCodes
 
 IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type)
 {
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-    return context->getThreadPoolReader(type);
-#else
+#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
     const auto & config = Poco::Util::Application::instance().config();
     switch (type)
     {
@@ -46,6 +41,11 @@ IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type)
             return *synchronous_local_fs_reader;
         }
     }
+#else
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+    return context->getThreadPoolReader(type);
 #endif
 }
 
