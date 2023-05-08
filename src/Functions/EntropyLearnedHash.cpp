@@ -45,14 +45,14 @@ Key getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_
 
 bool allPartialKeysAreUnique(const std::vector<Key> & data, const PartialKeyPositions & partial_key_positions)
 {
-    std::unordered_set<Key> partial_keys;
-    partial_keys.reserve(data.size());
+    std::unordered_set<Key> unique_partial_keys;
+    unique_partial_keys.reserve(data.size());
     Key partial_key;
 
     for (const auto & key : data)
     {
         getPartialKey(key, partial_key_positions, partial_key);
-        if (!partial_keys.insert(partial_key).second)
+        if (!unique_partial_keys.insert(partial_key).second)
             return false;
     }
 
