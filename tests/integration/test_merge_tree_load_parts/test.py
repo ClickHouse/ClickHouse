@@ -240,7 +240,8 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
         ).strip()
 
         node3.exec_in_container(
-            ["bash", "-c", f"mv {part_path}id.cmrk {part_path}id.cmrk3"], privileged=True
+            ["bash", "-c", f"mv {part_path}id.cmrk {part_path}id.cmrk3"],
+            privileged=True,
         )
 
     corrupt_part("mt_load_parts", "all_1_1_0")
