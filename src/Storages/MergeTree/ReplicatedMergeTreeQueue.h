@@ -386,6 +386,8 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
+    /// Count the total number of active mutations that are not finished (is_done = false).
+    size_t countUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint);

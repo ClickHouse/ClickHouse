@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
@@ -33,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int CANNOT_USE_CACHE;
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -190,12 +190,11 @@ CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, 
 
             if (!remote_fs_segment_reader)
             {
-                remote_fs_segment_reader = implementation_buffer_creator();
-
-                if (!remote_fs_segment_reader->supportsRightBoundedReads())
-                    throw Exception(
-                        ErrorCodes::CANNOT_USE_CACHE,
-                        "Cache cannot be used with a ReadBuffer which does not support right bounded reads");
+                auto impl = implementation_buffer_creator();
+                if (impl->supportsRightBoundedReads())
+                    remote_fs_segment_reader = std::move(impl);
+                else
+                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
 
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
@@ -937,6 +936,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (result)
     {
+        bool download_current_segment_succeeded = false;
         if (download_current_segment)
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
@@ -955,6 +955,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                         || file_segment.getCurrentWriteOffset(false) == implementation_buffer->getFileOffsetOfBufferEnd());
 
                     LOG_TEST(log, "Successfully written {} bytes", size);
+                    download_current_segment_succeeded = true;
 
                     // The implementation_buffer is valid and positioned correctly (at file_segment->getCurrentWriteOffset()).
                     // Later reads for this file segment can reuse it.
@@ -963,14 +964,15 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     implementation_buffer_can_be_reused = true;
                 }
                 else
-                {
-                    chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
-                }
             }
             else
-            {
                 LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
+
+            if (!success)
+            {
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
         }
 
@@ -991,6 +993,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         file_offset_of_buffer_end += size;
 
+        if (download_current_segment && download_current_segment_succeeded)
+            chassert(file_segment.getCurrentWriteOffset(false) >= file_offset_of_buffer_end);
         chassert(file_offset_of_buffer_end <= read_until_position);
     }
 
