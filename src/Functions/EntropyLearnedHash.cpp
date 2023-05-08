@@ -13,6 +13,7 @@
 /// TODOs for future work:
 /// - allow to specify an arbitrary hash function (currently always CityHash is used)
 /// - allow function chaining a la entropyLearnedHash(trainEntropyLearnedHash())
+/// - support more datatypes for data (besides String)
 
 
 namespace DB
@@ -128,7 +129,6 @@ public:
     void setPartialKeyPositionsForId(const String & user_name, const String & id, const PartialKeyPositions & partial_key_positions)
     {
         std::lock_guard lock(mutex);
-        /// partial_key_positions_by_id[id] = partial_key_positions;
         auto & ids_for_user = partial_key_positions_by_id[user_name];
         ids_for_user[id] = partial_key_positions;
     }
