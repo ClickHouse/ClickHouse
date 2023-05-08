@@ -36,7 +36,6 @@ public:
     using DisclosedGlobIterator = StorageS3Source::DisclosedGlobIterator;
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
     using KeyWithInfo = StorageS3Source::KeyWithInfo;
-    using ReadBufferOrFactory = StorageS3Source::ReadBufferOrFactory;
     class QueueGlobIterator : public IIterator
     {
     public:
@@ -95,8 +94,6 @@ public:
 
     Chunk generate() override;
 
-    static std::unordered_set<String> parseCollection(String & files);
-
 
 private:
     String name;
@@ -104,12 +101,8 @@ private:
     String version_id;
     String format;
     ColumnsDescription columns_desc;
-    UInt64 max_block_size;
     S3Settings::RequestSettings request_settings;
-    String compression_hint;
     std::shared_ptr<const S3::Client> client;
-    Block sample_block;
-    std::optional<FormatSettings> format_settings;
 
     std::shared_ptr<S3QueueHolder> queue_holder;
     using ReaderHolder = StorageS3Source::ReaderHolder;
@@ -118,12 +111,9 @@ private:
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     const S3QueueAction action;
-    size_t download_thread_num = 1;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSource");
 
-    ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
     UInt64 total_rows_approx_max = 0;
@@ -132,15 +122,7 @@ private:
 
     mutable std::mutex mutex;
 
-
-    ReaderHolder createReader();
-    std::future<ReaderHolder> createReaderAsync();
-
-    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
-    std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
-
-    void setFileProcessed(const String & file_path);
-    void setFileFailed(const String & file_path);
+    std::shared_ptr<StorageS3Source> internal_source;
     void applyActionAfterProcessing(const String & file_path);
 };
 
