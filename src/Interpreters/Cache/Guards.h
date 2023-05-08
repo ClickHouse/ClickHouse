@@ -61,7 +61,12 @@ namespace DB
  */
 struct CacheGuard : private boost::noncopyable
 {
-    using Lock = std::unique_lock<std::mutex>;
+    /// struct is used (not keyword `using`) to make CacheGuard::Lock non-interchangable with other guards locks
+    /// so, we wouldn't be able to pass CacheGuard::Lock to a function which accepts KeyGuard::Lock, for example
+    struct Lock : public std::unique_lock<std::mutex>
+    {
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+    };
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -72,7 +77,10 @@ struct CacheGuard : private boost::noncopyable
  */
 struct CacheMetadataGuard : private boost::noncopyable
 {
-    using Lock = std::unique_lock<std::mutex>;
+    struct Lock : public std::unique_lock<std::mutex>
+    {
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+    };
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -83,7 +91,10 @@ struct CacheMetadataGuard : private boost::noncopyable
  */
 struct KeyGuard : private boost::noncopyable
 {
-    using Lock = std::unique_lock<std::mutex>;
+    struct Lock : public std::unique_lock<std::mutex>
+    {
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+    };
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -94,7 +105,10 @@ struct KeyGuard : private boost::noncopyable
  */
 struct FileSegmentGuard : private boost::noncopyable
 {
-    using Lock = std::unique_lock<std::mutex>;
+    struct Lock : public std::unique_lock<std::mutex>
+    {
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+    };
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
