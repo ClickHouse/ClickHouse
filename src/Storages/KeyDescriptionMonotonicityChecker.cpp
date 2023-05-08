@@ -14,7 +14,7 @@ namespace ErrorCodes
 namespace
 {
 
-    void buildFunctionListImpl(const RPNBuilderTreeNode & node,
+    void buildRPNFunctionListImpl(const RPNBuilderTreeNode & node,
                                const KeyDescription & key_description,
                                DataTypePtr & out_key_column_type,
                                std::vector<RPNBuilderFunctionTreeNode> & function_list)
@@ -35,11 +35,11 @@ namespace
             {
                 if (function_node.getArgumentAt(0).isConstant())
                 {
-                    buildFunctionListImpl(function_node.getArgumentAt(1), key_description, out_key_column_type, function_list);
+                    buildRPNFunctionListImpl(function_node.getArgumentAt(1), key_description, out_key_column_type, function_list);
                 }
                 else if (function_node.getArgumentAt(1).isConstant())
                 {
-                    buildFunctionListImpl(function_node.getArgumentAt(0), key_description, out_key_column_type, function_list);
+                    buildRPNFunctionListImpl(function_node.getArgumentAt(0), key_description, out_key_column_type, function_list);
                 }
                 else
                 {
@@ -51,7 +51,7 @@ namespace
             }
             else
             {
-                buildFunctionListImpl(function_node.getArgumentAt(0), key_description, out_key_column_type, function_list);
+                buildRPNFunctionListImpl(function_node.getArgumentAt(0), key_description, out_key_column_type, function_list);
             }
         }
         else
@@ -148,6 +148,20 @@ namespace
 
         return monotonicity;
     }
+
+    auto buildRPNContext(const KeyDescription & key_description, ContextPtr context)
+    {
+        auto pkeyastclone = key_description.definition_ast->clone();
+
+        auto result = TreeRewriter(context).analyze(pkeyastclone, key_description.expression->getRequiredColumnsWithTypes());
+
+        auto block_with_constants = KeyCondition::getBlockWithConstants(pkeyastclone, result, context);
+
+        auto rpn_context = RPNBuilderTreeContext(context, block_with_constants, {});
+
+        return rpn_context;
+    }
+
 }
 
 IFunction::Monotonicity
@@ -159,21 +173,34 @@ KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
 {
     DataTypePtr key_column_type;
 
-    auto pkeyastclone = key_description.definition_ast->clone();
+    auto rpn_context = buildRPNContext(key_description, context);
 
-    auto result = TreeRewriter(context).analyze(pkeyastclone, key_description.expression->getRequiredColumnsWithTypes());
+    auto rpn_function_list = buildRPNFunctionList(key_description, key_column_type, rpn_context);
 
-    auto block_with_constants = KeyCondition::getBlockWithConstants(pkeyastclone, result, context);
+    auto function_list = buildFunctionList(rpn_function_list, key_column_type, context);
 
-    auto rpn_context = RPNBuilderTreeContext(context, block_with_constants, {});
+    return applyMonotonicFunctionsChainToRange(range, function_list, key_column_type);
+}
 
+std::vector<RPNBuilderFunctionTreeNode> KeyDescriptionMonotonicityChecker::buildRPNFunctionList(const KeyDescription & key_description,
+                                                                                                DataTypePtr & key_expr_type,
+                                                                                                RPNBuilderTreeContext & rpn_context)
+{
     auto rpn_node = RPNBuilderTreeNode(key_description.definition_ast.get(), rpn_context);
 
-    std::vector<RPNBuilderFunctionTreeNode> rpn_function_list;
+    std::vector<RPNBuilderFunctionTreeNode> function_list;
 
-    buildFunctionListImpl(rpn_node, key_description, key_column_type, rpn_function_list);
+    buildRPNFunctionListImpl(rpn_node, key_description, key_expr_type, function_list);
 
+    return function_list;
+}
 
+std::vector<FunctionBasePtr> KeyDescriptionMonotonicityChecker::buildFunctionList(
+    const std::vector<RPNBuilderFunctionTreeNode> & rpn_function_list,
+    DataTypePtr key_column_type,
+    ContextPtr context
+)
+{
     std::vector<FunctionBasePtr> functions;
 
     for (auto it = rpn_function_list.rbegin(); it != rpn_function_list.rend(); ++it)
@@ -183,7 +210,7 @@ KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
 
         if (!func_builder)
         {
-            return {false};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to check monotonicity of function {}", function.getFunctionName());
         }
 
         ColumnsWithTypeAndName arguments;
@@ -211,34 +238,13 @@ KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
 
         if (!func || !func->hasInformationAboutMonotonicity())
         {
-            return {false};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to check monotonicity of function {}", function.getFunctionName());
         }
 
         functions.push_back(func);
     }
 
-    return applyMonotonicFunctionsChainToRange(range, functions, key_column_type);
-}
-
-std::vector<RPNBuilderFunctionTreeNode> KeyDescriptionMonotonicityChecker::buildFunctionList(const KeyDescription & key_description,
-                                                                                          DataTypePtr & key_expr_type,
-                                                                                          ContextPtr context)
-{
-    auto pkeyastclone = key_description.definition_ast->clone();
-
-    auto result = TreeRewriter(context).analyze(pkeyastclone, key_description.expression->getRequiredColumnsWithTypes());
-
-    auto block_with_constants = KeyCondition::getBlockWithConstants(pkeyastclone, result, context);
-
-    auto rpn_context = RPNBuilderTreeContext(context, block_with_constants, {});
-
-    auto rpn_node = RPNBuilderTreeNode(key_description.definition_ast.get(), rpn_context);
-
-    std::vector<RPNBuilderFunctionTreeNode> function_list;
-
-    buildFunctionListImpl(rpn_node, key_description, key_expr_type, function_list);
-
-    return function_list;
+    return functions;
 }
 
 }
