@@ -24,7 +24,6 @@ private:
     ThreadFromGlobalPool thread;
 
     void run();
-    void stop();
 };
 
 }
