@@ -9,12 +9,12 @@ ORDER BY (KeyID);
 
 insert into t_hardware_error values (1), (2), (3), (4), (5); 
 
-system enable failpoint rmt_commit_zk_fail_after_op;
+system enable failpoint replicated_merge_tree_commit_zk_fail_after_op;
 
 insert into t_hardware_error values (6), (7), (8), (9), (10); 
 
 select count() from t_hardware_error;
 
-system disable failpoint rmt_commit_zk_fail_after_op;
+system disable failpoint replicated_commit_zk_fail_after_op;
 
 DROP TABLE t_hardware_error NO DELAY;
