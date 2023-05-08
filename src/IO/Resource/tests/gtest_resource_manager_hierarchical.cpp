@@ -36,7 +36,11 @@ TEST(IOResourceDynamicResourceManager, Smoke)
 
     for (int i = 0; i < 10; i++)
     {
-        ResourceGuard gA(cA->get("res1"));
+        ResourceGuard gA(cA->get("res1"), ResourceGuard::PostponeLocking);
+        gA.lock();
+        gA.setFailure();
+        gA.unlock();
+
         ResourceGuard gB(cB->get("res1"));
     }
 }
