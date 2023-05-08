@@ -22,6 +22,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 
+#include <Storages/ColumnsDescription.h>
+
 namespace DB
 {
 
@@ -91,10 +93,7 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `hasKeys`", name);
     }
 
-    Pipe read(const Names &, size_t, size_t) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `read`", name);
-    }
+    Pipe read(const Names &, size_t, size_t) const override;
 
     ColumnPtr getColumn(
         const std::string & attribute_name,

@@ -31,8 +31,9 @@ create dictionary regexp_dict1
 PRIMARY KEY(regexp)
 SOURCE(CLICKHOUSE(QUERY concat('select * from ', currentDatabase() , '.regexp_dictionary_source_table')))
 LIFETIME(0)
-LAYOUT(regexp_tree)
-SETTINGS(regexp_dict_allow_other_sources = true);
+LAYOUT(regexp_tree);
+
+select * from dictionary(regexp_dict1);
 
 select dictGet('regexp_dict1', ('name', 'version', 'comment'), 'Linux/101.tlinux');
 select dictGet('regexp_dict1', ('name', 'version', 'comment'), '33/tclwebkit11.10x');
@@ -79,6 +80,7 @@ select dictGet(regexp_dict1, ('name', 'version', 'comment'), '33/tclwebkit');
 truncate table regexp_dictionary_source_table;
 SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489 }
 
+select * from dictionary(regexp_dict1);
 
 DROP TABLE IF EXISTS regexp_dictionary_source_table;
 DROP TABLE IF EXISTS needle_table;

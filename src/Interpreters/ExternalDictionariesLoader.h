@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
 #include <Common/quoteString.h>
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
 
@@ -28,6 +29,8 @@ public:
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
+
+    ColumnsDescription getActualTableStructure(const std::string & dictionary_name, ContextPtr context) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
