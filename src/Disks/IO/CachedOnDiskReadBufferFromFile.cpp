@@ -936,6 +936,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (result)
     {
+        bool download_current_segment_succeeded = false;
         if (download_current_segment)
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
@@ -954,6 +955,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                         || file_segment.getCurrentWriteOffset(false) == implementation_buffer->getFileOffsetOfBufferEnd());
 
                     LOG_TEST(log, "Successfully written {} bytes", size);
+                    download_current_segment_succeeded = true;
 
                     // The implementation_buffer is valid and positioned correctly (at file_segment->getCurrentWriteOffset()).
                     // Later reads for this file segment can reuse it.
@@ -962,14 +964,15 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     implementation_buffer_can_be_reused = true;
                 }
                 else
-                {
-                    chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
-                }
             }
             else
-            {
                 LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
+
+            if (!success)
+            {
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
         }
 
@@ -990,6 +993,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         file_offset_of_buffer_end += size;
 
+        if (download_current_segment && download_current_segment_succeeded)
+            chassert(file_segment.getCurrentWriteOffset(false) >= file_offset_of_buffer_end);
         chassert(file_offset_of_buffer_end <= read_until_position);
     }
 
