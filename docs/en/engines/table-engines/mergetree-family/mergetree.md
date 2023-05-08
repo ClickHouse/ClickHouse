@@ -727,7 +727,7 @@ TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPR
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 ```
 
-Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
 ``` sql
 CREATE TABLE table_for_aggregation

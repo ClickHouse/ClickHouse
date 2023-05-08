@@ -187,7 +187,9 @@ target_include_directories(qplcore_avx512
 set_target_properties(qplcore_avx512 PROPERTIES
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
-target_link_libraries(qplcore_avx512 ${CMAKE_DL_LIBS} isal)
+target_link_libraries(qplcore_avx512
+        PRIVATE isal
+        PRIVATE ${CMAKE_DL_LIBS})
 
 target_compile_options(qplcore_avx512
                         PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
@@ -217,7 +219,9 @@ target_include_directories(qplcore_px
 set_target_properties(qplcore_px PROPERTIES
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
-target_link_libraries(qplcore_px isal ${CMAKE_DL_LIBS})
+target_link_libraries(qplcore_px
+        PRIVATE isal
+        PRIVATE ${CMAKE_DL_LIBS})
 
 target_compile_options(qplcore_px
                         PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
@@ -339,6 +343,7 @@ target_compile_definitions(_qpl
 
 target_link_libraries(_qpl
         PRIVATE accel-config
+        PRIVATE ch_contrib::isal
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
