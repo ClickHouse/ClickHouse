@@ -629,6 +629,16 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
+    if (hash_join)
+    {
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+        for (auto & block : right_blocks)
+        {
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
+        }
+    }
+
     hash_join = makeInMemoryJoin();
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
