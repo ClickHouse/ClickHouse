@@ -23,6 +23,10 @@ INSERT INTO nl VALUES (0, 'str'), (2, 'str_l');
 INSERT INTO l_lc VALUES (0, 'str'), (2, 'str_l');
 
 -- { echoOn }
+{% for allow_experimental_analyzer in [0, 1] -%}
+
+SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
+
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 
@@ -100,6 +104,8 @@ SET join_algorithm = 'partial_merge';
 SET join_use_nulls = 1;
 
 SELECT r.lc, materialize(r.lc), toTypeName(r.lc), toTypeName(materialize(r.lc)) FROM l_lc AS l FULL OUTER JOIN r_lc AS r USING (x) ORDER BY r.lc;
+
+{% endfor -%}
 
 DROP TABLE l;
 DROP TABLE r;
