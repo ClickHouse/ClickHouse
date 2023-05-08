@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     Block buildBlockWithMinAndMaxIdx(const MergeTreeData & data, const Field & min, const Field & max)
