@@ -1,4 +1,5 @@
 -- Tags: disabled
+-- FIXME https://github.com/ClickHouse/ClickHouse/issues/49552
 
 DROP TABLE IF EXISTS video_log;
 DROP TABLE IF EXISTS video_log_result__fuzz_0;
