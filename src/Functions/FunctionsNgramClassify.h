@@ -60,15 +60,16 @@ public:
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        // return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
-        return nullptr;
+        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+        // return nullptr;
     }
 
     ColumnPtr executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
-        throw Exception("Not Implemented", ErrorCodes::SUPPORT_IS_DISABLED);
+        // throw Exception("Not Implemented", ErrorCodes::SUPPORT_IS_DISABLED);
         auto col_res = ColumnVector<ResultType>::create();
+        
         return col_res;
     }
 
