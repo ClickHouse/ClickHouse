@@ -199,7 +199,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     /// used only during restore from zookeeper log
     int32_t parent_cversion = -1;
 
-    /// should it fail if node already exists
+    /// should it succeed if node already exists
     bool not_exists = false;
 
     ZooKeeperCreateRequest() = default;
