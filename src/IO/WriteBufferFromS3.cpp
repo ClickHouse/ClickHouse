@@ -238,9 +238,8 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
-void WriteBufferFromS3::createMultipartUpload()
+void WriteBufferFromS3::fillCreateMultipartRequest(DB::S3::CreateMultipartUploadRequest & req)
 {
-    DB::S3::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
@@ -249,6 +248,14 @@ void WriteBufferFromS3::createMultipartUpload()
 
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+
+    client_ptr->setKMSHeaders(req);
+}
+
+void WriteBufferFromS3::createMultipartUpload()
+{
+    DB::S3::CreateMultipartUploadRequest req;
+    fillCreateMultipartRequest(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
     if (write_settings.for_object_storage)
@@ -571,6 +578,8 @@ void WriteBufferFromS3::fillPutRequest(S3::PutObjectRequest & req)
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
+
+    client_ptr->setKMSHeaders(req);
 }
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
