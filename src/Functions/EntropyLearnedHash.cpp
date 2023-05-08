@@ -33,22 +33,22 @@ using PartialKeyPositions = std::vector<size_t>;
 namespace
 {
 
-Key getPartialKey(const Key & key, const std::vector<size_t> & positions)
+Key getPartialKey(const Key & key, const PartialKeyPositions & partial_key_positions)
 {
     Key result_key;
-    result_key.reserve(positions.size());
-    for (auto position : positions)
-        if (position < key.size())
-            result_key.push_back(key[position]);
+    result_key.reserve(partial_key_positions.size());
+    for (auto partial_key_position : partial_key_positions)
+        if (partial_key_position < key.size())
+            result_key.push_back(key[partial_key_position]);
     return result_key;
 }
 
-bool allPartialKeysAreUnique(const std::vector<EntropyLearnedHashing::Key> & data, const std::vector<size_t> & positions)
+bool allPartialKeysAreUnique(const std::vector<EntropyLearnedHashing::Key> & data, const PartialKeyPositions & partial_key_positions)
 {
     std::unordered_set<EntropyLearnedHashing::Key> partial_keys;
     partial_keys.reserve(data.size());
     for (const auto & key : data)
-        if (!partial_keys.insert(EntropyLearnedHashing::getPartialKey(key, positions)).second)
+        if (!partial_keys.insert(EntropyLearnedHashing::getPartialKey(key, partial_key_positions)).second)
             return false;
     return true;
 }
@@ -125,13 +125,13 @@ private:
     std::map<String, std::map<String, PartialKeyPositions>> partial_key_positions_by_id TSA_GUARDED_BY(mutex);
 };
 
-std::pair<std::vector<size_t>, std::vector<size_t>> chooseBytes(const std::vector<Key> & train_data)
+std::pair<PartialKeyPositions, std::vector<size_t>> chooseBytes(const std::vector<Key> & train_data)
 {
     if (train_data.size() <= 1)
         return {};
 
     // position contains numbers of chosen bytes
-    std::vector<size_t> positions;
+    PartialKeyPositions partial_key_positions;
 
     // entropies contains entropies of keys after each new chosen byte
     std::vector<size_t> entropies;
@@ -142,15 +142,15 @@ std::pair<std::vector<size_t>, std::vector<size_t>> chooseBytes(const std::vecto
         max_len = std::max(max_len, key.size());
 
     // while not all partial keys unique, choose new byte and recalculate the entropy
-    while (!allPartialKeysAreUnique(train_data, positions))
+    while (!allPartialKeysAreUnique(train_data, partial_key_positions))
     {
-        auto [new_position, new_entropy] = nextByte(train_data, max_len, positions);
+        auto [new_position, new_entropy] = nextByte(train_data, max_len, partial_key_positions);
         if (!entropies.empty() && new_entropy == entropies.back())
             break;
-        positions.push_back(new_position);
+        partial_key_positions.push_back(new_position);
         entropies.push_back(new_entropy);
     }
-    return {positions, entropies};
+    return {partial_key_positions, entropies};
 }
 
 }
