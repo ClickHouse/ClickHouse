@@ -41,13 +41,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageS3Cluster::StorageS3Cluster(
     const Configuration & configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
-    bool structure_argument_was_provided_)
+    bool structure_argument_was_provided_,
+    bool format_argument_was_provided_)
     : IStorageCluster(table_id_)
     , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
     , s3_configuration{configuration_}
@@ -55,6 +61,7 @@ StorageS3Cluster::StorageS3Cluster(
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
     , structure_argument_was_provided(structure_argument_was_provided_)
+    , format_argument_was_provided(format_argument_was_provided_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -87,6 +94,28 @@ StorageS3Cluster::StorageS3Cluster(
 void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
 {
     s3_configuration.update(local_context);
+}
+
+namespace
+{
+
+void addColumnsStructureToQueryWithS3ClusterEngine(ASTPtr & query, const String & structure, bool format_argument_was_provided, const String & function_name)
+{
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function {}, got '{}'", function_name, queryToString(query));
+
+    auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+    if (!format_argument_was_provided)
+    {
+        auto format_literal = std::make_shared<ASTLiteral>("auto");
+        expression_list->children.push_back(format_literal);
+    }
+
+    expression_list->children.push_back(structure_literal);
+}
+
 }
 
 /// The code executes on initiator
@@ -127,8 +156,8 @@ Pipe StorageS3Cluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     if (!structure_argument_was_provided)
-        addColumnsStructureToQueryWithClusterEngine(
-            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
+        addColumnsStructureToQueryWithS3ClusterEngine(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), format_argument_was_provided, getName());
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
