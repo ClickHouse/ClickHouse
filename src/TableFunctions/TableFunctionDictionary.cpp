@@ -42,10 +42,8 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
-    auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
-    auto result = ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
 
-    return result;
+    return external_loader.getActualTableStructure(dictionary_name, context);
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(

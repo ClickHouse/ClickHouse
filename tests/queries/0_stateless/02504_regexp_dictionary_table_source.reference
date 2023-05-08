@@ -1,3 +1,9 @@
+1	0	Linux/(\\d+[\\.\\d]*).+tlinux	['version','name']	['\\1','TencentOS']
+2	0	(\\d+)/tclwebkit(\\d+[\\.\\d]*)	['comment','version','name']	['test $1 and $2','$1','Andriod']
+3	2	33/tclwebkit	['version']	['13']
+4	2	3[12]/tclwebkit	['version']	['12']
+5	2	3[12]/tclwebkit	['version']	['11']
+6	2	3[12]/tclwebkit	['version']	['10']
 ('TencentOS',101,'nothing')
 ('Andriod',13,'test 33 and 11.10')
 ('',NULL,'nothing')
@@ -33,3 +39,6 @@
 ('Andriod',43)
 ('Andriod',44)
 ('Andriod1',33,'matched 3')
+1	0	(\\d+)/tclwebkit	['version','name']	['$1','Andriod']
+2	0	33/tclwebkit	['comment','version']	['matched 3','13']
+3	1	33/tclwebkit	['name']	['Andriod1']
