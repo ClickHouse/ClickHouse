@@ -42,6 +42,7 @@ services:
     depends_on:
       - kafka_zookeeper
       - kafka1
+    restart: always
     security_opt:
       - label:disable
 
@@ -64,5 +65,6 @@ services:
     depends_on:
       - kafka_zookeeper
       - kafka1
+    restart: always
     security_opt:
       - label:disable
