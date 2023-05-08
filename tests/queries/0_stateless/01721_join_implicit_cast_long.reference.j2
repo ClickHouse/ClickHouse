@@ -200,6 +200,7 @@
 1
 1
 1
+{% if join_algorithm not in ['full_sorting_merge'] -%}
 === join use nulls ===
 = full =
 -4	\N	196
@@ -401,4 +402,5 @@
 1
 1
 1
+{% endif -%}
 {% endfor -%}
