@@ -1,4 +1,3 @@
-#include <mutex>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -13,7 +12,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include "GraceHashJoin.h"
 
 #include <base/FnTraits.h>
 #include <fmt/format.h>
@@ -474,59 +472,13 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty;
 }
 
-// Add lock for reading non-joined blocks, it's thread safe.
-class GraceHashJoin::NonJoinedBlocksStream : public IBlocksStream
-{
-public:
-    explicit NonJoinedBlocksStream(
-        InMemoryJoinPtr hash_join_,
-        const Block & left_sample_block_,
-        const Block & result_sample_block_,
-        size_t max_block_size_)
-        : hash_join(hash_join_)
-        , left_sample_block(left_sample_block_)
-        , result_sample_block(result_sample_block_)
-        , max_block_size(max_block_size_)
-    {
-    }
-
-    Block nextImpl() override
-    {
-        // initialize non_joined_blocks lazily.
-        if (!has_init_non_joined_blocks) [[unlikely]]
-        {
-            std::lock_guard lock(mutex);
-            if (!has_init_non_joined_blocks)
-            {
-                has_init_non_joined_blocks = true;
-                non_joined_blocks = hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-            }
-        }
-        // For right/full join, non_joined_blocks is not null
-        // For inner/left join, non_joined_blocks is null, and return a empty block directly.
-        std::lock_guard lock(mutex);
-        if (non_joined_blocks)
-            return non_joined_blocks->next();
-        return {};
-    }
-
-private:
-    InMemoryJoinPtr hash_join;
-    Block left_sample_block;
-    Block result_sample_block;
-    size_t max_block_size;
-    bool has_init_non_joined_blocks = false;
-    IBlocksStreamPtr non_joined_blocks = nullptr;
-    std::mutex mutex;
-};
-
 // This is only be called for bucket[0] at present. other buckets' non-joined blocks are generated in
 // DelayedBlocks.
 // There is a finished counter in JoiningTransform, only the last JoiningTransform could call this function.
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
-    return std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
+    return hash_join->getNonJoinedBlocks(left_sample_block_, result_sample_block_, max_block_size_);
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
@@ -547,7 +499,9 @@ public:
         , left_reader(buckets[current_bucket]->getLeftTableReader())
         , left_key_names(left_key_names_)
         , right_key_names(right_key_names_)
-        , non_joined_blocks_iter(hash_join, left_sample_block_, result_sample_block_, max_block_size_)
+        , left_sample_block(left_sample_block_)
+        , result_sample_block(result_sample_block_)
+        , max_block_size(max_block_size_)
     {
     }
 
@@ -557,6 +511,12 @@ public:
     //   changed inside.
     Block nextImpl() override
     {
+        // there is data race case wihthout this lock:
+        //   1. thread 1 read the last block from left_reader, but not finish the join
+        //   2. thread 2 try to read from non-joined blocks. Since thread 1 has not finished,
+        //     the used flags in the hash_join is incomplete, then thread 2 return invalid mismatch rows.
+        std::lock_guard lock(non_joined_blocks_mutex);
+
         Block block;
         size_t num_buckets = buckets.size();
         size_t current_idx = buckets[current_bucket]->idx;
@@ -571,12 +531,18 @@ public:
                 if (!block)
                 {
                     is_left_reader_finished = true;
-                    return non_joined_blocks_iter.next();
+                    non_joined_blocks = hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
                 }
             }
-            else
+
+            if (is_left_reader_finished)
             {
-                return non_joined_blocks_iter.next();
+                if (non_joined_blocks)
+                {
+                    return non_joined_blocks->next();
+                }
+                else
+                    return {};
             }
 
             // block comes from left_reader, need to join with right table to get the result.
@@ -619,8 +585,12 @@ public:
 
     Names left_key_names;
     Names right_key_names;
-    std::atomic<bool> is_left_reader_finished = false;
-    NonJoinedBlocksStream non_joined_blocks_iter;
+    Block left_sample_block;
+    Block result_sample_block;
+    size_t max_block_size = 0;
+    bool is_left_reader_finished = false;
+    IBlocksStreamPtr non_joined_blocks = nullptr;
+    std::mutex non_joined_blocks_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
