@@ -14,7 +14,7 @@ add_subdirectory (config-processor)
 add_subdirectory (report)
 
 # Not used in package
-if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
+if (ENABLE_UTILS)
     add_subdirectory (compressor)
     add_subdirectory (corrector_utf8)
     add_subdirectory (zookeeper-cli)
