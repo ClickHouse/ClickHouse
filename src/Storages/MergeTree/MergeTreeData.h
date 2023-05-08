@@ -217,7 +217,6 @@ public:
     };
 
 
-
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;

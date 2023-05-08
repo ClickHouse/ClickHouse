@@ -4734,7 +4734,6 @@ void MergeTreeData::sanityCheckSourcePartition(const ASTPtr & ast, DataPartsLock
                         partition_ast.fields_count, fields_count);
 
 
-
     // this one does not seem necessary, but well... not sure it's going to be harmful, because it would fail later if there are no arguments
     if (fields_count == 0)
     {

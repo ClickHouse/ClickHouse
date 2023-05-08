@@ -47,9 +47,7 @@
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <fmt/core.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreePartitionGlobalMinMaxIdxCalculator.h>
 
