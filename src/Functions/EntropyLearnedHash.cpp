@@ -24,9 +24,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace EntropyLearnedHashing
-{
-
 using Key = String;
 using PartialKeyPositions = std::vector<size_t>;
 
@@ -43,23 +40,23 @@ Key getPartialKey(const Key & key, const PartialKeyPositions & partial_key_posit
     return result_key;
 }
 
-bool allPartialKeysAreUnique(const std::vector<EntropyLearnedHashing::Key> & data, const PartialKeyPositions & partial_key_positions)
+bool allPartialKeysAreUnique(const std::vector<Key> & data, const PartialKeyPositions & partial_key_positions)
 {
-    std::unordered_set<EntropyLearnedHashing::Key> partial_keys;
+    std::unordered_set<Key> partial_keys;
     partial_keys.reserve(data.size());
     for (const auto & key : data)
-        if (!partial_keys.insert(EntropyLearnedHashing::getPartialKey(key, partial_key_positions)).second)
+        if (!partial_keys.insert(getPartialKey(key, partial_key_positions)).second)
             return false;
     return true;
 }
 
 // NextByte returns position of byte which adds the most entropy and the new entropy
-std::pair<size_t, size_t> nextByte(const std::vector<EntropyLearnedHashing::Key> & keys, size_t max_len, std::vector<size_t> & chosen_bytes)
+std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len, std::vector<size_t> & chosen_bytes)
 {
     size_t min_collisions = std::numeric_limits<size_t>::max();
     size_t best_position = 0;
 
-    std::unordered_map<EntropyLearnedHashing::Key, size_t> count_table;
+    std::unordered_map<Key, size_t> count_table;
     for (size_t i = 0; i < max_len; ++i)
     {
         count_table.clear();
@@ -69,7 +66,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<EntropyLearnedHashing::Key>
         size_t collisions = 0;
         for (const auto & key : keys)
         {
-            auto partial_key = EntropyLearnedHashing::getPartialKey(key, chosen_bytes);
+            auto partial_key = getPartialKey(key, chosen_bytes);
             collisions += count_table[partial_key]++;
         }
 
@@ -83,7 +80,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<EntropyLearnedHashing::Key>
     return {best_position, min_collisions};
 }
 
-// std::pair<size_t, size_t> nextByte(const std::vector<EntropyLearnedHashing::Key> & keys, std::vector<size_t> & chosen_bytes)
+// std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, std::vector<size_t> & chosen_bytes)
 // {
 //     size_t max_len = 0;
 //     for (const auto & key : keys)
@@ -192,15 +189,15 @@ public:
         {
             const size_t num_rows = col_data_string->size();
 
-            std::vector<EntropyLearnedHashing::Key> training_data;
+            std::vector<Key> training_data;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 std::string_view string_ref = col_data_string->getDataAt(i).toView();
                 training_data.emplace_back(string_ref.data(), string_ref.size());
             }
 
-            EntropyLearnedHashing::PartialKeyPositions partial_key_positions = EntropyLearnedHashing::chooseBytes(training_data).first;
-            auto & id_manager = EntropyLearnedHashing::IdManager::instance();
+            PartialKeyPositions partial_key_positions = chooseBytes(training_data).first;
+            auto & id_manager = IdManager::instance();
             id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
 
             return result_type->createColumnConst(num_rows, 0u)->convertToFullColumnIfConst();
@@ -247,7 +244,7 @@ public:
         const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
         const String id = id_col_const->getValue<String>();
 
-        const auto & id_manager = EntropyLearnedHashing::IdManager::instance();
+        const auto & id_manager = IdManager::instance();
         const auto & partial_key_positions = id_manager.getPartialKeyPositionsForId(user_name, id);
 
         const auto * data_col = arguments[0].column.get();
@@ -260,8 +257,8 @@ public:
             for (size_t i = 0; i < num_rows; ++i)
             {
                 std::string_view string_ref = col_data_string->getDataAt(i).toView();
-                EntropyLearnedHashing::Key key(string_ref.data(), string_ref.size());
-                EntropyLearnedHashing::Key partial_key = EntropyLearnedHashing::getPartialKey(key, partial_key_positions);
+                Key key(string_ref.data(), string_ref.size());
+                Key partial_key = getPartialKey(key, partial_key_positions);
                 col_res_vec[i] = CityHash_v1_0_2::CityHash64(partial_key.data(), partial_key.size());
             }
 
@@ -279,8 +276,6 @@ REGISTER_FUNCTION(EntropyLearnedHash)
 {
     factory.registerFunction<FunctionTrainEntropyLearnedHash>();
     factory.registerFunction<FunctionEntropyLearnedHash>();
-}
-
 }
 
 }
