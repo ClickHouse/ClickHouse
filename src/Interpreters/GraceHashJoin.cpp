@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -524,7 +525,17 @@ private:
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
-    return std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
+    std::lock_guard lock(hash_join_mutex);
+    if (!non_joined_block_stream)
+    {
+        if (last_hash_join_for_non_joined && last_hash_join_for_non_joined != hash_join)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "getNonJoinedBlocks should be called once");
+        }
+        non_joined_block_stream = std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
+        last_hash_join_for_non_joined = hash_join;
+    }
+    return non_joined_block_stream;
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
