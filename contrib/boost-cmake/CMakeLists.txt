@@ -151,7 +151,6 @@ add_library (_boost_context ${SRCS_CONTEXT})
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
-
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
 endif()
