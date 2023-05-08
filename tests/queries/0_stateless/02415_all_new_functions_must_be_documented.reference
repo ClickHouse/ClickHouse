@@ -265,6 +265,7 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
+entropyLearnedHash
 equals
 erf
 erfc
@@ -860,6 +861,7 @@ toYear
 toYearWeek
 today
 tokens
+trainEntropyLearnedHash
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
