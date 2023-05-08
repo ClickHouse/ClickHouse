@@ -340,4 +340,4 @@
 	url = https://github.com/ClickHouse/isa-l.git
 [submodule "contrib/udt"]
 	path = contrib/udt
-	url = https://github.com/dorkbox/UDT.git
+	url = https://github.com/BoloniniD/UDT.git
