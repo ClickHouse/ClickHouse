@@ -5,7 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -110,7 +110,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
-    format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
     format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
@@ -127,6 +128,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.pretty.squash_milliseconds = static_cast<UInt64>(settings.output_format_pretty_squash_ms);
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
@@ -734,6 +736,14 @@ void FormatFactory::markFormatSupportsSubcolumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
+{
+    auto & target = dict[name].prefers_large_blocks;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
+    target = true;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
 {
     const auto & target = getCreators(name);
@@ -792,6 +802,20 @@ bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) co
 bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
+{
+    if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+        return false;
+
+    return true;
 }
 
 void FormatFactory::checkFormatName(const String & name) const
