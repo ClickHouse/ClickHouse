@@ -522,20 +522,11 @@ private:
 
 // This is only be called for bucket[0] at present. other buckets' non-joined blocks are generated in
 // DelayedBlocks.
+// There is a finished counter in JoiningTransform, only the last JoiningTransform could call this function.
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
-    std::lock_guard lock(hash_join_mutex);
-    if (!non_joined_block_stream)
-    {
-        if (last_hash_join_for_non_joined && last_hash_join_for_non_joined != hash_join)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "getNonJoinedBlocks should be called once");
-        }
-        non_joined_block_stream = std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
-        last_hash_join_for_non_joined = hash_join;
-    }
-    return non_joined_block_stream;
+    return std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
@@ -582,7 +573,7 @@ public:
                     is_left_reader_finished = true;
                 }
             }
-            if (is_left_reader_finished || !block)
+            if (is_left_reader_finished && !block)
             {
                 return non_joined_blocks_iter.next();
             }
