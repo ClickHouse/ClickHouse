@@ -30,6 +30,7 @@ namespace
 
 using Key = String;
 using PartialKeyPositions = std::vector<size_t>;
+using Entropies = std::vector<size_t>;
 
 Key getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, Key & result)
 {
@@ -99,23 +100,18 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
 //     return nextByte(keys, max_len, chosen_bytes);
 // }
 
-std::pair<PartialKeyPositions, std::vector<size_t>> chooseBytes(const std::vector<Key> & train_data)
+std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<Key> & train_data)
 {
     if (train_data.size() <= 1)
         return {};
 
-    // position contains numbers of chosen bytes
     PartialKeyPositions partial_key_positions;
+    Entropies entropies;
 
-    // entropies contains entropies of keys after each new chosen byte
-    std::vector<size_t> entropies;
-
-    // max_len is a maximal length of any key in train_data
-    size_t max_len = 0;
+    size_t max_len = 0; /// length of the longest key in training data
     for (const auto & key : train_data)
         max_len = std::max(max_len, key.size());
 
-    // while not all partial keys unique, choose new byte and recalculate the entropy
     while (!allPartialKeysAreUnique(train_data, partial_key_positions))
     {
         auto [new_position, new_entropy] = nextByte(train_data, max_len, partial_key_positions);
@@ -198,6 +194,7 @@ public:
         {
             const size_t num_rows = col_data_string->size();
 
+            /// TODO this does some needless copying ... chooseBytes() should ideally understand the native ColumnString representation
             std::vector<Key> training_data;
             for (size_t i = 0; i < num_rows; ++i)
             {
