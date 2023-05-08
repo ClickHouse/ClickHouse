@@ -21,6 +21,7 @@ RUN apt-get update \
         lz4 \
         odbc-postgresql \
         odbcinst \
+        libodbc1 \
         python3 \
         rpm2cpio \
         sqlite3 \
