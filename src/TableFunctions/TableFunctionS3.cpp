@@ -229,9 +229,61 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 }
 
 
+class TableFunctionGCS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "gcs";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "GCS"; }
+};
+
+class TableFunctionCOS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "cosn";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
+};
+
+
+void registerTableFunctionGCS(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionGCS>(
+        {.documentation
+         = {R"(The table function can be used to read the data stored on Google Cloud Storage.)",
+            Documentation::Examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = false});
+}
+
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3>();
+    factory.registerFunction<TableFunctionS3>(
+        {.documentation
+         = {R"(The table function can be used to read the data stored on AWS S3.)",
+            Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = false});
 }
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
