@@ -170,4 +170,4 @@ size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
     return ++queue_iter->hits;
 }
 
-};
+}

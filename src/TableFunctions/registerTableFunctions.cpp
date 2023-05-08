@@ -28,6 +28,7 @@ void registerTableFunctions()
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
     registerTableFunctionOSS(factory);
+    registerTableFunctionGCS(factory);
     registerTableFunctionHudi(factory);
 #if USE_PARQUET
     registerTableFunctionDeltaLake(factory);

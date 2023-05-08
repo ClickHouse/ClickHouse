@@ -118,10 +118,8 @@ namespace ProfileEvents
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
     extern const Event InsertedCompactParts;
-    extern const Event InsertedInMemoryParts;
     extern const Event MergedIntoWideParts;
     extern const Event MergedIntoCompactParts;
-    extern const Event MergedIntoInMemoryParts;
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
@@ -385,8 +383,7 @@ MergeTreeData::MergeTreeData(
 
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
-        LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
-            "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
+        LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part'and 'min_bytes_for_wide_part' will be ignored.", reason);
 
 #if !USE_ROCKSDB
     if (use_metadata_cache)
@@ -2354,22 +2351,6 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-void MergeTreeData::flushAllInMemoryPartsIfNeeded()
-{
-    if (getSettings()->in_memory_parts_enable_wal)
-        return;
-
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    DataPartsVector parts = getDataPartsVectorForInternalUsage();
-    for (const auto & part : parts)
-    {
-        if (auto part_in_memory = asInMemoryPart(part))
-        {
-            part_in_memory->flushToDisk(part_in_memory->getDataPartStorage().getPartDirectory(), metadata_snapshot);
-        }
-    }
-}
-
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
@@ -2451,17 +2432,19 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     std::mutex part_names_mutex;
     ThreadPool pool(CurrentMetrics::MergeTreePartsCleanerThreads, CurrentMetrics::MergeTreePartsCleanerThreadsActive, num_threads);
 
-    bool has_zero_copy_parts = false;
+    /// This flag disallow straightforward concurrent parts removal. It's required only in case
+    /// when we have parts on zero-copy disk + at least some of them were mutated.
+    bool remove_parts_in_order = false;
     if (settings->allow_remote_fs_zero_copy_replication && dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
     {
-        has_zero_copy_parts = std::any_of(
+        remove_parts_in_order = std::any_of(
             parts_to_remove.begin(), parts_to_remove.end(),
-            [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport(); }
+            [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport() && data_part->info.getMutationVersion() > 0; }
         );
     }
 
 
-    if (!has_zero_copy_parts)
+    if (!remove_parts_in_order)
     {
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         LOG_DEBUG(
@@ -3340,7 +3323,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, bool only_on_disk) const
+MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
@@ -3354,9 +3337,6 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
         return bytes_uncompressed < min_bytes_for || rows_count < min_rows_for;
     };
 
-    if (!only_on_disk && satisfies(settings->min_bytes_for_compact_part, settings->min_rows_for_compact_part))
-        return {PartType::InMemory, PartStorageType::Full};
-
     auto part_type = PartType::Wide;
     if (satisfies(settings->min_bytes_for_wide_part, settings->min_rows_for_wide_part))
         part_type = PartType::Compact;
@@ -3366,7 +3346,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const
 {
-    return choosePartFormat(bytes_uncompressed, rows_count, true);
+    return choosePartFormat(bytes_uncompressed, rows_count);
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
@@ -6144,19 +6124,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             }
         }
 
-        MergeTreeData::WriteAheadLogPtr wal;
-        auto get_inited_wal = [&] ()
-        {
-            if (!wal)
-                wal = data.getWriteAheadLog();
-            return wal;
-        };
-
-        if (settings->in_memory_parts_enable_wal)
-            for (const auto & part : precommitted_parts)
-                if (auto part_in_memory = asInMemoryPart(part))
-                    get_inited_wal()->addPart(part_in_memory);
-
         NOEXCEPT_SCOPE({
             auto current_time = time(nullptr);
 
@@ -6200,10 +6167,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
-
-                        if (settings->in_memory_parts_enable_wal)
-                            if (isInMemoryPart(covered_part))
-                                get_inited_wal()->dropPart(covered_part->name);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -7884,11 +7847,8 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
                     "Table can't create parts with adaptive granularity, but settings"
                     " min_rows_for_wide_part = {}"
                     ", min_bytes_for_wide_part = {}"
-                    ", min_rows_for_compact_part = {}"
-                    ", min_bytes_for_compact_part = {}"
                     ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
-                    settings.min_rows_for_wide_part,    settings.min_bytes_for_wide_part,
-                    settings.min_rows_for_compact_part, settings.min_bytes_for_compact_part);
+                    settings.min_rows_for_wide_part, settings.min_bytes_for_wide_part);
         }
 
         return false;
@@ -8268,9 +8228,6 @@ void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType typ
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::InsertedCompactParts);
             break;
-        case MergeTreeDataPartType::InMemory:
-            ProfileEvents::increment(ProfileEvents::InsertedInMemoryParts);
-            break;
         default:
             break;
     }
@@ -8285,9 +8242,6 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
             break;
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::MergedIntoCompactParts);
-            break;
-        case MergeTreeDataPartType::InMemory:
-            ProfileEvents::increment(ProfileEvents::MergedIntoInMemoryParts);
             break;
         default:
             break;
