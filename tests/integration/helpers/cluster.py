@@ -1168,15 +1168,15 @@ class ClickHouseCluster:
         ]
         return self.base_kerberized_hdfs_cmd
 
-    def setup_kafka_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
-    ):
+    def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
         env_variables["SCHEMA_REGISTRY_DIR"] = instance.path + "/"
         env_variables["SCHEMA_REGISTRY_EXTERNAL_PORT"] = str(self.schema_registry_port)
-        env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(self.schema_registry_auth_port)
+        env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
+            self.schema_registry_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -1617,7 +1617,10 @@ class ClickHouseCluster:
             with_nats=with_nats,
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
-            with_secrets=with_secrets or with_kerberized_hdfs or with_kerberos_kdc or with_kerberized_kafka,
+            with_secrets=with_secrets
+            or with_kerberized_hdfs
+            or with_kerberos_kdc
+            or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
             with_meili=with_meili,
             with_redis=with_redis,
@@ -2508,8 +2511,8 @@ class ClickHouseCluster:
 
     def wait_schema_registry_to_start(self, timeout=180):
         for port in self.schema_registry_port, self.schema_registry_auth_port:
-            reg_url="http://localhost:{}".format(port)
-            arg={'url':reg_url}
+            reg_url = "http://localhost:{}".format(port)
+            arg = {"url": reg_url}
             sr_client = CachedSchemaRegistryClient(arg)
 
             start = time.time()
@@ -4245,8 +4248,8 @@ class ClickHouseInstance:
                 base_secrets_dir = self.cluster.instances_dir
             else:
                 base_secrets_dir = self.path
-            from_dir=self.secrets_dir
-            to_dir=p.abspath(p.join(base_secrets_dir, "secrets"))
+            from_dir = self.secrets_dir
+            to_dir = p.abspath(p.join(base_secrets_dir, "secrets"))
             logging.debug(f"Copy secret from {from_dir} to {to_dir}")
             shutil.copytree(
                 self.secrets_dir,
