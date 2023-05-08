@@ -70,13 +70,15 @@ if (LINKER_NAME)
     if (NOT LLD_PATH)
         message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
     endif ()
-    if (COMPILER_CLANG)
-        # This a temporary quirk to emit .debug_aranges with ThinLTO, can be removed after upgrade to clang-16
+    # This a temporary quirk to emit .debug_aranges with ThinLTO, it is only the case clang/llvm <16
+    if (COMPILER_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
         set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
         configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
 
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
-    endif ()
+    else ()
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
+    endif()
 
 endif ()
 
