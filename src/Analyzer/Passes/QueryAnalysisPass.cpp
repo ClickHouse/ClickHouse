@@ -1264,7 +1264,8 @@ private:
         size_t identifier_bind_size,
         const QueryTreeNodePtr & compound_expression,
         String compound_expression_source,
-        IdentifierResolveScope & scope);
+        IdentifierResolveScope & scope,
+        bool can_be_not_found = false);
 
     QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
@@ -1313,12 +1314,13 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveSettings identifier_resolve_settings = {});
 
-    QueryTreeNodePtr resolveIdentifierFromStorageOrThrow(
+    QueryTreeNodePtr tryResolveIdentifierFromStorage(
         const Identifier & identifier,
         const QueryTreeNodePtr & table_expression_node,
         const TableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
-        size_t identifier_column_qualifier_parts);
+        size_t identifier_column_qualifier_parts,
+        bool can_be_not_found = false);
 
     /// Resolve query tree nodes functions
 
@@ -2402,11 +2404,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
 }
 
 /// Resolve identifier from compound expression
+/// If identifier cannot be resolved throw exception or return nullptr if can_be_not_found is true
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
     size_t identifier_bind_size,
     const QueryTreeNodePtr & compound_expression,
     String compound_expression_source,
-    IdentifierResolveScope & scope)
+    IdentifierResolveScope & scope,
+    bool can_be_not_found)
 {
     Identifier compound_expression_identifier;
     for (size_t i = 0; i < identifier_bind_size; ++i)
@@ -2419,6 +2423,23 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
 
     if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
+        if (auto * column = compound_expression->as<ColumnNode>())
+        {
+            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+            if (column_type->getTypeId() == TypeIndex::Object)
+            {
+                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
+                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                {
+                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                    return constant_node_null;
+                }
+            }
+        }
+
+        if (can_be_not_found)
+            return {};
+
         std::unordered_set<Identifier> valid_identifiers;
         collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
             expression_type,
@@ -2432,20 +2453,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
         {
             compound_expression_from_error_message += " from ";
             compound_expression_from_error_message += compound_expression_source;
-        }
-
-        if (auto * column = compound_expression->as<ColumnNode>())
-        {
-            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::Object)
-            {
-                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
-                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
-                {
-                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
-                    return constant_node_null;
-                }
-            }
         }
 
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
@@ -2803,12 +2810,13 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpressions(const IdentifierLookup &
     return can_bind_identifier_to_table_expression;
 }
 
-QueryTreeNodePtr QueryAnalyzer::resolveIdentifierFromStorageOrThrow(
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     const Identifier & identifier,
     const QueryTreeNodePtr & table_expression_node,
     const TableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
-    size_t identifier_column_qualifier_parts)
+    size_t identifier_column_qualifier_parts,
+    bool can_be_not_found)
 {
     auto identifier_without_column_qualifier = identifier;
     identifier_without_column_qualifier.popFirst(identifier_column_qualifier_parts);
@@ -2851,7 +2859,10 @@ QueryTreeNodePtr QueryAnalyzer::resolveIdentifierFromStorageOrThrow(
             identifier_bind_size,
             result_expression,
             table_expression_source,
-            scope);
+            scope,
+            can_be_not_found);
+        if (can_be_not_found && !result_expression)
+            return {};
         clone_is_needed = false;
     }
 
@@ -3000,24 +3011,35 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
-        return resolveIdentifierFromStorageOrThrow(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_data.canBindIdentifier(IdentifierView(identifier)))
-        return resolveIdentifierFromStorageOrThrow(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
+    {
+        /** This check is insufficient to determine whether and identifier can be resolved from table expression.
+          * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
+          * In cases where the subcolumn cannot be found we want to have `nullptr` instead of exception.
+          * So, we set `can_be_not_found = true` to have an attempt to resolve the identifier from another table expression.
+          * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
+          * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
+          */
+        auto resolved_identifier = tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        if (resolved_identifier)
+            return resolved_identifier;
+    }
 
     if (identifier.getPartsSize() == 1)
         return {};
 
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
-        return resolveIdentifierFromStorageOrThrow(identifier, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
         return {};
 
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return resolveIdentifierFromStorageOrThrow(identifier, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
 }
