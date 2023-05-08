@@ -1,8 +1,6 @@
 #pragma once
 #include <mutex>
-#include <Interpreters/Cache/FileCache_fwd.h>
 #include <boost/noncopyable.hpp>
-#include <map>
 
 namespace DB
 {
@@ -63,10 +61,7 @@ namespace DB
  */
 struct CacheGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
-    {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
-    };
+    using Lock = std::unique_lock<std::mutex>;
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -77,10 +72,7 @@ struct CacheGuard : private boost::noncopyable
  */
 struct CacheMetadataGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
-    {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
-    };
+    using Lock = std::unique_lock<std::mutex>;
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -91,10 +83,7 @@ struct CacheMetadataGuard : private boost::noncopyable
  */
 struct KeyGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
-    {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
-    };
+    using Lock = std::unique_lock<std::mutex>;
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
@@ -105,10 +94,7 @@ struct KeyGuard : private boost::noncopyable
  */
 struct FileSegmentGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
-    {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
-    };
+    using Lock = std::unique_lock<std::mutex>;
 
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
