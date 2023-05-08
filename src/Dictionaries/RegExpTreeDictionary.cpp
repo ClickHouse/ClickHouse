@@ -264,7 +264,7 @@ void RegExpTreeDictionary::initGraph()
         if (regex_nodes.contains(pid))
             regex_nodes[pid]->children.push_back(id);
         else
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {}", pid);
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {} in regexp tree dictionary", pid);
     }
     std::set<UInt64> visited;
     UInt64 topology_id = 0;

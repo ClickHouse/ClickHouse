@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
@@ -27,12 +22,14 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , read_buffer_creator(std::move(read_buffer_creator_))
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
-    , current_object(!blobs_to_read_.empty() ? blobs_to_read_.front() : throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read zero number of objects"))
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
     if (cache_log_ && settings.enable_filesystem_cache_log)
         cache_log = cache_log_;
+
+    if (!blobs_to_read.empty())
+        current_object = blobs_to_read.front();
 
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
@@ -75,10 +72,9 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
 void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 {
-    if (!cache_log)
+    if (!cache_log || current_object.remote_path.empty())
         return;
 
-    chassert(!current_object.remote_path.empty());
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
@@ -103,7 +99,7 @@ IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, 
     file_offset_of_buffer_end = offset;
     bytes_to_ignore = ignore;
 
-    auto result = nextImpl();
+    const auto result = nextImpl();
 
     if (result)
         return { working_buffer.size(), BufferBase::offset(), nullptr };
@@ -113,6 +109,9 @@ IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, 
 
 void ReadBufferFromRemoteFSGather::initialize()
 {
+    if (blobs_to_read.empty())
+        return;
+
     /// One clickhouse file can be split into multiple files in remote fs.
     auto current_buf_offset = file_offset_of_buffer_end;
     for (size_t i = 0; i < blobs_to_read.size(); ++i)
@@ -146,21 +145,14 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     if (!current_buf)
         initialize();
 
-    /// If current buffer has remaining data - use it.
-    if (current_buf)
-    {
-        if (readImpl())
-            return true;
-    }
-    else
-    {
+    if (!current_buf)
         return false;
-    }
+
+    if (readImpl())
+        return true;
 
     if (!moveToNextBuffer())
-    {
         return false;
-    }
 
     return readImpl();
 }
