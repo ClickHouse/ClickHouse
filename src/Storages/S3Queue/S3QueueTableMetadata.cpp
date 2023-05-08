@@ -2,11 +2,11 @@
 
 #if USE_AWS_S3
 
-#include <IO/Operators.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <Storages/StorageS3.h>
+#    include <IO/Operators.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <Storages/S3Queue/S3QueueSettings.h>
+#    include <Storages/S3Queue/S3QueueTableMetadata.h>
+#    include <Storages/StorageS3.h>
 
 
 namespace DB

@@ -2,14 +2,13 @@
 
 #if USE_AWS_S3
 
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/StorageS3.h>
-#include <base/types.h>
+#    include <Storages/S3Queue/S3QueueSettings.h>
+#    include <Storages/StorageS3.h>
+#    include <base/types.h>
 
 namespace DB
 {
 
-class MergeTreeData;
 class WriteBuffer;
 class ReadBuffer;
 

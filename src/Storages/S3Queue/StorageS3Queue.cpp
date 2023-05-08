@@ -3,59 +3,59 @@
 
 #if USE_AWS_S3
 
-#include <Databases/DatabaseReplicated.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Common/ProfileEvents.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/isValidUTF8.h>
-#include "IO/ParallelReadBuffer.h"
+#    include <Databases/DatabaseReplicated.h>
+#    include <IO/WriteBuffer.h>
+#    include <IO/WriteHelpers.h>
+#    include <Interpreters/InterpreterInsertQuery.h>
+#    include <Processors/Executors/CompletedPipelineExecutor.h>
+#    include <Common/ProfileEvents.h>
+#    include <Common/ZooKeeper/ZooKeeper.h>
+#    include <Common/isValidUTF8.h>
+#    include "IO/ParallelReadBuffer.h"
 
-#include <Functions/FunctionsConversion.h>
+#    include <Functions/FunctionsConversion.h>
 
-#include <IO/S3Common.h>
+#    include <IO/S3Common.h>
 
-#include <Interpreters/TreeRewriter.h>
+#    include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTInsertQuery.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTInsertQuery.h>
 
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/PartitionedSink.h>
-#include <Storages/ReadFromStorageProgress.h>
-#include <Storages/S3Queue/S3QueueSource.h>
-#include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <Storages/S3Queue/StorageS3Queue.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/getVirtualsForStorage.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#    include <Storages/NamedCollectionsHelpers.h>
+#    include <Storages/PartitionedSink.h>
+#    include <Storages/ReadFromStorageProgress.h>
+#    include <Storages/S3Queue/S3QueueSource.h>
+#    include <Storages/S3Queue/S3QueueTableMetadata.h>
+#    include <Storages/S3Queue/StorageS3Queue.h>
+#    include <Storages/StorageFactory.h>
+#    include <Storages/StorageMaterializedView.h>
+#    include <Storages/StorageS3.h>
+#    include <Storages/StorageSnapshot.h>
+#    include <Storages/VirtualColumnUtils.h>
+#    include <Storages/getVirtualsForStorage.h>
+#    include <Common/NamedCollections/NamedCollections.h>
 
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#    include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
-#include <Formats/FormatFactory.h>
+#    include <Formats/FormatFactory.h>
 
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#    include <Processors/Formats/IInputFormat.h>
+#    include <Processors/Formats/IOutputFormat.h>
+#    include <Processors/Transforms/AddingDefaultsTransform.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeString.h>
 
-#include <Common/parseGlobs.h>
+#    include <Common/parseGlobs.h>
 
-#include <filesystem>
-#include <Processors/ISource.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Pipe.h>
+#    include <filesystem>
+#    include <Processors/ISource.h>
+#    include <Processors/Sinks/SinkToStorage.h>
+#    include <QueryPipeline/Pipe.h>
 
 namespace fs = std::filesystem;
 
@@ -175,8 +175,8 @@ StorageS3Queue::StorageS3Queue(
         checkTableStructure(zookeeper_path, metadata_snapshot);
     }
 
-    auto table_uuid = getStorageID().uuid;
-    queue_holder = std::make_unique<S3QueueHolder>(zookeeper_path, mode, table_uuid, getContext());
+    queue_holder = std::make_unique<S3QueueHolder>(
+        zookeeper_path, mode, getContext(), s3queue_settings->s3queue_max_set_size.value, s3queue_settings->s3queue_max_set_age_s.value);
 
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -216,7 +216,7 @@ Pipe StorageS3Queue::read(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageS3Queue with attached materialized views");
 
     auto query_s3_configuration = updateConfigurationAndGetCopy(local_context);
 
@@ -279,8 +279,6 @@ Pipe StorageS3Queue::read(
         iterator_wrapper,
         queue_holder,
         after_processing,
-        zookeeper,
-        zookeeper_path,
         max_download_threads));
 }
 
@@ -492,8 +490,6 @@ void StorageS3Queue::streamToViews()
         iterator_wrapper,
         queue_holder,
         after_processing,
-        zookeeper,
-        zookeeper_path,
         max_download_threads));
 
 
@@ -553,10 +549,8 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
         else
         {
             String metadata_str = S3QueueTableMetadata(s3_configuration, *s3queue_settings).toString();
-            String default_processed = mode == S3QueueMode::ORDERED ? "" : "[]";
-
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", default_processed, zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "processed_files\n", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "[]", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -627,19 +621,27 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysW
     std::lock_guard lock{sync_mutex};
 
     auto it = std::make_shared<StorageS3QueueSource::QueueGlobIterator>(
-        *s3_configuration.client, s3_configuration.url, query, virtual_block, local_context, read_keys, s3_configuration.request_settings);
+        *s3_configuration.client,
+        s3_configuration.url,
+        query,
+        virtual_block,
+        local_context,
+        s3queue_settings->s3queue_polling_size.value,
+        read_keys,
+        s3_configuration.request_settings);
 
+    auto zookeeper_lock = queue_holder->AcquireLock();
     S3QueueHolder::S3FilesCollection exclude = queue_holder->getExcludedFiles();
 
     Strings processing_files;
     if (mode == S3QueueMode::UNORDERED)
     {
-        processing_files = it->setProcessing(mode, exclude);
+        processing_files = it->filterProcessingFiles(mode, exclude);
     }
     else
     {
         String max_processed_file = queue_holder->getMaxProcessedFile();
-        processing_files = it->setProcessing(mode, exclude, max_processed_file);
+        processing_files = it->filterProcessingFiles(mode, exclude, max_processed_file);
     }
     queue_holder->setFilesProcessing(processing_files);
     return it;

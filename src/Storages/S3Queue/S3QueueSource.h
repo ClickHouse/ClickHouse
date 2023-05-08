@@ -3,26 +3,26 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
+#    include <Core/Types.h>
 
-#include <Compression/CompressionInfo.h>
+#    include <Compression/CompressionInfo.h>
 
-#include <Storages/IStorage.h>
-#include <Storages/S3Queue/S3QueueHolder.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageS3Settings.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/S3Queue/S3QueueHolder.h>
+#    include <Storages/StorageS3.h>
+#    include <Storages/StorageS3Settings.h>
 
-#include <IO/CompressionMethod.h>
-#include <IO/S3/getObjectInfo.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
-#include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
-#include <Poco/URI.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/S3/getObjectInfo.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/ISource.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/StorageConfiguration.h>
+#    include <Poco/URI.h>
+#    include <Common/ZooKeeper/ZooKeeper.h>
+#    include <Common/logger_useful.h>
 
 
 namespace DB
@@ -46,16 +46,18 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
+            UInt64 & max_poll_size_,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {});
 
         KeyWithInfo next() override;
         size_t getTotalSize() const override;
 
-        Strings setProcessing(S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
+        Strings
+        filterProcessingFiles(const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
 
     private:
-        size_t max_poll_size = 10;
+        UInt64 max_poll_size;
         const String bucket;
         KeysWithInfo keys_buf;
         KeysWithInfo processing_keys;
@@ -85,8 +87,6 @@ public:
         std::shared_ptr<IIterator> file_iterator_,
         std::shared_ptr<S3QueueHolder> queue_holder_,
         const S3QueueAction & action_,
-        zkutil::ZooKeeperPtr current_zookeeper,
-        const String & zookeeper_path_,
         size_t download_thread_num);
 
     ~StorageS3QueueSource() override;
@@ -121,9 +121,6 @@ private:
     size_t download_thread_num = 1;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSource");
-
-    zkutil::ZooKeeperPtr zookeeper;
-    const String zookeeper_path;
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
