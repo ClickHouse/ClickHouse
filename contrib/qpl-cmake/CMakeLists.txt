@@ -1,16 +1,4 @@
 ## The Intel® QPL provides high performance implementations of data processing functions for existing hardware accelerator, and/or software path in case if hardware accelerator is not available.
-if (OS_LINUX AND ARCH_AMD64 AND (ENABLE_AVX2 OR ENABLE_AVX512))
-    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
-elseif(ENABLE_QPL)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with avx2/avx512 support")
-endif()
-
-if (NOT ENABLE_QPL)
-    message(STATUS "Not using QPL")
-    return()
-endif()
-
-## QPL build start here.
 set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
