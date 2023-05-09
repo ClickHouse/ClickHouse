@@ -38,32 +38,6 @@ void StorageNull::drop()
     std::lock_guard lock(mutex);
     condition.notify_all();
 }
-bool StorageNull::getNewBlocks()
-{
-    BlocksPtr new_blocks = std::make_shared<Blocks>();
-    // for (int i = 0; i < 1; ++i) {
-    //     Block block;
-    //     new_blocks->push_back(block);
-    // }
-    (*blocks_ptr) = new_blocks;
-    return true;
-}
-
-void StorageNull::refresh(bool grab_lock)
-{
-
-    if (grab_lock)
-    {
-        std::lock_guard lock(mutex);
-        if (getNewBlocks())
-            condition.notify_all();
-    }
-    else
-    {
-        if (getNewBlocks())
-            condition.notify_all();
-    }
-}
 
 Pipe StorageNull::read(
     const Names & column_names,
@@ -78,12 +52,18 @@ Pipe StorageNull::read(
     modified_query_info.query = query_info.query->clone();
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
     if (modified_select.is_stream) {
-        if (!(*blocks_ptr))
-            refresh(false);
+        Block block = storage_snapshot->getSampleBlockForColumns(column_names);
+        block.insert({DataTypeInt32().createColumnConst(block.rows(), 3), std::make_shared<DataTypeInt32>(), "vv"});
+        if (!(*blocks_ptr)) {
+            BlocksPtr new_blocks = std::make_shared<Blocks>();
+            new_blocks->push_back(block);
+            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM INSERT");
+            (*blocks_ptr) = new_blocks;
+        }
         LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM");
         return Pipe(
         std::make_shared<NullSource>(
-            storage_snapshot->getSampleBlockForColumns(column_names),
+            block,
         std::static_pointer_cast<StorageNull>(shared_from_this()), blocks_ptr));
     } else {
         LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "NOT STREAM");
@@ -96,18 +76,27 @@ SinkToStoragePtr StorageNull::write(const ASTPtr & query, const StorageMetadataP
 {
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_stream = insert_query && insert_query->is_stream;
+    auto null_sink_to_storage = std::shared_ptr<NullSinkToStorage>(new NullSinkToStorage(metadata_snapshot->getSampleBlock()));
     if (is_stream) {
         BlocksPtr new_blocks = std::make_shared<Blocks>();
-        Block block;
-        block.insert({DataTypeUInt64().createColumnConst(
-            block.rows(), 1)->convertToFullColumnIfConst(),
-            std::make_shared<DataTypeUInt64>(),
-            "_version"});
+        Block block = metadata_snapshot->getSampleBlockInsertable(); // TODO блок должен доставаться по-другому
+        block.insert({DataTypeInt32().createColumnConst(block.rows(), 3), std::make_shared<DataTypeInt32>(), "vv"});
         new_blocks->push_back(block);
         LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM INSERT");
         (*blocks_ptr) = new_blocks;
+
+
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "fdhfkadhk " + std::to_string(block.rows()));
+        new_block = metadata_snapshot->getSampleBlockInsertable();
+        for (const auto & name : new_block.getNames())
+        {
+            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "name " + name);
+        }
+
+        
+        condition.notify_all();
     }
-    return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+    return null_sink_to_storage;
 }
 
 void registerStorageNull(StorageFactory & factory)

@@ -33,7 +33,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -118,6 +118,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot) const
 {
+    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterInsertQuery::getSampleBlock");
     /// If the query does not include information about columns
     if (!query.columns)
     {
@@ -135,6 +136,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getColumnName " + current_name);
         names.emplace_back(std::move(current_name));
     }
 

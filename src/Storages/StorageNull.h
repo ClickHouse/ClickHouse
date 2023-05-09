@@ -32,8 +32,8 @@ public:
     ~StorageNull() override;
     void drop() override;
     void shutdown() override;
-    bool getNewBlocks();
-    void refresh(bool grab_lock = true);
+    // bool getNewBlocks();
+    void refresh();
 
     std::string getName() const override { return "Null"; }
 
@@ -69,6 +69,7 @@ private:
     std::condition_variable condition;
     bool is_stream_{false};
     std::shared_ptr<BlocksPtr> blocks_ptr;
+    Block new_block;
 
 };
 

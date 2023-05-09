@@ -140,8 +140,8 @@ protected:
 private:
     std::shared_ptr<StorageNull> storage;
     std::shared_ptr<BlocksPtr> blocks_ptr;
-    UInt64 last_event_timestamp_usec = 15000000;
-    UInt64 heartbeat_interval_usec;
+    UInt64 last_event_timestamp_usec;
+    UInt64 heartbeat_interval_usec = 1500000000;
     bool is_stream = false;
     BlocksPtr blocks;
     Blocks::iterator it;
