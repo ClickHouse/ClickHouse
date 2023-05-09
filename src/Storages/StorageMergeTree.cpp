@@ -1343,6 +1343,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
 {
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    
     size_t count = 0;
     for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
     {
