@@ -5,7 +5,7 @@
 using namespace DB;
 
 template <typename Ptr>
-void run(Ptr && context)
+void run(Ptr context)
 {
     for (size_t i = 0; i < 100; ++i)
     {
@@ -31,19 +31,19 @@ TEST(Context, MutableRace)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
-    run<ContextMutablePtr>(std::move(context));
+    run<ContextMutablePtr>(context);
 }
 
 TEST(Context, ConstRace)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
-    run<ContextPtr>(std::move(context));
+    run<ContextPtr>(context);
 }
 
 TEST(Context, WeakRace)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
-    run<ContextWeakPtr>(std::move(context));
+    run<ContextWeakPtr>(context);
 }
