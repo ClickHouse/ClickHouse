@@ -20,6 +20,7 @@
 #include <Functions/Regexps.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Sources/BlocksListSource.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -31,7 +32,6 @@
 
 #include <re2_st/stringpiece.h>
 
-#include "Processors/Sources/BlocksListSource.h"
 #include "config.h"
 
 #if USE_VECTORSCAN
@@ -86,6 +86,32 @@ namespace
                         raw, data_type->getName(), getCurrentExceptionMessage(false));
     }
 }
+
+struct ExternalRegexpQueryBuilder final : public ExternalQueryBuilder
+{
+    explicit ExternalRegexpQueryBuilder(const ExternalQueryBuilder & builder) : ExternalQueryBuilder(builder) {}
+
+    void composeLoadAllQuery(WriteBuffer & out) const override
+    {
+        writeString("SELECT id, parent_id, regexp, keys, values FROM ", out);
+        if (!db.empty())
+        {
+            writeQuoted(db, out);
+            writeChar('.', out);
+        }
+        if (!schema.empty())
+        {
+            writeQuoted(schema, out);
+            writeChar('.', out);
+        }
+        writeQuoted(table, out);
+        if (!where.empty())
+        {
+            writeString(" WHERE ", out);
+            writeString(where, out);
+        }
+    }
+};
 
 struct RegExpTreeDictionary::RegexTreeNode
 {
@@ -385,6 +411,8 @@ RegExpTreeDictionary::RegExpTreeDictionary(
         sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kKeys));
         sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kValues));
         ch_source->sample_block = std::move(sample_block);
+        ch_source->query_builder = std::make_shared<ExternalRegexpQueryBuilder>(*ch_source->query_builder);
+        ch_source->load_all_query = ch_source->query_builder->composeLoadAllQuery();
     }
 
     loadData();
