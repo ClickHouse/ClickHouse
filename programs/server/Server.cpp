@@ -27,7 +27,6 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -98,9 +97,7 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
-#    include <cstddef>
 #    include <cstdlib>
-#    include <sys/socket.h>
 #    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
@@ -108,7 +105,6 @@
 #endif
 
 #if USE_SSL
-#    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
@@ -1242,8 +1238,13 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            if (global_context->isServerCompletelyStarted())
+            {
+                /// It does not make sense to reload anything before server has started.
+                /// Moreover, it may break initialization order.
+                global_context->loadOrReloadDictionaries(*config);
+                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            }
 
             global_context->setRemoteHostFilter(*config);
 

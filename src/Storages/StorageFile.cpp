@@ -412,6 +412,11 @@ bool StorageFile::prefersLargeBlocks() const
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
 }
 
+bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+}
+
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
