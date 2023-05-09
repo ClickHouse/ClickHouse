@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
 
+import logging
 import os
 import subprocess
-import logging
+import sys
 
 from github import Github
 
 from commit_status_helper import get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import (
     IMAGES_PATH,
     REPO_COPY,
     S3_DOWNLOAD,
+    S3_BUILDS_BUCKET,
     S3_TEST_REPORTS_BUCKET,
     TEMP_PATH,
 )
@@ -27,16 +29,24 @@ from upload_result_helper import upload_results
 NAME = "Woboq Build"
 
 
-def get_run_command(repo_path, output_path, image):
+def get_run_command(
+    repo_path: str, output_path: str, image: DockerImage, sha: str
+) -> str:
+    user = f"{os.geteuid()}:{os.getegid()}"
     cmd = (
-        "docker run " + f"--volume={repo_path}:/repo_folder "
-        f"--volume={output_path}:/test_output "
-        f"-e 'DATA={S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/data' {image}"
+        f"docker run --rm --user={user} --volume={repo_path}:/build "
+        f"--volume={output_path}:/workdir/output --network=host "
+        # use sccache, https://github.com/KDAB/codebrowser/issues/111
+        f"-e SCCACHE_BUCKET='{S3_BUILDS_BUCKET}' "
+        "-e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
+        '-e CMAKE_FLAGS="$CMAKE_FLAGS -DCOMPILER_CACHE=sccache" '
+        f"-e 'DATA={S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/data' "
+        f"-e SHA={sha} {image}"
     )
     return cmd
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -55,37 +65,48 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_command = get_run_command(REPO_COPY, result_path, docker_image)
+    run_command = get_run_command(
+        REPO_COPY, result_path, docker_image, pr_info.sha[:12]
+    )
 
     logging.info("Going to run codebrowser: %s", run_command)
 
     run_log_path = os.path.join(TEMP_PATH, "run.log")
 
+    state = "success"
     with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
+            state = "failure"
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     report_path = os.path.join(result_path, "html_report")
     logging.info("Report path %s", report_path)
     s3_path_prefix = "codebrowser"
-    html_urls = s3_helper.fast_parallel_upload_dir(
-        report_path, s3_path_prefix, "clickhouse-test-reports"
+    _ = s3_helper.fast_parallel_upload_dir(
+        report_path, s3_path_prefix, S3_TEST_REPORTS_BUCKET
     )
 
     index_html = (
-        '<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
-        "HTML report</a>"
+        f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
+        "Generate codebrowser site</a>"
     )
 
-    test_result = TestResult(index_html, "Look at the report")
+    test_result = TestResult(index_html, state, stopwatch.duration_seconds)
 
     report_url = upload_results(s3_helper, 0, pr_info.sha, [test_result], [], NAME)
 
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(commit, "success", report_url, "Report built", NAME, pr_info)
+    post_commit_status(commit, state, report_url, "Report built", NAME, pr_info)
+
+    if state != "success":
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
