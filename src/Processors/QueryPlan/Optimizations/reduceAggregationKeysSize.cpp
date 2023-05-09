@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -108,6 +109,10 @@ size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & n
 
     auto * rollup_step = typeid_cast<RollupStep *>(node->step.get());
     if (rollup_step)
+        return 0;
+
+    auto * cube_step = typeid_cast<CubeStep *>(node->step.get());
+    if (cube_step)
         return 0;
 
     auto * aggregating_node = node->children.front();
