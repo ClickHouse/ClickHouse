@@ -4179,35 +4179,8 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
-static size_t getThreadPoolReaderSizeFromConfig(Context::FilesystemReaderType type, const Poco::Util::AbstractConfiguration & config)
-{
-    switch (type)
-    {
-        case Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
-        {
-            return config.getUInt(".threadpool_remote_fs_reader_pool_size", 250);
-        }
-        case Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
-        {
-            return config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
-        }
-        case Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
-        {
-            return std::numeric_limits<std::size_t>::max();
-        }
-    }
-}
-
-size_t Context::getThreadPoolReaderSize(FilesystemReaderType type) const
-{
-    const auto & config = getConfigRef();
-    return getThreadPoolReaderSizeFromConfig(type, config);
-}
-
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    const auto & config = getConfigRef();
-
     auto lock = getLock();
 
     switch (type)
@@ -4215,31 +4188,20 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
         {
             if (!shared->asynchronous_remote_fs_reader)
-            {
-                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
-                auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
-                shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-            }
-
+                shared->asynchronous_remote_fs_reader = createThreadPoolReader(type, getConfigRef());
             return *shared->asynchronous_remote_fs_reader;
         }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->asynchronous_local_fs_reader)
-            {
-                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
-                auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
-                shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
-            }
+                shared->asynchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->asynchronous_local_fs_reader;
         }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->synchronous_local_fs_reader)
-            {
-                shared->synchronous_local_fs_reader = std::make_unique<SynchronousReader>();
-            }
+                shared->synchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->synchronous_local_fs_reader;
         }
