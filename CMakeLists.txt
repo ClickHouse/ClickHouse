@@ -57,7 +57,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # gcc10/gcc10/clang -fsanitize=memory is too heavy
+    # -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory")
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
@@ -280,7 +280,7 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+# Compiler-specific coverage flags e.g. -fcoverage-mapping
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
 if (COMPILER_CLANG)
@@ -522,6 +522,26 @@ include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
     add_subdirectory (rust)
+
+    # With LTO Rust adds few symbols with global visiblity, the most common is
+    # rust_eh_personality. And this leads to linking errors because multiple
+    # Rust libraries contains the same symbol.
+    #
+    # If it was shared library, that we could use version script for linker to
+    # hide this symbols, but libraries are static.
+    #
+    # we could in theory compile everything to one library but this will be a
+    # mess
+    #
+    # But this should be OK since CI has lots of other builds that are done
+    # without LTO and it will find multiple definitions if there will be any.
+    #
+    # More information about this behaviour in Rust can be found here
+    # - https://github.com/rust-lang/rust/issues/44322
+    # - https://alanwu.space/post/symbol-hygiene/
+    if (ENABLE_THINLTO)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
+    endif()
 endif()
 
 add_subdirectory (base)
