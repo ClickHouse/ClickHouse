@@ -38,7 +38,7 @@ static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 // - 5: Decimal, Float
 // - 25: Map, Array, Tuple
 // - 125: Date, DateTime,
-static size_t scoreForType(const DataTypePtr & type)
+static unsigned scoreForType(const DataTypePtr & type)
 {
     WhichDataType which(type);
 
@@ -60,7 +60,7 @@ static size_t scoreForType(const DataTypePtr & type)
     return 1;
 }
 
-static size_t scoreForRule(FormatSettings::EscapingRule rule)
+static unsigned scoreForRule(FormatSettings::EscapingRule rule)
 {
     switch (rule)
     {
@@ -80,25 +80,39 @@ static size_t scoreForRule(FormatSettings::EscapingRule rule)
     UNREACHABLE();
 }
 
-static size_t scoreForField(FormatSettings::EscapingRule rule, const DataTypePtr & type)
+static unsigned scoreForField(FormatSettings::EscapingRule rule, const DataTypePtr & type)
 {
     return scoreForRule(rule) * scoreForType(type);
 }
 
-FieldMatcher::Result FieldMatcher::generateResult(String field, size_t offset, size_t index)
+FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_t offset)
 {
-    auto type = getDataTypeFromField(field);
-    if (!type)
-        return {.ok = false};
+    NamesAndTypesList names_and_types;
+    std::vector<String> values;
+    unsigned type_score{0}, score{0};
+    for (auto & [col, field] : fields)
+    {
+        if (field.size() <= 1 && isPunctuationASCII(field[0]))
+            return {.ok = false};
+
+        auto type = getDataTypeFromField(field);
+        if (!type)
+            return {.ok = false};
+
+        names_and_types.emplace_back(col, type);
+        values.emplace_back(field);
+        score += scoreForField(getEscapingRule(), type);
+        type_score += scoreForType(type);
+    }
 
     return {
-        .name_and_type = {fmt::format("c{}", index), type},
-        .field = field,
-        .score = scoreForField(getEscapingRule(), type),
-        .type_score = scoreForType(type),
+        .names_and_types = names_and_types,
+        .fields = values,
+        .score = score,
+        .type_score = type_score,
         .offset = offset,
-        .ok = !(field.size() <= 1 && isPunctuationASCII(field[0])),
-        .parse_till_newline_as_one_string = (field.ends_with(':') && getName() == "RawByWhitespaceFieldMatcher"),
+        .ok = true,
+        .parse_till_newline_as_one_string = (fields.rbegin()->second.ends_with(':') && getName() == "RawByWhitespaceFieldMatcher"),
     };
 }
 
@@ -107,11 +121,11 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t in
 {
     try
     {
-        auto field = readFieldByEscapingRule(in);
+        auto fields = readFieldsByEscapingRule(in, index);
         if constexpr (with_offset)
-            return generateResult(field, in.offsetFromLastCheckpoint(), index);
+            return generateResult(fields, in.offsetFromLastCheckpoint());
 
-        return generateResult(field, 0, index);
+        return generateResult(fields, 0);
     }
     catch (Exception & e)
     {
@@ -120,39 +134,64 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t in
     }
 }
 
-String JSONFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
     String field;
-    readJSONField(field, in);
-    return field;
+    if (*in.position() != '{')
+    {
+        readJSONField(field, in);
+        return {{fmt::format("c{}", index), field}};
+    }
+
+    ++in.position();
+
+    skipWhitespacesAndDelimiters(in);
+    NamesAndFields cols_and_fields;
+    while (*in.position() != '}')
+    {
+        String col = JSONUtils::readFieldName(in);
+
+        if (*in.position() == '{')
+            readJSONObjectPossiblyInvalid(field, in);
+        else
+            readJSONField(field, in);
+
+        cols_and_fields.emplace_back(col, field);
+
+        skipWhitespacesAndDelimiters(in);
+    }
+
+    ++in.position();
+
+    return cols_and_fields;
 }
 
-String CSVFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+FieldMatcher::NamesAndFields CSVFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
     String field;
     readCSVField(field, in, settings.csv);
-    return field;
+    return {{fmt::format("c{}", index), field}};
 }
 
-String QuotedFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+FieldMatcher::NamesAndFields QuotedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
     String field;
     readQuotedField(field, in);
-    return field;
+    return {{fmt::format("c{}", index), field}};
 }
 
-String EscapedFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+FieldMatcher::NamesAndFields EscapedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
     String field;
     readEscapedString(field, in);
-    return field;
+    return {{fmt::format("c{}", index), field}};
 }
 
-String RawByWhitespaceFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+FieldMatcher::NamesAndFields RawByWhitespaceFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
     String field;
     readStringUntilWhitespaceDelimiter(field, in);
-    return field;
+    return {{fmt::format("c{}", index), field}};
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
@@ -212,17 +251,18 @@ void FreeformFieldMatcher::buildSolutions(
     skipWhitespacesAndDelimiters(*in);
     in->setCheckpoint();
     const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size);
-    for (const auto & field : next_fields)
+    for (const auto & fields : next_fields)
     {
         auto next = current_solution;
-        next.matchers_order.push_back(field.matcher_index);
-        next.columns.push_back(field.parse_result.name_and_type);
+        next.matchers_order.push_back(fields.matcher_index);
+        for (const auto & name_and_type : fields.parse_result.names_and_types)
+            next.columns.push_back(name_and_type);
 
-        next.score += field.parse_result.score;
+        next.score += fields.parse_result.score;
         next.size += 1;
 
-        in->ignore(field.parse_result.offset);
-        buildSolutions(next, solutions, field.parse_result.parse_till_newline_as_one_string);
+        in->ignore(fields.parse_result.offset);
+        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string);
         in->rollbackToCheckpoint();
     }
 
@@ -254,17 +294,20 @@ bool FreeformFieldMatcher::validateSolution(Solution solution) const
                 if (!result.ok)
                     break;
 
-                auto type = result.name_and_type.type;
-                auto name = result.name_and_type.name;
-                if (!type || !column_index.contains(name))
-                    break;
+                for (const auto & name_and_type : result.names_and_types)
+                {
+                    auto type = name_and_type.type;
+                    auto name = name_and_type.name;
+                    if (!type || !column_index.contains(name))
+                        break;
 
-                auto type_index = column_index[name];
-                matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
-                if (!solution.columns[type_index].type->equals(*type))
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt");
+                    auto type_index = column_index[name];
+                    matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
+                    if (!solution.columns[type_index].type->equals(*type))
+                        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt");
 
-                ++validated_columns;
+                    ++validated_columns;
+                }
             }
 
             if (validated_columns < solution.columns.size())
@@ -337,24 +380,27 @@ bool FreeformFieldMatcher::parseRow()
     matched_fields.resize(final_solution.size);
     rules.resize(final_solution.size);
 
-    for (size_t col = 0; const auto & i : final_solution.matchers_order)
+    for (size_t col{0}; const auto & i : final_solution.matchers_order)
     {
         skipWhitespacesAndDelimiters(*in);
         auto result = matchers[i]->parseField<false>(*in, col);
-        if (!first_row)
+        for (unsigned j{0}; const auto & [name, _] : result.names_and_types)
         {
-            auto it = field_name_to_index.find(result.name_and_type.name);
-            if (it != field_name_to_index.end())
-                matched_fields[it->second] = result.field;
-        }
-        else
-        {
-            field_name_to_index[result.name_and_type.name] = col;
-            rules[col] = matchers[i]->getEscapingRule();
-            matched_fields[col] = result.field;
-        }
+            if (!first_row)
+            {
+                auto it = field_name_to_index.find(name);
+                if (it != field_name_to_index.end())
+                    matched_fields[it->second] = result.fields[j++];
+            }
+            else
+            {
+                field_name_to_index[name] = col;
+                rules[col] = matchers[i]->getEscapingRule();
+                matched_fields[col] = result.fields[j++];
+            }
 
-        ++col;
+            ++col;
+        }
     }
 
     first_row = false;

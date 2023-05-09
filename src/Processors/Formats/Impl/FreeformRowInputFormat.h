@@ -23,14 +23,16 @@ public:
 
     struct Result
     {
-        const NameAndTypePair name_and_type;
-        const String field;
+        const NamesAndTypesList names_and_types;
+        const std::vector<String> fields;
         const size_t score = 0;
         const size_t type_score = 0;
         const size_t offset;
         const bool ok = true;
         const bool parse_till_newline_as_one_string = false;
     };
+
+    using NamesAndFields = std::vector<std::pair<String, String>>;
 
     // We only need an offset on the intial run to determine the schema, we don't need it for successive runs to parse fields.
     template <bool with_offset>
@@ -45,8 +47,8 @@ public:
     virtual ~FieldMatcher() = default;
 
 protected:
-    virtual String readFieldByEscapingRule(PeekableReadBuffer & in) const = 0;
-    Result generateResult(String field, size_t offset, size_t index);
+    virtual NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const = 0;
+    Result generateResult(NamesAndFields & fields, size_t offset);
     DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
 
     FormatSettings::EscapingRule rule;
@@ -59,7 +61,7 @@ class JSONFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "JSONFieldMatcher"; }
-    String readFieldByEscapingRule(PeekableReadBuffer & in) const override;
+    std::vector<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
 };
 
 class CSVFieldMatcher : public FieldMatcher
@@ -67,7 +69,7 @@ class CSVFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "CSVFieldMatcher"; }
-    String readFieldByEscapingRule(PeekableReadBuffer & in) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
 };
 
 class QuotedFieldMatcher : public FieldMatcher
@@ -75,7 +77,7 @@ class QuotedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "QuotedFieldMatcher"; }
-    String readFieldByEscapingRule(PeekableReadBuffer & in) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
 };
 
 class EscapedFieldMatcher : public FieldMatcher
@@ -83,7 +85,7 @@ class EscapedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "EscapedFieldMatcher"; }
-    String readFieldByEscapingRule(PeekableReadBuffer & in) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
 };
 
 class RawByWhitespaceFieldMatcher : public FieldMatcher
@@ -91,7 +93,7 @@ class RawByWhitespaceFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "RawByWhitespaceFieldMatcher"; }
-    String readFieldByEscapingRule(PeekableReadBuffer & in) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
 };
 
 /// Class for matching generic data row by row.
