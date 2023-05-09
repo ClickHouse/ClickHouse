@@ -96,12 +96,17 @@ using namespace std::chrono_literals;
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
+MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
 
 std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
-
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
+    : parent(parent_)
+    , log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_)
+    , level(level_)
+{}
 
 MemoryTracker::~MemoryTracker()
 {
@@ -527,4 +532,11 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
+}
+
+bool canEnqueueBackgroundTask()
+{
+    auto limit = background_memory_tracker.getSoftLimit();
+    auto amount = background_memory_tracker.get();
+    return limit == 0 || amount < limit;
 }
