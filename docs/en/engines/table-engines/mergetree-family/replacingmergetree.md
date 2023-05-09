@@ -97,7 +97,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
   
   :::note
   `is_deleted` can only be enabled when `ver` is used.
-    The row is deleted when the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` is used or if the engine settings `clean_deleted_rows` has been set to `Always`.
+    The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
   No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
 
 
