@@ -145,20 +145,16 @@ LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remov
 
 void LRUFileCachePriority::LRUFileCacheIterator::annul()
 {
-    cache_priority->current_size -= queue_iter->size;
-    queue_iter->size = 0;
+    updateSize(-queue_iter->size);
+    chassert(queue_iter->size == 0);
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 {
     cache_priority->current_size += size;
-
-    if (size > 0)
-        CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
-    else
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size);
-
     queue_iter->size += size;
+
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
 
     chassert(cache_priority->current_size >= 0);
     chassert(queue_iter->size >= 0);
