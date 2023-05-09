@@ -871,7 +871,8 @@ bool Client::processWithFuzzing(const String & full_query)
                 const auto * tmp_pos = text_2.c_str();
                 const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
                     false /* allow_multi_statements */);
-                const auto text_3 = ast_3->formatForErrorMessage();
+                const auto text_3 = ast_3 ? ast_3->formatForErrorMessage() : "";
+
                 if (text_3 != text_2)
                 {
                     fmt::print(stderr, "Found error: The query formatting is broken.\n");
@@ -886,7 +887,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
                     fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
                     fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
-                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3->dumpTree());
+                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3 ? ast_3->dumpTree() : "");
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
