@@ -45,7 +45,6 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void flush() override;
     void shutdown() override;
 
     ~StorageMergeTree() override;
@@ -112,6 +111,8 @@ public:
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    size_t getNumberOfUnfinishedMutations() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 

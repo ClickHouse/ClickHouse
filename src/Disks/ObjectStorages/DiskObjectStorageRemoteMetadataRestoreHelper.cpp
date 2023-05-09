@@ -98,7 +98,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(object.absolute_path, metadata);
+        updateObjectMetadata(object.remote_path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
