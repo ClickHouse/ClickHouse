@@ -1410,8 +1410,8 @@ and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in mor
 
 Possible values:
 
-- 0 - Yes
-- 1 - No
+- 0 - Disabled
+- 1 - Enabled
 
 Default value: `0`.
 
