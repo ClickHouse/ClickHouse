@@ -17,7 +17,6 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
-import pyspark
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -33,6 +32,7 @@ try:
     import nats
     import ssl
     import meilisearch
+    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
