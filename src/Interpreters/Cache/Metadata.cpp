@@ -336,13 +336,16 @@ void LockedKey::removeAllReleasable()
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
-    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", getKey(), offset);
-
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
+
+    LOG_DEBUG(
+        log, "Remove from cache. Key: {}, offset: {}, size: {}",
+        getKey(), offset, file_segment->getReservedSize());
+
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->annul();
 
