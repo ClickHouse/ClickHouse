@@ -7,6 +7,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/UnionNode.h>
 
 #include <Interpreters/Context.h>
@@ -248,6 +249,16 @@ public:
         return getImpl().needApply(node);
     }
 
+    bool shouldSkipSubtree(QueryTreeNodePtr & parent, size_t subtree_index)
+    {
+        if (auto * table_function_node = parent->as<TableFunctionNode>())
+        {
+            const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
+            return std::find(unresolved_indexes.begin(), unresolved_indexes.end(), subtree_index) != unresolved_indexes.end();
+        }
+        return false;
+    }
+
     void visit(QueryTreeNodePtr & node)
     {
         auto current_scope_context_ptr = current_context;
@@ -288,10 +299,12 @@ private:
 
     void visitChildren(QueryTreeNodePtr & node)
     {
+        size_t index = 0;
         for (auto & child : node->getChildren())
         {
-            if (child)
+            if (child && !shouldSkipSubtree(node, index))
                 visit(child);
+            ++index;
         }
     }
 
