@@ -159,7 +159,7 @@ void S3QueueHolder::setFileProcessed(const String & file_path)
     if (zookeeper->tryGet(fs::path(zookeeper_processing_path), node_data))
     {
         S3FilesCollection processing_files = parseCollection(node_data);
-        for (auto x : processing_files)
+        for (const auto & x : processing_files)
         {
             if (x != file_path)
             {
@@ -251,7 +251,7 @@ void S3QueueHolder::setFilesProcessing(Strings & file_paths)
     if (zookeeper->tryGet(fs::path(zookeeper_processing_path), node_data))
     {
         S3FilesCollection processing_files = parseCollection(node_data);
-        for (auto x : processing_files)
+        for (const auto & x : processing_files)
         {
             if (!std::count(file_paths.begin(), file_paths.end(), x))
             {

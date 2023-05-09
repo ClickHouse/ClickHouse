@@ -539,10 +539,13 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests ops;
+        bool is_first_replica = true;
         if (zookeeper->exists(zookeeper_path + "/metadata"))
         {
+            if (!zookeeper->exists(zookeeper_path + "/processing"))
+                ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "", zkutil::CreateMode::Ephemeral));
             LOG_DEBUG(log, "This table {} is already created, will use existing metadata for checking engine settings", zookeeper_path);
-            return false;
+            is_first_replica = false;
         }
         else
         {
@@ -569,7 +572,7 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
             zkutil::KeeperMultiException::check(code, ops, responses);
         }
 
-        return true;
+        return is_first_replica;
     }
 
     throw Exception(
