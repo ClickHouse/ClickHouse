@@ -726,7 +726,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
