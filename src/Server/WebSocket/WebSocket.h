@@ -63,7 +63,8 @@ namespace DB
             FRAME_FLAG_FIN = 0x80, /// FIN bit: final fragment of a multi-fragment message.
             FRAME_FLAG_RSV1 = 0x40, /// Reserved for future use. Must be zero.
             FRAME_FLAG_RSV2 = 0x20, /// Reserved for future use. Must be zero.
-            FRAME_FLAG_RSV3 = 0x10 /// Reserved for future use. Must be zero.
+            FRAME_FLAG_RSV3 = 0x10, /// Reserved for future use. Must be zero.
+            FRAME_FLAG_BITMASK = 0xf0 /// Bit mask for flags.
         };
 
         enum FrameOpcodes

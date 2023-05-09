@@ -138,7 +138,7 @@ createPrometheusMainHandlerFactory(IServer & server,
     const std::string & name);
 
 HTTPRequestHandlerFactoryPtr
-createWebSocketMainHandlerFactory(IServer & server,
+createHTTPWebSocketMainHandlerFactory(IServer & server,
    const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()

@@ -875,6 +875,7 @@ try
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
+    /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
     /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
     /// to avoid reading part of the current request body in the next request.
