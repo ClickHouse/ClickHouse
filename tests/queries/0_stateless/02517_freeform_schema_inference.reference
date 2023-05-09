@@ -59,7 +59,6 @@ Nov	13	13	24	2	PC	kernel:	[91566.562562] hv_utils: TimeSync IC version 4.0
 JSONL
 msg	Int64					
 type	String					
-nested.object	String					
-nested.field	String					
-1	log	a	something_a
-2	log	b	
+nested	Map(String, String)					
+1	log	{'object':'a','field':'something_a'}
+2	log	{'object':'b','field':''}

@@ -136,9 +136,9 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t in
 
 FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
 {
-    String field;
     if (*in.position() != '{')
     {
+        String field;
         readJSONField(field, in);
         return {{fmt::format("c{}", index), field}};
     }
@@ -150,12 +150,14 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
     while (*in.position() != '}')
     {
         String col = JSONUtils::readFieldName(in);
+        String field;
 
         if (*in.position() == '{')
             readJSONObjectPossiblyInvalid(field, in);
         else
             readJSONField(field, in);
 
+        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got JSON field: {}:{}", col, field);
         cols_and_fields.emplace_back(col, field);
 
         skipWhitespacesAndDelimiters(in);
@@ -259,7 +261,7 @@ void FreeformFieldMatcher::buildSolutions(
             next.columns.push_back(name_and_type);
 
         next.score += fields.parse_result.score;
-        next.size += 1;
+        next.size += fields.parse_result.names_and_types.size();
 
         in->ignore(fields.parse_result.offset);
         buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string);
