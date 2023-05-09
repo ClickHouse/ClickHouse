@@ -236,6 +236,7 @@ class Context: public std::enable_shared_from_this<Context>
 {
 private:
     ContextSharedPart * shared;
+
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
 

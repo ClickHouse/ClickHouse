@@ -42,7 +42,6 @@ public:
     String getConnectedAddress() const override { return connected_zk_address; }
 
 
-
     void create(
             const String & path,
             const String & data,
