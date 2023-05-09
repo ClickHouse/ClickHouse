@@ -301,13 +301,13 @@ void checkAccessRightsForSelect(
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
-    const Map & setting,
+    const Map & additional_table_filters,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
 {
-    for (size_t i = 0; i < setting.size(); ++i)
+    for (const auto & additional_filter : additional_table_filters)
     {
-        const auto & tuple = setting[i].safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
         auto & table = tuple.at(0).safeGet<String>();
         auto & filter = tuple.at(1).safeGet<String>();
 
