@@ -9,6 +9,7 @@ REGISTER_FUNCTION(Round)
 {
     factory.registerFunction<FunctionRound>("round", {}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionRoundBankers>("roundBankers", {}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionRoundHalfUp>("roundHalfUp", {}, FunctionFactory::CaseSensitive);
     factory.registerFunction<FunctionFloor>("floor", {}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionCeil>("ceil", {}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTrunc>("trunc", {}, FunctionFactory::CaseInsensitive);
