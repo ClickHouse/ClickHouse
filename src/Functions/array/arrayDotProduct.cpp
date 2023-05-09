@@ -32,8 +32,10 @@ public:
                                DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
 
         DataTypePtr result_type;
-        bool valid = castTypeToEither(Types{}, left.get(), [&](const auto & left_) {
-            return castTypeToEither(Types{}, right.get(), [&](const auto & right_) {
+        bool valid = castTypeToEither(Types{}, left.get(), [&](const auto & left_)
+        {
+            return castTypeToEither(Types{}, right.get(), [&](const auto & right_)
+            {
                 using LeftDataType = typename std::decay_t<decltype(left_)>::FieldType;
                 using RightDataType = typename std::decay_t<decltype(right_)>::FieldType;
                 using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftDataType, RightDataType>::Type;
