@@ -74,6 +74,7 @@ public:
         ERROR = 4,
     };
 #endif
+    static const Fiber * getCurrentFiber();
 
 protected:
     /// Method that is called in resume() before actual fiber resuming.
@@ -116,6 +117,30 @@ private:
     std::atomic_bool is_cancelled = false;
 
     std::unique_ptr<AsyncTask> task;
+};
+
+/// Simple class for storing fiber local variables.
+template <typename T>
+class FiberLocalVariable
+{
+public:
+    T & operator*()
+    {
+        return get();
+    }
+
+    T * operator->()
+    {
+        return &get();
+    }
+
+private:
+    T & get()
+    {
+        return data[AsyncTaskExecutor::getCurrentFiber()];
+    }
+
+    std::unordered_map<const Fiber *, T> data;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);
