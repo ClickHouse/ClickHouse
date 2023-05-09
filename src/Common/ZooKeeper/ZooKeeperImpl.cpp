@@ -434,6 +434,7 @@ void ZooKeeper::connect(
 
                 connected = true;
                 connected_zk_address = node.address.toString();
+
                 break;
             }
             catch (...)
@@ -450,6 +451,7 @@ void ZooKeeper::connect(
     {
         WriteBufferFromOwnString message;
         connected_zk_address = "";
+
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)

@@ -2813,6 +2813,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
+
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);

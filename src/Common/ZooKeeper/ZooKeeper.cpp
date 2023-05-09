@@ -202,6 +202,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
     return shuffle_hosts;
 }
 
+
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
 {
     ZooKeeperArgs new_args(config, config_name);

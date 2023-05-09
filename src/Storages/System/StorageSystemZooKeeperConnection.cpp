@@ -22,7 +22,8 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
     };
 }
 
-void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
+    const SelectQueryInfo &) const
 {
     res_columns[0]->insert("default_zookeeper");
     res_columns[1]->insert(context->getZooKeeper()->getConnectedZooKeeperHost());
