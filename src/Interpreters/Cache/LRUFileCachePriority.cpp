@@ -32,7 +32,8 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
         if (entry.size != 0 && entry.key == key && entry.offset == offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
+                "Attempt to add duplicate queue entry to queue. "
+                "(Key: {}, offset: {}, size: {})",
                 entry.key, entry.offset, entry.size);
     }
 #endif
@@ -46,14 +47,15 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
             key, offset, size, current_size, getSizeLimit());
     }
 
-    current_size += size;
-
     auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
+    current_size += size;
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}, size: {}", key, offset, size);
+    LOG_TEST(
+        log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
+        key, offset, size);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
@@ -81,13 +83,19 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key, it->offset);
+    LOG_TEST(
+        log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
+        it->key, it->offset, it->size);
+
+    it->size = 0;
     return queue.erase(it);
 }
 
 LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
-    LRUFileCachePriority * cache_priority_, LRUFileCachePriority::LRUQueueIterator queue_iter_)
-    : cache_priority(cache_priority_), queue_iter(queue_iter_)
+    LRUFileCachePriority * cache_priority_,
+    LRUFileCachePriority::LRUQueueIterator queue_iter_)
+    : cache_priority(cache_priority_)
+    , queue_iter(queue_iter_)
 {
 }
 
@@ -113,7 +121,8 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Mismatch of file segment size in file segment metadata and priority queue: {} != {} ({})",
+                "Mismatch of file segment size in file segment metadata "
+                "and priority queue: {} != {} ({})",
                 it->size, metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
@@ -138,9 +147,11 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
     }
 }
 
-LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
+LRUFileCachePriority::Iterator
+LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
 {
-    return std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->remove(queue_iter));
+    return std::make_shared<LRUFileCacheIterator>(
+        cache_priority, cache_priority->remove(queue_iter));
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::annul()
