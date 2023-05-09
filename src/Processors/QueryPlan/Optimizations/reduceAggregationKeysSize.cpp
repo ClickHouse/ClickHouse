@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -103,6 +104,10 @@ std::shared_ptr<ActionsDAG> buildSuccessorActionsDag(const Block & header, const
 size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     if (node->children.size() != 1)
+        return 0;
+
+    auto * rollup_step = typeid_cast<RollupStep *>(node->step.get());
+    if (rollup_step)
         return 0;
 
     auto * aggregating_node = node->children.front();
