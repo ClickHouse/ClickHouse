@@ -102,29 +102,29 @@ namespace ErrorCodes
 
 using Poco::IOException;
 
-static std::chrono::steady_clock::duration parseSessionTimeout(
-    const Poco::Util::AbstractConfiguration & config,
-    const HTMLForm & params)
-{
-    unsigned session_timeout = config.getInt("default_session_timeout", 60);
-
-    if (params.has("session_timeout"))
-    {
-        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
-        std::string session_timeout_str = params.get("session_timeout");
-
-        ReadBufferFromString buf(session_timeout_str);
-        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
-
-        if (session_timeout > max_session_timeout)
-            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
-                                                                 "Maximum session timeout could be modified in configuration file.",
-                            session_timeout_str, max_session_timeout);
-    }
-
-    return std::chrono::seconds(session_timeout);
-}
+//static std::chrono::steady_clock::duration parseSessionTimeout(
+//    const Poco::Util::AbstractConfiguration & config,
+//    const HTMLForm & params)
+//{
+//    unsigned session_timeout = config.getInt("default_session_timeout", 60);
+//
+//    if (params.has("session_timeout"))
+//    {
+//        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+//        std::string session_timeout_str = params.get("session_timeout");
+//
+//        ReadBufferFromString buf(session_timeout_str);
+//        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+//            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
+//
+//        if (session_timeout > max_session_timeout)
+//            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+//                                                                 "Maximum session timeout could be modified in configuration file.",
+//                            session_timeout_str, max_session_timeout);
+//    }
+//
+//    return std::chrono::seconds(session_timeout);
+//}
 
 static String base64Encode(const String & decoded)
 {
@@ -380,7 +380,7 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         // TODO: maybe we should not allocate it on stack or everything will go down
         WebSocket ws(request, response);
-        auto connection = WebSocketServerConnection(ws);
+        auto connection = WebSocketServerConnection(server, ws);
         connection.run();
     }
     catch (WebSocketException& exc)
@@ -401,8 +401,6 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         }
     }
 }
-
-///probably here should be "createWebSocketHandlerFactory" similary to prometeus handler
 
 HTTPRequestHandlerFactoryPtr
 createHTTPWebSocketMainHandlerFactory(IServer & server, const std::string & name)

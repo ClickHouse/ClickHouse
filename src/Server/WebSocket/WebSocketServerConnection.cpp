@@ -1,6 +1,7 @@
 #include <Server/WebSocket/WebSocketServerConnection.h>
 
 #include <Poco/Util/ServerApplication.h>
+#include <Poco/JSON/Object.h>
 
 
 namespace DB
@@ -9,6 +10,7 @@ namespace DB
 void WebSocketServerConnection::run()
 {
     using Poco::Util::Application;
+    using Poco::JSON::Object;
 
     int flags_and_opcode = 0;
     int received_bytes = -1;
@@ -42,8 +44,13 @@ void WebSocketServerConnection::run()
             case WebSocket::FRAME_OP_PING:
             case WebSocket::FRAME_OP_CLOSE:
                 message_buffer.assign(frame_buffer.begin(), frame_buffer.size());
-                // TODO: call control frames handler
-                control_frames_handler.handleRequest(, webSocket);
+                try {
+                    std::string request(message_buffer.begin());
+                    control_frames_handler.handleRequest(request, webSocket);
+                } catch (const Exception& e) {
+                    //TODO: add a reasonable exception wrapper here
+                    throw Exception(e);
+                }
                 break;
 
             default:
@@ -51,9 +58,16 @@ void WebSocketServerConnection::run()
         }
 
         if (flag == WebSocket::FRAME_FLAG_FIN) {
-            // TODO: call regular message handler
-            // TODO: parse JSON
-            regular_handler.handleRequest(, webSocket);
+            try {
+                // TODO: parse actual request JSON
+                // auto request = parser.parse(message_buffer.begin()).extract<Object::Ptr>();
+                auto tmp_request = Object();
+                tmp_request.set("data", "received message");
+                regular_handler.handleRequest(tmp_request, webSocket);
+            } catch (const Exception& e) {
+                //TODO: add a reasonable exception wrapper here
+                throw Exception(e);
+            }
         }
     }
 }

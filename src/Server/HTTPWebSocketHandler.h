@@ -42,16 +42,6 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response);
 
-    void processQuery(
-        HTTPServerRequest & request,
-        HTMLForm & params,
-        WriteBuffer & simple_output,
-        ReadBuffer & web_socket_input,
-        std::optional<CurrentThread::QueryScope> & query_scope
-//        WebSocket & ws,
-//        Poco::Util::Application & app
-        );
-
 public:
     HTTPWebSocketHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;

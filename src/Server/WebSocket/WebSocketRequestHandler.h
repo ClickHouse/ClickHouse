@@ -4,6 +4,8 @@
 #include <Server/WebSocket/WebSocket.h>
 #include <Server/WebSocket/WebSocketRequestHandler.h>
 #include <Server/HTTP/HTMLForm.h>
+#include <Interpreters/Session.h>
+#include <Server/IServer.h>
 
 #include <Poco/JSON/Object.h>
 #include <boost/noncopyable.hpp>
@@ -11,17 +13,25 @@
 namespace DB
 {
 
-class WebSocketRequestHandler : public WebSocketRequestHandler
+class WebSocketRequestHandler
 {
 public:
-    void handleRequest(Poco::JSON::Object & request, WebSocket & webSocket) override;
+    explicit WebSocketRequestHandler(IServer& /*iServer*/)
+//        : server(iServer)
+    {
+    }
+
+    void handleRequest(Poco::JSON::Object & request, WebSocket & webSocket);
 private:
+//    IServer& server;
+    std::unique_ptr<Session> session;
+
     void processQuery(
-        HTTPServerRequest & request,
-        HTMLForm & params,
-        WriteBuffer & simple_output,
-        ReadBuffer & web_socket_input,
-        std::optional<CurrentThread::QueryScope> & query_scope
+//        HTTPServerRequest & request,
+//        HTMLForm & params,
+//        WriteBuffer & simple_output,
+//        ReadBuffer & web_socket_input,
+//        std::optional<CurrentThread::QueryScope> & query_scope
     );
 };
 }

@@ -9,10 +9,9 @@
 namespace DB
 {
 
-using Poco::JSON::Object;
-class WebSocketControlFramesHandler : public WebSocketRequestHandler
+class WebSocketControlFramesHandler
 {
 public:
-    void handleRequest(Object & request, WebSocket & webSocket) override;
+    void handleRequest(std::string & /*request*/, WebSocket & /*webSocket*/);
 };
 }

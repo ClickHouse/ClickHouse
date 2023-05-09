@@ -3,7 +3,7 @@
 namespace DB
 {
 
-void WebSocketControlFramesHandler::handleRequest(Poco::JSON::Object & request, DB::WebSocket & webSocket)
+void WebSocketControlFramesHandler::handleRequest(std::string & /*request*/, WebSocket & /*webSocket*/)
 {
     ///TODO: implement
 }
