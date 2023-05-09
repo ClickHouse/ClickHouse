@@ -92,7 +92,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a `UInt8` column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
 
-    Column data type — `UInt8`.
+  Column data type — `UInt8`.
 
     Can only be enabled when `ver` is used.
     The row is deleted when the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` is used or if the engine settings `clean_deleted_rows` has been set to `Always`.
