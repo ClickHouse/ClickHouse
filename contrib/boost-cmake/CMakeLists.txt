@@ -174,6 +174,7 @@ set (SRCS_FIBER
 add_library (_boost_fiber ${SRCS_FIBER})
 add_library (boost::fiber ALIAS _boost_fiber)
 target_include_directories (_boost_fiber PRIVATE ${LIBRARY_DIR})
+target_link_libraries(_boost_fiber PRIVATE _boost_context)
 
 # coroutine
 
