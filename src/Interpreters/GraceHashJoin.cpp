@@ -472,9 +472,9 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty;
 }
 
-// This is only be called for bucket[0] at present. other buckets' non-joined blocks are generated in
-// DelayedBlocks.
-// There is a finished counter in JoiningTransform, only the last JoiningTransform could call this function.
+// There is a finished counter in JoiningTransform/DelayedJoinedBlocksWorkerTransform,
+// only the last processor could call this function to ensure all used flags have been inserted.
+// To support delayed stream mode, need to keep the hash join before next getDelayedBlocks call.
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
@@ -489,60 +489,30 @@ public:
         Buckets buckets_,
         InMemoryJoinPtr hash_join_,
         const Names & left_key_names_,
-        const Names & right_key_names_,
-        const Block & left_sample_block_,
-        const Block & result_sample_block_,
-        size_t max_block_size_)
+        const Names & right_key_names_)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
         , left_reader(buckets[current_bucket]->getLeftTableReader())
         , left_key_names(left_key_names_)
         , right_key_names(right_key_names_)
-        , left_sample_block(left_sample_block_)
-        , result_sample_block(result_sample_block_)
-        , max_block_size(max_block_size_)
     {
     }
 
-    // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransforms, need locks for
-    // - reading from left_reader. left_reader.read() has had a lock inside.
-    // - reading non-joined blocks from hash_join. Since iterate on non-joined blocks will has state
-    //   changed inside.
     Block nextImpl() override
     {
-        // there is data race case wihthout this lock:
-        //   1. thread 1 read the last block from left_reader, but not finish the join
-        //   2. thread 2 try to read from non-joined blocks. Since thread 1 has not finished,
-        //     the used flags in the hash_join is incomplete, then thread 2 return invalid mismatch rows.
-        std::lock_guard lock(non_joined_blocks_mutex);
-
         Block block;
         size_t num_buckets = buckets.size();
         size_t current_idx = buckets[current_bucket]->idx;
 
         do
         {
-            // When left reader finish, return non-joined blocks.
-            // empty block means the end of this stream.
-            if (!is_left_reader_finished)
+            // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
+            // There is a lock inside left_reader.read().
+            block = left_reader.read();
+            if (!block)
             {
-                block = left_reader.read();
-                if (!block)
-                {
-                    is_left_reader_finished = true;
-                    non_joined_blocks = hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-                }
-            }
-
-            if (is_left_reader_finished)
-            {
-                if (non_joined_blocks)
-                {
-                    return non_joined_blocks->next();
-                }
-                else
-                    return {};
+                return {};
             }
 
             // block comes from left_reader, need to join with right table to get the result.
@@ -585,12 +555,6 @@ public:
 
     Names left_key_names;
     Names right_key_names;
-    Block left_sample_block;
-    Block result_sample_block;
-    size_t max_block_size = 0;
-    bool is_left_reader_finished = false;
-    IBlocksStreamPtr non_joined_blocks = nullptr;
-    std::mutex non_joined_blocks_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -636,18 +600,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
-        auto result_sample_block = left_sample_block;
-        ExtraBlockPtr tmp;
-        hash_join->joinBlock(result_sample_block, tmp);
-        return std::make_unique<DelayedBlocks>(
-            current_bucket->idx,
-            buckets,
-            hash_join,
-            left_key_names,
-            right_key_names,
-            left_sample_block,
-            result_sample_block,
-            max_block_size);
+        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
