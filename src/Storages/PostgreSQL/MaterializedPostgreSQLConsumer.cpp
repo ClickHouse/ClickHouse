@@ -562,34 +562,27 @@ void MaterializedPostgreSQLConsumer::syncTables()
         Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
         storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
 
-        try
+        if (result_rows.rows())
         {
-            if (result_rows.rows())
-            {
-                auto storage = storage_data.storage;
+            auto storage = storage_data.storage;
 
-                auto insert_context = Context::createCopy(context);
-                insert_context->setInternalQuery(true);
+            auto insert_context = Context::createCopy(context);
+            insert_context->setInternalQuery(true);
 
-                auto insert = std::make_shared<ASTInsertQuery>();
-                insert->table_id = storage->getStorageID();
-                insert->columns = storage_data.buffer.columns_ast;
+            auto insert = std::make_shared<ASTInsertQuery>();
+            insert->table_id = storage->getStorageID();
+            insert->columns = storage_data.buffer.columns_ast;
 
-                InterpreterInsertQuery interpreter(insert, insert_context, true);
-                auto io = interpreter.execute();
-                auto input = std::make_shared<SourceFromSingleChunk>(
-                    result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
+            InterpreterInsertQuery interpreter(insert, insert_context, true);
+            auto io = interpreter.execute();
+            auto input = std::make_shared<SourceFromSingleChunk>(
+                result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
-                io.pipeline.complete(Pipe(std::move(input)));
+            assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
+            io.pipeline.complete(Pipe(std::move(input)));
 
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            CompletedPipelineExecutor executor(io.pipeline);
+            executor.execute();
         }
     }
 

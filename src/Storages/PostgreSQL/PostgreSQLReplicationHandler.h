@@ -140,12 +140,15 @@ private:
     BackgroundSchedulePool::TaskHolder consumer_task;
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
+    const UInt64 reschedule_backoff_min_ms;
+    const UInt64 reschedule_backoff_max_ms;
+    const UInt64 reschedule_backoff_factor;
+    UInt64 milliseconds_to_wait;
+
     std::atomic<bool> stop_synchronization = false;
 
     /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;
-
-    UInt64 milliseconds_to_wait;
 
     bool replication_handler_initialized = false;
 };
