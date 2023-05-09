@@ -3,9 +3,16 @@
 namespace DB
 {
 
+thread_local const Fiber * current_fiber = nullptr;
+
 AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_) : task(std::move(task_))
 {
     createFiber();
+}
+
+const Fiber * AsyncTaskExecutor::getCurrentFiber()
+{
+    return current_fiber;
 }
 
 void AsyncTaskExecutor::resume()
@@ -31,7 +38,10 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
+    const auto * parent_fiber = current_fiber;
+    current_fiber = &fiber;
     fiber = std::move(fiber).resume();
+    current_fiber = parent_fiber;
 }
 
 void AsyncTaskExecutor::cancel()
