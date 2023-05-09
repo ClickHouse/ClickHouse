@@ -46,14 +46,34 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+instance2 = cluster.add_instance(
+    "instance2",
+    main_configs=["configs/log_conf.xml", "configs/merge_tree_too_many_parts.xml"],
+    user_configs=["configs/users.xml"],
+    with_postgres=True,
+    stay_alive=True,
+)
+
+
 pg_manager = PostgresManager()
+pg_manager2 = PostgresManager()
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        pg_manager.init(instance, cluster.postgres_ip, cluster.postgres_port)
+        pg_manager.init(
+            instance,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="test_database",
+        )
+        pg_manager.create_clickhouse_postgres_db()
+        pg_manager2.init(
+            instance2, cluster.postgres_ip, cluster.postgres_port, "test_database2"
+        )
+        pg_manager2.create_clickhouse_postgres_db()
         yield cluster
 
     finally:
@@ -647,6 +667,59 @@ def test_materialized_view(started_cluster):
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     pg_manager.drop_materialized_db()
+
+
+def test_too_many_parts(started_cluster):
+    table = "test_table"
+    pg_manager2.create_and_fill_postgres_table(table)
+    pg_manager2.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = 'test_table', materialized_postgresql_backoff_min_ms = 100, materialized_postgresql_backoff_max_ms = 100"
+        ],
+    )
+    check_tables_are_synchronized(
+        instance2, "test_table", postgres_database=pg_manager2.get_default_database()
+    )
+    assert (
+        "50" == instance2.query("SELECT count() FROM test_database.test_table").strip()
+    )
+
+    instance2.query("SYSTEM STOP MERGES")
+    num = 50
+    for i in range(10):
+        instance2.query(
+            f"""
+            INSERT INTO {pg_manager2.get_default_database()}.test_table SELECT {num}, {num};
+        """
+        )
+        num = num + 1
+        for i in range(30):
+            if num == int(
+                instance2.query("SELECT count() FROM test_database.test_table")
+            ) or instance2.contains_in_log("DB::Exception: Too many parts"):
+                break
+            time.sleep(1)
+            print(f"wait sync try {i}")
+        if instance2.contains_in_log("DB::Exception: Too many parts"):
+            num = num - 1
+            break
+        assert num == int(
+            instance2.query("SELECT count() FROM test_database.test_table")
+        )
+
+    assert instance2.contains_in_log("DB::Exception: Too many parts")
+    print(num)
+    assert num == int(instance2.query("SELECT count() FROM test_database.test_table"))
+
+    instance2.query("SYSTEM START MERGES")
+    check_tables_are_synchronized(
+        instance2, "test_table", postgres_database=pg_manager2.get_default_database()
+    )
+
+    # assert "200" == instance.query("SELECT count FROM test_database.test_table").strip()
+    pg_manager2.drop_materialized_db()
 
 
 if __name__ == "__main__":
