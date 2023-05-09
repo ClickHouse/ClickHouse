@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Core/TypeId.h>
 
 
 namespace DB
@@ -154,12 +155,23 @@ public:
     {
         switch (result_type->getTypeId())
         {
-            case TypeIndex::Float32:
-                return executeWithResultType<Float32>(arguments);
+        #define SUPPORTED_TYPE(type) \
+            case TypeIndex::type: \
+                return executeWithResultType<type>(arguments); \
                 break;
-            case TypeIndex::Float64:
-                return executeWithResultType<Float64>(arguments);
-                break;
+
+            SUPPORTED_TYPE(UInt8)
+            SUPPORTED_TYPE(UInt16)
+            SUPPORTED_TYPE(UInt32)
+            SUPPORTED_TYPE(UInt64)
+            SUPPORTED_TYPE(Int8)
+            SUPPORTED_TYPE(Int16)
+            SUPPORTED_TYPE(Int32)
+            SUPPORTED_TYPE(Int64)
+            SUPPORTED_TYPE(Float32)
+            SUPPORTED_TYPE(Float64)
+        #undef SUPPORTED_TYPE
+
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
         }
