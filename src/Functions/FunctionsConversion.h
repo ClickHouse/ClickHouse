@@ -731,7 +731,10 @@ struct FormatImpl<DataTypeDate32>
     template <typename ReturnType = void>
     static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl * time_zone)
     {
+        std::cerr << "BEFORE: " << std::endl;
+        std::cerr << time_zone->getTimeZone() << std::endl;
         writeDateText(ExtendedDayNum(x), wb, *time_zone);
+        std::cerr << "AFTER" << std::endl;
         return ReturnType(true);
     }
 };
@@ -831,7 +834,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
 
         const DateLUTImpl * time_zone = nullptr;
 
-        if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
             time_zone = &DateLUT::instance();
         /// For argument of Date or DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
@@ -1765,7 +1768,7 @@ public:
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
-            // toDate(value[, timezone : String])
+            // toDate32(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate32>
             // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
