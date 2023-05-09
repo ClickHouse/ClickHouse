@@ -8,16 +8,24 @@
 namespace DB
 {
 
+/*
+ * Calculates global min max indexes for a given set of parts.
+ * */
 class MergeTreePartitionGlobalMinMaxIdxCalculator
 {
     using DataPart = IMergeTreeDataPart;
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 public:
-    static std::pair<Field, Field> calculate(const MergeTreeData & storage, const DataPartsVector & parts);
+    static std::vector<std::pair<Field, Field>> calculate(
+        const MergeTreeData & storage,
+        const DataPartsVector & parts,
+        const std::vector<std::size_t> & column_indexes
+    );
 
 private:
-    static std::pair<Field, Field> extractMinMaxFromBlock(const Block & block);
+    static std::vector<std::pair<Field, Field>> extractMinMaxIndexesFromBlock(const Block & block,
+                                                                              const std::vector<size_t> & column_indexes);
 };
 
 }

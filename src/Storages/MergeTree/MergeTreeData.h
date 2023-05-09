@@ -820,7 +820,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    void sanityCheckSourcePartition(const ASTPtr & ast, MergeTreeData::DataPartsLock * acquired_lock = nullptr) const;
+    void sanityCheckASTPartition(const ASTPtr & ast, MergeTreeData::DataPartsLock * acquired_lock = nullptr) const;
 
     struct HardlinkedFiles
     {

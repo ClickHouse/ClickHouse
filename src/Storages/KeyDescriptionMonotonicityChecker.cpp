@@ -15,9 +15,9 @@ namespace
 {
 
     void buildRPNFunctionListImpl(const RPNBuilderTreeNode & node,
-                               const KeyDescription & key_description,
-                               DataTypePtr & out_key_column_type,
-                               std::vector<RPNBuilderFunctionTreeNode> & function_list)
+                                  const KeyDescription & key_description,
+                                  DataTypePtr & out_key_column_type,
+                                  std::vector<RPNBuilderFunctionTreeNode> & function_list)
     {
         if (node.isFunction())
         {
@@ -43,10 +43,8 @@ namespace
                 }
                 else
                 {
-                    // re-think below message
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "A function with {} arguments must contain at least one constant argument to be considered monotonic",
-                                    arguments_size);
+                                    "A function with 2 arguments must contain at least one constant argument to be considered monotonic");
                 }
             }
             else
@@ -151,11 +149,11 @@ namespace
 
     auto buildRPNContext(const KeyDescription & key_description, ContextPtr context)
     {
-        auto pkeyastclone = key_description.definition_ast->clone();
+        auto partition_key_ast_clone = key_description.definition_ast->clone();
 
-        auto result = TreeRewriter(context).analyze(pkeyastclone, key_description.expression->getRequiredColumnsWithTypes());
+        auto result = TreeRewriter(context).analyze(partition_key_ast_clone, key_description.expression->getRequiredColumnsWithTypes());
 
-        auto block_with_constants = KeyCondition::getBlockWithConstants(pkeyastclone, result, context);
+        auto block_with_constants = KeyCondition::getBlockWithConstants(partition_key_ast_clone, result, context);
 
         auto rpn_context = RPNBuilderTreeContext(context, block_with_constants, {});
 
@@ -164,8 +162,7 @@ namespace
 
 }
 
-IFunction::Monotonicity
-KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
+IFunction::Monotonicity KeyDescriptionMonotonicityChecker::getMonotonicityInfo(
     const KeyDescription & key_description,
     const Range & range,
     ContextPtr context

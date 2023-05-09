@@ -4709,7 +4709,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 }
 
-void MergeTreeData::sanityCheckSourcePartition(const ASTPtr & ast, DataPartsLock * acquired_lock) const
+void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -4719,8 +4719,6 @@ void MergeTreeData::sanityCheckSourcePartition(const ASTPtr & ast, DataPartsLock
     if (!partition_ast.value)
     {
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
-
-        // re-think below return
         return;
     }
 
@@ -4799,7 +4797,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 }
                 else
                 {
-                    sanityCheckSourcePartition(command.partition);
+                    sanityCheckASTPartition(command.partition);
                 }
             }
         }

@@ -10,6 +10,14 @@
 namespace DB
 {
 
+/*
+ * Code adapted from Storages/MergeTree/KeyCondition.
+ *
+ * Algorithm outline:
+ * 1. Navigate through partition key AST and extract RPN functions as well as the partition key column
+ * 2. Loops through RPN functions and builds a list of Functions/IFunction
+ * 3. Loops through IFunction list, grabs monotonicity info on column Range and computes intermediate Range for next iterations.
+ * */
 class KeyDescriptionMonotonicityChecker
 {
 public:

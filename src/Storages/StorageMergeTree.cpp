@@ -1924,7 +1924,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     if (is_partition_exp_different)
     {
-        auto [src_min_idx, src_max_idx] = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts);
+        auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts, {0});
+
+        auto [src_min_idx, src_max_idx] = src_global_min_max_indexes[0];
 
         if (src_min_idx.isNull() || src_max_idx.isNull())
         {
