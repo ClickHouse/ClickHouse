@@ -66,6 +66,57 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
     return result;
 }
 
+struct ProcessedFunction
+{
+    const ActionsDAG::Node * node;
+    Field value;
+    bool reversed; // If INPUT is right child
+    bool is_column_unsigned;
+};
+
+std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
+{
+    if (node.children.size() != 2)
+        return std::nullopt;
+
+    const ActionsDAG::Node * maybe_hinted_node = nullptr;
+    const ActionsDAG::Node * maybe_constant_node = nullptr;
+
+    for (const auto & child : node.children)
+    {
+        if (child->type == ActionsDAG::ActionType::COLUMN)
+            maybe_constant_node = child;
+        else
+            maybe_hinted_node = child;
+    }
+
+    if (!maybe_constant_node || !maybe_hinted_node||
+            !maybe_hinted_node->result_type->isValueRepresentedByInteger() ||
+            !maybe_constant_node->result_type->isValueRepresentedByInteger())
+        return std::nullopt;
+
+    const auto & constant_type_name = maybe_constant_node->result_type->getName();
+    if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256" ||
+            constant_type_name == "IPv4" || constant_type_name == "IPv6")
+        return std::nullopt;
+
+    const auto & input_type = maybe_hinted_node->result_type;
+    const auto & constant_type = maybe_constant_node->result_type;
+    if (isDate(input_type) != isDate(constant_type) || isDate32(input_type) != isDate32(constant_type) ||
+            isDateTime(input_type) != isDateTime(constant_type) || isDateTime64(input_type) != isDateTime64(constant_type))
+        return std::nullopt;
+
+    ProcessedFunction result;
+    result.node = maybe_hinted_node;
+    if (maybe_constant_node->result_type->isValueRepresentedByUnsignedInteger())
+        result.value = maybe_constant_node->column->getUInt(0);
+    else
+        result.value = maybe_constant_node->column->getInt(0);
+    result.reversed = maybe_hinted_node == node.children[1];
+    result.is_column_unsigned = maybe_hinted_node->result_type->isValueRepresentedByUnsignedInteger();
+    return result;
+}
+
 }
 
 void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::Node & actions)
@@ -191,13 +242,118 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
         intersectDataHints(hints, node_to_hints[&actions]);
 }
 
+const std::unordered_set<std::string> allowed_functions = {"plus", "minus", "multiply", "modulo"};
+
 void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG & actions)
 {
-    const auto & outputs = actions.getOutputs();
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes, already_pushed;
+    std::unordered_map<const ActionsDAG::Node *, DataHint> node_to_hint;
+
+    std::stack<const ActionsDAG::Node *> stack;
+    for (const auto & output_node : actions.getOutputs())
+    {
+        if (!already_pushed.contains(output_node))
+        {
+            stack.push(output_node);
+            already_pushed.insert(output_node);
+        }
+    }
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        visited_nodes.insert(node);
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (hints.contains(node->result_name))
+                node_to_hint[node] = hints[node->result_name];
+        }
+        else if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            if (!already_pushed.contains(node->children[0])) {
+                stack.push(node->children[0]);
+                already_pushed.insert(node->children[0]);
+                continue;
+            }
+
+            if (!visited_nodes.contains(node->children[0]))
+                continue;
+
+            if (node_to_hint.contains(node->children[0]))
+                node_to_hint[node] = node_to_hint[node->children[0]];
+        }
+        else if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (!allowed_functions.contains(name)) {
+                stack.pop();
+                continue;
+            }
+
+            const auto & info = processFunction(*node);
+            if (!info) {
+                stack.pop();
+                continue;
+            }
+
+            if (name == "modulo")
+            {
+                if (!info->reversed && info->value.getTypeName() == "UInt64")
+                {
+                    node_to_hint[node] = {true};
+                    node_to_hint[node].setLowerBoundary(0);
+                    node_to_hint[node].setStrictUpperBoundary(info->value.get<uint64_t>());
+                }
+                stack.pop();
+                continue;
+            }
+
+            if (!already_pushed.contains(info->node)) {
+                stack.push(info->node);
+                already_pushed.insert(info->node);
+                continue;
+            }
+
+            if (!visited_nodes.contains(info->node))
+                continue;
+
+            if (node_to_hint.contains(info->node))
+            {
+                node_to_hint[node] = node_to_hint[info->node];
+                node_to_hint[node].is_column_unsigned = node->result_type->isValueRepresentedByUnsignedInteger();
+
+                if (name == "plus")
+                {
+                    node_to_hint[node].plusConst(info->value);
+                }
+                else if (name == "minus")
+                {
+                    if (info->reversed)
+                    {
+                        node_to_hint[node].multiplyConst(-1);
+                        node_to_hint[node].plusConst(info->value);
+                    }
+                    else
+                    {
+                        node_to_hint[node].minusConst(info->value);
+                    }
+                }
+                else if (name == "multiply")
+                {
+                    node_to_hint[node].multiplyConst(info->value);
+                }
+            }
+        }
+
+        stack.pop();
+    }
+
     DataHints new_hints;
-    for (const auto & node : outputs)
-        if (node->type == ActionsDAG::ActionType::INPUT && hints.contains(node->result_name))
-                new_hints[node->result_name] = hints[node->result_name];
+    for (const auto & output_node : actions.getOutputs())
+        if (node_to_hint.contains(output_node) && !node_to_hint[output_node].isEmpty())
+            new_hints[output_node->result_name] = node_to_hint[output_node];
+
     hints = std::move(new_hints);
 }
 
