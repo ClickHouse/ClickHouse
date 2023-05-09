@@ -917,9 +917,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists && storage.uncommitted_state.getNode(request.path) != nullptr)
-            return new_deltas;
-
         auto parent_path = parentPath(request.path);
         auto parent_node = storage.uncommitted_state.getNode(parent_path);
         if (parent_node == nullptr)
@@ -949,7 +946,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         }
 
         if (storage.uncommitted_state.getNode(path_created))
+        {
+            if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
+                return new_deltas;
+
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        }
 
         if (getBaseName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
