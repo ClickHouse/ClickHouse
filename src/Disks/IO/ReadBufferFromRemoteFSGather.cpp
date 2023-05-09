@@ -8,7 +8,6 @@
 #include <iostream>
 #include <base/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -17,15 +16,18 @@ namespace DB
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    const ReadSettings & settings_)
+    const ReadSettings & settings_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBuffer(nullptr, 0)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
-    , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
+    if (cache_log_ && settings.enable_filesystem_cache_log)
+        cache_log = cache_log_;
+
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 
@@ -36,7 +38,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
-    if (current_buf != nullptr && !with_cache && enable_cache_log)
+    if (current_buf != nullptr && !with_cache)
     {
         appendFilesystemCacheLog();
     }
@@ -61,7 +63,8 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             object.bytes_size,
             /* allow_seeks */false,
             /* use_external_buffer */true,
-            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
+            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt,
+            cache_log);
     }
 
     return current_read_buffer_creator();
@@ -69,7 +72,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
 void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 {
-    if (current_object.remote_path.empty())
+    if (!cache_log || current_object.remote_path.empty())
         return;
 
     FilesystemCacheLogElement elem
@@ -82,9 +85,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
         .file_segment_size = total_bytes_read_from_current_file,
         .read_from_cache_attempted = false,
     };
-
-    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
-        cache_log->add(elem);
+    cache_log->add(elem);
 }
 
 IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
@@ -267,10 +268,8 @@ size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
 
 ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
 {
-    if (!with_cache && enable_cache_log)
-    {
+    if (!with_cache)
         appendFilesystemCacheLog();
-    }
 }
 
 }
