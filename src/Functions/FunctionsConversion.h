@@ -731,10 +731,7 @@ struct FormatImpl<DataTypeDate32>
     template <typename ReturnType = void>
     static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl * time_zone)
     {
-        std::cerr << "BEFORE: " << std::endl;
-        std::cerr << time_zone->getTimeZone() << std::endl;
         writeDateText(ExtendedDayNum(x), wb, *time_zone);
-        std::cerr << "AFTER" << std::endl;
         return ReturnType(true);
     }
 };
