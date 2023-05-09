@@ -84,7 +84,7 @@ Alias: The [OR Operator](../../sql-reference/operators/index.md#logical-or-opera
 
 **Returned value**
 
-- `1`, if at least one argument evalutes to `true`,
+- `1`, if at least one argument evaluates to `true`,
 - `0`, if all arguments evaluate to `false`,
 - `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`.
 
@@ -173,7 +173,7 @@ xor(val1, val2...)
 **Returned value**
 
 - `1`, for two values: if one of the values evaluates to `false` and other does not,
-- `0`, for two values: if both values evalute to `false` or to both `true`,
+- `0`, for two values: if both values evaluate to `false` or to both `true`,
 - `NULL`, if at least one of the inputs is `NULL`
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
