@@ -189,7 +189,6 @@ void JoiningTransform::transform(Chunk & chunk)
     }
     else
         block = readExecute(chunk);
-
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
@@ -426,7 +425,7 @@ void DelayedJoinedBlocksWorkerTransform::resetTask()
     task.reset();
     left_delayed_stream_finished = false;
     setup_non_joined_stream = false;
-    non_joined_delay_stream = nullptr;
+    non_joined_delayed_stream = nullptr;
 }
 
 Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
@@ -440,15 +439,15 @@ Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
         // To make only one processor could read from non-joined stream seems be a easy way.
         if (task && task->left_delayed_stream_finish_counter->isLast())
         {
-            if (!non_joined_delay_stream)
+            if (!non_joined_delayed_stream)
             {
-                non_joined_delay_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
+                non_joined_delayed_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
             }
         }
     }
-    if (non_joined_delay_stream)
+    if (non_joined_delayed_stream)
     {
-        return non_joined_delay_stream->next();
+        return non_joined_delayed_stream->next();
     }
     return {};
 }

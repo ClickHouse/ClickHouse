@@ -173,7 +173,7 @@ private:
 
     bool left_delayed_stream_finished = false;
     bool setup_non_joined_stream = false;
-    IBlocksStreamPtr non_joined_delay_stream = nullptr;
+    IBlocksStreamPtr non_joined_delayed_stream = nullptr;
 
     void resetTask();
     Block nextNonJoinedBlock();
