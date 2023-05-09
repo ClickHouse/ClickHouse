@@ -718,7 +718,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
         return false;
 
     ExtendedDayNum ret = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day());
-    convertToDayNum(date,ret);
+    convertToDayNum(date, ret);
     return ReturnType(true);
 }
 
@@ -1159,8 +1159,11 @@ inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, 
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
+
+inline void readText(DayNum & x, ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readDateText(x, buf, time_zone); }
+
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readDateText(x, buf, time_zone); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 inline void readText(IPv4 & x, ReadBuffer & buf) { readIPv4Text(x, buf); }
@@ -1219,7 +1222,7 @@ requires is_arithmetic_v<T>
 inline void readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 template <typename T>
-    requires is_arithmetic_v<T>
+requires is_arithmetic_v<T>
 inline void readDoubleQuoted(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readText(x, buf, time_zone); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -1283,7 +1286,8 @@ inline void readCSV(T & x, ReadBuffer & buf)
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readCSVSimple(x, buf, time_zone); }
+inline void readCSV(DayNum & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readCSVSimple(x, buf, time_zone); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(IPv4 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }

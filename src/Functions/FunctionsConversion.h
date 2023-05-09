@@ -439,7 +439,7 @@ struct ToDate32Transform32Or64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
         if (from < daynum_min_offset)
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -830,8 +830,11 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
+            time_zone = &DateLUT::instance();
         /// For argument of Date or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64> || std::is_same_v<FromDataType, DataTypeDate>)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
             auto non_null_args = createBlockWithNestedColumns(arguments);
             time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
@@ -1193,7 +1196,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
-        /// For conversion to DateTime type, second argument with time zone could be specified.
+        /// For conversion to Date or DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
             const auto result_type = removeNullable(res_type);
@@ -1205,6 +1208,12 @@ struct ConvertThroughParsing
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 utc_time_zone = &DateLUT::instance("UTC");
+        }
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            // Timezone is more or less dummy when parsing Date/Date32 from string.
+            local_time_zone = &DateLUT::instance();
+            utc_time_zone = &DateLUT::instance("UTC");
         }
 
         const IColumn * col_from = arguments[0].column.get();
