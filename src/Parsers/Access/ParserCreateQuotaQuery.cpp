@@ -82,7 +82,7 @@ namespace
         {
             for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword.c_str()}.ignore(pos, expected))
+                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword}.ignore(pos, expected))
                 {
                     quota_type = qt;
                     return true;
