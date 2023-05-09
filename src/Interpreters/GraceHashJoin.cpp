@@ -566,16 +566,6 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    if (hash_join)
-    {
-        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-        for (auto & block : right_blocks)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
-        }
-    }
-
     hash_join = makeInMemoryJoin();
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
@@ -639,6 +629,18 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
+        // buckets size has been changed in other threads. Need to scatter current_block again.
+        // rehash could only happen under hash_join_mutex's scope.
+        auto current_buckets = getCurrentBuckets();
+        if (buckets_snapshot.size() != current_buckets.size())
+        {
+            LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, current_buckets.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
+            current_block = std::move(blocks[bucket_index]);
+            if (!current_block.rows())
+                return;
+        }
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
