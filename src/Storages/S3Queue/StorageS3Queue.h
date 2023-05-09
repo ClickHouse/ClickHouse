@@ -130,7 +130,6 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
     void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
-    // Return default or custom zookeeper name for table
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     using KeysWithInfo = StorageS3QueueSource::KeysWithInfo;

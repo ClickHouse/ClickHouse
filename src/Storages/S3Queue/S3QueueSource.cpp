@@ -48,10 +48,8 @@
 #    include <Common/NamedCollections/NamedCollections.h>
 #    include <Common/parseGlobs.h>
 
-#    include <filesystem>
 #    include <Processors/ISource.h>
 #    include <Processors/Sinks/SinkToStorage.h>
-#    include <QueryPipeline/Pipe.h>
 
 namespace fs = std::filesystem;
 
