@@ -2135,11 +2135,23 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     for (const String & partition : partitions)
         paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
 
-    auto locks_children = zookeeper->getChildren(paths);
+    auto locks_children = zookeeper->tryGetChildren(paths);
 
     for (size_t i = 0; i < partitions.size(); ++i)
     {
-        Strings partition_block_numbers = locks_children[i].names;
+        auto & response = locks_children[i];
+        if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
+            throw Coordination::Exception(response.error, paths[i]);
+
+        if (response.error != Coordination::Error::ZOK)
+        {
+            /// Probably a wrong hint was provided (it's ok if a user passed non-existing partition to OPTIMIZE)
+            LOG_WARNING(queue.log, "Partition id '{}' was provided as a hint, but there's not such partition in ZooKeeper", partitions[i]);
+            partition_ids_hint->erase(partitions[i]);
+            continue;
+        }
+
+        Strings partition_block_numbers = response.names;
         for (const String & entry : partition_block_numbers)
         {
             if (!startsWith(entry, "block-"))
