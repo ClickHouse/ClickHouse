@@ -10,28 +10,13 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update && apt-get --yes --allow-unauthenticated install libclang-${LLVM_VERSION}-dev libmlir-${LLVM_VERSION}-dev
 
-# libclang-15-dev does not contain proper symlink:
-#
-# This is what cmake will search for:
-#
-#     # readlink -f /usr/lib/llvm-15/lib/libclang-15.so.1
-#     /usr/lib/x86_64-linux-gnu/libclang-15.so.1
-#
-# This is what exists:
-#
-#     # ls -l /usr/lib/x86_64-linux-gnu/libclang-15*
-#     lrwxrwxrwx 1 root root       16 Sep  5 13:31 /usr/lib/x86_64-linux-gnu/libclang-15.so -> libclang-15.so.1
-#     lrwxrwxrwx 1 root root       21 Sep  5 13:31 /usr/lib/x86_64-linux-gnu/libclang-15.so.15 -> libclang-15.so.15.0.0
-#     -rw-r--r-- 1 root root 31835760 Sep  5 13:31 /usr/lib/x86_64-linux-gnu/libclang-15.so.15.0.0
-#
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) rarch=x86_64 ;; \
         arm64) rarch=aarch64 ;; \
         *) exit 1 ;; \
-    esac \
-    && ln -rsf /usr/lib/$rarch-linux-gnu/libclang-16.so.15 /usr/lib/$rarch-linux-gnu/libclang-16.so.1
+    esac
 
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
