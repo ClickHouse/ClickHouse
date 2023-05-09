@@ -75,7 +75,7 @@ void fieldPlusConst(std::optional<Field> & field, const Field & value, bool is_c
 {
     if (!field)
         return;
-    
+
     if (is_column_unsigned)
     {
         uint64_t res;
@@ -98,7 +98,7 @@ void fieldMinusConst(std::optional<Field> & field, const Field & value, bool is_
 {
     if (!field)
         return;
-    
+
     if (is_column_unsigned)
     {
         uint64_t res;
@@ -121,7 +121,7 @@ void fieldMultiplyConst(std::optional<Field> & field, const Field & value, bool 
 {
     if (!field)
         return;
-    
+
     if (is_column_unsigned)
     {
         uint64_t res;

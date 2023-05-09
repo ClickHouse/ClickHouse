@@ -271,7 +271,8 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
         }
         else if (node->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (!already_pushed.contains(node->children[0])) {
+            if (!already_pushed.contains(node->children[0]))
+            {
                 stack.push(node->children[0]);
                 already_pushed.insert(node->children[0]);
                 continue;
@@ -286,13 +287,15 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
         else if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
-            if (!allowed_functions.contains(name)) {
+            if (!allowed_functions.contains(name))
+            {
                 stack.pop();
                 continue;
             }
 
             const auto & info = processFunction(*node);
-            if (!info) {
+            if (!info)
+            {
                 stack.pop();
                 continue;
             }
@@ -309,7 +312,8 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 continue;
             }
 
-            if (!already_pushed.contains(info->node)) {
+            if (!already_pushed.contains(info->node))
+            {
                 stack.push(info->node);
                 already_pushed.insert(info->node);
                 continue;
