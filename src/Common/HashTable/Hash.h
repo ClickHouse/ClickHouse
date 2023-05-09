@@ -285,7 +285,7 @@ inline size_t DefaultHash64(T key)
 }
 
 template <typename T>
-struct DefaultHash
+struct  DefaultHash
 {
     size_t operator() (T key) const
     {

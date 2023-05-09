@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #ifndef A6580F72_7317_47C2_B0B2_4EA564CB6BF4
 #define A6580F72_7317_47C2_B0B2_4EA564CB6BF4
 
@@ -53,24 +54,26 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
-        // return nullptr;
     }
 
     ColumnPtr executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
         // throw Exception("Not Implemented", ErrorCodes::SUPPORT_IS_DISABLED);
-        auto col_res = ColumnVector<ResultType>::create();
-        
-        return col_res;
+
+        std::cout << "aaa\n";
+
+        // auto col_res = ColumnVector<ResultType>::create();
+        // return col_res;
+
+        ResultType res = 1.0;
+        return result_type->createColumnConst(1, toField(res));
     }
 
 };

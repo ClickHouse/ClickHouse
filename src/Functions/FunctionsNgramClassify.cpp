@@ -9,6 +9,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Functions/FunctionFactory.h>
+#include <fstream>
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "base/defines.h"
 
@@ -60,16 +61,80 @@ struct NgramTextClassificationImpl
         for (const auto &[word, stat] : text)
         {
             const auto it = model.find(word); 
-            if (it == model.end()) 
+            if (it == model.end())
             {
                 result += stat * log(1 / cnt_words_in_model);
-            } else 
+            } else
             {
                 result += stat * log(it->stat / cnt_words_in_model);
             }
         }
         return result;
     }
+
+    template<class ModelMap>
+    class NgramModel {
+    public:
+        explicit NgramModel(const String &filename) {
+            load(filename);
+        }
+        void load(const String &filename) {
+            map.clear();
+            std::ifstream in(filename);
+            in >> name >> n;
+            char buffer[n + 1] = {0};
+            int count = 0;
+            while (!in.eof()) {
+                in.read(&buffer, n);
+                in >> count;
+                map[StringSlice(buffer, n)] = count;
+            }
+            in.close();
+        }
+        void learn(const String &name_, size_t n_, const String &text) {
+            name = name_;
+            n = n_;
+            map = buildModel<ModelMap>(text, n);
+        }
+        void learnDump(const String &name_, size_t n_, const String &text, const String &filename) { // will be used only for creating models
+            name = name_;
+            n = n_;
+            std::unordered_map<String, int> slow_map;
+            String tmp;
+            tmp.clear();
+            for (size_t index = 0; index < std::min(text.size(), n); ++index) {
+                tmp += text[index];
+            }
+            ++slow_map[tmp];
+            for (size_t index = 1; index + n < text.size(); ++index) {
+                tmp.clear();
+                for (size_t index2 = 0; index2 < n; ++index2) {
+                    tmp += text[index + index2];
+                }
+                ++slow_map[tmp];
+            }
+            // here we need to print that model
+            std::ofstream out(filename);
+            out << name << ' ' << n << '\n';
+            for (const auto &[word, count] : slow_map) {
+                out << word << count << '\n';
+            }
+            out.close();
+        }
+        const ModelMap& getMap() const {
+            return map;
+        }
+        String getName() const {
+            return name;
+        }
+        int getN() const {
+            return n;
+        }
+    private:
+        size_t n;
+        String name;
+        ModelMap map;
+    };
 
     struct StringSlice {
         const size_t p = 313;
@@ -85,6 +150,16 @@ struct NgramTextClassificationImpl
                 precalced_pn *= p;
             }
         }
+
+        StringSlice(char *buf, size_t n) {
+            precalced_pn = 1;
+            for (size_t index = 0; index < std::min(strlen(buf), n); ++index) {
+                value *= p;
+                value += static_cast<size_t>(buf[index]);
+                precalced_pn *= p;
+            }
+        }
+
         void slide(char old_c, char new_c) {
             value -= precalced_pn * static_cast<size_t>(old_c);
             value *= p;
@@ -112,13 +187,11 @@ struct NgramTextClassificationImpl
     }
 
     template <typename ModelMap>
-    ALWAYS_INLINE Float64 ngramScore(const String &text, const ModelMap &model, size_t n) {
+    ALWAYS_INLINE Float64 ngramScore(const String &text, const NgramModel<ModelMap> &model) {
         // depends on buildModel
-        ModelMap text_model = buildModel<ModelMap>(text, n);
-        return naiveBayes(text_model, model);
-    } 
-
-
+        ModelMap text_model = buildModel<ModelMap>(text, model.getN());
+        return naiveBayes(text_model, model.getMap());
+    }
     
 };
 
@@ -135,4 +208,3 @@ REGISTER_FUNCTION(NgramClassify)
 }
 
 }
-
