@@ -94,13 +94,13 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
   Column data type — `UInt8`.
 
-  
-  :::note
-  `is_deleted` can only be enabled when `ver` is used.
-    The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
-  No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
+:::note
+`is_deleted` can only be enabled when `ver` is used.
 
+The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
 
+No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
+:::
 
 ## Query clauses
 
