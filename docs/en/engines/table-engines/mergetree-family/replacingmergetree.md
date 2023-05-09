@@ -90,7 +90,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 ### is_deleted
 
-`is_deleted` —  Name of a `UInt8` column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
+`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
 
   Column data type — `UInt8`.
 
