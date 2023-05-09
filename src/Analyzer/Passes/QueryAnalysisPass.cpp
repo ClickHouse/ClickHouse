@@ -1219,6 +1219,7 @@ private:
     static void convertJoinedColumnTypeToNullIfNeeded(QueryTreeNodePtr & resolved_identifier, const JoinKind & join_kind, std::optional<JoinTableSide> resolved_side)
     {
         if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
+            JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
             (isFull(join_kind) ||
             (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
             (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
