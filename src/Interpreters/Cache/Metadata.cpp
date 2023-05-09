@@ -344,7 +344,9 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
 
     LOG_DEBUG(
         log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), offset, file_segment->getReservedSize());
+        getKey(), offset, file_segment->reserved_size);
+
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->annul();

@@ -87,7 +87,6 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
         it->key, it->offset, it->size);
 
-    it->size = 0;
     return queue.erase(it);
 }
 
