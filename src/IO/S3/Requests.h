@@ -62,15 +62,15 @@ public:
         return uri_override;
     }
 
-    void setProviderType(ProviderType provider_type_) const
+    void setApiMode(ApiMode api_mode_) const
     {
-        provider_type = provider_type_;
+        api_mode = api_mode_;
     }
 
 protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
-    mutable ProviderType provider_type{ProviderType::UNKNOWN};
+    mutable ApiMode api_mode{ApiMode::AWS};
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
