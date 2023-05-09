@@ -21,8 +21,8 @@ SELECT '# two parts';
 INSERT INTO data_01660 VALUES (0);
 INSERT INTO data_01660 VALUES (1);
 SELECT _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660';
-SELECT name, _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660';
-SELECT name, active FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660';
+SELECT name, _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' ORDER BY name;
+SELECT name, active FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' ORDER BY name;
 
 -- OPTIMIZE to create Outdated parts
 SELECT '# optimize';

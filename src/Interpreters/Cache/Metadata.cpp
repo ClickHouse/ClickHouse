@@ -208,10 +208,9 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
         chassert(key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY);
     }
 
-    /// Not we are at a case:
-    /// key_state == KeyMetadata::KeyState::REMOVED
-    /// and KeyNotFoundPolicy == CREATE_EMPTY
-    /// Retry.
+    /// Now we are at the case when the key was removed (key_state == KeyMetadata::KeyState::REMOVED)
+    /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
+    /// Retry
     return lockKeyMetadata(key, key_not_found_policy);
 }
 
@@ -240,13 +239,6 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 void CacheMetadata::doCleanup()
 {
     auto lock = guard.lock();
-
-    /// Let's mention this case.
-    /// This metadata cleanup is delayed so what is we marked key as deleted and
-    /// put it to deletion queue, but then the same key was added to cache before
-    /// we actually performed this delayed removal?
-    /// In this case it will work fine because on each attempt to add any key to cache
-    /// we perform this delayed removal.
 
     FileCacheKey cleanup_key;
     while (cleanup_queue->tryPop(cleanup_key))
