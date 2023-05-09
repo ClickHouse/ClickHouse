@@ -53,7 +53,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-### Adresses
+### Addresses
 
 ``` text
 example01-01-1
