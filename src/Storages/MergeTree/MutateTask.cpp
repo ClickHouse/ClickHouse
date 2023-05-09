@@ -464,10 +464,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
 
-    for (size_t i = 0; i < indices.size(); ++i)
+    for (const auto & index : indices)
     {
-        const auto & index = indices[i];
-
         bool has_index =
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
