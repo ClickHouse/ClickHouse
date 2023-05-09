@@ -28,7 +28,7 @@ def s3_queue_setup_teardown(started_cluster):
 
 
 MINIO_INTERNAL_PORT = 9001
-AVAILABLE_MODES = ["ordered", "unordered"]
+AVAILABLE_MODES = ["unordered", "ordered"]
 AUTH = "'minio','minio123',"
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -569,7 +569,7 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     total_values = generate_random_files(
         files_to_generate, prefix, started_cluster, bucket, row_num=1
     )
-    time.sleep((files_to_generate // poll_size) + 10)
+    time.sleep((files_to_generate // poll_size) * 2)
 
     get_query = f"SELECT * FROM test.s3_queue_persistent"
     res1 = [
@@ -637,7 +637,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         files_to_generate, prefix, started_cluster, bucket, row_num=1
     )
 
-    time.sleep((files_to_generate // poll_size) + 10)
+    time.sleep((files_to_generate // poll_size) * 2)
     get_query = f"SELECT * FROM test.s3_queue_persistent"
     res1 = [
         list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
