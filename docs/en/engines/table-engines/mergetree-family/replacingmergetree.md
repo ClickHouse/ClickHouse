@@ -90,12 +90,12 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 ### is_deleted
 
-`is_deleted` —  Name of the column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
+`is_deleted` —  Name of a `UInt8` column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
 
-    Column data type — `Int8`.
+    Column data type — `UInt8`.
 
     Can only be enabled when `ver` is used.
-    The row is deleted when use the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` if the engine settings `clean_deleted_rows` has been set to `Always`.
+    The row is deleted when the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` is used or if the engine settings `clean_deleted_rows` has been set to `Always`.
     No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted one is the one kept.
 
 
