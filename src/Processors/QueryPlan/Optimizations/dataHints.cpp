@@ -246,22 +246,21 @@ const std::unordered_set<std::string> allowed_functions = {"plus", "minus", "mul
 
 void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG & actions)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited_nodes, already_pushed;
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
     std::unordered_map<const ActionsDAG::Node *, DataHint> node_to_hint;
 
     std::stack<const ActionsDAG::Node *> stack;
     for (const auto & output_node : actions.getOutputs())
-    {
-        if (!already_pushed.contains(output_node))
-        {
-            stack.push(output_node);
-            already_pushed.insert(output_node);
-        }
-    }
+        stack.push(output_node);
 
     while (!stack.empty())
     {
         const auto * node = stack.top();
+        if (node_to_hint.contains(node))
+        {
+            stack.pop();
+            continue;
+        }
         visited_nodes.insert(node);
 
         if (node->type == ActionsDAG::ActionType::INPUT)
@@ -271,15 +270,11 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
         }
         else if (node->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (!already_pushed.contains(node->children[0]))
+            if (!visited_nodes.contains(node->children[0]))
             {
                 stack.push(node->children[0]);
-                already_pushed.insert(node->children[0]);
                 continue;
             }
-
-            if (!visited_nodes.contains(node->children[0]))
-                continue;
 
             if (node_to_hint.contains(node->children[0]))
                 node_to_hint[node] = node_to_hint[node->children[0]];
@@ -289,6 +284,7 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
             const auto & name = node->function_base->getName();
             if (!allowed_functions.contains(name))
             {
+                node_to_hint[node] = {};
                 stack.pop();
                 continue;
             }
@@ -296,12 +292,14 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
             const auto & info = processFunction(*node);
             if (!info)
             {
+                node_to_hint[node] = {};
                 stack.pop();
                 continue;
             }
 
             if (name == "modulo")
             {
+                node_to_hint[node] = {};
                 if (!info->reversed && info->value.getTypeName() == "UInt64")
                 {
                     node_to_hint[node] = {true};
@@ -312,15 +310,11 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 continue;
             }
 
-            if (!already_pushed.contains(info->node))
+            if (!visited_nodes.contains(info->node))
             {
                 stack.push(info->node);
-                already_pushed.insert(info->node);
                 continue;
             }
-
-            if (!visited_nodes.contains(info->node))
-                continue;
 
             if (node_to_hint.contains(info->node))
             {
