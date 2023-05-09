@@ -42,13 +42,7 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreePartitionGlobalMinMaxIdxCalculator.h>
 #include <fmt/core.h>
