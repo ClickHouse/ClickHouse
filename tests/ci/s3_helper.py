@@ -8,6 +8,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import boto3  # type: ignore
+import botocore  # type: ignore
 
 from env_helper import (
     S3_TEST_REPORTS_BUCKET,
@@ -40,9 +41,12 @@ def _flatten_list(lst):
 
 
 class S3Helper:
+    max_pool_size = 100
+
     def __init__(self):
+        config = botocore.config.Config(max_pool_connections=self.max_pool_size)
         self.session = boto3.session.Session(region_name="us-east-1")
-        self.client = self.session.client("s3", endpoint_url=S3_URL)
+        self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
         self.host = S3_URL
         self.download_host = S3_DOWNLOAD
 
@@ -167,25 +171,20 @@ class S3Helper:
                 if counter % 1000 == 0:
                     sum_time += int(time.time() - t)
                     print(
-                        "Uploaded",
-                        counter,
-                        "-",
-                        int(time.time() - t),
-                        "s",
-                        "sum time",
-                        sum_time,
-                        "s",
+                        f"Uploaded {counter}, {int(time.time()-t)}s, "
+                        f"sum time {sum_time}s",
                     )
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
             return f"{self.download_host}/{bucket_name}/{s3_path}"
 
-        p = Pool(256)
+        p = Pool(self.max_pool_size)
 
+        original_level = logging.root.level
         logging.basicConfig(level=logging.CRITICAL)
         result = sorted(_flatten_list(p.map(upload_task, all_files)))
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=original_level)
         return result
 
     def _upload_folder_to_s3(
