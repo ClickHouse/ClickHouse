@@ -52,6 +52,7 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
+        libclang-${LLVM_VERSION}-dev \
         moreutils \
         nasm \
         ninja-build \
