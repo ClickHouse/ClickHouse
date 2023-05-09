@@ -46,6 +46,11 @@ TableFunctionPtr TableFunctionFactory::get(
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
+    if (table_function->name == "duckdb" && !context->getSettingsRef().allow_experimental_duckdb)
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+            "duckdb is an experimental table function. "
+            "Enable allow_experimental_duckdb setting to use it");
+
     res->parseArguments(ast_function, context);
     return res;
 }

@@ -264,6 +264,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
+    if (create.storage->engine->name == "DuckDB"
+        && !getContext()->getSettingsRef().allow_experimental_duckdb
+        && !internal && !create.attach)
+    {
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                        "DuckDB is an experimental database engine. "
+                        "Enable allow_experimental_duckdb setting to use it");
+    }
+
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
@@ -892,6 +901,14 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                         name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
             }
         }
+    }
+
+    if (create.storage && create.storage->engine && create.storage->engine->name == "DuckDB"
+        && !create.attach && !settings.allow_experimental_duckdb)
+    {
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                        "DuckDB is an experimental table engine. "
+                        "Enable allow_experimental_duckdb setting to use it");
     }
 }
 

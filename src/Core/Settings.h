@@ -741,6 +741,7 @@ class IColumn;
     M(Bool, keeper_map_strict_mode, false, "Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key", 0) \
     M(Bool, function_json_value_return_type_allow_nullable, false, "Allow function to return nullable type.", 0) \
     M(Bool, function_json_value_return_type_allow_complex, false, "Allow function to return complex type, such as: struct, array, map.", 0) \
+    M(Bool, allow_experimental_duckdb, false, "Allows to use DuckDB table and database engine and duckdb table function.", 0)
     // End of COMMON_SETTINGS
     // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
