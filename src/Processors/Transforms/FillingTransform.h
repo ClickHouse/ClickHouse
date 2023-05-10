@@ -20,7 +20,8 @@ public:
         const Block & header_,
         const SortDescription & sort_description_,
         const SortDescription & fill_description_,
-        InterpolateDescriptionPtr interpolate_description_);
+        InterpolateDescriptionPtr interpolate_description_,
+        bool use_with_fill_by_sorting_prefix_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -87,6 +88,7 @@ private:
     Columns last_row;
     Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
+    const bool use_with_fill_by_sorting_prefix;
 };
 
 class FillingNoopTransform : public ISimpleTransform

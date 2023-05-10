@@ -14,7 +14,8 @@ public:
         const DataStream & input_stream_,
         SortDescription sort_description_,
         SortDescription fill_description_,
-        InterpolateDescriptionPtr interpolate_description_);
+        InterpolateDescriptionPtr interpolate_description_,
+        bool use_with_fill_by_sorting_prefix);
 
     String getName() const override { return "Filling"; }
 
@@ -31,6 +32,7 @@ private:
     SortDescription sort_description;
     SortDescription fill_description;
     InterpolateDescriptionPtr interpolate_description;
+    const bool use_with_fill_by_sorting_prefix;
 };
 
 }

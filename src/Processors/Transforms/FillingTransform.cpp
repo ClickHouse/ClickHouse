@@ -187,13 +187,18 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, const SortDescription& fill_description_, InterpolateDescriptionPtr interpolate_description_)
-        : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
-        , sort_description(sort_description_)
-        , fill_description(fill_description_)
-        , interpolate_description(interpolate_description_)
-        , filling_row(fill_description_)
-        , next_row(fill_description_)
+    const Block & header_,
+    const SortDescription & sort_description_,
+    const SortDescription & fill_description_,
+    InterpolateDescriptionPtr interpolate_description_,
+    const bool use_with_fill_by_sorting_prefix_)
+    : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
+    , sort_description(sort_description_)
+    , fill_description(fill_description_)
+    , interpolate_description(interpolate_description_)
+    , filling_row(fill_description_)
+    , next_row(fill_description_)
+    , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
@@ -673,7 +678,7 @@ void FillingTransform::transform(Chunk & chunk)
         res_sort_prefix_columns,
         res_other_columns);
 
-    if (sort_prefix.empty())
+    if (sort_prefix.empty() || !use_with_fill_by_sorting_prefix)
     {
         transformRange(
             input_fill_columns,

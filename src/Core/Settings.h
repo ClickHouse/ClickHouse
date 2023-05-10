@@ -716,6 +716,7 @@ class IColumn;
     \
     M(Bool, parallelize_output_from_storages, true, "Parallelize output for reading step from storage. It allows parallelizing query processing right after reading from storage if possible", 0) \
     \
+    M(Bool, use_with_fill_by_sorting_prefix, false, "Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with the same values in sorting prefix will be filled separately", 0) \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
