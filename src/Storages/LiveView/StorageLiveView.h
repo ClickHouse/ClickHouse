@@ -16,7 +16,6 @@ limitations under the License. */
 
 #include <mutex>
 #include <condition_variable>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -67,7 +66,6 @@ public:
     bool isView() const override { return true; }
     String getBlocksTableName() const
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getBlocksTableName");
         return getStorageID().table_name + "_blocks";
     }
     StoragePtr getParentStorage() const;
@@ -75,7 +73,6 @@ public:
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getInnerSubQuery");
         if (inner_subquery)
             return inner_subquery->clone();
         return nullptr;
@@ -92,7 +89,6 @@ public:
     /// must be called with mutex locked
     bool hasActiveUsers()
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "hasActiveUsers");
         return active_ptr.use_count() > 1;
     }
 
@@ -100,7 +96,6 @@ public:
     /// must be called with mutex locked
     String getBlocksHashKey()
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getBlocksHashKey");
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->hash;
         return {};
@@ -109,7 +104,6 @@ public:
     /// must be called with mutex locked
     UInt64 getBlocksVersion()
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getBlocksVersion");
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->version;
         return 0;
@@ -119,7 +113,6 @@ public:
     /// must be called with mutex locked
     Time getBlocksTime()
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getBlocksTime");
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->time;
         return {};
@@ -129,7 +122,6 @@ public:
     /// must be called with mutex locked
     void reset()
     {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "reset");
         (*blocks_ptr).reset();
         if (*blocks_metadata_ptr)
             (*blocks_metadata_ptr)->hash.clear();

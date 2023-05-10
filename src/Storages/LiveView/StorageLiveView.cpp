@@ -41,8 +41,6 @@ limitations under the License. */
 #include <Access/Common/AccessFlags.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -57,7 +55,6 @@ namespace ErrorCodes
 
 static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const String & table_name, ASTPtr & inner_subquery)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "extractDependentTable");
     ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);
 
     if (auto db_and_table = getDatabaseAndTable(select_query, 0))
@@ -100,7 +97,6 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
 
 MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_context)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "collectMergeableBlocks");
     ASTPtr mergeable_query = inner_query;
 
     if (inner_subquery)
@@ -136,7 +132,6 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
 Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "blocksToPipes");
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
         pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
@@ -147,7 +142,6 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 /// Complete query using input streams from mergeable blocks
 QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "completeQuery");
     //FIXME it's dangerous to create Context on stack
     auto block_context = Context::createCopy(getContext());
     block_context->makeQueryContext();
@@ -186,7 +180,6 @@ void StorageLiveView::writeIntoLiveView(
     const Block & block,
     ContextPtr local_context)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "3");
     auto output = std::make_shared<LiveViewSink>(live_view);
 
     /// Check if live view has any readers if not
@@ -287,7 +280,6 @@ StorageLiveView::StorageLiveView(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "StorageLiveView");
     live_view_context = Context::createCopy(getContext());
     live_view_context->makeQueryContext();
 
@@ -330,7 +322,6 @@ StorageLiveView::StorageLiveView(
 
 Block StorageLiveView::getHeader() const
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getHeader");
     std::lock_guard lock(sample_block_lock);
 
     if (!sample_block)
@@ -352,13 +343,11 @@ Block StorageLiveView::getHeader() const
 
 StoragePtr StorageLiveView::getParentStorage() const
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getParentStorage");
     return DatabaseCatalog::instance().getTable(select_table_id, getContext());
 }
 
 ASTPtr StorageLiveView::getInnerBlocksQuery()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getInnerBlocksQuery");
     std::lock_guard lock(sample_block_lock);
     if (!inner_blocks_query)
     {
@@ -375,7 +364,6 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
 
 bool StorageLiveView::getNewBlocks()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getNewBlocks");
     SipHash hash;
     UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
@@ -445,7 +433,6 @@ bool StorageLiveView::getNewBlocks()
 
 void StorageLiveView::checkTableCanBeDropped() const
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "checkTableCanBeDropped");
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (!view_ids.empty())
@@ -457,14 +444,12 @@ void StorageLiveView::checkTableCanBeDropped() const
 
 void StorageLiveView::startup()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "startup");
     if (is_periodically_refreshed)
         periodic_refresh_task->activate();
 }
 
 void StorageLiveView::shutdown()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "shutdown");
     shutdown_called = true;
 
     if (is_periodically_refreshed)
@@ -480,7 +465,6 @@ StorageLiveView::~StorageLiveView()
 
 void StorageLiveView::drop()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "drop");
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 
@@ -490,7 +474,6 @@ void StorageLiveView::drop()
 
 void StorageLiveView::scheduleNextPeriodicRefresh()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "scheduleNextPeriodicRefresh");
     Seconds current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
     Seconds blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
 
@@ -514,7 +497,6 @@ void StorageLiveView::scheduleNextPeriodicRefresh()
 
 void StorageLiveView::periodicRefreshTaskFunc()
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "periodicRefreshTaskFunc");
     LOG_TRACE(log, "periodic refresh task");
 
     std::lock_guard lock(mutex);
@@ -525,7 +507,6 @@ void StorageLiveView::periodicRefreshTaskFunc()
 
 void StorageLiveView::refresh(bool grab_lock)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "refresh");
     // Lock is already acquired exclusively from InterperterAlterQuery.cpp InterpreterAlterQuery::execute() method.
     // So, reacquiring lock is not needed and will result in an exception.
 
@@ -551,7 +532,6 @@ Pipe StorageLiveView::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "1");
     std::lock_guard lock(mutex);
 
     if (!(*blocks_ptr))
@@ -577,7 +557,6 @@ Pipe StorageLiveView::watch(
     size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "2");
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
     bool has_limit = false;
@@ -608,7 +587,6 @@ Pipe StorageLiveView::watch(
             refresh(false);
 
         if (is_periodically_refreshed)
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "is_periodically_refreshed");
             scheduleNextPeriodicRefresh();
     }
 
@@ -618,7 +596,6 @@ Pipe StorageLiveView::watch(
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "getVirtuals");
     return NamesAndTypesList{
         NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
     };

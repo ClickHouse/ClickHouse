@@ -17,7 +17,8 @@ class StorageNull final : public IStorage
 {
 friend class NullSource;
 friend class NullSinkToStorage;
-friend class NullSinkk;
+friend class NullStreamSink;
+
 public:
     StorageNull(
         const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)

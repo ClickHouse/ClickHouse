@@ -8,7 +8,6 @@ namespace DB
 
 class NullSource : public ISource
 {
-using NonBlockingResult = std::pair<Block, bool>;
 public:
     explicit NullSource(Block header) : ISource(std::move(header)) {}
 
@@ -21,66 +20,48 @@ public:
 
     String getName() const override { return "NullSource"; }
 
-    NonBlockingResult tryRead()
-    {
-        return tryReadImpl(false);
-    }
-
 protected:
     Chunk generate() override { 
-        auto block = tryReadImpl(true).first;
         if (!is_stream) {
             return Chunk();
         }
+        auto block = tryReadImpl();
         return Chunk(block.getColumns(), block.rows());
     }
 
-    NonBlockingResult tryReadImpl(bool blocking)
+    Block tryReadImpl()
     {
-        if (!is_stream) {
-            return { Block(), true };
-        }
         Block res;
 
         if (!blocks)
         {
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Нет блоков, инициализвция");
             std::lock_guard lock(storage->mutex);
             blocks = (*blocks_ptr);
             it = blocks->begin();
-            begin = blocks->begin();
             end = blocks->end();
         }
 
         if (isCancelled() || storage->shutdown_called)
         {
-            return { Block(), true };
+            return Block();
         }
 
         if (it == end)
         {
             {
-                LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "it == end");
                 std::unique_lock lock(storage->mutex);
                 if (blocks.get() != (*blocks_ptr).get())
                 {
-                    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Появились новые блоки");
                     blocks = (*blocks_ptr);
                     it = blocks->begin();
-                    begin = blocks->begin();
                     end = blocks->end();
                 }
                 else
                 {
-                    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Ждём");
-                    if (!blocking)
-                    {
-                        return { Block(), false };
-                    }
                     if (!end_of_blocks)
                     {
                         end_of_blocks = true;
-                        return { getPort().getHeader(), true };
+                        return getPort().getHeader();
                     }
                     while (true)
                     {
@@ -90,7 +71,7 @@ protected:
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
                         if (isCancelled() || storage->shutdown_called)
                         {
-                            return { Block(), true };
+                            return Block();
                         }
                         if (signaled)
                         {
@@ -99,16 +80,15 @@ protected:
                         else
                         {
                             last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-                            return { getPort().getHeader(), true };
+                            return getPort().getHeader();
                         }
                     }
                 }
             }
-            return tryReadImpl(blocking);
+            return tryReadImpl();
         }
 
         res = *it;
-
         ++it;
 
         if (it == end)
@@ -117,7 +97,7 @@ protected:
         }
 
         last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-        return { res, true };
+        return res;
     }
 private:
     std::shared_ptr<StorageNull> storage;
@@ -128,7 +108,6 @@ private:
     BlocksPtr blocks;
     Blocks::iterator it;
     Blocks::iterator end;
-    Blocks::iterator begin;
     bool end_of_blocks = false;
 };
 

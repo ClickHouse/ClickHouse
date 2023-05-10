@@ -10,32 +10,32 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-class NullSinkk : public SinkToStorage
+class NullStreamSink : public SinkToStorage
 {
 public:
-    NullSinkk (StorageNull & storage_, const StorageMetadataPtr & metadata_snapshot_) : SinkToStorage(metadata_snapshot_->getSampleBlock()), storage(storage_) {}
+    NullStreamSink (StorageNull & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock()), 
+        storage(storage_) {}
+    
     using SinkToStorage::SinkToStorage;
-    std::string getName() const override { return "NullSinkk"; }
+
+    std::string getName() const override { return "NullStreamSink"; }
+
     void consume(Chunk chunk) override {
-        if (!is_stream) {
-            return;
-        }
         std::lock_guard lock(storage.mutex);
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "NullSinkk consume");
+
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         BlocksPtr new_blocks = std::make_shared<Blocks>();
         new_blocks->push_back(block);
         *(storage.blocks_ptr) = new_blocks;
+
         storage.condition.notify_all();
     }
-    void setIsStream(bool flag) {is_stream = flag;}
 private:
-    bool is_stream = false;
     StorageNull & storage;
 };
 
@@ -72,30 +72,26 @@ Pipe StorageNull::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
+    Block block = storage_snapshot->getSampleBlockForColumns(column_names);
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+
     if (modified_select.is_stream) {
-        Block block = storage_snapshot->getSampleBlockForColumns(column_names);
-        // block.insert({DataTypeInt32().createColumnConst(1, 3), std::make_shared<DataTypeInt32>(), "vv"});
         std::unique_lock lock(mutex);
         if (!(*blocks_ptr)) {
             BlocksPtr new_blocks = std::make_shared<Blocks>();
             new_blocks->push_back(block);
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM INSERT");
             (*blocks_ptr) = new_blocks;
             condition.notify_all();
         }
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM");
         return Pipe(
-        std::make_shared<NullSource>(
-            storage_snapshot->getSampleBlockForColumns(column_names),
-        std::static_pointer_cast<StorageNull>(shared_from_this()), blocks_ptr));
-    } else {
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "NOT STREAM");
+                std::make_shared<NullSource>(
+                block,
+                std::static_pointer_cast<StorageNull>(shared_from_this()), blocks_ptr));
     }
     return Pipe(
-            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+            std::make_shared<NullSource>(block));
 }
 
 SinkToStoragePtr StorageNull::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*ctx*/)
@@ -103,22 +99,9 @@ SinkToStoragePtr StorageNull::write(const ASTPtr & query, const StorageMetadataP
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_stream = insert_query && insert_query->is_stream;
     if (is_stream) {
-        // BlocksPtr new_blocks = std::make_shared<Blocks>();
-        // Block block ;//= metadata_snapshot->getSampleBlock(); // TODO блок должен доставаться по-другому
-        // block.insert({DataTypeInt32().createColumnConst(1, 4), std::make_shared<DataTypeInt32>(), "vv"});
-        // new_blocks->push_back(block);
-        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "STREAM INSERT");
-        // (*blocks_ptr) = new_blocks;
-
-        // LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "fdhfkadhk " + std::to_string(block.rows()));
-        
-        // condition.notify_all();
-        auto null_sink_to_storage = std::shared_ptr<NullSinkk>(new NullSinkk(*this, metadata_snapshot));
-        null_sink_to_storage->setIsStream(true);
-        return null_sink_to_storage;
+        return std::make_shared<NullStreamSink>(*this, metadata_snapshot);
     }
-    auto null_sink_to_storage = std::shared_ptr<NullSinkToStorage>(new NullSinkToStorage(metadata_snapshot->getSampleBlock()));
-    return null_sink_to_storage;
+    return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
 }
 
 void registerStorageNull(StorageFactory & factory)

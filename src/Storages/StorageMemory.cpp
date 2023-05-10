@@ -32,7 +32,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -279,9 +278,6 @@ Pipe StorageMemory::read(
 
 SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "MEMORY INSERT");
-    Block block = metadata_snapshot->getSampleBlock();
-    LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "fdhfkadhk " + std::to_string(block.rows()));
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 

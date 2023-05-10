@@ -7,7 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -94,7 +93,6 @@ Block getHeaderForProcessingStage(
     {
         case QueryProcessingStage::FetchColumns:
         {
-            LOG_FATAL(&Poco::Logger::root(), "!!!QueryProcessingStage::FetchColumns");
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
 
             if (query_info.prewhere_info)
@@ -121,7 +119,6 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
-            LOG_FATAL(&Poco::Logger::root(), "!!!QueryProcessingStage::Complete:");
             /// TODO: Analyzer syntax analyzer result
             if (!query_info.syntax_analyzer_result)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
