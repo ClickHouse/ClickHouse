@@ -4,11 +4,11 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageDictionary.h>
+#include <Common/logger_useful.h>
+
+#include "Storages/ColumnsDescription.h"
+#include "config.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -67,30 +67,6 @@ void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     loadOrReload(resolved_dictionary_name);
-}
-
-ColumnsDescription ExternalDictionariesLoader::getActualTableStructure(const std::string & dictionary_name, ContextPtr query_context) const
-{
-    /// if it is regexp tree dictionary, we have a special table structure.
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
-    auto load_result = load(resolved_name);
-    if (load_result)
-    {
-        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result);
-        if (dictionary->getTypeName() == "RegExpTree")
-        {
-            return ColumnsDescription(NamesAndTypesList({
-                {"id", std::make_shared<DataTypeUInt64>()},
-                {"parent_id", std::make_shared<DataTypeUInt64>()},
-                {"regexp", std::make_shared<DataTypeString>()},
-                {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-                {"values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
-            }));
-        }
-    }
-    /// otherwise, we get table structure by dictionary structure.
-    auto dictionary_structure = getDictionaryStructure(dictionary_name, query_context);
-    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
