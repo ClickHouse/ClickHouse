@@ -8267,22 +8267,26 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
     {
         /// Part {} is in temporary state and has it_temp flag. it means that it is under construction.
         /// That path hasn't been added to active set, no commit procedure has begun.
-        /// The metadata files is about to delete now.
-        /// However remote data might be shared and has to be unlocked in the keper before removing.
-        /// Actually there is some cases when it is clear without keper:
+        /// The metadata files is about to delete now. Clichouse has to make a decision remove or preserve blobs on remote FS.
+        /// In general remote data might be shared and has to be unlocked in the keeper before removing.
+        /// However there are some cases when decision is clear without asking keeper:
         /// When the part has been fetched then remote data has to be preserved, part doesn't own it.
         /// When the part has been merged then remote data can be removed, part owns it.
-        /// In opposition, when the part has been mutated in generally it hardlinks the files.
-        /// Therefore remote data is shared, it has to be unlocked in the keper.
-        /// In order to track all that cases has_exclusive_blobs optional value is used
-        /// If has_exclusive_blobs is determined, then CH tracked the parts origin from the creation
+        /// In opposition, when the part has been mutated in generally it hardlinks the files from source part.
+        /// Therefore remote data could be shared, it has to be unlocked in the keeper.
+        /// In order to track all that cases remove_tmp_policy is used.
+        /// Clickhouse set that field as REMOVE_BLOBS or PRESERVE_BLOBS when it sure about the decision without asking keeper.
 
-        if (part.has_exclusive_blobs.has_value())
+        if (part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS
+            || part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS)
         {
+            bool can_remove_blobs = part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
             LOG_INFO(log, "Looks like CH knows the origin of that part. "
                           "Part {} can be deleted without unlocking shared data in zookeeper. "
-                          "Part data is {}", part.name, part.has_exclusive_blobs.value() ? "exclusive" : "shared");
-            return std::make_pair(part.has_exclusive_blobs.value(), NameSet{});
+                          "Part blobs {}.",
+                     part.name,
+                     can_remove_blobs ? "will be removed" : "have to be preserved");
+            return std::make_pair(can_remove_blobs, NameSet{});
         }
     }
 
