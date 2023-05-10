@@ -12,12 +12,11 @@ import boto3  # type: ignore
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
 SUSPICIOUS_PATTERNS = [
-    "tests/ci/*",
-    "docs/tools/*",
     ".github/*",
-    "utils/release/*",
     "docker/*",
-    "release",
+    "docs/tools/*",
+    "packages/*",
+    "tests/ci/*",
 ]
 
 # Number of retries for API calls.
