@@ -3562,7 +3562,7 @@ Default value: `1`.
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
 
-## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+## optimize_use_projections {#optimize_use_projections}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
 
@@ -3575,7 +3575,7 @@ Default value: `1`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting).
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
 Possible values:
 
