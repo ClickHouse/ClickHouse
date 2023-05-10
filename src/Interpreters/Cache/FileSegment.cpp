@@ -753,7 +753,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
     }
     else
     {
-        if (download_state == State::DOWNLOADED)
+        if (download_state == State::DOWNLOADING)
         {
             chassert(!downloader_id.empty());
         }
