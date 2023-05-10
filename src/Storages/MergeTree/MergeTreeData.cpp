@@ -3608,6 +3608,9 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
+        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name)
+            continue;
+
         auto storage_column = columns.getPhysical(part_column.name);
         if (!storage_column.type->hasDynamicSubcolumns())
             continue;
