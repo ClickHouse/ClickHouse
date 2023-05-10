@@ -49,7 +49,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_))
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
