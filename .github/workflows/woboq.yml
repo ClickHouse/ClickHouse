@@ -6,8 +6,6 @@ env:
 concurrency:
   group: woboq
 on: # yamllint disable-line rule:truthy
-  schedule:
-    - cron: '0 */18 * * *'
   workflow_dispatch:
   workflow_call:
 jobs:
