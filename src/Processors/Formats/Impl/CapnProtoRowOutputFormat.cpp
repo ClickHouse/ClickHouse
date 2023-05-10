@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 CapnProtoOutputStream::CapnProtoOutputStream(WriteBuffer & out_) : out(out_)
 {
 }
