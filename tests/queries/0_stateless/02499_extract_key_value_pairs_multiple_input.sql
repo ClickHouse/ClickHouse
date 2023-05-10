@@ -123,7 +123,7 @@ SELECT
 -- semi-colon as pair delimiter
 -- expected output: {'age':'31','name':'neymar','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;invalid1:invalid1,invalid2:invalid2', ':', ';') AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;random_key:value_with_comma,still_part_of_value:still_part_of_value', ':', ';') AS s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -418,6 +418,18 @@ SELECT
 -- should not fail because pair delimiters contains 8 characters, which is within the limit
 WITH
     extractKeyValuePairs('not_important', ':', '12345678', '\'') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+-- key value delimiter should be considered valid part of value, char2 has a problem with ==
+WITH
+    extractKeyValuePairs('formula=1+2=3 argument1=1 argument2=2 result=3, char="=" char2== string="foo=bar"', '=') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
