@@ -25,6 +25,12 @@ static struct InitFiu
 } init_fiu;
 #endif
 
+/// We should define different types of failpoints here. There are four types of them:
+/// - ONCE: the failpoint will only be triggered once.
+/// - REGULAR: the failpoint will always be triggered util disableFailPoint is called.
+/// - PAUSAEBLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSAEBLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     REGULAR(dummy_failpoint) \
@@ -96,6 +102,11 @@ void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UI
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
 }
 
+void FailPointInjection::pauseFailPoint(const String & fail_point_name)
+{
+    fiu_do_on(fail_point_name.c_str(), FailPointInjection::wait(fail_point_name););
+}
+
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
 #if FIU_ENABLE
@@ -141,11 +152,12 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 
 void FailPointInjection::wait(const String & fail_point_name)
 {
-    std::lock_guard lock(mu);
+    std::unique_lock lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter == fail_point_wait_channels.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
     else
     {
+        lock.unlock();
         auto ptr = iter->second;
         ptr->wait();
     }
