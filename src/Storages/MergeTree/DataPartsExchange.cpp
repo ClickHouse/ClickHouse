@@ -355,10 +355,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    /// It is important to include PreActive and Outdated parts here because remote replicas cannot reliably
+    /// It is important to include Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
     auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+        name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -918,7 +918,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
         new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         new_data_part->is_temp = true;
-        new_data_part->has_exclusive_blobs = false;
+        new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
         new_data_part->loadColumnsChecksumsIndexes(true, false);
     }

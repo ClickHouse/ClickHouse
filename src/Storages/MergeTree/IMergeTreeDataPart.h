@@ -218,7 +218,15 @@ public:
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
-    std::optional<bool> has_exclusive_blobs = std::nullopt;
+    enum class BlobsRemovalPolicyForTemporaryParts
+    {
+        ASK_KEEPER,
+        REMOVE_BLOBS,
+        PRESERVE_BLOBS,
+    };
+    /// That field is used by replicated merge tree with zero copy replication
+    /// Usually the data has to bo unlocked in keeper unless explicitly otherwise stated
+    BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;

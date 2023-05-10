@@ -1838,7 +1838,7 @@ bool MutateTask::prepare()
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
-        ctx->new_data_part->has_exclusive_blobs = true;
+        ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
@@ -1867,7 +1867,7 @@ bool MutateTask::prepare()
             ctx->for_file_renames,
             ctx->mrk_extension);
 
-        ctx->new_data_part->has_exclusive_blobs = std::nullopt; // that means that unlocking in zookeper needed
+        ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }
