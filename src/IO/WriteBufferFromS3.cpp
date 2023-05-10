@@ -109,7 +109,7 @@ void WriteBufferFromS3::nextImpl()
     else
         processWithDynamicParts();
 
-    waitForReadyBackGroundTasks();
+    waitForReadyBackgroundTasks();
 }
 
 void WriteBufferFromS3::processWithStrictParts()
@@ -225,7 +225,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
-    waitForAllBackGroundTasks();
+    waitForAllBackgroundTasks();
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
@@ -632,7 +632,7 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         max_retry, key, bucket);
 }
 
-void WriteBufferFromS3::waitForReadyBackGroundTasks()
+void WriteBufferFromS3::waitForReadyBackgroundTasks()
 {
     if (schedule)
     {
@@ -650,7 +650,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 
             if (exception)
             {
-                waitForAllBackGroundTasksUnlocked(lock);
+                waitForAllBackgroundTasksUnlocked(lock);
                 std::rethrow_exception(exception);
             }
 
@@ -659,16 +659,16 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
     }
 }
 
-void WriteBufferFromS3::waitForAllBackGroundTasks()
+void WriteBufferFromS3::waitForAllBackgroundTasks()
 {
     if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
-        waitForAllBackGroundTasksUnlocked(lock);
+        waitForAllBackgroundTasksUnlocked(lock);
     }
 }
 
-void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
+void WriteBufferFromS3::waitForAllBackgroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
 {
     if (schedule)
     {
