@@ -3008,8 +3008,14 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 
         InterpolateDescriptionPtr interpolate_descr =
             getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+
+        const Settings & settings = context->getSettingsRef();
         auto filling_step = std::make_unique<FillingStep>(
-            query_plan.getCurrentDataStream(), std::move(sort_description), std::move(fill_description), interpolate_descr);
+            query_plan.getCurrentDataStream(),
+            std::move(sort_description),
+            std::move(fill_description),
+            interpolate_descr,
+            settings.use_with_fill_by_sorting_prefix);
         query_plan.addStep(std::move(filling_step));
     }
 }
