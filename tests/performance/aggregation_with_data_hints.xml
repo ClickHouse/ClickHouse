@@ -20,4 +20,18 @@
     <query><![CDATA[select a, b from (select toUInt64(number % 65536 + 10000000000) as a, toUInt64(number % 65536 + 10000000000 + 65536) as b from numbers(100000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 group by a, b format Null]]></query>
     <query><![CDATA[select a, b from (select toUInt128(number % 65536 + 10000000000) as a, toUInt128(number % 65536 + 10000000000 + 65536) as b from numbers(100000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 group by a, b format Null]]></query>
     <query><![CDATA[select a, b from (select toUInt256(number % 65536 + 10000000000) as a, toUInt256(number % 65536 + 10000000000 + 65536) as b from numbers(100000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 group by a, b format Null]]></query>
+
+    <query><![CDATA[select k from (select number % 256 + 256 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 256 + 65536 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 256 + 10000000000 as k from numbers(100000000)) group by k format Null]]></query>
+
+    <query><![CDATA[select k from (select number % 65536 + 65536 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 65536 + 10000000000 as k from numbers(100000000)) group by k format Null]]></query>
+
+    <query><![CDATA[select a, b from (select number % 256 + 256 as a, number % 256 + 256 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 256 + 65536 as a, number % 256 + 65536 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 256 + 10000000000 as a, number % 256 + 10000000000 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+
+    <query><![CDATA[select a, b from (select number % 65536 + 65536 as a, number % 65536 + 65536 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 65536 + 10000000000 as a, number % 65536 + 10000000000 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
 </test>
