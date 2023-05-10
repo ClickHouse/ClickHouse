@@ -87,9 +87,10 @@ def main():
     report_path = result_path / "html_report"
     logging.info("Report path %s", report_path)
     s3_path_prefix = "codebrowser"
-    _ = s3_helper.fast_parallel_upload_dir(
-        report_path, s3_path_prefix, S3_TEST_REPORTS_BUCKET
-    )
+    if state == "success":
+        _ = s3_helper.fast_parallel_upload_dir(
+            report_path, s3_path_prefix, S3_TEST_REPORTS_BUCKET
+        )
 
     index_html = (
         f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
