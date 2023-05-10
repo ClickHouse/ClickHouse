@@ -59,11 +59,6 @@
 
 namespace fs = std::filesystem;
 
-//namespace CurrentMetrics
-//{
-//extern const Metric S3QueueBackgroundReads;
-//}
-
 namespace ProfileEvents
 {
 extern const Event S3DeleteObjects;
@@ -131,7 +126,14 @@ StorageS3Queue::StorageS3Queue(
         auto table_id = getStorageID();
         auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         bool is_in_replicated_database = database->getEngineName() == "Replicated";
-        if (is_in_replicated_database)
+
+        auto default_path = getContext()->getSettingsRef().s3queue_default_zookeeper_path.value;
+        if (default_path != "")
+        {
+            zookeeper_path
+                = zkutil::extractZooKeeperPath(fs::path(default_path) / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
+        }
+        else if (is_in_replicated_database)
         {
             LOG_INFO(log, "S3Queue engine keeper_path not specified. Use replicated database zookeeper path");
             String base_zookeeper_path = assert_cast<const DatabaseReplicated *>(database.get())->getZooKeeperPath();
@@ -140,7 +142,10 @@ StorageS3Queue::StorageS3Queue(
         }
         else
         {
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "S3Queue zookeeper path not specified and table not in replicated database.");
+            throw Exception(
+                ErrorCodes::NO_ZOOKEEPER,
+                "S3Queue keeper_path engine setting not specified, s3queue_default_zookeeper_path_prefix not specified and table not in "
+                "replicated database.");
         }
     }
     else
@@ -176,7 +181,12 @@ StorageS3Queue::StorageS3Queue(
     }
 
     queue_holder = std::make_unique<S3QueueHolder>(
-        zookeeper_path, mode, getContext(), s3queue_settings->s3queue_max_set_size.value, s3queue_settings->s3queue_max_set_age_s.value);
+        zookeeper_path,
+        mode,
+        getContext(),
+        s3queue_settings->s3queue_max_set_size.value,
+        s3queue_settings->s3queue_max_set_age_s.value,
+        s3queue_settings->s3queue_loading_retries.value);
 
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -187,7 +197,7 @@ StorageS3Queue::StorageS3Queue(
     for (const auto & column : virtual_columns)
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 
-    auto poll_thread = context_->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
+    auto poll_thread = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
     task = std::make_shared<TaskContext>(std::move(poll_thread));
 }
 
@@ -551,8 +561,8 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
         {
             String metadata_str = S3QueueTableMetadata(s3_configuration, *s3queue_settings).toString();
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "processed_files\n", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "[]", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "collection:\n", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "collection:\n", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "", zkutil::CreateMode::Ephemeral));
             ops.emplace_back(zkutil::makeCreateRequest(
                 zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(), zkutil::CreateMode::Persistent));

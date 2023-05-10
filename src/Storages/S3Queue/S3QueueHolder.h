@@ -14,44 +14,73 @@ class S3QueueHolder : public WithContext
 public:
     using S3FilesCollection = std::unordered_set<String>;
     using ProcessedFiles = std::vector<std::pair<String, Int64>>;
+    using FailedFiles = std::vector<std::pair<String, Int64>>;
 
     S3QueueHolder(
-        const String & zookeeper_path_, const S3QueueMode & mode_, ContextPtr context_, UInt64 & max_set_size_, UInt64 & max_set_age_s_);
+        const String & zookeeper_path_,
+        const S3QueueMode & mode_,
+        ContextPtr context_,
+        UInt64 & max_set_size_,
+        UInt64 & max_set_age_s_,
+        UInt64 & max_loading_retries_);
 
     void setFileProcessed(const String & file_path);
-    void setFileFailed(const String & file_path);
+    bool markFailedAndCheckRetry(const String & file_path);
     void setFilesProcessing(Strings & file_paths);
-    static S3FilesCollection parseCollection(String & files);
-
     S3FilesCollection getExcludedFiles();
     String getMaxProcessedFile();
-    S3FilesCollection getFailedFiles();
-    S3FilesCollection getProcessedFiles();
-    S3FilesCollection getProcessingFiles();
+
     std::shared_ptr<zkutil::EphemeralNodeHolder> AcquireLock();
 
-    struct ProcessedCollection
+    struct S3QueueCollection
     {
-        ProcessedCollection(const UInt64 & max_size_, const UInt64 & max_age_);
-
-        void parse(const String & s);
-
+    public:
+        virtual ~S3QueueCollection() = default;
         String toString() const;
-
-        void add(const String & file_name);
         S3FilesCollection getFileNames();
-        const UInt64 max_size;
-        const UInt64 max_age;
+
+        virtual void parse(const String & s) = 0;
+
+    protected:
+        ProcessedFiles files;
 
         void read(ReadBuffer & in);
         void write(WriteBuffer & out) const;
-        ProcessedFiles files;
     };
 
-    const UInt64 max_set_size;
-    const UInt64 max_set_age_s;
+    struct S3QueueProcessedCollection : public S3QueueCollection
+    {
+    public:
+        S3QueueProcessedCollection(const UInt64 & max_size_, const UInt64 & max_age_);
+
+        void parse(const String & s) override;
+        void add(const String & file_name);
+
+    private:
+        const UInt64 max_size;
+        const UInt64 max_age;
+    };
+
+    struct S3QueueFailedCollection : S3QueueCollection
+    {
+    public:
+        S3QueueFailedCollection(const UInt64 & max_retries_count_);
+
+        void parse(const String & s) override;
+        bool add(const String & file_name);
+
+        S3FilesCollection getFilesWithoutRetries();
+
+    private:
+        const UInt64 max_retries_count;
+    };
+
 
 private:
+    const UInt64 max_set_size;
+    const UInt64 max_set_age_s;
+    const UInt64 max_loading_retries;
+
     zkutil::ZooKeeperPtr current_zookeeper;
     mutable std::mutex current_zookeeper_mutex;
     mutable std::mutex mutex;
@@ -66,6 +95,13 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
+
+    S3FilesCollection getFailedFiles();
+    S3FilesCollection getProcessingFiles();
+    S3FilesCollection getUnorderedProcessedFiles();
+    void removeProcessingFile(const String & file_path);
+
+    static S3FilesCollection parseCollection(String & files);
 };
 
 

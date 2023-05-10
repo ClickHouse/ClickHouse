@@ -69,6 +69,11 @@ extern const Event S3ListObjects;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
+}
+
 
 StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     const S3::Client & client_,
@@ -244,13 +249,15 @@ Chunk StorageS3QueueSource::generate()
         }
 
         Chunk chunk;
+        bool success_in_pulling = false;
+        String file_path;
         try
         {
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
 
-                const auto & file_path = reader.getPath();
+                file_path = reader.getPath();
                 size_t total_size = file_iterator->getTotalSize();
                 if (num_rows && total_size)
                 {
@@ -271,16 +278,21 @@ Chunk StorageS3QueueSource::generate()
                         chunk.addColumn(column->convertToFullColumnIfConst());
                     }
                 }
-                queue_holder->setFileProcessed(file_path);
-                applyActionAfterProcessing(file_path);
-                return chunk;
+                success_in_pulling = true;
             }
         }
         catch (const Exception & e)
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
             const auto & failed_file_path = reader.getPath();
-            queue_holder->setFileFailed(failed_file_path);
+            queue_holder->markFailedAndCheckRetry(failed_file_path);
+            success_in_pulling = false;
+        }
+        if (success_in_pulling)
+        {
+            applyActionAfterProcessing(file_path);
+            queue_holder->setFileProcessed(file_path);
+            return chunk;
         }
 
 
@@ -298,14 +310,28 @@ Chunk StorageS3QueueSource::generate()
     return {};
 }
 
+
 void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
 {
-    LOG_WARNING(log, "Delete {} Bucket {}", file_path, bucket);
+    switch (action)
+    {
+        case S3QueueAction::DELETE:
+            deleteProcessedObject(file_path);
+            break;
+        case S3QueueAction::KEEP:
+            break;
+    }
+}
+
+void StorageS3QueueSource::deleteProcessedObject(const String & file_path)
+{
+    LOG_WARNING(log, "Delete processed file {} from bucket {}", file_path, bucket);
     S3::DeleteObjectRequest request;
-    request.SetBucket(bucket);
-    request.SetKey(file_path);
+    String delete_key = file_path.substr(bucket.length() + 1);
+
+    request.WithKey(delete_key).WithBucket(bucket);
     auto outcome = client->DeleteObject(request);
-    if (!outcome.IsSuccess() && !S3::isNotFoundError(outcome.GetError().GetErrorType()))
+    if (!outcome.IsSuccess())
     {
         const auto & err = outcome.GetError();
         LOG_ERROR(log, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
@@ -315,7 +341,6 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
         LOG_TRACE(log, "Object with path {} was removed from S3", file_path);
     }
 }
-
 
 }
 

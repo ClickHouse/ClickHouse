@@ -123,6 +123,7 @@ private:
     mutable std::mutex mutex;
 
     std::shared_ptr<StorageS3Source> internal_source;
+    void deleteProcessedObject(const String & file_path);
     void applyActionAfterProcessing(const String & file_path);
 };
 

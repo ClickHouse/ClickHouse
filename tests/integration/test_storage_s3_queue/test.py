@@ -7,7 +7,72 @@ import time
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_tools import prepare_s3_bucket
+import json
+
+"""
+export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-server
+export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-client
+export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-odbc-bridge
+export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/home/sergey/vkr/ClickHouse/programs/server
+
+"""
+
+
+def prepare_s3_bucket(started_cluster):
+    # Allows read-write access for bucket without authorization.
+    bucket_read_write_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": "s3:GetBucketLocation",
+                "Resource": "arn:aws:s3:::root",
+            },
+            {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": "s3:ListBucket",
+                "Resource": "arn:aws:s3:::root",
+            },
+            {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::root/*",
+            },
+            {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::root/*",
+            },
+            {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {"AWS": "*"},
+                "Action": "s3:DeleteObject",
+                "Resource": "arn:aws:s3:::root/*",
+            },
+        ],
+    }
+
+    minio_client = started_cluster.minio_client
+    minio_client.set_bucket_policy(
+        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
+    )
+
+    started_cluster.minio_restricted_bucket = "{}-with-auth".format(
+        started_cluster.minio_bucket
+    )
+    if minio_client.bucket_exists(started_cluster.minio_restricted_bucket):
+        minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
+
+    minio_client.make_bucket(started_cluster.minio_restricted_bucket)
 
 
 @pytest.fixture(autouse=True)
@@ -110,6 +175,90 @@ def run_query(instance, query, stdin=None, settings=None):
     logging.info("Query finished")
 
     return result
+
+
+@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+def test_delete_after_processing(started_cluster, mode):
+    prefix = "delete"
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["instance"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    total_values = generate_random_files(5, prefix, started_cluster, bucket)
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.s3_queue;
+        CREATE TABLE test.s3_queue ({table_format})
+        ENGINE = S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
+        SETTINGS
+            mode = '{mode}',
+            keeper_path = '/clickhouse/test_delete_{mode}',
+            s3queue_loading_retries = 3,
+            after_processing='delete';
+        """
+    )
+
+    get_query = f"SELECT * FROM test.s3_queue"
+    assert [
+        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+    ] == total_values
+    minio = started_cluster.minio_client
+    objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
+    assert len(objects) == 0
+
+
+@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+def test_failed_retry(started_cluster, mode):
+    bucket = started_cluster.minio_restricted_bucket
+    instance = started_cluster.instances["instance"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    values = [
+        ["failed", 1, 1],
+    ]
+    values_csv = (
+        "\n".join((",".join(map(str, row)) for row in values)) + "\n"
+    ).encode()
+    filename = f"test.csv"
+    put_s3_file_content(started_cluster, bucket, filename, values_csv)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.s3_queue;
+        CREATE TABLE test.s3_queue ({table_format})
+        ENGINE = S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/*', {AUTH}'CSV')
+        SETTINGS
+            mode = '{mode}',
+            keeper_path = '/clickhouse/select_failed_retry_{mode}',
+            s3queue_loading_retries = 3;
+        """
+    )
+
+    # first try
+    get_query = f"SELECT * FROM test.s3_queue"
+    assert [
+        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+    ] == []
+    # second try
+    assert [
+        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+    ] == []
+    # upload correct file
+    values = [
+        [1, 1, 1],
+    ]
+    values_csv = (
+        "\n".join((",".join(map(str, row)) for row in values)) + "\n"
+    ).encode()
+    put_s3_file_content(started_cluster, bucket, filename, values_csv)
+
+    assert [
+        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+    ] == values
+
+    assert [
+        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+    ] == []
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
