@@ -1,4 +1,4 @@
-set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+set optimize_use_projections = 1, force_optimize_projection = 1;
 
 drop table if exists tp;
 
