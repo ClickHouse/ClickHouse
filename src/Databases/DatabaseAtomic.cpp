@@ -443,9 +443,10 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 
 LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
+    auto base = DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
-        DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode)->goals(),
+        base->goals(),
         DATABASE_STARTUP_PRIORITY,
         fmt::format("startup Atomic database {}", database_name),
         [this, mode] (const LoadJobPtr &)

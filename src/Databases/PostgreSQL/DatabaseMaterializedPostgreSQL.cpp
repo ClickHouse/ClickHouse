@@ -127,9 +127,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
 LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
+    auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
-        DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode)->goals(),
+        base->goals(),
         DATABASE_STARTUP_PRIORITY,
         fmt::format("startup MaterializedMySQL database {}", database_name),
         [this] (const LoadJobPtr &)

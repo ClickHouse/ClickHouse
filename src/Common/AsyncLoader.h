@@ -185,7 +185,7 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
 }
 
 template <class... Args>
-inline void scheduleLoad(Args && ... args)
+inline void scheduleLoadAll(Args && ... args)
 {
     (scheduleLoad(std::forward<Args>(args)), ...);
 }
@@ -208,7 +208,7 @@ inline void waitLoad(const LoadTaskPtrs & tasks)
 }
 
 template <class... Args>
-inline void waitLoad(Args && ... args)
+inline void waitLoadAll(Args && ... args)
 {
     (waitLoad(std::forward<Args>(args)), ...);
 }
@@ -216,8 +216,8 @@ inline void waitLoad(Args && ... args)
 template <class... Args>
 inline void scheduleAndWaitLoad(Args && ... args)
 {
-    scheduleLoad(std::forward<Args>(args)...);
-    waitLoad(std::forward<Args>(args)...);
+    scheduleLoadAll(std::forward<Args>(args)...);
+    waitLoadAll(std::forward<Args>(args)...);
 }
 
 inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)

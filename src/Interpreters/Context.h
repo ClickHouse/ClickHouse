@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
-#include <Common/AsyncLoader.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
@@ -130,6 +129,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
+class AsyncLoader;
 
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
