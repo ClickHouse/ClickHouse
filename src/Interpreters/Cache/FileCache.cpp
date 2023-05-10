@@ -559,6 +559,11 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     assertInitialized();
     auto cache_lock = cache_guard.lock();
 
+    LOG_TEST(
+        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
+        size, file_segment.key(), file_segment.offset(),
+        main_priority->getSize(cache_lock), main_priority->getSizeLimit());
+
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
     /// while checking the limits in both.
@@ -571,7 +576,17 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         const bool query_limit_exceeded = query_priority->getSize(cache_lock) + size > query_priority->getSizeLimit();
         if (query_limit_exceeded && !query_context->recacheOnFileCacheQueryLimitExceeded())
+        {
+            LOG_TEST(log, "Query limit exceeded, space reservation failed, "
+                     "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
+                     file_segment.key(), file_segment.offset());
             return false;
+        }
+
+        LOG_TEST(
+            log, "Using query limit, current usage: {}/{} (while reserving for {}:{})",
+            query_priority->getSize(cache_lock), query_priority->getSizeLimit(),
+            file_segment.key(), file_segment.offset());
     }
 
     size_t queue_size = main_priority->getElementsCount(cache_lock);
@@ -656,6 +671,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         if (is_query_priority_overflow())
             return false;
+
+        LOG_TEST(
+            log, "Query limits satisfied (while reserving for {}:{})",
+            file_segment.key(), file_segment.offset());
     }
 
     auto is_main_priority_overflow = [&]
@@ -709,9 +728,12 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
         /// and getQueueIterator() is assigned on first space reservation attempt.
-        file_segment.setQueueIterator(main_priority->add(
-            file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock));
+        queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock);
+        file_segment.setQueueIterator(queue_iterator);
     }
+
+    file_segment.reserved_size += size;
+    chassert(file_segment.reserved_size == queue_iterator->getEntry().size);
 
     if (query_context)
     {
@@ -719,13 +741,12 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         if (query_queue_it)
             query_queue_it->updateSize(size);
         else
-            query_context->add(file_segment, cache_lock);
+            query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock);
     }
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
-    file_segment.reserved_size += size;
     return true;
 }
 

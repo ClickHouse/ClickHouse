@@ -57,6 +57,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>
@@ -528,6 +529,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context->initializeExternalTablesIfSet();
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+        bool async_insert_enabled = settings.async_insert;
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
         if (insert_query)
@@ -536,6 +538,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
             else if (auto table = insert_query->getTable(); !table.empty())
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+
+            if (insert_query->table_id)
+                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
+                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
         }
 
         if (insert_query && insert_query->select)
@@ -570,7 +576,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto * queue = context->getAsynchronousInsertQueue();
         auto * logger = &Poco::Logger::get("executeQuery");
 
-        if (insert_query && settings.async_insert)
+        if (insert_query && async_insert_enabled)
         {
             String reason;
 
@@ -639,9 +645,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        bool can_use_query_cache =
-            settings.allow_experimental_query_cache && settings.use_query_cache
-            && !ast->as<ASTExplainQuery>();
+        bool can_use_query_cache = settings.use_query_cache && !internal && !ast->as<ASTExplainQuery>();
 
         if (!async_insert)
         {
@@ -733,7 +737,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
-                        res.pipeline = QueryPipeline(reader.getPipe());
+                        QueryPipeline pipeline;
+                        pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        res.pipeline = std::move(pipeline);
                         read_result_from_query_cache = true;
                     }
                 }
@@ -757,15 +763,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     const size_t num_query_runs = query_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_cache_min_query_runs)
                     {
-                        auto stream_in_query_cache_transform =
-                                    std::make_shared<StreamInQueryCacheTransform>(
-                                        res.pipeline.getHeader(), query_cache, key,
-                                        std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
-                                        context->getSettings().query_cache_squash_partial_results,
-                                        context->getSettings().max_block_size,
-                                        context->getSettings().query_cache_max_size_in_bytes,
-                                        context->getSettings().query_cache_max_entries);
-                        res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
+                        auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                         key,
+                                         std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                                         settings.query_cache_squash_partial_results,
+                                         settings.max_block_size,
+                                         settings.query_cache_max_size_in_bytes,
+                                         settings.query_cache_max_entries));
+                        res.pipeline.writeResultIntoQueryCache(query_cache_writer);
                     }
                 }
 

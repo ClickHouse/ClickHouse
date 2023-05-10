@@ -27,7 +27,6 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -41,10 +40,9 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
-#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -99,9 +97,7 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
-#    include <cstddef>
 #    include <cstdlib>
-#    include <sys/socket.h>
 #    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
@@ -109,7 +105,6 @@
 #endif
 
 #if USE_SSL
-#    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
@@ -135,6 +130,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
 }
@@ -778,6 +774,11 @@ try
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
+    OutdatedPartsLoadingThreadPool::initialize(
+        server_settings.max_outdated_parts_loading_thread_pool_size,
+        0, // We don't need any threads one all the parts will be loaded
+        server_settings.outdated_part_loading_thread_pool_queue_size);
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -1225,6 +1226,25 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
+
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+            {
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            }
+
+            LOG_INFO(log, "Merges and mutations memory limit is set to {}",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
+            background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
+            background_memory_tracker.setDescription("(background)");
+            background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
+
             total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
@@ -1238,8 +1258,13 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            if (global_context->isServerCompletelyStarted())
+            {
+                /// It does not make sense to reload anything before server has started.
+                /// Moreover, it may break initialization order.
+                global_context->loadOrReloadDictionaries(*config);
+                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            }
 
             global_context->setRemoteHostFilter(*config);
 
@@ -1852,7 +1877,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            if (server_settings.shutdown_wait_unfinished_queries)
+            if (!server_settings.shutdown_wait_unfinished_queries)
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
