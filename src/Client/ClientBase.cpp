@@ -34,6 +34,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -572,6 +573,13 @@ try
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
+                if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
+                }
+
                 if (query_with_output->compression_level)
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
@@ -586,8 +594,14 @@ try
                             range.second);
                 }
 
+                auto flags = O_WRONLY | O_EXCL;
+                if (query_with_output->is_outfile_append)
+                    flags |= O_APPEND;
+                else
+                    flags |= O_CREAT;
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
                     static_cast<int>(compression_level)
                 );
@@ -1612,10 +1626,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
+        if (!create_user_query->attach && create_user_query->auth_data)
         {
-            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
-            create_user_query->temporary_password_for_checks.reset();
+            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
+            {
+                auto password = auth_data->getPassword();
+
+                if (password)
+                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
+            }
         }
     }
 

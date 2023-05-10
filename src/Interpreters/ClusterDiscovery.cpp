@@ -219,7 +219,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<Strings> shards;
     {
-        std::map<size_t, Strings> replica_adresses;
+        std::map<size_t, Strings> replica_addresses;
 
         for (const auto & [_, node] : cluster_info.nodes_info)
         {
@@ -228,24 +228,29 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
                 LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
                 continue;
             }
-            replica_adresses[node.shard_id].emplace_back(node.address);
+            replica_addresses[node.shard_id].emplace_back(node.address);
         }
 
-        shards.reserve(replica_adresses.size());
-        for (auto & [_, replicas] : replica_adresses)
+        shards.reserve(replica_addresses.size());
+        for (auto & [_, replicas] : replica_addresses)
             shards.emplace_back(std::move(replicas));
     }
 
     bool secure = cluster_info.current_node.secure;
-    auto cluster = std::make_shared<Cluster>(
-        context->getSettingsRef(),
-        shards,
+    ClusterConnectionParameters params{
         /* username= */ context->getUserName(),
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
-        /* secure= */ secure);
+        /* secure= */ secure,
+        /* priority= */ 1,
+        /* cluster_name= */ "",
+        /* password= */ ""};
+    auto cluster = std::make_shared<Cluster>(
+        context->getSettingsRef(),
+        shards,
+        params);
     return cluster;
 }
 
