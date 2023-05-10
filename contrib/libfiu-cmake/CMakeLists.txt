@@ -1,5 +1,5 @@
 if (NOT ENABLE_FIU)
-  message (STATUS "Not using gwp-asan")
+  message (STATUS "Not using fiu")
   return ()
 endif ()
 

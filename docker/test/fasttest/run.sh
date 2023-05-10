@@ -147,7 +147,7 @@ function clone_submodules
             contrib/xxHash
             contrib/simdjson
             contrib/liburing
-	    contrib/libfiu
+            contrib/libfiu
         )
 
         git submodule sync
