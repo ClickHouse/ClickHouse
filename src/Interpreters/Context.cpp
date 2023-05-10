@@ -669,13 +669,15 @@ SharedContextHolder Context::createShared()
 
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
+    auto lock = other->getLock();
     return std::shared_ptr<Context>(new Context(*other));
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
-    if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
+    if (!ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
 }
 
@@ -1612,26 +1614,42 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+bool Context::displaySecretsInShowAndSelect() const
+{
+    return shared->server_settings.display_secrets_in_show_and_select;
+}
+
 Settings Context::getSettings() const
 {
     auto lock = getLock();
     return settings;
 }
 
-
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    auto old_readonly = settings.readonly;
-    auto old_allow_ddl = settings.allow_ddl;
-    auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_readonly = settings.readonly;
+    const auto old_allow_ddl = settings.allow_ddl;
+    const auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_display_secrets = settings.format_display_secrets_in_show_and_select;
 
     settings = settings_;
 
-    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+    if ((settings.readonly != old_readonly)
+        || (settings.allow_ddl != old_allow_ddl)
+        || (settings.allow_introspection_functions != old_allow_introspection_functions)
+        || (settings.format_display_secrets_in_show_and_select != old_display_secrets))
         calculateAccessRights();
 }
 
+void Context::recalculateAccessRightsIfNeeded(std::string_view name)
+{
+    if (name == "readonly"
+        || name == "allow_ddl"
+        || name == "allow_introspection_functions"
+        || name == "format_display_secrets_in_show_and_select")
+        calculateAccessRights();
+}
 
 void Context::setSetting(std::string_view name, const String & value)
 {
@@ -1642,11 +1660,8 @@ void Context::setSetting(std::string_view name, const String & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::setSetting(std::string_view name, const Field & value)
 {
@@ -1657,11 +1672,8 @@ void Context::setSetting(std::string_view name, const Field & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::applySettingChange(const SettingChange & change)
 {
@@ -4159,35 +4171,8 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
-static size_t getThreadPoolReaderSizeFromConfig(Context::FilesystemReaderType type, const Poco::Util::AbstractConfiguration & config)
-{
-    switch (type)
-    {
-        case Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
-        {
-            return config.getUInt(".threadpool_remote_fs_reader_pool_size", 250);
-        }
-        case Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
-        {
-            return config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
-        }
-        case Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
-        {
-            return std::numeric_limits<std::size_t>::max();
-        }
-    }
-}
-
-size_t Context::getThreadPoolReaderSize(FilesystemReaderType type) const
-{
-    const auto & config = getConfigRef();
-    return getThreadPoolReaderSizeFromConfig(type, config);
-}
-
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    const auto & config = getConfigRef();
-
     auto lock = getLock();
 
     switch (type)
@@ -4195,31 +4180,20 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
         {
             if (!shared->asynchronous_remote_fs_reader)
-            {
-                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
-                auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
-                shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-            }
-
+                shared->asynchronous_remote_fs_reader = createThreadPoolReader(type, getConfigRef());
             return *shared->asynchronous_remote_fs_reader;
         }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->asynchronous_local_fs_reader)
-            {
-                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
-                auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
-                shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
-            }
+                shared->asynchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->asynchronous_local_fs_reader;
         }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
         {
             if (!shared->synchronous_local_fs_reader)
-            {
-                shared->synchronous_local_fs_reader = std::make_unique<SynchronousReader>();
-            }
+                shared->synchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
 
             return *shared->synchronous_local_fs_reader;
         }
@@ -4274,7 +4248,6 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
-    res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;

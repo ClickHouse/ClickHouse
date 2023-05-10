@@ -5,6 +5,7 @@
 
 #include <base/hex.h>
 #include <Common/Macros.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -131,6 +132,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric ReadonlyReplica;
 }
 
 namespace DB
@@ -1061,6 +1063,20 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, logger);
     }
 }
+
+void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger)
+{
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperIfTableShutDown();
+
+    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
+    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// This check prevents only from accidental drop of some other replica.
+    if (zookeeper->exists(drop_zookeeper_path + "/replicas/" + drop_replica + "/is_active"))
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", drop_replica);
+
+    dropReplica(zookeeper, drop_zookeeper_path, drop_replica, logger);
+}
+
 
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
         const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
@@ -3235,7 +3251,14 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
         size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
-        if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
+        if (!canEnqueueBackgroundTask())
+        {
+            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
+                "Current background tasks memory usage: {}.",
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
+        }
+        else if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges ({}) and part mutations ({})"
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
@@ -4367,7 +4390,21 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 {
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
+    {
+        if (!since_metadata_err_incr_readonly_metric)
+        {
+            since_metadata_err_incr_readonly_metric = true;
+            CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+        }
         return;
+    }
+
+    if (since_metadata_err_incr_readonly_metric)
+    {
+        since_metadata_err_incr_readonly_metric = false;
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
 
     try
     {
@@ -4424,14 +4461,6 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         /// Note: after failed "startup", the table will be in a state that only allows to destroy the object.
         throw;
     }
-}
-
-void StorageReplicatedMergeTree::flush()
-{
-    if (flush_called.exchange(true))
-        return;
-
-    flushAllInMemoryPartsIfNeeded();
 }
 
 
@@ -5224,7 +5253,10 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands = commands.getMutationCommands(
-            *current_metadata, query_context->getSettingsRef().materialize_ttl_after_modify, query_context);
+            *current_metadata,
+            query_context->getSettingsRef().materialize_ttl_after_modify,
+            query_context);
+
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
 
@@ -5235,6 +5267,7 @@ void StorageReplicatedMergeTree::alter(
         PartitionBlockNumbersHolder partition_block_numbers_holder;
         if (have_mutation)
         {
+            delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
             const String mutations_path(fs::path(zookeeper_path) / "mutations");
 
             ReplicatedMergeTreeMutationEntry mutation_entry;
@@ -6415,6 +6448,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     ///
     /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
     /// the version of this mutation), the mutation is considered done and can be deleted.
+
+    delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
 
     ReplicatedMergeTreeMutationEntry mutation_entry;
     mutation_entry.source_replica = replica_name;
@@ -8046,6 +8081,10 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     return toString(table_shared_id);
 }
 
+size_t StorageReplicatedMergeTree::getNumberOfUnfinishedMutations() const
+{
+    return queue.countUnfinishedMutations();
+}
 
 void StorageReplicatedMergeTree::createTableSharedID() const
 {

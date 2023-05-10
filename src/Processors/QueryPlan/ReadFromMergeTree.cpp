@@ -290,7 +290,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         .callback = read_task_callback.value(),
         .count_participating_replicas = client_info.count_participating_replicas,
         .number_of_current_replica = client_info.number_of_current_replica,
-        .colums_to_read = required_columns
+        .columns_to_read = required_columns
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -734,7 +734,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             .callback = read_task_callback.value(),
             .count_participating_replicas = client_info.count_participating_replicas,
             .number_of_current_replica = client_info.number_of_current_replica,
-            .colums_to_read = column_names
+            .columns_to_read = column_names
         };
 
         auto min_marks_for_concurrent_read = info.min_marks_for_concurrent_read;

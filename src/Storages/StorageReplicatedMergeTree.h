@@ -113,7 +113,6 @@ public:
     void startup() override;
     void shutdown() override;
     void partialShutdown();
-    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
@@ -230,6 +229,8 @@ public:
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
@@ -318,6 +319,8 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
+    size_t getNumberOfUnfinishedMutations() const override;
+
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
@@ -386,6 +389,11 @@ private:
     /// If nullopt - ZooKeeper is not available, so we don't know if there is table metadata.
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
+
+    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
+    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    bool since_metadata_err_incr_readonly_metric = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
