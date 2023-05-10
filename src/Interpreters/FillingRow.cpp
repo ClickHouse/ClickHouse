@@ -50,6 +50,15 @@ bool FillingRow::operator>=(const FillingRow & other) const
     return !(*this < other);
 }
 
+bool FillingRow::isNull() const
+{
+    for (const auto & field : row)
+        if (!field.isNull())
+            return false;
+
+    return true;
+}
+
 bool FillingRow::next(const FillingRow & to_row)
 {
     const size_t row_size = size();

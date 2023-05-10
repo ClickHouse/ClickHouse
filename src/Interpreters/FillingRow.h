@@ -29,6 +29,7 @@ public:
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
     bool operator>=(const FillingRow & other) const;
+    bool isNull() const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
