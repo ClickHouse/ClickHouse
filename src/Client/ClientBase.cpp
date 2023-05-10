@@ -1082,9 +1082,7 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-    Settings settings;
-    settings.session_timezone = tz;
-    global_context->applySettingsChanges(settings.changes());
+    global_context->setSetting("session_timezone", tz);
 }
 
 
