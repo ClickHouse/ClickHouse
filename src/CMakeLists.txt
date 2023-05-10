@@ -354,6 +354,10 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
+if (TARGET ch_contrib::fiu)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
@@ -543,6 +547,10 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+endif ()
+
+if (TARGET ch_contrib::accel-config)
+    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
 endif ()
 
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
