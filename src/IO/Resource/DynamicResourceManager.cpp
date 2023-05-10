@@ -148,7 +148,7 @@ DynamicResourceManager::Classifier::Classifier(const DynamicResourceManager::Sta
             const auto & resource = resource_iter->second;
             if (auto node_iter = resource->nodes.find(path); node_iter != resource->nodes.end())
             {
-                if (auto queue = dynamic_cast<ISchedulerQueue *>(node_iter->second.ptr.get()))
+                if (auto * queue = dynamic_cast<ISchedulerQueue *>(node_iter->second.ptr.get()))
                     resources.emplace(resource_name, ResourceLink{.queue = queue});
                 else
                     throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unable to access non-queue node at path '{}' for resource '{}'", path, resource_name);
