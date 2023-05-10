@@ -448,7 +448,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("generateSuffixIfNeeded() next_row", next_row);
 
     /// Determines should we insert filling row before start generating next rows.
-    bool should_insert_first = next_row < filling_row;
+    bool should_insert_first = next_row < filling_row || next_row.isNull();
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
