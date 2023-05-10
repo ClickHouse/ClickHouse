@@ -31,7 +31,6 @@ public:
     /// Data inlined into query
     const char * data = nullptr;
     const char * end = nullptr;
-    bool is_stream = false;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
     ReadBuffer * tail = nullptr;

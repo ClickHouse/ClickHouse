@@ -39,7 +39,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_watch("WATCH");
     ParserKeyword s_partition_by("PARTITION BY");
     ParserKeyword s_with("WITH");
-    ParserKeyword s_stream("STREAM");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserToken s_semicolon(TokenType::Semicolon);
@@ -65,11 +64,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Insertion data
     const char * data = nullptr;
-    bool is_stream = false;
-
-    if (s_stream.ignore(pos, expected)) {
-        is_stream = true;
-    }
 
     /// Check for key words `INSERT INTO`. If it isn't found, the query can't be parsed as insert query.
     if (!s_insert_into.ignore(pos, expected))
@@ -258,7 +252,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Create query and fill its fields.
     auto query = std::make_shared<ASTInsertQuery>();
     node = query;
-    query->is_stream = is_stream;
 
     if (infile)
     {

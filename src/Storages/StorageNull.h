@@ -7,6 +7,8 @@
 
 #include <mutex>
 #include <condition_variable>
+
+
 namespace DB
 {
 
@@ -18,6 +20,7 @@ class StorageNull final : public IStorage
 friend class NullSource;
 friend class NullSinkToStorage;
 friend class NullStreamSink;
+friend class NullStreamSource;
 
 public:
     StorageNull(
@@ -30,12 +33,12 @@ public:
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
 
-        subscribers = std::make_shared<std::map<int, std::shared_ptr<BlocksPtr>>>();
+        subscribers = std::make_shared<std::map<UInt64, BlocksPtr>>();
     }
     ~StorageNull() override;
     void drop() override;
     void shutdown() override;
-    void refresh();
+    UInt64 getNextSubscriberId() { return subscribers_count.fetch_add(1, std::memory_order_relaxed); }
 
     std::string getName() const override { return "Null"; }
 
@@ -70,8 +73,8 @@ private:
     std::mutex mutex;
     std::condition_variable condition;
     bool is_stream_{false};
-    std::shared_ptr<std::map<int, std::shared_ptr<BlocksPtr>>> subscribers;
-    std::atomic<int> client_id = 0;
+    std::shared_ptr<std::map<UInt64, BlocksPtr>> subscribers;
+    std::atomic<UInt64> subscribers_count = {0};
 };
 
 }

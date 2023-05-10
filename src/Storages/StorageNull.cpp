@@ -7,9 +7,11 @@
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/NullStreamSource.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+
 
 namespace DB
 {
@@ -17,29 +19,38 @@ namespace DB
 class NullStreamSink : public SinkToStorage
 {
 public:
-    NullStreamSink (StorageNull & storage_, const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock()), 
-        storage(storage_) {}
+    NullStreamSink(StorageNull & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
+    {}
     
     using SinkToStorage::SinkToStorage;
 
     std::string getName() const override { return "NullStreamSink"; }
 
-    void consume(Chunk chunk) override {
+    void consume(Chunk chunk) override
+    {
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        storage_snapshot->metadata->check(block, true);
+
+        new_blocks.emplace_back(block);
+    }
+
+    void onFinish() override
+    {
         std::lock_guard lock(storage.mutex);
 
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
-        BlocksPtr new_blocks = std::make_shared<Blocks>();
-        new_blocks->push_back(block);
-        std::shared_ptr<BlocksPtr>  blocks_ptr = std::make_shared<BlocksPtr>();
-        *(blocks_ptr) = new_blocks;
         for (auto it = storage.subscribers->begin(); it != storage.subscribers->end(); ++it) {
-            (*storage.subscribers)[it->first] = blocks_ptr;
+            (*storage.subscribers)[it->first] = std::make_shared<Blocks>();
+            (*storage.subscribers)[it->first]->insert((*storage.subscribers)[it->first]->end(), new_blocks.begin(), new_blocks.end());
         }
         storage.condition.notify_all();
     }
 private:
+    Blocks new_blocks;
     StorageNull & storage;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 namespace ErrorCodes
@@ -76,32 +87,27 @@ Pipe StorageNull::read(
     size_t /*num_streams*/)
 {
     Block block = storage_snapshot->getSampleBlockForColumns(column_names);
-    int client_id_ = client_id.fetch_add(1, std::memory_order_relaxed);
-    SelectQueryInfo modified_query_info = query_info;
-    modified_query_info.query = query_info.query->clone();
-    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+    UInt64 subs_cnt = getNextSubscriberId();
+    auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (modified_select.is_stream) {
-        std::shared_ptr<BlocksPtr>  blocks_ptr = std::make_shared<BlocksPtr>();
-        if (!(*blocks_ptr)) {
-            BlocksPtr new_blocks = std::make_shared<Blocks>();
-            new_blocks->push_back(block);
-            (*blocks_ptr) = new_blocks;
-            subscribers->insert(std::pair{client_id_, blocks_ptr});
-            condition.notify_all();
-        }
+    if (select.is_stream) {
+        Blocks new_blocks;
+        new_blocks.emplace_back(block);
+        (*subscribers)[subs_cnt] = std::make_shared<Blocks>();
+        (*subscribers)[subs_cnt]->insert((*subscribers)[subs_cnt]->end(), new_blocks.begin(), new_blocks.end());
+        condition.notify_all();
         return Pipe(
-                std::make_shared<NullSource>(
+                std::make_shared<NullStreamSource>(
                 block,
-                std::static_pointer_cast<StorageNull>(shared_from_this()), client_id_));
+                std::static_pointer_cast<StorageNull>(shared_from_this()), subs_cnt));
     }
     return Pipe(
             std::make_shared<NullSource>(block));
 }
 
-SinkToStoragePtr StorageNull::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*ctx*/)
+SinkToStoragePtr StorageNull::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<NullStreamSink>(*this, metadata_snapshot);
+    return std::make_shared<NullStreamSink>(*this, metadata_snapshot, context);
 }
 
 void registerStorageNull(StorageFactory & factory)
