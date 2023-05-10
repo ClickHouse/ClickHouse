@@ -342,7 +342,10 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                         ///                           ^
                         ///                           file_offset_of_buffer_end
 
-                        LOG_TEST(log, "Predownload. File segment info: {}", file_segment.getInfoForLog());
+                        LOG_TEST(
+                            log, "Predownload {} -> {}. File segment info: {}",
+                            current_write_offset, file_offset_of_buffer_end, file_segment.getInfoForLog());
+
                         chassert(file_offset_of_buffer_end > current_write_offset);
                         bytes_to_predownload = file_offset_of_buffer_end - current_write_offset;
                         chassert(bytes_to_predownload < file_segment.range().size());
@@ -542,6 +545,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
         chassert(static_cast<size_t>(implementation_buffer->getPosition()) == file_segment.getCurrentWriteOffset(false));
         size_t current_offset = file_segment.getCurrentWriteOffset(false);
         const auto & current_range = file_segment.range();
+        size_t initial_buffer_size = implementation_buffer->internalBuffer().size();
 
         while (true)
         {
@@ -648,6 +652,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 swap(*implementation_buffer);
                 resetWorkingBuffer();
+                internal_buffer.resize(initial_buffer_size);
 
                 implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
 
@@ -852,10 +857,16 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current read type: {}, read offset: {}, impl offset: {}, file segment: {}",
+        "Current read type: {}, read offset: {}, impl offset: {}, buffer size: {}/{}({}), "
+        "need_to_predownload: {}, having file segments: {}, file segment: {}",
         toString(read_type),
         file_offset_of_buffer_end,
         implementation_buffer->getFileOffsetOfBufferEnd(),
+        implementation_buffer->internalBuffer().size(),
+        settings.remote_fs_buffer_size,
+        settings.prefetch_buffer_size,
+        bytes_to_predownload,
+        file_segments->size(),
         file_segment.getInfoForLog());
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
@@ -903,6 +914,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         assert(!implementation_buffer->hasPendingData());
 #endif
+        chassert(implementation_buffer->internalBuffer().size() == settings.prefetch_buffer_size
+                 || implementation_buffer->internalBuffer().size() == settings.remote_fs_buffer_size);
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -987,6 +1000,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             size_t remaining_size_to_read
                 = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            LOG_TEST(
+                log, "Remaining size to read: {}, read: {}, next_impl_working_buffer_offset: {}, available: {}",
+                remaining_size_to_read, size, nextimpl_working_buffer_offset, available());
             size = std::min(size, remaining_size_to_read);
             chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
             implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);

@@ -66,6 +66,7 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , async_read_counters(async_read_counters_)
     , prefetches_log(prefetches_log_)
 {
+    LOG_TEST(log, "Using async buffer");
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
 
