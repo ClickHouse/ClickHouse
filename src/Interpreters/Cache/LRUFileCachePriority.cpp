@@ -28,7 +28,8 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 #ifndef NDEBUG
     for (const auto & entry : queue)
     {
-        if (entry.key == key && entry.offset == offset)
+        /// entry.size == 0 means entry was invalidated.
+        if (entry.size != 0 && entry.key == key && entry.offset == offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
@@ -52,7 +53,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key, offset);
+    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}, size: {}", key, offset, size);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
@@ -169,4 +170,4 @@ size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
     return ++queue_iter->hits;
 }
 
-};
+}

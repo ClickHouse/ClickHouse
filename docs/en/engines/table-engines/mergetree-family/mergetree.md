@@ -439,6 +439,50 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
+Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
+
+```sql
+CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
+AS  
+(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
+  
+CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
+AS  
+(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
+    
+CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
+AS   
+(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
+  
+CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
+AS  
+(number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
+
+```  
+To use those functions,we need to specify two parameter at least.
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
+  
+
+```sql
+--- estimate number of bits in the filter
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
+
+┌─size_of_bloom_filter_in_bytes─┐
+│                         10304 │
+└───────────────────────────────┘
+  
+--- estimate number of hash functions
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
+  
+┌─number_of_hash_functions─┐
+│                       13 │
+└──────────────────────────┘
+
+```
+Of course, you can also use those functions to estimate parameters by other conditions.
+The functions refer to the content [here](https://hur.st/bloomfilter).
+
+
 #### Token Bloom Filter
 
 The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
@@ -699,7 +743,7 @@ TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPR
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 ```
 
-Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
 ``` sql
 CREATE TABLE table_for_aggregation
@@ -1027,7 +1071,11 @@ Configuration markup:
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
+            <header>Authorization: Bearer SOME-TOKEN</header>
             <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key</server_side_encryption_customer_key_base64>
+            <server_side_encryption_kms_key_id>your_kms_key_id</server_side_encryption_kms_key_id>
+            <server_side_encryption_kms_encryption_context>your_kms_encryption_context</server_side_encryption_kms_encryption_context>
+            <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled>
             <proxy>
                 <uri>http://proxy1</uri>
                 <uri>http://proxy2</uri>
@@ -1078,7 +1126,11 @@ Optional parameters:
 - `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
 - `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
 - `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
 - `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+- `server_side_encryption_kms_key_id` - If specified, required headers for accessing S3 objects with [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) will be set. If an empty string is specified, the AWS managed S3 key will be used. Optional.
+- `server_side_encryption_kms_encryption_context` - If specified alongside `server_side_encryption_kms_key_id`, the given encryption context header for SSE-KMS will be set. Optional.
+- `server_side_encryption_kms_bucket_key_enabled` - If specified alongside `server_side_encryption_kms_key_id`, the header to enable S3 bucket keys for SSE-KMS will be set. Optional, can be `true` or `false`, defaults to nothing (matches the bucket-level setting).
 - `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
 - `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
 - `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
