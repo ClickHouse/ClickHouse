@@ -26,4 +26,9 @@ SYSTEM RELOAD DICTIONARY dict_hashed_simple_auto_convert;
 SELECT name, type FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_hashed_simple_auto_convert';
 DROP DICTIONARY dict_hashed_simple_auto_convert;
 
+CREATE DICTIONARY dict_hashed_simple_int_auto_convert (v0 Int16, v1 UInt16, v2 UInt16) PRIMARY KEY v0 SOURCE(CLICKHOUSE(TABLE 'dict_data')) LIFETIME(0) LAYOUT(hashed());
+SYSTEM RELOAD DICTIONARY dict_hashed_simple_int_auto_convert;
+SELECT name, type FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_hashed_simple_int_auto_convert';
+DROP DICTIONARY dict_hashed_simple_int_auto_convert;
+
 DROP TABLE dict_data;
