@@ -155,8 +155,8 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     /// Use try-catch to make sure the ctor is exception safe.
     try
     {
-        this->trace_id =current_fiber_trace_context->trace_id;
-        this->parent_span_id =current_fiber_trace_context->span_id;
+        this->trace_id = current_fiber_trace_context->trace_id;
+        this->parent_span_id = current_fiber_trace_context->span_id;
         this->span_id = thread_local_rng(); // create a new id for this span
         this->operation_name = _operation_name;
         this->kind = _kind;
