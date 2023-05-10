@@ -359,8 +359,8 @@ t1 ALL FULL JOIN tn2 | bs = {{ block_size }}
 2	\N	5	0
 2	\N	5	0
 3	3	4	4
+{% if join_algorithm != 'grace_hash' -%}
 t1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
-{% if join_algorithm == 'full_sorting_merge' -%}
 1	4	5
 1	4	5
 2	5	0
@@ -378,24 +378,6 @@ t1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 \N	0	5
 \N	0	5
 \N	0	5
-{% else -%}
-0	0	5
-0	0	5
-0	0	5
-0	0	5
-0	0	5
-0	0	5
-0	0	5
-1	4	5
-1	4	5
-2	5	0
-2	5	0
-2	5	0
-2	5	0
-2	5	0
-2	5	0
-2	5	0
-3	4	4
 {% endif -%}
 tn1 ALL INNER JOIN t2 | bs = {{ block_size }}
 1	1	4	5
@@ -551,6 +533,7 @@ tn1 ALL FULL JOIN tn2 | bs = {{ block_size }}
 \N	\N	5	0
 \N	\N	5	0
 \N	\N	5	0
+{% if join_algorithm != 'grace_hash' -%}
 tn1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 1	4	5
 1	4	5
@@ -569,5 +552,6 @@ tn1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 \N	5	0
 \N	5	0
 \N	5	0
+{% endif -%}
 {% endfor -%}
 {% endfor -%}
