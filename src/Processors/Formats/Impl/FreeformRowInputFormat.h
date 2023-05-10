@@ -13,6 +13,7 @@
 namespace DB
 {
 
+// Base class for FieldMatcher, inheriting classes needs to implement readFieldsByEscapingRule() and getName()
 class FieldMatcher
 {
 public:
@@ -34,10 +35,12 @@ public:
 
     using NamesAndFields = std::vector<std::pair<String, String>>;
 
-    // We only need an offset on the intial run to determine the schema, we don't need it for successive runs to parse fields.
+    // We only need the offset on the initial run to determine the schema, we don't need it for successive runs to parse fields.
     template <bool with_offset>
-    Result parseField(PeekableReadBuffer & in, size_t index);
+    // parseField is the general interface that other classes will use to parse/build solutions.
+    Result parseField(PeekableReadBuffer & in, unsigned index);
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
+    // transformTypesIfPossible attempts to find the union between &first and &second and then reassign both of them to this new type if it exists.
     void transformTypesIfPossible(DataTypePtr & first, DataTypePtr & second)
     {
         transformInferredTypesByEscapingRuleIfNeeded(first, second, settings, rule, &json_inference_info);
@@ -47,7 +50,7 @@ public:
     virtual ~FieldMatcher() = default;
 
 protected:
-    virtual NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const = 0;
+    virtual NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const = 0;
     Result generateResult(NamesAndFields & fields, size_t offset);
     DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
 
@@ -61,7 +64,7 @@ class JSONFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "JSONFieldMatcher"; }
-    std::vector<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
+    std::vector<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 class CSVFieldMatcher : public FieldMatcher
@@ -69,7 +72,7 @@ class CSVFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "CSVFieldMatcher"; }
-    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 class QuotedFieldMatcher : public FieldMatcher
@@ -77,7 +80,7 @@ class QuotedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "QuotedFieldMatcher"; }
-    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 class EscapedFieldMatcher : public FieldMatcher
@@ -85,7 +88,7 @@ class EscapedFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "EscapedFieldMatcher"; }
-    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 class RawByWhitespaceFieldMatcher : public FieldMatcher
@@ -93,7 +96,7 @@ class RawByWhitespaceFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "RawByWhitespaceFieldMatcher"; }
-    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const override;
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 /// Class for matching generic data row by row.
@@ -115,19 +118,19 @@ public:
         mutable NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
         size_t score;
-        size_t size;
+        unsigned size;
     };
 
     explicit FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings);
     // iterates over max_rows_to_read and pick the solution with the highest score. Returns false if no solution is found.
     bool buildSolutionsAndPickBest();
-    // parse the row based on solution, generateSolutionsAndPickBest() must be called prior or it will throw an exception
+    // parse the row based on solution, buildSolutionsAndPickBest() must be called prior or it will throw an exception
     bool parseRow();
 
-    const String & getField(size_t index) { return matched_fields[index]; }
-    const FormatSettings::EscapingRule & getRule(size_t index) { return rules[index]; }
+    const String & getField(unsigned index) { return matched_fields[index]; }
+    const FormatSettings::EscapingRule & getRule(unsigned index) { return rules[index]; }
     NamesAndTypes & getNamesAndTypes() { return final_solution.columns; }
-    size_t getSolutionLength() const { return final_solution.size; }
+    unsigned getSolutionLength() const { return final_solution.size; }
 
 private:
     std::vector<FieldMatcherPtr> matchers;
@@ -135,7 +138,7 @@ private:
     Solution final_solution;
 
     std::vector<String> matched_fields;
-    std::unordered_map<String, size_t> field_name_to_index;
+    std::unordered_map<String, unsigned> field_name_to_index;
     bool first_row = true;
 
     // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
@@ -144,8 +147,10 @@ private:
     std::unique_ptr<PeekableReadBuffer> in;
 
     void buildSolutions(Solution current_solution, std::vector<Solution> & solutions, bool one_string) const;
+    // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
     bool validateSolution(Solution solution) const;
-    std::vector<Fields> readNextFields(bool one_string, size_t index) const;
+    // readNextFields iterates over the list of matchers and try to parse all the possible fields.
+    std::vector<Fields> readNextFields(bool one_string, unsigned index) const;
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
@@ -159,7 +164,7 @@ private:
     const FormatSettings format_settings;
     FreeformFieldMatcher matcher;
 
-    bool readField(size_t index, MutableColumns & columns);
+    bool readField(unsigned index, MutableColumns & columns);
     bool readRow(MutableColumns &, RowReadExtension &) override;
     void syncAfterError() override;
 };
@@ -168,7 +173,7 @@ class FreeformSchemaReader : public IRowSchemaReader
 {
 public:
     FreeformSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
-    // readSchema initiates the simultaneous iterations on multiple lines and pick the best solution
+    // readSchema initiates the solutions building process, run them against 100 rows and pick the best solution according to the scoring criteria.
     NamesAndTypesList readSchema() override;
 
 private:

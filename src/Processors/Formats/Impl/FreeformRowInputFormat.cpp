@@ -117,13 +117,13 @@ FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_
 }
 
 template <bool with_offset>
-FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t index)
+FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, unsigned index)
 {
     try
     {
         auto fields = readFieldsByEscapingRule(in, index);
         if constexpr (with_offset)
-            return generateResult(fields, in.offsetFromLastCheckpoint());
+            return generateResult(fields, in.offsetFromLastCheckpoint()); // offset is not needed if this is called in parseRow()
 
         return generateResult(fields, 0);
     }
@@ -134,14 +134,17 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t in
     }
 }
 
-FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
+FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
+    // If there's no opening bracket, read the field as a json field with the column name as c{index}
     if (*in.position() != '{')
     {
         String field;
         readJSONField(field, in);
         return {{fmt::format("c{}", index), field}};
     }
+
+    // Else, attempt to parse each JSON fields of the root object as separate columns.
 
     ++in.position();
 
@@ -157,9 +160,7 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
         else
             readJSONField(field, in);
 
-        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got JSON field: {}:{}", col, field);
         cols_and_fields.emplace_back(col, field);
-
         skipWhitespacesAndDelimiters(in);
     }
 
@@ -168,28 +169,28 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
     return cols_and_fields;
 }
 
-FieldMatcher::NamesAndFields CSVFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
+FieldMatcher::NamesAndFields CSVFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
     String field;
     readCSVField(field, in, settings.csv);
     return {{fmt::format("c{}", index), field}};
 }
 
-FieldMatcher::NamesAndFields QuotedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
+FieldMatcher::NamesAndFields QuotedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
     String field;
     readQuotedField(field, in);
     return {{fmt::format("c{}", index), field}};
 }
 
-FieldMatcher::NamesAndFields EscapedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
+FieldMatcher::NamesAndFields EscapedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
     String field;
     readEscapedString(field, in);
     return {{fmt::format("c{}", index), field}};
 }
 
-FieldMatcher::NamesAndFields RawByWhitespaceFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, size_t index) const
+FieldMatcher::NamesAndFields RawByWhitespaceFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
     String field;
     readStringUntilWhitespaceDelimiter(field, in);
@@ -208,7 +209,7 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, size_t index) const
+std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsigned index) const
 {
     std::vector<Fields> next_fields;
     if (parse_till_newline_as_one_string)
@@ -222,11 +223,12 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
     }
 
     size_t best_score = 0;
-    for (size_t i = 0; const auto & matcher : matchers)
+    for (uint8_t i = 0; const auto & matcher : matchers)
     {
         auto result = matcher->parseField<true>(*in, index);
         if (result.ok)
         {
+            // best_score <= 1 means that we've only found strings so far, in that case it's best to include all of the fields
             if (best_score <= 1 || result.type_score > best_score)
             {
                 best_score = result.type_score;
@@ -276,19 +278,20 @@ bool FreeformFieldMatcher::validateSolution(Solution solution) const
     try
     {
         // A map mapping column name to an index. This allows transforming multiple rows in one columns into one type.
-        std::unordered_map<String, size_t> column_index;
-        for (size_t i = 0; const auto & [name, _] : solution.columns)
-        {
+        std::unordered_map<String, unsigned> column_index;
+        for (unsigned i = 0; const auto & [name, _] : solution.columns)
             column_index[name] = i++;
-        }
 
         for (size_t row = 0; row < max_rows_to_check; ++row)
         {
+            // For each iteration, we try to parse fields and find the type union of the current row and the previously parsed rows. If it doesn't exist,
+            // the solution is invalid. Additionally, we also try to check if for each row, we're getting the right number of columns and if we're ending
+            // each row at \n
             if (in->eof())
                 break;
 
 
-            size_t validated_columns = 0;
+            unsigned validated_columns = 0;
             for (const auto & i : solution.matchers_order)
             {
                 skipWhitespacesAndDelimiters(*in);
@@ -382,7 +385,7 @@ bool FreeformFieldMatcher::parseRow()
     matched_fields.resize(final_solution.size);
     rules.resize(final_solution.size);
 
-    for (size_t col{0}; const auto & i : final_solution.matchers_order)
+    for (unsigned col{0}; const auto & i : final_solution.matchers_order)
     {
         skipWhitespacesAndDelimiters(*in);
         auto result = matchers[i]->parseField<false>(*in, col);
@@ -416,7 +419,7 @@ FreeformRowInputFormat::FreeformRowInputFormat(
 {
 }
 
-bool FreeformRowInputFormat::readField(size_t index, MutableColumns & columns)
+bool FreeformRowInputFormat::readField(unsigned index, MutableColumns & columns)
 {
     const auto & type = matcher.getNamesAndTypes()[index].type;
     const auto rule = matcher.getRule(index);
@@ -436,7 +439,7 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
 
         columns.resize(size);
         ext.read_columns.assign(size, false);
-        for (size_t index = 0; index < size; ++index)
+        for (unsigned index = 0; index < size; ++index)
             ext.read_columns[index] = readField(index, columns);
     }
 
