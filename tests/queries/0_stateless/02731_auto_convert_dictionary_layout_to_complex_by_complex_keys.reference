@@ -2,3 +2,4 @@ dict_flat_simple	Flat
 dict_hashed_simple	Hashed
 dict_hashed_complex	ComplexKeyHashed
 dict_hashed_simple_auto_convert	ComplexKeyHashed
+dict_hashed_simple_int_auto_convert	ComplexKeyHashed
