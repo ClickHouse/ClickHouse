@@ -20,6 +20,18 @@ public:
 
     String getName() const override { return "NullSource"; }
 
+    void onCancel() override
+    {
+        if (!is_stream) {
+            return;
+        }
+        if (storage->shutdown_called)
+            return;
+            
+        std::lock_guard lock(storage->mutex);
+        storage->condition.notify_all();
+    }
+
 protected:
     Chunk generate() override { 
         if (!is_stream) {

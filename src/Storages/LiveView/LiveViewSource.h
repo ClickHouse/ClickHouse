@@ -3,6 +3,7 @@
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Processors/ISource.h>
 
+
 namespace DB
 {
 
@@ -163,7 +164,6 @@ protected:
             }
             return tryReadImpl(blocking);
         }
-
 
         res = *it;
 

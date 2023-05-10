@@ -1,8 +1,6 @@
 #pragma once
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
-#include <Storages/StorageNull.h>
-#include <Storages/IStorage.h>
 
 namespace DB
 {
