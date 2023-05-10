@@ -3,8 +3,6 @@
 
 import logging
 import os
-import sys
-
 from pathlib import Path
 
 from github import Github
@@ -99,18 +97,38 @@ def main():
 
     additional_logs = [path.absolute() for path in result_path.glob("*.log")]
 
-    test_result = TestResult(
-        index_html, state, stopwatch.duration_seconds, additional_logs
-    )
+    test_results = [
+        TestResult(index_html, state, stopwatch.duration_seconds, additional_logs)
+    ]
 
-    report_url = upload_results(s3_helper, 0, pr_info.sha, [test_result], [], NAME)
+    # Check if the run log contains `FATAL Error:`, that means the code problem
+    stopwatch = Stopwatch()
+    fatal_error = "FATAL Error:"
+    logging.info("Search for '%s' in %s", fatal_error, run_log_path)
+    with open(run_log_path, "r", encoding="utf-8") as rlfd:
+        for line in rlfd.readlines():
+            if "FATAL Error:" in line:
+                logging.warning(
+                    "The line '%s' found, mark the run as failure", fatal_error
+                )
+                state = "failure"
+                test_results.append(
+                    TestResult(
+                        "Indexing error",
+                        state,
+                        stopwatch.duration_seconds,
+                        additional_logs,
+                    )
+                )
+                break
+
+    report_url = upload_results(
+        s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME
+    )
 
     print(f"::notice ::Report url: {report_url}")
 
     post_commit_status(commit, state, report_url, "Report built", NAME, pr_info)
-
-    if state != "success":
-        sys.exit(1)
 
 
 if __name__ == "__main__":
