@@ -1,6 +1,8 @@
 #pragma once
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Storages/StorageNull.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -38,7 +40,17 @@ class NullSinkToStorage : public SinkToStorage
 public:
     using SinkToStorage::SinkToStorage;
     std::string getName() const override { return "NullSinkToStorage"; }
-    void consume(Chunk) override {}
+    void consume(Chunk chunk) override {
+        if (!is_stream) {
+            return;
+        }
+        block = getHeader().cloneWithColumns(chunk.getColumns());
+    }
+    void setIsStream(bool flag) {is_stream = flag;}
+    Block getBlock() {return block;}
+private:
+    Block block;
+    bool is_stream = false;
 };
 
 using SinkPtr = std::shared_ptr<SinkToStorage>;

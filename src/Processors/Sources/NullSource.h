@@ -37,13 +37,7 @@ protected:
 
     NonBlockingResult tryReadImpl(bool blocking)
     {
-        if (blocking) {
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "22");
-        } else {
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "33");
-        }
         if (!is_stream) {
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "not streammm");
             return { Block(), true };
         }
         Block res;
@@ -60,7 +54,6 @@ protected:
 
         if (isCancelled() || storage->shutdown_called)
         {
-            LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Закрываемся");
             return { Block(), true };
         }
 
@@ -69,8 +62,6 @@ protected:
             {
                 LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "it == end");
                 std::unique_lock lock(storage->mutex);
-                /// If we are done iterating over our blocks
-                /// and there are new blocks available then get them
                 if (blocks.get() != (*blocks_ptr).get())
                 {
                     LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Появились новые блоки");
@@ -79,43 +70,34 @@ protected:
                     begin = blocks->begin();
                     end = blocks->end();
                 }
-                /// No new blocks available wait for new ones
                 else
                 {
                     LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "Ждём");
                     if (!blocking)
                     {
-                        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "blocking");
                         return { Block(), false };
                     }
                     if (!end_of_blocks)
                     {
-                        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "end_of_blocks");
                         end_of_blocks = true;
                         return { getPort().getHeader(), true };
                     }
                     while (true)
                     {
-                        // LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "while");
                         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
 
-                        /// Or spurious wakeup.
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
                         if (isCancelled() || storage->shutdown_called)
                         {
-                            // LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "11");
                             return { Block(), true };
                         }
                         if (signaled)
                         {
-                            // LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "12");
                             break;
                         }
                         else
                         {
-                            // LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "13");
-                            // heartbeat
                             last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
                             return { getPort().getHeader(), true };
                         }
@@ -141,7 +123,7 @@ private:
     std::shared_ptr<StorageNull> storage;
     std::shared_ptr<BlocksPtr> blocks_ptr;
     UInt64 last_event_timestamp_usec;
-    UInt64 heartbeat_interval_usec = 1500000000;
+    UInt64 heartbeat_interval_usec = 15000000;
     bool is_stream = false;
     BlocksPtr blocks;
     Blocks::iterator it;

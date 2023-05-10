@@ -16,6 +16,8 @@ namespace DB
 class StorageNull final : public IStorage
 {
 friend class NullSource;
+friend class NullSinkToStorage;
+friend class NullSinkk;
 public:
     StorageNull(
         const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
@@ -69,8 +71,6 @@ private:
     std::condition_variable condition;
     bool is_stream_{false};
     std::shared_ptr<BlocksPtr> blocks_ptr;
-    Block new_block;
-
 };
 
 }

@@ -269,9 +269,13 @@ Chain InterpreterInsertQuery::buildChainImpl(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterInsertQuery::buildChainImpl");
         auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterInsertQuery::buildChainImpl");
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterInsertQuery::buildChainImpl");
         out.addSource(std::move(sink));
+        LOG_FATAL(&Poco::Logger::root(), "AOOAOAOOAAOO  {}", "InterpreterInsertQuery::buildChainImpl");
     }
     else
     {
