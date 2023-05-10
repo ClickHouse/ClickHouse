@@ -219,7 +219,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<Strings> shards;
     {
-        std::map<size_t, Strings> replica_adresses;
+        std::map<size_t, Strings> replica_addresses;
 
         for (const auto & [_, node] : cluster_info.nodes_info)
         {
@@ -228,11 +228,11 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
                 LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
                 continue;
             }
-            replica_adresses[node.shard_id].emplace_back(node.address);
+            replica_addresses[node.shard_id].emplace_back(node.address);
         }
 
-        shards.reserve(replica_adresses.size());
-        for (auto & [_, replicas] : replica_adresses)
+        shards.reserve(replica_addresses.size());
+        for (auto & [_, replicas] : replica_addresses)
             shards.emplace_back(std::move(replicas));
     }
 
