@@ -1410,8 +1410,8 @@ and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in mor
 
 Possible values:
 
-- 0 - Yes
-- 1 - No
+- 0 - Disabled
+- 1 - Enabled
 
 Default value: `0`.
 
@@ -1514,7 +1514,7 @@ Default value: `0`.
 
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
-The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
 
 Possible values:
 
@@ -1524,7 +1524,7 @@ Default value: 0 (no restriction).
 
 ## query_cache_max_entries {#query-cache-max-entries}
 
-The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+The maximum number of query results the current user may store in the [query cache](../query-cache.md). 0 means unlimited.
 
 Possible values:
 
