@@ -157,8 +157,6 @@ public:
 
     virtual const std::string & getCacheName() const;
 
-    static IAsynchronousReader & getThreadPoolReader();
-
     static ThreadPool & getThreadPoolWriter();
 
     virtual void shutdown() = 0;
