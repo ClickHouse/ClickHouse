@@ -26,7 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int BAD_TYPE_OF_FIELD;
+    extern const int LOGICAL_ERROR;
     extern const int CAPN_PROTO_BAD_CAST;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
@@ -293,7 +293,7 @@ namespace
                     return capnp::DynamicValue::Reader(capnp::DynamicEnum(enumerant));
             }
 
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert CLickHouse Enum value to CapnProto Enum");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert ClickHouse Enum value to CapnProto Enum");
         }
 
         void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
