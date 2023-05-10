@@ -623,7 +623,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     }
 
     auto filling_step = std::make_unique<FillingStep>(
-        query_plan.getCurrentDataStream(), std::move(sort_description), std::move(fill_description), interpolate_description);
+        query_plan.getCurrentDataStream(), sort_description, std::move(fill_description), interpolate_description);
     query_plan.addStep(std::move(filling_step));
 }
 
