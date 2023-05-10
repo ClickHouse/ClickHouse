@@ -12,11 +12,11 @@ public:
     explicit NullSource(Block header) : ISource(std::move(header)) {}
 
     NullSource(Block header, 
-        std::shared_ptr<StorageNull> storage_, std::shared_ptr<BlocksPtr> blocks_ptr_) 
+        std::shared_ptr<StorageNull> storage_, int client_id_) 
         : ISource(std::move(header)), 
         storage(std::move(storage_)), 
-        blocks_ptr(std::move(blocks_ptr_)),
-        is_stream(true) {}
+        is_stream(true),
+        client_id(client_id_) {}
 
     String getName() const override { return "NullSource"; }
 
@@ -37,6 +37,9 @@ protected:
         if (!is_stream) {
             return Chunk();
         }
+        if (!storage->subscribers || !storage->subscribers->contains(client_id)) {
+            return Chunk();
+        }
         auto block = tryReadImpl();
         return Chunk(block.getColumns(), block.rows());
     }
@@ -48,7 +51,7 @@ protected:
         if (!blocks)
         {
             std::lock_guard lock(storage->mutex);
-            blocks = (*blocks_ptr);
+            blocks = (*(*storage->subscribers)[client_id]);
             it = blocks->begin();
             end = blocks->end();
         }
@@ -62,9 +65,9 @@ protected:
         {
             {
                 std::unique_lock lock(storage->mutex);
-                if (blocks.get() != (*blocks_ptr).get())
+                if (blocks.get() != (*(*storage->subscribers)[client_id]).get())
                 {
-                    blocks = (*blocks_ptr);
+                    blocks = (*(*storage->subscribers)[client_id]);
                     it = blocks->begin();
                     end = blocks->end();
                 }
@@ -113,7 +116,6 @@ protected:
     }
 private:
     std::shared_ptr<StorageNull> storage;
-    std::shared_ptr<BlocksPtr> blocks_ptr;
     UInt64 last_event_timestamp_usec;
     UInt64 heartbeat_interval_usec = 15000000;
     bool is_stream = false;
@@ -121,6 +123,7 @@ private:
     Blocks::iterator it;
     Blocks::iterator end;
     bool end_of_blocks = false;
+    int client_id;
 };
 
 }

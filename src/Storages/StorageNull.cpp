@@ -31,8 +31,11 @@ public:
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         BlocksPtr new_blocks = std::make_shared<Blocks>();
         new_blocks->push_back(block);
-        *(storage.blocks_ptr) = new_blocks;
-
+        std::shared_ptr<BlocksPtr>  blocks_ptr = std::make_shared<BlocksPtr>();
+        *(blocks_ptr) = new_blocks;
+        for (auto it = storage.subscribers->begin(); it != storage.subscribers->end(); ++it) {
+            (*storage.subscribers)[it->first] = blocks_ptr;
+        }
         storage.condition.notify_all();
     }
 private:
@@ -73,35 +76,32 @@ Pipe StorageNull::read(
     size_t /*num_streams*/)
 {
     Block block = storage_snapshot->getSampleBlockForColumns(column_names);
+    int client_id_ = client_id.fetch_add(1, std::memory_order_relaxed);
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     if (modified_select.is_stream) {
-        std::unique_lock lock(mutex);
+        std::shared_ptr<BlocksPtr>  blocks_ptr = std::make_shared<BlocksPtr>();
         if (!(*blocks_ptr)) {
             BlocksPtr new_blocks = std::make_shared<Blocks>();
             new_blocks->push_back(block);
             (*blocks_ptr) = new_blocks;
+            subscribers->insert(std::pair{client_id_, blocks_ptr});
             condition.notify_all();
         }
         return Pipe(
                 std::make_shared<NullSource>(
                 block,
-                std::static_pointer_cast<StorageNull>(shared_from_this()), blocks_ptr));
+                std::static_pointer_cast<StorageNull>(shared_from_this()), client_id_));
     }
     return Pipe(
             std::make_shared<NullSource>(block));
 }
 
-SinkToStoragePtr StorageNull::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*ctx*/)
+SinkToStoragePtr StorageNull::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*ctx*/)
 {
-    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    bool is_stream = insert_query && insert_query->is_stream;
-    if (is_stream) {
-        return std::make_shared<NullStreamSink>(*this, metadata_snapshot);
-    }
-    return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+    return std::make_shared<NullStreamSink>(*this, metadata_snapshot);
 }
 
 void registerStorageNull(StorageFactory & factory)

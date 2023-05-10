@@ -30,12 +30,11 @@ public:
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
 
-        blocks_ptr = std::make_shared<BlocksPtr>();
+        subscribers = std::make_shared<std::map<int, std::shared_ptr<BlocksPtr>>>();
     }
     ~StorageNull() override;
     void drop() override;
     void shutdown() override;
-    // bool getNewBlocks();
     void refresh();
 
     std::string getName() const override { return "Null"; }
@@ -71,7 +70,8 @@ private:
     std::mutex mutex;
     std::condition_variable condition;
     bool is_stream_{false};
-    std::shared_ptr<BlocksPtr> blocks_ptr;
+    std::shared_ptr<std::map<int, std::shared_ptr<BlocksPtr>>> subscribers;
+    std::atomic<int> client_id = 0;
 };
 
 }
