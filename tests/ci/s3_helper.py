@@ -6,6 +6,8 @@ import re
 import shutil
 import time
 from multiprocessing.dummy import Pool
+from pathlib import Path
+from typing import List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
@@ -128,7 +130,9 @@ class S3Helper:
         else:
             return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
-    def fast_parallel_upload_dir(self, dir_path, s3_dir_path, bucket_name):
+    def fast_parallel_upload_dir(
+        self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
+    ) -> List[str]:
         all_files = []
 
         for root, _, files in os.walk(dir_path):
@@ -141,12 +145,12 @@ class S3Helper:
         t = time.time()
         sum_time = 0
 
-        def upload_task(file_path):
+        def upload_task(file_path: str) -> str:
             nonlocal counter
             nonlocal t
             nonlocal sum_time
             try:
-                s3_path = file_path.replace(dir_path, s3_dir_path)
+                s3_path = file_path.replace(str(dir_path), s3_dir_path)
                 metadata = {}
                 if s3_path.endswith("html"):
                     metadata["ContentType"] = "text/html; charset=utf-8"
