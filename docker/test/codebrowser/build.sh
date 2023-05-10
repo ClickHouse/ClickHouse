@@ -10,6 +10,7 @@ OUTPUT_DIRECTORY=${OUTPUT_DIRECTORY:-/workdir/output}
 HTML_RESULT_DIRECTORY=${HTML_RESULT_DIRECTORY:-$OUTPUT_DIRECTORY/html_report}
 SHA=${SHA:-nosha}
 DATA=${DATA:-https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/data}
+nproc=$(($(nproc) + 2)) # increase parallelism
 
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 
@@ -18,7 +19,7 @@ cmake "$SOURCE_DIRECTORY" -DCMAKE_CXX_COMPILER="/usr/bin/clang++-${LLVM_VERSION}
 mkdir -p "$HTML_RESULT_DIRECTORY"
 echo 'Filter out too noisy "Error: filename" lines and keep them in full codebrowser_generator.log'
 /woboq_codebrowser/generator/codebrowser_generator -b "$BUILD_DIRECTORY" -a \
-  -o "$HTML_RESULT_DIRECTORY" --execute-concurrency=0 -p "ClickHouse:$SOURCE_DIRECTORY:$SHA" \
+  -o "$HTML_RESULT_DIRECTORY" --execute-concurrency="$nproc" -p "ClickHouse:$SOURCE_DIRECTORY:$SHA" \
   -d "$DATA" \
     |& ts '%Y-%m-%d %H:%M:%S' \
     | tee "$OUTPUT_DIRECTORY/codebrowser_generator.log" \
