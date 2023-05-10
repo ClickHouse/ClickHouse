@@ -7233,13 +7233,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
-        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr &,
+        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles *)
 {
     MergeTreeDataPartDistinctPartitionExpressionCloner part_cloner {
         this,
         src_part,
+        metadata_snapshot,
         dst_part_info,
         tmp_part_prefix,
         txn,
