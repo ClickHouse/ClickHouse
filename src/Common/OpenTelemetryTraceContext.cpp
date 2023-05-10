@@ -14,8 +14,48 @@ namespace DB
 namespace OpenTelemetry
 {
 
-/// This code can be executed inside fiber, we should use fiber local context.
-thread_local FiberLocalVariable<TracingContextOnThread> current_fiber_trace_context;
+/// This code can be executed inside several fibers in one thread,
+/// we should use fiber local tracing context.
+struct FiberLocalTracingContextOnThread
+{
+public:
+    FiberLocalTracingContextOnThread()
+    {
+        /// Initialize main context for this thread.
+        /// Contexts for fibers will inherit this main context.
+        data[nullptr] = TracingContextOnThread();
+    }
+
+    TracingContextOnThread & operator*()
+    {
+        return get();
+    }
+
+    TracingContextOnThread * operator->()
+    {
+        return &get();
+    }
+
+private:
+    TracingContextOnThread & get()
+    {
+        /// Get context for current fiber.
+        return getContextForFiber(AsyncTaskExecutor::getCurrentFiberInfo());
+    }
+
+    TracingContextOnThread & getContextForFiber(FiberInfo info)
+    {
+        auto it = data.find(info.fiber);
+        /// If it's the first request, we need to initialize context for the fiber using context from parent fiber.
+        if (it == data.end())
+            it = data.insert({info.fiber, getContextForFiber(*info.parent_fiber_info)}).first;
+        return it->second;
+    }
+
+    std::unordered_map<const Fiber *, TracingContextOnThread> data;
+};
+
+thread_local FiberLocalTracingContextOnThread current_fiber_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
