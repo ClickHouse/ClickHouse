@@ -61,6 +61,7 @@ private:
     void processWithStrictParts();
     void processWithDynamicParts();
 
+    void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & req);
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
@@ -78,9 +79,9 @@ private:
     void fillPutRequest(S3::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
-    void waitForReadyBackGroundTasks();
-    void waitForAllBackGroundTasks();
-    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
+    void waitForReadyBackgroundTasks();
+    void waitForAllBackgroundTasks();
+    void waitForAllBackgroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
     const String bucket;
     const String key;

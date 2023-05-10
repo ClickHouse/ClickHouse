@@ -13,6 +13,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+struct AsyncReadCounters;
 class ReadBufferFromRemoteFSGather;
 
 /**
@@ -35,7 +36,8 @@ public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
         IAsynchronousReader & reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
+        std::shared_ptr<AsyncReadCounters> async_read_counters_,
+        std::shared_ptr<FilesystemReadPrefetchesLog> prefetches_log_);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
@@ -84,8 +86,6 @@ private:
 
     Memory<> prefetch_buffer;
 
-    size_t min_bytes_for_seek;
-
     std::string query_id;
 
     std::string current_reader_id;
@@ -95,6 +95,9 @@ private:
     std::optional<size_t> read_until_position;
 
     Poco::Logger * log;
+
+    std::shared_ptr<AsyncReadCounters> async_read_counters;
+    std::shared_ptr<FilesystemReadPrefetchesLog> prefetches_log;
 
     struct LastPrefetchInfo
     {

@@ -237,6 +237,8 @@ public:
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
 
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
+
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
 
@@ -522,8 +524,6 @@ public:
     void setServerCompletelyStarted();
 
 private:
-    friend class EphemeralNodeHolder;
-
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
