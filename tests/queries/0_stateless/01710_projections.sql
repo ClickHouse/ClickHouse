@@ -4,7 +4,7 @@ create table projection_test (`sum(block_count)` UInt64, domain_alias UInt64 ali
 
 insert into projection_test with rowNumberInAllBlocks() as id select 1, toDateTime('2020-10-24 00:00:00') + (id / 20), toString(id % 100), * from generateRandom('x_id String, y_id String, block_count Int64, retry_count Int64, duration Int64, kbytes Int64, buffer_time Int64, first_time Int64, total_bytes Nullable(UInt64), valid_bytes Nullable(UInt64), completed_bytes Nullable(UInt64), fixed_bytes Nullable(UInt64), force_bytes Nullable(UInt64)', 10, 10, 1) limit 1000 settings max_threads = 1;
 
-set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+set optimize_use_projections = 1, force_optimize_projection = 1;
 
 select * from projection_test; -- { serverError 584 }
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x on 1 where domain = '1' group by dt_m order by dt_m; -- { serverError 584 }
@@ -47,6 +47,6 @@ drop table if exists projection_test;
 drop table if exists projection_without_key;
 create table projection_without_key (key UInt32, PROJECTION x (SELECT max(key))) engine MergeTree order by key;
 insert into projection_without_key select number from numbers(1000);
-set force_optimize_projection = 1, allow_experimental_projection_optimization = 1;
+set force_optimize_projection = 1, optimize_use_projections = 1;
 select max(key) from projection_without_key;
 drop table projection_without_key;
