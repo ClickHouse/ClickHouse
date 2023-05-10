@@ -30,17 +30,14 @@ public:
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };
 
-std::pair<String, String> splitCapnProtoFieldName(const String & name);
+bool checkIfStructContainsUnnamedUnion(const capnp::StructSchema & struct_schema);
+bool checkIfStructIsNamedUnion(const capnp::StructSchema & struct_schema);
 
-bool compareEnumNames(const String & first, const String & second, FormatSettings::EnumComparingMode mode);
-
-std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBuilderAndFieldByColumnName(capnp::DynamicStruct::Builder struct_builder, const String & name);
-
-capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Reader & struct_reader, const String & name);
-
-void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Block & header, FormatSettings::EnumComparingMode mode);
+/// Get full name of type for better exception messages.
+String getCapnProtoFullTypeName(const capnp::Type & type);
 
 NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, bool skip_unsupported_fields);
+
 }
 
 #endif

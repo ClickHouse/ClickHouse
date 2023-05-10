@@ -144,10 +144,10 @@ IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
      {"wait",           TransactionsWaitCSNMode::WAIT},
      {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
 
-IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
-     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
-     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
+IMPLEMENT_SETTING_ENUM(CapnProtoEnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"by_names",   FormatSettings::CapnProtoEnumComparingMode::BY_NAMES},
+     {"by_values",  FormatSettings::CapnProtoEnumComparingMode::BY_VALUES},
+     {"by_names_case_insensitive", FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
 
 IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
     {{"None", FormatSettings::EscapingRule::None},
