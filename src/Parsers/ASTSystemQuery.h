@@ -77,6 +77,8 @@ public:
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
         UNFREEZE,
+        ENABLE_FAILPOINT,
+        DISABLE_FAILPOINT,
         END
     };
 
@@ -96,6 +98,7 @@ public:
     String target_model;
     String target_function;
     String replica;
+    String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     String storage_policy;
@@ -108,6 +111,8 @@ public:
     String backup_name;
 
     String schema_cache_storage;
+
+    String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

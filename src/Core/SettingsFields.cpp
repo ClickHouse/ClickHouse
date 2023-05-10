@@ -338,7 +338,7 @@ void SettingFieldString::readBinary(ReadBuffer & in)
 /// that. The linker does not complain only because clickhouse-keeper does not call any of below
 /// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
 /// could then be linked by the server and the linker.
-#ifndef KEEPER_STANDALONE_BUILD
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
