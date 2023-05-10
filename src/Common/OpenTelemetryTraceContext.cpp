@@ -175,7 +175,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     }
 
     /// Set current span as parent of other spans created later on this thread.
-   current_fiber_trace_context->span_id = this->span_id;
+    current_fiber_trace_context->span_id = this->span_id;
 }
 
 void SpanHolder::finish() noexcept
@@ -189,7 +189,7 @@ void SpanHolder::finish() noexcept
 
     try
     {
-        auto log =current_fiber_trace_context->span_log.lock();
+        auto log = current_fiber_trace_context->span_log.lock();
 
         /// The log might be disabled, check it before use
         if (log)
@@ -312,7 +312,7 @@ void TracingContext::serialize(WriteBuffer & buf) const
 
 const TracingContextOnThread & CurrentContext()
 {
-    return*current_fiber_trace_context;
+    return *current_fiber_trace_context;
 }
 
 void TracingContextOnThread::reset() noexcept
@@ -347,15 +347,15 @@ TracingContextHolder::TracingContextHolder(
             /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
             ///
             this->is_context_owner = false;
-            this->root_span.trace_id =current_fiber_trace_context->trace_id;
-            this->root_span.parent_span_id =current_fiber_trace_context->span_id;
+            this->root_span.trace_id = current_fiber_trace_context->trace_id;
+            this->root_span.parent_span_id = current_fiber_trace_context->span_id;
             this->root_span.span_id = thread_local_rng();
             this->root_span.operation_name = _operation_name;
             this->root_span.start_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             /// Set the root span as parent of other spans created on current thread
-           current_fiber_trace_context->span_id = this->root_span.span_id;
+            current_fiber_trace_context->span_id = this->root_span.span_id;
             return;
         }
 
@@ -399,10 +399,10 @@ TracingContextHolder::TracingContextHolder(
     }
 
     /// Set up trace context on current thread only when the root span is successfully initialized.
-   *current_fiber_trace_context = _parent_trace_context;
-   current_fiber_trace_context->span_id = this->root_span.span_id;
-   current_fiber_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
-   current_fiber_trace_context->span_log = _span_log;
+    *current_fiber_trace_context = _parent_trace_context;
+    current_fiber_trace_context->span_id = this->root_span.span_id;
+    current_fiber_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
+    current_fiber_trace_context->span_log = _span_log;
 }
 
 TracingContextHolder::~TracingContextHolder()
@@ -414,7 +414,7 @@ TracingContextHolder::~TracingContextHolder()
 
     try
     {
-        auto shared_span_log =current_fiber_trace_context->span_log.lock();
+        auto shared_span_log = current_fiber_trace_context->span_log.lock();
         if (shared_span_log)
         {
             try
@@ -445,11 +445,11 @@ TracingContextHolder::~TracingContextHolder()
     if (this->is_context_owner)
     {
         /// Clear the context on current thread
-       current_fiber_trace_context->reset();
+        current_fiber_trace_context->reset();
     }
     else
     {
-       current_fiber_trace_context->span_id = this->root_span.parent_span_id;
+        current_fiber_trace_context->span_id = this->root_span.parent_span_id;
     }
 }
 
