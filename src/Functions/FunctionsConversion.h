@@ -57,6 +57,7 @@
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <Common/IPv6ToBinary.h>
 #include <Core/Types.h>
 
 
@@ -217,13 +218,13 @@ struct ConvertImpl
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
                 )
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
                                     TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
                 }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6> && !std::is_same_v<ToDataType, DataTypeIPv4>)
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Conversion between numeric types and IPv6 is not supported. "
@@ -304,7 +305,30 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
+                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeIPv6>)
+                            {
+                                const uint8_t ip4_cidr[] {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00};
+                                const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+                                if (!matchIPv6Subnet(src, ip4_cidr, 96))
+                                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 in column {} is not in IPv4 mapping block", named_from.column->getName());
+
+                                uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+                                if constexpr (std::endian::native == std::endian::little)
+                                {
+                                    dst[0] = src[15];
+                                    dst[1] = src[14];
+                                    dst[2] = src[13];
+                                    dst[3] = src[12];
+                                }
+                                else
+                                {
+                                    dst[3] = src[15];
+                                    dst[2] = src[14];
+                                    dst[1] = src[13];
+                                    dst[0] = src[12];
+                                }
+                            }
+                            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
                                 vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
                             else
                                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
