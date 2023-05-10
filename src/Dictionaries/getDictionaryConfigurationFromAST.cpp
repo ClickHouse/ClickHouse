@@ -655,10 +655,12 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 
-    if (table.empty())
-        return {};
+    info.query = config->getString("dictionary.source.clickhouse.query", "");
 
-    info.table_name = {database, table};
+    if (!table.empty())
+        info.table_name = {database, table};
+    else if (info.query.empty())
+        return {};
 
     try
     {
