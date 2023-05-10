@@ -7,11 +7,11 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/AsyncReadCounters.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -25,12 +25,10 @@
 #include "config.h"
 
 #include <boost/container/flat_set.hpp>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -683,6 +681,7 @@ public:
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
+    bool displaySecretsInShowAndSelect() const;
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
@@ -1099,16 +1098,7 @@ public:
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
-    enum class FilesystemReaderType
-    {
-        SYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_REMOTE_FS_READER,
-    };
-
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-
-    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
@@ -1146,6 +1136,7 @@ private:
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
+    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

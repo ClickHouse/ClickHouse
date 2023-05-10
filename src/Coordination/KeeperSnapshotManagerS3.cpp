@@ -102,6 +102,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
+            auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
             {
