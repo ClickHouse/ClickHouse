@@ -401,4 +401,16 @@ struct CleanResourcesCommand : public IFourLetterCommand
     ~CleanResourcesCommand() override = default;
 };
 
+struct AddServerCommand : public IFourLetterCommand
+{
+    explicit AddServerCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "asvr"; }
+    String run() override;
+    ~AddServerCommand() override = default;
+};
+
 }

@@ -128,6 +128,10 @@ public:
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & task);
 
+    /// Add this instance to cluster. Actually calls raft_instance->add_srv.
+    /// Synchronously check for update results with retries.
+    void addServerToCluster(const KeeperServerConfigPtr & server);
+
 
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.

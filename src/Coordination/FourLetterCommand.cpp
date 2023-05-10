@@ -1,3 +1,4 @@
+#include <memory>
 #include <Coordination/FourLetterCommand.h>
 
 #include <Coordination/KeeperDispatcher.h>
@@ -150,6 +151,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr add_server_command = std::make_shared<AddServerCommand>(keeper_dispatcher);
+        factory.registerCommand(add_server_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -530,6 +534,15 @@ String RecalculateCommand::run()
 String CleanResourcesCommand::run()
 {
     keeper_dispatcher.cleanResources();
+    return "ok";
+}
+
+String  AddServerCommand::run()
+{
+    ConfigUpdateAction change;
+    change.action_type  = ConfigUpdateActionType::AddServer;
+    change.server = std::make_shared<nuraft::srv_config>(3, "node3:9234");
+    keeper_dispatcher.addServer(change);
     return "ok";
 }
 

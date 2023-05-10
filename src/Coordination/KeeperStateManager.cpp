@@ -463,6 +463,7 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     for (auto [old_id, server_config] : old_ids)
     {
         if (!new_ids.contains(old_id))
+            LOG_WARNING(&Poco::Logger::get("RaftConfiguration"), "Removing config with ID {}.", old_id);
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
     }
 

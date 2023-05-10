@@ -51,3 +51,7 @@ def get_leader(cluster, nodes):
         if is_leader(cluster, node):
             return node
     raise Exception("No leader in Keeper cluster.")
+
+def add_server(cluster, node, port=9181):
+    stat = send_4lw_cmd(cluster, node, "asvr", port)
+    return stat

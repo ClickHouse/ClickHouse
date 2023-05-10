@@ -761,6 +761,21 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     snapshot_s3.updateS3Configuration(config, macros);
 }
 
+void KeeperDispatcher::addServer(const ConfigUpdateAction & change)
+{
+    // TODO think about disabling updates from configs
+    if (isLeader()) {
+        LOG_DEBUG(log, "Adding custom node on leader");
+    } else {
+        LOG_DEBUG(log, "Adding custom node on non-leader");
+    }
+    bool push_result = update_configuration_queue.push(change);
+    if (!push_result)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push add server update to queue");
+
+   // TODO deal with whatever this is: snapshot_s3.updateS3Configuration(config, macros);
+}
+
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
     keeper_stats.updateLatency(process_time_ms);

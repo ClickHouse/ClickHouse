@@ -135,6 +135,10 @@ public:
     /// 'macros' are used to substitute macros in endpoint of disks
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
 
+    // Push add server request to update queue
+    // TODO get rid if this queue
+    void addServer (const ConfigUpdateAction & change);
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
