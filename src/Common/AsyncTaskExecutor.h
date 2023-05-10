@@ -24,6 +24,11 @@ enum class AsyncEventTimeoutType
 using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
 using ResumeCallback = std::function<void()>;
 
+struct FiberInfo
+{
+    const Fiber * fiber = nullptr;
+    const FiberInfo * parent_fiber_info = nullptr;
+};
 
 /// Base class for a task that will be executed in a fiber.
 /// It has only one method - run, that takes 2 callbacks:
@@ -74,7 +79,7 @@ public:
         ERROR = 4,
     };
 #endif
-    static const Fiber * getCurrentFiber();
+    static FiberInfo getCurrentFiberInfo();
 
 protected:
     /// Method that is called in resume() before actual fiber resuming.
@@ -117,30 +122,6 @@ private:
     std::atomic_bool is_cancelled = false;
 
     std::unique_ptr<AsyncTask> task;
-};
-
-/// Simple class for storing fiber local variables.
-template <typename T>
-class FiberLocalVariable
-{
-public:
-    T & operator*()
-    {
-        return get();
-    }
-
-    T * operator->()
-    {
-        return &get();
-    }
-
-private:
-    T & get()
-    {
-        return data[AsyncTaskExecutor::getCurrentFiber()];
-    }
-
-    std::unordered_map<const Fiber *, T> data;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);
