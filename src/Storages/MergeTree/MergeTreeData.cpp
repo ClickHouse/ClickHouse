@@ -6242,7 +6242,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
                     return true;
         }
 
-        if (query_settings.allow_experimental_projection_optimization)
+        if (query_settings.optimize_use_projections)
         {
             for (const auto & projection : metadata_snapshot->getProjections())
                 if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(ast))
@@ -6613,7 +6613,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (!query_info.syntax_analyzer_result)
         return std::nullopt;
 
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
+    if (!settings.optimize_use_projections || query_info.ignore_projections || query_info.is_projection_query
         || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
 
