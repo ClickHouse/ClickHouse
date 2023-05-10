@@ -355,10 +355,10 @@ void Connection::receiveHello()
             nonce.emplace(read_nonce);
         }
     }
-    else if (packet_type == Protocol::Server::TimezoneUpdate)
-    {
-        // skip this packet at hello, will receive and process it later
-    }
+//    else if (packet_type == Protocol::Server::TimezoneUpdate)
+//    {
+//        // skip this packet at hello, will receive and process it later
+//    }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
