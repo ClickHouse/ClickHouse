@@ -18,6 +18,11 @@ WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_, bool send_pr
     send_progress = send_progress_;
 }
 
+void WriteBufferFromWebSocket::closeWithException(int exception_bitcode, std::string exception_text)
+{
+    ws.shutdown(exception_bitcode, exception_text);
+}
+
 
 void WriteBufferFromWebSocket::onProgress(const Progress & progress)
 {
@@ -84,7 +89,7 @@ void WriteBufferFromWebSocket::ConstructProgressMessage(WriteBuffer & msg){
     writeCString("}", msg);
 }
 
-void WriteBufferFromWebSocket::ConstructDataMessage(WriteBuffer & msg, WriteBuffer & dataBuffer){
+void WriteBufferFromWebSocket::ConstructDataMessage(WriteBuffer & msg, WriteBuffer & dataBuffer, bool is_last_message){
     writeCString("{\"type\":\"", msg);
     writeText("\"Metrics\"", msg);
     if (!query_id.empty()){
@@ -95,6 +100,8 @@ void WriteBufferFromWebSocket::ConstructDataMessage(WriteBuffer & msg, WriteBuff
 
     ///TODO: not necessary copy operation can be done better
     msg.write(dataBuffer.buffer().begin(), dataBuffer.buffer().size());
+    writeCString("\",\"last_message\":\"", msg);
+    writeText(is_last_message, msg);
     writeCString("\"}", msg);
 }
 
@@ -109,7 +116,7 @@ void WriteBufferFromWebSocket::SendMessage(WriteBuffer & writeBufferWithData)
     do {
         int buffer_size = static_cast<int>(std::min(data_to_send.buffer().size(), static_cast<size_t>(INT_MAX)));
 
-        char * begin_ptr;
+        char * begin_ptr = nullptr;
 
         ///max_payload_size is INT => will read less or equal INTMAX => static cast is safe
         bytes_to_send = static_cast<int>(data_to_send.read(begin_ptr, max_payload_size));
@@ -131,7 +138,7 @@ void WriteBufferFromWebSocket::SendMessage(WriteBuffer & writeBufferWithData)
         flag = WebSocket::FRAME_OP_CONT;
         first_frame = false;
 
-    }while(!data_to_send.eof());
+    } while (!data_to_send.eof());
 }
 
 }

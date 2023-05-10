@@ -17,7 +17,7 @@ public:
 
     void onProgress(const Progress & progress);
 
-    void sendException() {}
+    void closeWithException(int exception_bitcode, std::string exception_text);
 
 private:
 
