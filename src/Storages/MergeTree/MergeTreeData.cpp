@@ -5046,8 +5046,8 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
-                String from_database = query_context->resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
                 if (!from_storage_merge_tree)
@@ -6303,7 +6303,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
                     return true;
         }
 
-        if (query_settings.allow_experimental_projection_optimization)
+        if (query_settings.optimize_use_projections)
         {
             for (const auto & projection : metadata_snapshot->getProjections())
                 if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(ast))
@@ -6674,7 +6674,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (!query_info.syntax_analyzer_result)
         return std::nullopt;
 
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
+    if (!settings.optimize_use_projections || query_info.ignore_projections || query_info.is_projection_query
         || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
 
