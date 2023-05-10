@@ -62,8 +62,12 @@ private:
         MutableColumnRawPtrs & output_other_columns);
 
     bool generateSuffixIfNeeded(
-        const Columns & input_columns,
-        MutableColumns & result_columns);
+        const MutableColumns & result_columns,
+        MutableColumnRawPtrs res_fill_columns,
+        MutableColumnRawPtrs res_interpolate_columns,
+        MutableColumnRawPtrs res_sort_prefix_columns,
+        MutableColumnRawPtrs res_other_columns);
+    bool generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns);
 
     const SortDescription sort_description;
     const SortDescription fill_description; /// Contains only columns with WITH FILL.
@@ -81,6 +85,7 @@ private:
     std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
+    Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
 };
 
