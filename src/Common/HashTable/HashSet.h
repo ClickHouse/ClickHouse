@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -60,6 +61,8 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
+        if (new_size > 100'000'000'000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
         this->resize(new_size);
 

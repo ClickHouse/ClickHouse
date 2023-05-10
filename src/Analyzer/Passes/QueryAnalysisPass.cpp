@@ -32,6 +32,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Formats/FormatFactory.h>
 
 #include <Databases/IDatabase.h>
 
@@ -75,6 +76,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Identifier.h>
 
 namespace ProfileEvents
 {
@@ -111,11 +113,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
-/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
+/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
   *
   * Each node in query must be resolved. For each query tree node resolved state is specific.
@@ -156,7 +160,7 @@ namespace ErrorCodes
   *
   * TODO: This does not supported properly before, because matchers could not be resolved from aliases.
   *
-  * Identifiers are resolved with following resules:
+  * Identifiers are resolved with following rules:
   * Resolution starts with current scope.
   * 1. Try to resolve identifier from expression scope arguments. Lambda expression arguments are greatest priority.
   * 2. Try to resolve identifier from aliases.
@@ -1578,41 +1582,20 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
     const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    std::vector<std::pair<Identifier, const IDataType *>> identifiers_with_types_to_process;
-    identifiers_with_types_to_process.emplace_back(valid_identifier_prefix, compound_expression_type.get());
-
-    while (!identifiers_with_types_to_process.empty())
+    IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
-        auto [identifier, type] = identifiers_with_types_to_process.back();
-        identifiers_with_types_to_process.pop_back();
+        Identifier subcolumn_indentifier(name);
+        size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
 
-        if (identifier.getPartsSize() + 1 > unresolved_identifier.getPartsSize())
-            continue;
-
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(type))
-            type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(type);
-
-        if (!tuple)
-            continue;
-
-        const auto & tuple_element_names = tuple->getElementNames();
-        size_t tuple_element_names_size = tuple_element_names.size();
-
-        for (size_t i = 0; i < tuple_element_names_size; ++i)
+        if (new_identifier_size == unresolved_identifier.getPartsSize())
         {
-            const auto & element_name = tuple_element_names[i];
-            const auto & element_type = tuple->getElements()[i];
+            auto new_identifier = valid_identifier_prefix;
+            for (const auto & part : subcolumn_indentifier)
+                new_identifier.push_back(part);
 
-            identifier.push_back(element_name);
-
-            valid_identifiers_result.insert(identifier);
-            identifiers_with_types_to_process.emplace_back(identifier, element_type.get());
-
-            identifier.pop_back();
+            valid_identifiers_result.insert(std::move(new_identifier));
         }
-    }
+    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()));
 }
 
 /// Get valid identifiers for typo correction from table expression
@@ -2374,7 +2357,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!nestedIdentifierCanBeResolved(expression_type, nested_path))
+    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
         std::unordered_set<Identifier> valid_identifiers;
         collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
@@ -2401,10 +2384,15 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             getHintsErrorMessageSuffix(hints));
     }
 
-    auto tuple_element_result = wrapExpressionNodeInTupleElement(compound_expression, nested_path);
-    resolveFunction(tuple_element_result, scope);
+    QueryTreeNodePtr get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+    auto & get_subcolumn_function_arguments_nodes = get_subcolumn_function->as<FunctionNode>()->getArguments().getNodes();
 
-    return tuple_element_result;
+    get_subcolumn_function_arguments_nodes.reserve(2);
+    get_subcolumn_function_arguments_nodes.push_back(compound_expression);
+    get_subcolumn_function_arguments_nodes.push_back(std::make_shared<ConstantNode>(nested_path.getFullName()));
+
+    resolveFunction(get_subcolumn_function, scope);
+    return get_subcolumn_function;
 }
 
 /** Resolve identifier from expression arguments.
@@ -3708,8 +3696,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         auto result_type = expression_query_tree_node->getResultType();
 
-        while (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
-            result_type = array_type->getNestedType();
+        while (true)
+        {
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+                result_type = array_type->getNestedType();
+            else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
+                result_type = map_type->getNestedType();
+            else
+                break;
+        }
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
@@ -3729,11 +3724,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             if (!matcher_node_typed.isMatchingColumn(element_name))
                 continue;
 
-            auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
-            tuple_element_function->getArguments().getNodes().push_back(expression_query_tree_node);
-            tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
 
-            QueryTreeNodePtr function_query_node = tuple_element_function;
+            QueryTreeNodePtr function_query_node = get_subcolumn_function;
             resolveFunction(function_query_node, scope);
 
             qualified_matcher_element_identifier.push_back(element_name);
@@ -4087,11 +4082,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                replace_transformer_was_used = true;
-
                 auto replace_expression = replace_transformer->findReplacementExpression(column_name);
                 if (!replace_expression)
                     continue;
+
+                replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
@@ -4825,6 +4820,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            if (!parameters.empty())
+            {
+                throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_node.formatASTForErrorMessage());
+            }
+
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
@@ -4941,9 +4941,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
+    bool is_executable_udf = false;
 
     if (!function)
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
+    else
+        is_executable_udf = true;
 
     if (!function)
     {
@@ -4992,6 +4995,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;
+    }
+
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    if (!parameters.empty() && !is_executable_udf)
+    {
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
@@ -5095,8 +5104,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 arguments_projection_names[function_lambda_argument_index] = lambda_argument_projection_name_buffer.str();
             }
 
-            argument_types[function_lambda_argument_index] = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve->getResultType());
-            argument_columns[function_lambda_argument_index].type = argument_types[function_lambda_argument_index];
+            auto lambda_resolved_type = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve_typed.getExpression()->getResultType());
+            lambda_to_resolve_typed.resolve(lambda_resolved_type);
+
+            argument_types[function_lambda_argument_index] = lambda_resolved_type;
+            argument_columns[function_lambda_argument_index].type = lambda_resolved_type;
             function_arguments[function_lambda_argument_index] = std::move(lambda_to_resolve);
         }
 
@@ -5127,7 +5139,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, std::move(set));
+            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 
@@ -6086,6 +6098,18 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
+bool findIdentifier(const FunctionNode & function)
+{
+    for (const auto & argument : function.getArguments())
+    {
+        if (argument->as<IdentifierNode>())
+            return true;
+        if (const auto * f = argument->as<FunctionNode>(); f && findIdentifier(*f))
+            return true;
+    }
+    return false;
+}
+
 /// Resolve table function node in scope
 void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     IdentifierResolveScope & scope,
@@ -6097,12 +6121,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     if (!nested_table_function)
         expressions_visitor.visit(table_function_node_typed.getArgumentsNode());
 
-    const auto & table_function_factory = TableFunctionFactory::instance();
     const auto & table_function_name = table_function_node_typed.getTableFunctionName();
 
     auto & scope_context = scope.context;
 
-    TableFunctionPtr table_function_ptr = table_function_factory.tryGet(table_function_name, scope_context);
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);
@@ -6117,17 +6140,131 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_name);
     }
 
+    uint64_t use_structure_from_insertion_table_in_table_functions = scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions;
     if (!nested_table_function &&
-        scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions &&
+        use_structure_from_insertion_table_in_table_functions &&
         scope_context->hasInsertionTable() &&
         table_function_ptr->needStructureHint())
     {
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            auto insertion_table_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
-            const auto & structure_hint = insertion_table_storage->getInMemoryMetadataPtr()->columns;
-            table_function_ptr->setStructureHint(structure_hint);
+            const auto & insert_structure = DatabaseCatalog::instance().getTable(insertion_table, scope_context)->getInMemoryMetadataPtr()->getColumns();
+            DB::ColumnsDescription structure_hint;
+
+            bool use_columns_from_insert_query = true;
+
+            /// Insert table matches columns against SELECT expression by position, so we want to map
+            /// insert table columns to table function columns through names from SELECT expression.
+
+            auto insert_column = insert_structure.begin();
+            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            bool asterisk = false;
+            const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
+            auto expression = expression_list.begin();
+
+            /// We want to go through SELECT expression list and correspond each expression to column in insert table
+            /// which type will be used as a hint for the file structure inference.
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
+            {
+                if (auto * identifier_node = (*expression)->as<IdentifierNode>())
+                {
+
+                    if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
+                    {
+                        if (asterisk)
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
+
+                        structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
+                {
+                    if (asterisk)
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                    if (!structure_hint.empty())
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    asterisk = true;
+                }
+                else if (auto * function = (*expression)->as<FunctionNode>())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else
+                {
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+            }
+
+            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            {
+                /// For input function we should check if input format supports reading subset of columns.
+                if (table_function_ptr->getName() == "input")
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat());
+                else
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+            }
+
+            if (use_columns_from_insert_query)
+            {
+                if (expression == expression_list.end())
+                {
+                    /// Append tail of insert structure to the hint
+                    if (asterisk)
+                    {
+                        for (; insert_column != insert_structure_end; ++insert_column)
+                            structure_hint.add({ insert_column->name, insert_column->type });
+                    }
+
+                    if (!structure_hint.empty())
+                        table_function_ptr->setStructureHint(structure_hint);
+
+                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+            }
         }
     }
 
@@ -6557,7 +6694,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
-    if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
+    if (query_node_typed.isGroupByWithGroupingSets()
+        && query_node_typed.isGroupByWithTotals()
+        && query_node_typed.getGroupBy().getNodes().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
 
     if (query_node_typed.isGroupByWithGroupingSets() && is_rollup_or_cube)
@@ -6865,13 +7004,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isGroupByAll())
         expandGroupByAll(query_node_typed);
 
-    if (query_node_typed.hasPrewhere())
-        assertNoFunctionNodes(query_node_typed.getPrewhere(),
-            "arrayJoin",
-            ErrorCodes::ILLEGAL_PREWHERE,
-            "ARRAY JOIN",
-            "in PREWHERE");
-
+    validateFilters(query_node);
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
 
     for (const auto & column : projection_columns)

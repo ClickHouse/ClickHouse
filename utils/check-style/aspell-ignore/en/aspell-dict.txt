@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543 
+personal_ws-1.1 en 543
 AArch
 ACLs
 AMQP
@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+ClickableSquare
 CodeBlock
 CodeLLDB
 Config
@@ -53,7 +54,9 @@ HDDs
 Heredoc
 Homebrew
 Homebrew's
+HorizontalDivide
 Hostname
+INSERTed
 IPv
 IntN
 Integrations
@@ -83,13 +86,16 @@ Jepsen
 KDevelop
 LGPL
 LLDB
+LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
+LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
+MVCC
 MacOS
 Memcheck
 MemorySanitizer
@@ -108,12 +114,14 @@ NuRaft
 OLAP
 OLTP
 ObjectId
+Observability
 Ok
 OpenSSL
 OpenSUSE
 OpenStack
 OpenTelemetry
 PAAMAYIM
+ParquetMetadata
 Parsers
 Postgres
 Precompiled
@@ -121,6 +129,7 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
+PrettyJSONEachRow
 PrettyMonoBlock
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
@@ -143,8 +152,10 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTs
 SERIALIZABLE
 SIMD
+SLES
 SMALLINT
 SQLInsert
 SQLSTATE
@@ -169,6 +180,8 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+Transactional
+TwoColumnList
 UBSan
 UInt
 UIntN
@@ -178,6 +191,8 @@ Updatable
 Util
 Valgrind
 Vectorized
+VideoContainer
+ViewAllLink
 VirtualBox
 Werror
 WithNamesAndTypes
@@ -197,6 +212,7 @@ analytics
 anonymized
 ansi
 async
+atomicity
 autogeneration
 autostart
 avro
@@ -278,6 +294,7 @@ dmesg
 dont
 dragonbox
 durations
+encodings
 endian
 enum
 exFAT
@@ -289,6 +306,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
+fsync
 fuzzer
 fuzzers
 gRPC
@@ -362,11 +380,13 @@ linearizability
 linearizable
 lineasstring
 linefeeds
+lineorder
 linux
 llvm
 localhost
 macOS
 mariadb
+mdadm
 miniselect
 msgpack
 msgpk
@@ -385,6 +405,7 @@ num
 obfuscator
 odbc
 ok
+openSUSE
 openldap
 opentelemetry
 overcommit
@@ -412,6 +433,7 @@ prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
 prettycompactnoescapesmonoblock
+prettyjsoneachrow
 prettymonoblock
 prettynoescapes
 prettynoescapesmonoblock
@@ -505,6 +527,7 @@ tokenization
 toml
 toolchain
 toolset
+transactional
 transactionally
 tskv
 tsv

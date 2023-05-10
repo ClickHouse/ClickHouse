@@ -24,10 +24,6 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
     };
 }
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const Settings & settings = context->getSettingsRef();

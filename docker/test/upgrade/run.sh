@@ -59,6 +59,12 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+# local_blob_storage disk type does not exist in older versions
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+  | sed "s|<type>local_blob_storage</type>|<type>local</type>|" \
+  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -82,6 +88,11 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
+
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+  | sed "s|<type>local_blob_storage</type>|<type>local</type>|" \
+  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 
 start
 
@@ -109,8 +120,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages package_folder
-# Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
-export ZOOKEEPER_FAULT_INJECTION=0
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \

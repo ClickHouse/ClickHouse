@@ -37,6 +37,8 @@ init_list = {
     "ReadBufferFromS3InitMicroseconds": 0,
     "ReadBufferFromS3RequestsErrors": 0,
     "WriteBufferFromS3Bytes": 0,
+    "WriteBufferFromS3Microseconds": 0,
+    "WriteBufferFromS3RequestsErrors": 0,
     "S3ReadMicroseconds": 0,
     "S3ReadRequestsCount": 0,
     "S3ReadRequestsErrorsTotal": 0,
