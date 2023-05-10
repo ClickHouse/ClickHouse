@@ -1,7 +1,6 @@
 #if defined(OS_LINUX)
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
-#include <base/defines.h>
 
 #include <sys/timerfd.h>
 #include <fcntl.h>

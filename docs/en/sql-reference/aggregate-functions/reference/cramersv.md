@@ -15,11 +15,11 @@ cramersV(column1, column2)
 
 **Arguments**
 
--   `column1` and `column2` are the columns to be compared
+- `column1` and `column2` are the columns to be compared
 
 **Returned value**
 
--  a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
+- a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

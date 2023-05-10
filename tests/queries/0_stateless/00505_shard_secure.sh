@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: shard, no-parallel, no-fasttest
+# Tags: shard, no-fasttest
 
 # set -x
 

@@ -37,6 +37,7 @@
                 <disk>s3</disk>
                 <path>/jbod1/</path>
                 <max_size>1000000000</max_size>
+                <max_file_segment_size>1Gi</max_file_segment_size>
             </s3_with_cache_and_jbod>
             <s3_r>
                 <type>s3</type>

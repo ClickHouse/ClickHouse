@@ -16,11 +16,11 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 **Arguments**
 
--   `name` — Name of corresponding column.
--   `TypeName` — Type of corresponding column.
--   `max_array_length` — Maximum elements for all generated arrays or maps. Defaults to `10`.
--   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
--   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
+- `name` — Name of corresponding column.
+- `TypeName` — Type of corresponding column.
+- `max_array_length` — Maximum elements for all generated arrays or maps. Defaults to `10`.
+- `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
+- `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
 
 **Returned Value**
 

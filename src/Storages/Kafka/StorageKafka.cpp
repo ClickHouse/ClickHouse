@@ -19,13 +19,13 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -834,10 +834,21 @@ void registerStorageKafka(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
-        bool has_settings = args.storage_def->settings;
+        const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
+        String collection_name;
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : kafka_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    kafka_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+        }
+
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -901,14 +912,10 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        String collection_name;
-        if (named_collection)
+        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+        /// In case of named collection we already validated the arguments.
+        if (collection_name.empty())
         {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-        }
-        else
-        {
-            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
             CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
             CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
