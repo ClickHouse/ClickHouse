@@ -7,7 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATA_FILE=test_02497_$CLICKHOUSE_TEST_UNIQUE_NAME.tsv
 echo -e 'key\nfoo\nbar' > $DATA_FILE
 
-QUERY_ID=$RANDOM
 $CLICKHOUSE_LOCAL --storage_file_read_method=mmap --print-profile-events -q "SELECT * FROM file($DATA_FILE) FORMAT Null" 2>&1 | grep -F -c "CreatedReadBufferMMap"
 $CLICKHOUSE_LOCAL --storage_file_read_method=mmap --print-profile-events -q "SELECT * FROM file($DATA_FILE) FORMAT Null" 2>&1 | grep -F -c "CreatedReadBufferOrdinary"
 
