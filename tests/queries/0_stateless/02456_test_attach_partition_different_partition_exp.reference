@@ -53,11 +53,11 @@ CREATE TABLE destination (productName String, category String) engine=MergeTree 
 INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
 ALTER TABLE destination ATTACH PARTITION ID '17908065610379824077' from source;
-SELECT * FROM source ORDER BY category;
+SELECT * FROM source ORDER BY productName;
+mop	general
 rice	food
 spaghetti	food
-mop	general
-SELECT * FROM destination ORDER BY category;
+SELECT * FROM destination ORDER BY productName;
 rice	food
 spaghetti	food
 SELECT partition_id FROM system.parts where table='destination';

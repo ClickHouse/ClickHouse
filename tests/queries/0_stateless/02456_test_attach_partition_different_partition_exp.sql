@@ -58,8 +58,8 @@ INSERT INTO TABLE source VALUES ('rice', 'food');
 
 ALTER TABLE destination ATTACH PARTITION ID '17908065610379824077' from source;
 
-SELECT * FROM source ORDER BY category;
-SELECT * FROM destination ORDER BY category;
+SELECT * FROM source ORDER BY productName;
+SELECT * FROM destination ORDER BY productName;
 SELECT partition_id FROM system.parts where table='destination';
 
 -- Should not be allowed because data would be split into two different partitions
