@@ -1125,6 +1125,12 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 1000.
 
+## connect_timeout_with_failover_secure_ms
+
+Connection timeout for selecting first healthy replica (for secure connections)
+
+Default value: 1000.
+
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
 The wait time in milliseconds for a connection when the connection pool is full.
@@ -1630,7 +1636,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 ### async_insert {#async-insert}
 
-Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+Enables or disables asynchronous inserts. Note that deduplication isn't working for such inserts.
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
