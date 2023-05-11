@@ -194,7 +194,7 @@ These settings should be defined in the disk configuration section.
 
 File Cache **query settings**:
 
-Some of these settings will disable cache per query features that are enabled by default. For example, setting `cache_on_write_operations` to 1 means that general file and per query cache are enabled but also setting `enable_filesystem_cache_on_write_operations` to 1 means that file cache is enabled but disabled per query cache. The same approach must be used for `enable_filesystem_cache`, if set to 1 cache per query is disabled.
+Some of these settings will disable cache per query features that are enabled by default. For example, setting `cache_on_write_operations` to 1 means that general file and per query cache are enabled but also setting `enable_filesystem_cache_on_write_operations` to 1 means that file cache is enabled but disabled per query cache. The same approach must be used for `enable_filesystem_cache`, if set to 1, cache per query is disabled.
 
 - `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`. This setting should be defined in the disk configuration section.
 
