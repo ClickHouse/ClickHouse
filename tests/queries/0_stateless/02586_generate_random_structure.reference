@@ -1,11 +1,4 @@
-c1 Date, c2 Bool, c3 Int16, c4 Map(Int64, Array(Bool)), c5 Decimal256(30)
-c1 String, c2 Float64, c3 Enum8(\'v0\' = 0, \'v1\' = 1, \'v2\' = 2, \'v3\' = 3, \'v4\' = 4), c4 UInt64, c5 Date
-c1 Nested(e1 Int64, e2 Int16, e3 Map(Int16, LowCardinality(Nullable(String))), e4 UInt8, e5 Nested(e1 Array(Nullable(DateTime)), e2 Nullable(Bool), e3 UInt8, e4 UInt64, e5 Decimal64(6), e6 DateTime), e6 LowCardinality(Nullable(String))), c2 Date, c3 Int32, c4 IPv4, c5 Decimal32(8)
-c1 Date, c2 UInt16, c3 UInt256, c4 Nullable(IPv4), c5 Nullable(Decimal64(17))
-c1 Array(Int64), c2 Map(String, LowCardinality(String)), c3 Date, c4 Map(Int64, UInt128), c5 UInt8
-c1 Date, c2 UInt16, c3 UInt256, c4 Nullable(Decimal128(37)), c5 DateTime64(8)
-c1 Date, c2 Bool, c3 Int16, c4 Map(FixedString(120), Bool), c5 Decimal256(30)
-c1 String, c2 Float64, c3 Enum8(\'v0\' = 0, \'v1\' = 1, \'v2\' = 2, \'v3\' = 3, \'v4\' = 4), c4 UInt64, c5 Date
+c1 String, c2 UInt256, c3 String, c4 Decimal128(7), c5 UInt128
 String
 Const(String)
-1977-07-28	true	5389
+`	90465455320735604871982424534384518837533904778028808627865442405232847164685	5&	-3034771008825448884614719061068.2821046	75820566154622566322847299106656624693
