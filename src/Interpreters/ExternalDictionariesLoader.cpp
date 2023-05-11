@@ -5,9 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
-#include <Common/logger_useful.h>
 
-#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #if USE_MYSQL
