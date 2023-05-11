@@ -37,7 +37,7 @@ static const size_t SCRAMBLE_LENGTH = 20;
 static String generateScramble()
 {
     String scramble;
-    scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+    scramble.resize(SCRAMBLE_LENGTH, 0);
     Poco::RandomInputStream generator;
 
     for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
