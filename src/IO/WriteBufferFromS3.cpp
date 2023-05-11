@@ -109,7 +109,7 @@ void WriteBufferFromS3::nextImpl()
     else
         processWithDynamicParts();
 
-    waitForReadyBackGroundTasks();
+    waitForReadyBackgroundTasks();
 }
 
 void WriteBufferFromS3::processWithStrictParts()
@@ -225,7 +225,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
-    waitForAllBackGroundTasks();
+    waitForAllBackgroundTasks();
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
@@ -238,9 +238,8 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
-void WriteBufferFromS3::createMultipartUpload()
+void WriteBufferFromS3::fillCreateMultipartRequest(DB::S3::CreateMultipartUploadRequest & req)
 {
-    DB::S3::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
@@ -249,6 +248,14 @@ void WriteBufferFromS3::createMultipartUpload()
 
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+
+    client_ptr->setKMSHeaders(req);
+}
+
+void WriteBufferFromS3::createMultipartUpload()
+{
+    DB::S3::CreateMultipartUploadRequest req;
+    fillCreateMultipartRequest(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
     if (write_settings.for_object_storage)
@@ -571,6 +578,8 @@ void WriteBufferFromS3::fillPutRequest(S3::PutObjectRequest & req)
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
+
+    client_ptr->setKMSHeaders(req);
 }
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
@@ -623,7 +632,7 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         max_retry, key, bucket);
 }
 
-void WriteBufferFromS3::waitForReadyBackGroundTasks()
+void WriteBufferFromS3::waitForReadyBackgroundTasks()
 {
     if (schedule)
     {
@@ -641,7 +650,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 
             if (exception)
             {
-                waitForAllBackGroundTasksUnlocked(lock);
+                waitForAllBackgroundTasksUnlocked(lock);
                 std::rethrow_exception(exception);
             }
 
@@ -650,16 +659,16 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
     }
 }
 
-void WriteBufferFromS3::waitForAllBackGroundTasks()
+void WriteBufferFromS3::waitForAllBackgroundTasks()
 {
     if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
-        waitForAllBackGroundTasksUnlocked(lock);
+        waitForAllBackgroundTasksUnlocked(lock);
     }
 }
 
-void WriteBufferFromS3::waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
+void WriteBufferFromS3::waitForAllBackgroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock)
 {
     if (schedule)
     {

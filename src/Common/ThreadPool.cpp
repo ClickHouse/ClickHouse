@@ -397,7 +397,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
+            {
+                job_is_done = true;
                 continue;
+            }
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
