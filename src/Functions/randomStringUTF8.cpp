@@ -79,7 +79,8 @@ public:
         size_t max_byte_size = total_codepoints * 4 + input_rows_count;
         data_to.resize(max_byte_size);
 
-        const auto generate_code_point = [](UInt32 rand) {
+        const auto generate_code_point = [](UInt32 rand)
+        {
             /// We want to generate number in [0x0, 0x70000) and shift it if need
 
             /// Generate highest byte in [0, 6]
