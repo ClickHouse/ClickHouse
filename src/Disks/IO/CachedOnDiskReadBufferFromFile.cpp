@@ -389,14 +389,6 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     auto read_buffer_for_file_segment = getReadBufferForFileSegment(file_segment);
 
     watch.stop();
-    current_file_segment_counters.increment(
-        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
-
-    [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    chassert(download_current_segment == file_segment.isDownloader());
-
-    chassert(file_segment.range() == range);
-    chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
     LOG_TEST(
         log,
@@ -405,6 +397,15 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
         file_offset_of_buffer_end,
         read_buffer_for_file_segment->getFileOffsetOfBufferEnd(),
         file_segment.getInfoForLog());
+
+    current_file_segment_counters.increment(
+        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
+
+    [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+    chassert(download_current_segment == file_segment.isDownloader());
+
+    chassert(file_segment.range() == range);
+    chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
