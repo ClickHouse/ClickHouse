@@ -239,11 +239,11 @@ namespace
                 // Multipart upload failed because it wasn't possible to schedule all the tasks.
                 // To avoid execution of already scheduled tasks we abort MultipartUpload.
                 abortMultipartUpload();
-                waitForAllBackGroundTasks();
+                waitForAllBackgroundTasks();
                 throw;
             }
 
-            waitForAllBackGroundTasks();
+            waitForAllBackgroundTasks();
             completeMultipartUpload();
         }
 
@@ -381,7 +381,7 @@ namespace
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
         virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
 
-        void waitForAllBackGroundTasks()
+        void waitForAllBackgroundTasks()
         {
             if (!schedule)
                 return;
@@ -595,7 +595,7 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , supports_multipart_copy(S3::supportsMultiPartCopy(client_ptr_->getProviderType()))
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
         {
         }
 

@@ -19,17 +19,26 @@ namespace ErrorCodes
 class RandomFaultInjection
 {
 public:
+    bool must_fail_after_op = false;
+    bool must_fail_before_op = false;
+
     RandomFaultInjection(double probability, UInt64 seed_) : rndgen(seed_), distribution(probability) { }
 
     void beforeOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_before_op)
+        {
+            must_fail_before_op = false;
             throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
+        }
     }
     void afterOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_after_op)
+        {
+            must_fail_after_op = false;
             throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
+        }
     }
 
 private:
@@ -42,6 +51,9 @@ private:
 ///
 class ZooKeeperWithFaultInjection
 {
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
+
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
