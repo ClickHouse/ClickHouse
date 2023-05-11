@@ -304,7 +304,7 @@ WITH
 SELECT
     x;
 {}
--- key value delimiter should be considered valid part of value, char2 has a problem with ==
+-- key value delimiter should be considered valid part of value
 WITH
     extractKeyValuePairs('formula=1+2=3 argument1=1 argument2=2 result=3, char="=" char2== string="foo=bar"', '=') AS s_map,
     CAST(
