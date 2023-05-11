@@ -7,7 +7,6 @@
 
 
 #include <base/StringRef.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
@@ -46,6 +45,10 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
+using Arenas = std::vector<ArenaPtr>;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -300,11 +303,13 @@ struct AggregationMethodStringNoCache
     {
         if constexpr (nullable)
         {
-            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*key_columns[0]);
+            assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data, key.size);
+            column_nullable.getNullMapData().push_back(0);
         }
         else
         {
-            static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
 };
@@ -338,7 +343,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+        assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
     }
 };
 
@@ -372,11 +377,11 @@ struct AggregationMethodFixedStringNoCache
     {
         if constexpr (nullable)
         {
-            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data, key.size);
         }
         else
         {
-            static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
 };

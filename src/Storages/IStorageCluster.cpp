@@ -89,7 +89,8 @@ Pipe IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
-    const auto & current_settings = context->getSettingsRef();
+    auto new_context = updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -100,7 +101,7 @@ Pipe IStorageCluster::read(
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
                 sample_block,
-                context,
+                new_context,
                 /*throttler=*/nullptr,
                 scalars,
                 Tables(),
@@ -128,6 +129,17 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
+ContextPtr IStorageCluster::updateSettingsForTableFunctionCluster(ContextPtr context, const Settings & settings)
+{
+    Settings new_settings = settings;
+
+    /// Cluster table functions should always skip unavailable shards.
+    new_settings.skip_unavailable_shards = true;
+
+    auto new_context = Context::createCopy(context);
+    new_context->setSettings(new_settings);
+    return new_context;
+}
 
 ClusterPtr IStorageCluster::getCluster(ContextPtr context) const
 {

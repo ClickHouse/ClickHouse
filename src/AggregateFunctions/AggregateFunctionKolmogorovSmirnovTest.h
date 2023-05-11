@@ -5,7 +5,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <Common/ArenaAllocator.h>
 #include <Common/PODArray_fwd.h>
 #include <base/types.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -92,9 +91,9 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         UInt64 ny_g = n2 / g;
 
         if (method == "auto")
-            method = std::max(n1, n2) <= 10000 ? "exact" : "asymp";
+            method = std::max(n1, n2) <= 10000 ? "exact" : "asymptotic";
         else if (method == "exact" && nx_g >= std::numeric_limits<Int32>::max() / ny_g)
-            method = "asymp";
+            method = "asymptotic";
 
         Float64 p_value = std::numeric_limits<Float64>::infinity();
 
@@ -144,7 +143,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
             }
             p_value = c[n1];
         }
-        else if (method == "asymp")
+        else if (method == "asymp" || method == "asymptotic")
         {
             Float64 n = std::min(n1, n2);
             Float64 m = std::max(n1, n2);
@@ -243,9 +242,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
         method = params[1].get<String>();
-        if (method != "auto" && method != "exact" && method != "asymp")
+        if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
-                    "It must be one of: 'auto', 'exact', 'asymp'", getName());
+                    "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());
     }
 
     String getName() const override

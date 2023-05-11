@@ -605,6 +605,16 @@ bool IStorageURLBase::supportsSubsetOfColumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
+bool IStorageURLBase::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
+}
+
+bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+}
+
 Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

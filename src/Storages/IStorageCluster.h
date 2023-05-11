@@ -41,6 +41,8 @@ private:
     Poco::Logger * log;
     String cluster_name;
     bool structure_argument_was_provided;
+
+    ContextPtr updateSettingsForTableFunctionCluster(ContextPtr context, const Settings & settings);
 };
 
 
