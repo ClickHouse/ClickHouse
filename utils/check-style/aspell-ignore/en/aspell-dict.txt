@@ -22,9 +22,9 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
-ClickableSquare
 ClickHouse
 ClickHouse's
+ClickableSquare
 CodeBlock
 CodeLLDB
 Config
@@ -86,6 +86,7 @@ Jepsen
 KDevelop
 LGPL
 LLDB
+LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
@@ -93,8 +94,8 @@ LineAsString
 LinksDeployment
 LowCardinality
 MEMTABLE
-MVCC
 MSan
+MVCC
 MacOS
 Memcheck
 MemorySanitizer
@@ -110,24 +111,25 @@ NULLIF
 NVME
 NYPD
 NuRaft
-Observability
 OLAP
 OLTP
 ObjectId
+Observability
 Ok
 OpenSSL
 OpenSUSE
 OpenStack
 OpenTelemetry
 PAAMAYIM
-Parsers
 ParquetMetadata
+Parsers
 Postgres
 Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
+PrettyJSONEachRow
 PrettyMonoBlock
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
@@ -135,7 +137,6 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
-PrettyJSONEachRow
 Protobuf
 ProtobufSingle
 QEMU
@@ -154,6 +155,7 @@ SATA
 SELECTs
 SERIALIZABLE
 SIMD
+SLES
 SMALLINT
 SQLInsert
 SQLSTATE
@@ -292,9 +294,9 @@ dmesg
 dont
 dragonbox
 durations
+encodings
 endian
 enum
-encodings
 exFAT
 fastops
 fcoverage
@@ -403,6 +405,7 @@ num
 obfuscator
 odbc
 ok
+openSUSE
 openldap
 opentelemetry
 overcommit
@@ -430,6 +433,7 @@ prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
 prettycompactnoescapesmonoblock
+prettyjsoneachrow
 prettymonoblock
 prettynoescapes
 prettynoescapesmonoblock
@@ -437,7 +441,6 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
-prettyjsoneachrow
 prlimit
 prometheus
 proto

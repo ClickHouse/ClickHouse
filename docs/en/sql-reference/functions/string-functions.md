@@ -310,7 +310,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 
 ## repeat
 
-Conatenates a string as many times with itself as specified.
+Concatenates a string as many times with itself as specified.
 
 **Syntax**
 

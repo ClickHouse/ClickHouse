@@ -45,7 +45,6 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void flush() override;
     void shutdown() override;
 
     ~StorageMergeTree() override;
@@ -112,6 +111,8 @@ public:
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    size_t getNumberOfUnfinishedMutations() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
@@ -190,9 +191,9 @@ private:
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
-    void waitForMutation(Int64 version);
-    void waitForMutation(const String & mutation_id) override;
-    void waitForMutation(Int64 version, const String & mutation_id);
+    void waitForMutation(Int64 version, bool wait_for_another_mutation = false);
+    void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
+    void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
 
@@ -253,7 +254,8 @@ private:
     /// because we can execute several mutations at once. Order is important for
     /// better readability of exception message. If mutation was killed doesn't
     /// return any ids.
-    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr,
+                                                                        bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
 

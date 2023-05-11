@@ -1341,11 +1341,11 @@ void IMergeTreeDataPart::loadColumns(bool require)
         .choose_kind = false,
     };
 
-    SerializationInfoByName infos(loaded_columns, settings);
+    SerializationInfoByName infos;
     if (metadata_manager->exists(SERIALIZATION_FILE_NAME))
     {
         auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
-        infos.readJSON(*in);
+        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
     }
 
     int32_t loaded_metadata_version;
@@ -1357,14 +1357,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
-
-        if (!is_readonly_storage)
-        {
-            writeMetadata(METADATA_VERSION_FILE_NAME, {}, [loaded_metadata_version](auto & buffer)
-            {
-                writeIntText(loaded_metadata_version, buffer);
-            });
-        }
     }
 
     setColumns(loaded_columns, infos, loaded_metadata_version);
