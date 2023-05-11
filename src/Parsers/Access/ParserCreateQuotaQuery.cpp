@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 
@@ -107,151 +108,13 @@ namespace
         });
     }
 
-    template <typename T, typename = std::enable_if_t<std::is_same_v<T, QuotaValue> || std::is_same_v<T, double>>>
-    bool multipleBinarySuffix(T & max_value, int power_of_two)
-    {
-        constexpr T max_t = std::numeric_limits<T>::max();
-        if constexpr (std::is_same_v<T, double>)
-        {
-            const T factor = std::exp2(power_of_two);
-            // Multiplication will cause overflow
-            if (max_t / factor < max_value)
-                return false;
-            max_value *= factor;
-        }
-        else
-        {
-            // Bit shift will cause overflow
-            if (max_t >> power_of_two < max_value)
-                return false;
-            max_value <<= power_of_two;
-        }
-        return true;
-    }
-
-    template <typename T, typename = std::enable_if_t<std::is_same_v<T, QuotaValue> || std::is_same_v<T, double>>>
-    bool multipleDeciMalSuffix(T & max_value, UInt64 base)
-    {
-        constexpr T max_t = std::numeric_limits<T>::max();
-        // Multiplication will cause overflow
-        if (max_t / base < max_value)
-            return false;
-        max_value *= base;
-        return true;
-    }
-
-    template <typename T, typename = std::enable_if_t<std::is_same_v<T, QuotaValue> || std::is_same_v<T, double>>>
-    bool multipleSizeSuffix(T & max_value, ReadBufferFromMemory & suffix)
-    {
-        // Check suffix empty before call this function
-        // Updates max_value depending on the suffix
-        auto finish = [&suffix, &max_value](UInt64 base, int power_of_two)
-        {
-            ++suffix.position();
-            if (*suffix.position() == 'i')
-            {
-                ++suffix.position();
-                return multipleBinarySuffix(max_value, power_of_two); // NOLINT // For binary suffixes, such as ki, Mi, Gi, etc.
-            }
-            else
-            {
-                return multipleDeciMalSuffix(max_value, base); // For decimal suffixes, such as k, M, G etc.
-            }
-        };
-
-        switch (*suffix.position())
-        {
-            case 'k':
-                [[fallthrough]];
-            case 'K':
-                return finish(1e3, 10);
-            case 'M':
-                return finish(1e6, 20);
-            case 'G':
-                return finish(1e9, 30);
-            case 'T':
-                return finish(1e12, 40);
-            default:
-                return false;
-        }
-    }
-
-    bool isSizeSuffix(const char c)
-    {
-        return c == 'k' || c == 'K' || c == 'M' || c == 'G' || c == 'T';
-    }
-
-    template <typename T, typename = std::enable_if_t<std::is_same_v<T, QuotaValue> || std::is_same_v<T, double>>>
-    bool parseWithSizeSuffix(std::string_view s, T & max_value)
-    {
-        ReadBufferFromMemory buf(s.data(), s.size());
-
-        // Consume space
-        while (!buf.eof() && (*buf.position()) == ' ')
-        {
-            ++buf.position();
-        }
-
-        if constexpr (is_integer<T>)
-        {
-            if (!tryReadIntText(max_value, buf))
-            {
-                return false;
-            }
-        }
-        else
-        {
-            if (!tryReadFloatText(max_value, buf))
-            {
-                return false;
-            }
-            // Underflow
-            if (max_value < 0)
-            {
-                return false;
-            }
-        }
-
-        // Has suffix
-        if (!buf.eof() && isSizeSuffix(*buf.position()))
-        {
-            if (!multipleSizeSuffix(max_value, buf))
-            {
-                return false;
-            }
-        }
-
-        // Consume space
-        while (!buf.eof() && isspace(*buf.position()))
-        {
-            ++buf.position();
-        }
-
-        // More after size suffix, illegal syntax
-        if (!buf.eof())
-        {
-            return false;
-        }
-        return true;
-    }
-
-
     template <typename T, typename = std::enable_if_t<std::is_same_v<T, double> || std::is_same_v<T, QuotaValue>>>
-    bool fieldToNumber(const Field & f, T & max_value)
+    T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-        {
-            if (!parseWithSizeSuffix<T>(f.get<const String &>(), max_value))
-            {
-                return false;
-            }
-            return true;
-        }
+            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.get<std::string>()));
         else
-        {
-            max_value = applyVisitor(FieldVisitorConvertToNumber<T>(), f);
-            return true;
-        }
+            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
@@ -263,24 +126,10 @@ namespace
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
-        {
-            return fieldToNumber<QuotaValue>(max_field, max_value);
-        }
+            max_value = fieldToNumber<QuotaValue>(max_field);
         else
-        {
-            // 2023-04-25 : only for EXECUTION_TIME
-            double tmp_max_value = 0;
-            if (fieldToNumber<double>(max_field, tmp_max_value))
-            {
-                constexpr QuotaValue max_quota = std::numeric_limits<QuotaValue>::max();
-                // Multiplication will cause overflow
-                if (max_quota / type_info.output_denominator < tmp_max_value) // NOLINT
-                    return false;
-                max_value = static_cast<QuotaValue>(tmp_max_value * type_info.output_denominator);
-                return true;
-            }
-            return false;
-        }
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * type_info.output_denominator);
+        return true;
     }
 
     bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<QuotaType, QuotaValue>> & limits)
