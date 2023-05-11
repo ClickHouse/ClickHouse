@@ -18,3 +18,8 @@ crate-type = ["staticlib"]
 
 [profile.release]
 debug = true
+
+[profile.release-thinlto]
+inherits = "release"
+# We use LTO here as well to slightly decrease binary size
+lto = true
