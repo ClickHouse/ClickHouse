@@ -2341,7 +2341,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                                 interserver_scheme, address.scheme, address.host);
 
             part_desc->res_part = fetcher.fetchSelectedPart(
-                metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
+                metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
 
@@ -2458,7 +2458,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                                 interserver_scheme, address.scheme, address.host);
 
             return fetcher.fetchSelectedPart(
-                metadata_snapshot, getContext(), entry.new_part_name, source_replica_path,
+                metadata_snapshot, getContext(), entry.new_part_name,
+                zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
                 replicated_fetches_throttler, true);
@@ -4169,6 +4170,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
+                zookeeper_name,
                 source_replica_path,
                 address.host,
                 address.replication_port,
@@ -4332,7 +4334,8 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
                 "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
         return fetcher.fetchSelectedPart(
-            metadata_snapshot, getContext(), part_name, source_replica_path,
+            metadata_snapshot, getContext(), part_name,
+            zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
             interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
@@ -4412,7 +4415,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
-        getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
+        getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(zookeeper_name + ":" + replica_path), data_parts_exchange_ptr);
 
         startBeingLeader();
 
@@ -4528,7 +4531,7 @@ void StorageReplicatedMergeTree::shutdown()
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)
     {
-        getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(replica_path));
+        getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(zookeeper_name + ":" + replica_path));
         /// Ask all parts exchange handlers to finish asap. New ones will fail to start
         data_parts_exchange_ptr->blocker.cancelForever();
         /// Wait for all of them
