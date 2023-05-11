@@ -121,9 +121,9 @@ SELECT
     x;
 
 -- semi-colon as pair delimiter
--- expected output: {'age':'31','name':'neymar','team':'psg'}
+-- expected output: {'age':'31','anotherkey':'anothervalue','name':'neymar','random_key':'value_with_comma,still_part_of_value:still_part_of_value','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;random_key:value_with_comma,still_part_of_value:still_part_of_value', ':', ';') AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;random_key:value_with_comma,still_part_of_value:still_part_of_value;anotherkey:anothervalue', ':', ';') AS s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
