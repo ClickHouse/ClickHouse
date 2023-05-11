@@ -52,6 +52,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <cmath>
+#include <algorithm>
 
 
 namespace ProfileEvents
