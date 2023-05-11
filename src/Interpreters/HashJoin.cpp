@@ -79,7 +79,13 @@ namespace JoinStuff
         {
             assert(flags[nullptr].size() <= size);
             need_flags = true;
-            flags[nullptr] = std::vector<std::atomic_bool>(size);
+            // For one disjunct clause case, we don't need to reinit each time we call addJoinedBlock.
+            // and there is no value inserted in this JoinUsedFlags before addJoinedBlock finish.
+            // So we reinit only when the hash table is rehashed to a larger size.
+            if (flags.empty() || flags[nullptr].size() < size) [[unlikely]]
+            {
+                flags[nullptr] = std::vector<std::atomic_bool>(size);
+            }
         }
     }
 
