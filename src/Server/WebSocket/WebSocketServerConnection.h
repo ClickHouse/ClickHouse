@@ -15,8 +15,8 @@ class WebSocketServerConnection : public Poco::Runnable
         WebSocketServerConnection(IServer& iServer, WebSocket& socket) :
             server(iServer),
             webSocket(socket),
-            frame_buffer(DBMS_DEFAULT_BUFFER_SIZE),
-            message_buffer(DBMS_DEFAULT_BUFFER_SIZE),
+            frame_buffer(0),
+            message_buffer(0),
             regular_handler(server)
         {
         }

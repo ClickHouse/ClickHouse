@@ -18,6 +18,7 @@ void WebSocketServerConnection::run()
     Application& app = Application::instance();
     while (received_bytes != 0 && (flags_and_opcode & WebSocket::FRAME_OP_BITMASK) != WebSocket::FRAME_OP_CLOSE)
     {
+
         try {
             received_bytes = webSocket.receiveFrame(frame_buffer, flags_and_opcode);
         } catch (const Exception& e) {
@@ -60,15 +61,18 @@ void WebSocketServerConnection::run()
         if (flag == WebSocket::FRAME_FLAG_FIN) {
             try {
                 // TODO: parse actual request JSON
-                // auto request = parser.parse(message_buffer.begin()).extract<Object::Ptr>();
+                auto request = parser.parse(std::string(message_buffer.begin(), message_buffer.end())).extract<Object::Ptr>();
                 auto tmp_request = Object();
                 tmp_request.set("data", "received message");
                 regular_handler.handleRequest(tmp_request, webSocket);
+                message_buffer.setCapacity(0,false);
             } catch (const Exception& e) {
                 //TODO: add a reasonable exception wrapper here
                 throw Exception(e);
             }
         }
+        frame_buffer.setCapacity(0,false);
+
     }
 }
 
