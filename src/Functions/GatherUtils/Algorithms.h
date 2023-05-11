@@ -15,6 +15,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
 namespace DB::GatherUtils
@@ -404,6 +405,8 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
             }
 
             writeSlice(slice, sink);
+        }else if(offset == 0){
+            throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
         }
 
         sink.next();
