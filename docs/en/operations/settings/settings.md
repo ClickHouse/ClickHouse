@@ -1125,6 +1125,12 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 1000.
 
+## connect_timeout_with_failover_secure_ms
+
+Connection timeout for selecting first healthy replica (for secure connections)
+
+Default value: 1000.
+
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
 The wait time in milliseconds for a connection when the connection pool is full.
