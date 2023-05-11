@@ -22,7 +22,7 @@ namespace ErrorCodes
 class FunctionGenerateRandomStructure : public IFunction
 {
 private:
-    static constexpr std::array<TypeIndex, 28> simple_types
+    static constexpr std::array<TypeIndex, 29> simple_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -64,7 +64,7 @@ private:
         TypeIndex::Map,
     };
 
-    static constexpr std::array<TypeIndex, 18> map_key_types
+    static constexpr std::array<TypeIndex, 19> map_key_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
