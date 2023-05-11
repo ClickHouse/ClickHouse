@@ -30,11 +30,10 @@ namespace ErrorCodes
 namespace
 {
 
-using Key = String;
 using PartialKeyPositions = std::vector<size_t>;
 using Entropies = std::vector<size_t>;
 
-void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, Key & result)
+void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, String & result)
 {
     result.clear();
     result.reserve(partial_key_positions.size());
@@ -44,11 +43,11 @@ void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key
             result.push_back(key[partial_key_position]);
 }
 
-bool allPartialKeysAreUnique(const std::vector<Key> & keys, const PartialKeyPositions & partial_key_positions)
+bool allPartialKeysAreUnique(const std::vector<std::string_view> & keys, const PartialKeyPositions & partial_key_positions)
 {
-    std::unordered_set<Key> unique_partial_keys;
+    std::unordered_set<String> unique_partial_keys;
     unique_partial_keys.reserve(keys.size());
-    Key partial_key;
+    String partial_key;
 
     for (const auto & key : keys)
     {
@@ -61,15 +60,15 @@ bool allPartialKeysAreUnique(const std::vector<Key> & keys, const PartialKeyPosi
 }
 
 // NextByte returns position of byte which adds the most entropy and the new entropy
-std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len, PartialKeyPositions & partial_key_positions)
+std::pair<size_t, size_t> nextByte(const std::vector<std::string_view> & keys, size_t max_len, PartialKeyPositions & partial_key_positions)
 {
     size_t min_collisions = std::numeric_limits<size_t>::max();
     size_t best_position = 0;
 
-    std::unordered_map<Key, size_t> count_table;
+    std::unordered_map<String, size_t> count_table;
     count_table.reserve(keys.size());
 
-    Key partial_key;
+    String partial_key;
 
     for (size_t i = 0; i < max_len; ++i)
     {
@@ -94,7 +93,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
     return {best_position, min_collisions};
 }
 
-std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<Key> & train_data)
+std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<std::string_view> & train_data)
 {
     if (train_data.size() <= 1)
         return {};
@@ -189,11 +188,11 @@ public:
             const size_t num_rows = col_data_string->size();
 
             /// TODO this does some needless copying ... chooseBytes() should ideally understand the native ColumnString representation
-            std::vector<Key> training_data;
+            std::vector<std::string_view> training_data;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 std::string_view string_view = col_data_string->getDataAt(i).toView();
-                training_data.emplace_back(string_view.data(), string_view.size());
+                training_data.emplace_back(string_view);
             }
 
             PartialKeyPositions partial_key_positions = chooseBytes(training_data).first;
@@ -254,7 +253,7 @@ public:
             auto col_res = ColumnUInt64::create(num_rows);
 
             auto & col_res_vec = col_res->getData();
-            Key partial_key;
+            String partial_key;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 std::string_view string_ref = col_data_string->getDataAt(i).toView();
