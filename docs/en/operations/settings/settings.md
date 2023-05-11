@@ -1636,7 +1636,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 ### async_insert {#async-insert}
 
-Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+Enables or disables asynchronous inserts. Note that deduplication isn't working for such inserts.
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
