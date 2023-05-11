@@ -3,6 +3,10 @@
 #include <errno.h>
 #include "syscall.h"
 
+#if __has_feature(memory_sanitizer)
+#    include <sanitizer/msan_interface.h>
+#endif
+
 int epoll_create(int size)
 {
 	return epoll_create1(0);
@@ -33,5 +37,10 @@ int epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to, const sigset_t 
 
 int epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 {
-	return epoll_pwait(fd, ev, cnt, to, 0);
+    int res = epoll_pwait(fd, ev, cnt, to, 0);
+#if __has_feature(memory_sanitizer)
+	if (res > 0)
+		__msan_unpoison(ev, sizeof(struct epoll_event) * res);
+#endif
+    return res;
 }

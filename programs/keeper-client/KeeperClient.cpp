@@ -1,5 +1,4 @@
 #include "KeeperClient.h"
-#include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -8,6 +7,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/MapConfiguration.h>
+#include "Common/FoundationDB/FoundationDBCommon.h"
 
 
 namespace DB
@@ -20,6 +21,20 @@ namespace ErrorCodes
 
 String KeeperClient::executeFourLetterCommand(const String & command)
 {
+    if (zk_args.implementation == "fdbkeeper")
+    {
+        if (command == "ruok")
+        {
+            return "imok";
+        }
+        else
+        {
+            // TODO: Support more 4lw for fdbkeeper
+            // See also https://zookeeper.apache.org/doc/r3.8.2/zookeeperAdmin.html#sc_zkCommands
+            return "not support";
+        }
+    }
+
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
     Poco::Net::StreamSocket socket;
     socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
@@ -181,6 +196,25 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("tests-mode", "", "run keeper-client in a special mode for tests. all commands output are separated by special symbols. default false")
             .binding("tests-mode"));
+
+    options.addOption(
+        Poco::Util::Option("fdb", "", "connect to fdbkeeper")
+        .binding("fdb"));
+
+    options.addOption(
+        Poco::Util::Option("fdb-cluster", "", "fdb cluster file. default /etc/foundationdb/fdb.cluster")
+        .argument("<path>")
+        .binding("fdb-cluster"));
+
+    options.addOption(
+        Poco::Util::Option("fdb-prefix", "", "prefix of fdb key")
+        .argument("<prefix>")
+        .binding("fdb-prefix"));
+
+    options.addOption(
+        Poco::Util::Option("chroot", "", "")
+        .argument("<path>")
+        .binding("chroot"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -215,8 +249,10 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
     if (config().has("history-file"))
         history_file = config().getString("history-file");
-    else
+    else if (!home_path.empty())
         history_file = home_path + "/.keeper-client-history";
+    else
+        history_file = "/tmp/.keeper-client-history";
 
     if (!history_file.empty() && !fs::exists(history_file))
     {
@@ -291,7 +327,7 @@ bool KeeperClient::processQueryText(const String & text)
     }
     catch (Coordination::Exception & err)
     {
-        std::cerr << err.message() << "\n";
+        std::cout << "Err: " << err.message() << "\n";
     }
     return true;
 }
@@ -370,33 +406,50 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     Poco::Util::AbstractConfiguration::Keys keys;
     clickhouse_config.configuration->keys("zookeeper", keys);
 
-    if (!config().has("host") && !config().has("port") && !keys.empty())
+    if (config().hasOption("fdb"))
     {
-        LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
+        auto cluster_file = config().getString("fdb-cluster", "/etc/foundationdb/fdb.cluster");
+        zk_args.implementation = "fdbkeeper";
+        zk_args.fdb_cluster = cluster_file;
 
-        for (const auto & key : keys)
+        if (config().has("fdb-prefix"))
         {
-            String prefix = "zookeeper." + key;
-            String host = clickhouse_config.configuration->getString(prefix + ".host");
-            String port = clickhouse_config.configuration->getString(prefix + ".port");
-
-            if (clickhouse_config.configuration->has(prefix + ".secure"))
-                host = "secure://" + host;
-
-            zk_args.hosts.push_back(host + ":" + port);
+            auto prefix = config().getString("fdb-prefix");
+            zk_args.fdb_prefix = prefix;
         }
     }
     else
     {
-        String host = config().getString("host", "localhost");
-        String port = config().getString("port", "9181");
+        if (!config().has("host") && !config().has("port") && !keys.empty())
+        {
+            LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
-        zk_args.hosts.push_back(host + ":" + port);
+            for (const auto & key : keys)
+            {
+                String prefix = "zookeeper." + key;
+                String host = clickhouse_config.configuration->getString(prefix + ".host");
+                String port = clickhouse_config.configuration->getString(prefix + ".port");
+
+                if (clickhouse_config.configuration->has(prefix + ".secure"))
+                    host = "secure://" + host;
+
+                zk_args.hosts.push_back(host + ":" + port);
+            }
+        }
+        else
+        {
+            String host = config().getString("host", "localhost");
+            String port = config().getString("port", "9181");
+
+            zk_args.hosts.push_back(host + ":" + port);
+        }
+
+        zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
+        zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
+        zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     }
 
-    zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
-    zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
-    zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
+    zk_args.chroot = config().getString("chroot", "");
     zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))
@@ -408,6 +461,9 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     }
     else
         runInteractive();
+
+    if (config().has("fdb"))
+        FoundationDBNetwork::shutdownIfNeed();
 
     return 0;
 }

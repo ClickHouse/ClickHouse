@@ -5,6 +5,7 @@
 #include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/EventNotifier.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/FoundationDB/FDBKeeper.h>
 #include "IO/ReadBufferFromString.h"
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -138,9 +139,27 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
     {
         std::string connection_key = "connections." + key;
         auto connection_info = default_connection_info;
+
+        auto handle_fdb_host = [&]()
+        {
+            if (connection_info.host.starts_with("fdb://"))
+            {
+                if (connections_keys.size() > 1)
+                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Only single fdb host is acceptable");
+
+                auto config_path = connection_info.host.substr(6);
+                if (config_path.empty())
+                    config_path = "/etc/foundationdb/fdb.cluster";
+
+                connection_info.host = config_path;
+                connection_info.is_fdb = true;
+            }
+        };
+
         if (key.starts_with("host"))
         {
             connection_info.host = config.getString(connection_key);
+            handle_fdb_host();
             connection_infos.push_back(std::move(connection_info));
         }
         else if (key.starts_with("connection") && key != "connection_timeout_ms")
@@ -148,6 +167,7 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
             connection_info.host = config.getString(connection_key + ".host");
             if (config.has(connection_key + ".sessions"))
                 connection_info.sessions = config.getUInt64(connection_key + ".sessions");
+            handle_fdb_host();
 
             fill_connection_details(connection_key, connection_info);
 
@@ -156,7 +176,45 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
-void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
+static void execRequest(std::shared_ptr<Coordination::IKeeper> keeper, Coordination::ZooKeeperRequestPtr request, Coordination::ResponseCallback callback)
+{
+    using namespace Coordination;
+
+    if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(request.get()))
+    {
+        keeper->create(
+            concrete_request_create->path,
+            concrete_request_create->data,
+            concrete_request_create->is_ephemeral,
+            concrete_request_create->is_sequential,
+            concrete_request_create->acls,
+            callback);
+    }
+    else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(request.get()))
+    {
+        keeper->remove(concrete_request_remove->path, concrete_request_remove->version, callback);
+    }
+    else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
+    {
+        keeper->set(concrete_request_set->path, concrete_request_set->data, concrete_request_set->version, callback);
+    }
+    else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(request.get()))
+    {
+        keeper->check(concrete_request_check->path, concrete_request_check->version, callback);
+    }
+    else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(request.get()))
+    {
+        keeper->get(concrete_request_get->path, callback, {});
+    }
+    else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(request.get()))
+    {
+        keeper->list(concrete_request_list->path, ListRequestType::ALL, callback, {});
+    }
+    else
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupport request");
+}
+
+void Runner::thread(std::vector<std::shared_ptr<Coordination::IKeeper>> zookeepers)
 {
     Coordination::ZooKeeperRequestPtr request;
     /// Randomly choosing connection index
@@ -228,7 +286,14 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         Stopwatch watch;
 
-        zk->executeGenericRequest(request, callback);
+        if (auto * zookeeper = dynamic_cast<Coordination::ZooKeeper *>(zk.get()))
+        {
+            zookeeper->executeGenericRequest(request, callback);
+        }
+        else
+        {
+            execRequest(zk, request, callback);
+        }
 
         try
         {
@@ -423,19 +488,29 @@ void Runner::createConnections()
     std::cerr << "---- Done creating connections ----\n" << std::endl;
 }
 
-std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
+std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
 {
-    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, connection_info.secure};
-    std::vector<Coordination::ZooKeeper::Node> nodes;
-    nodes.push_back(node);
-    zkutil::ZooKeeperArgs args;
-    args.session_timeout_ms = connection_info.session_timeout_ms;
-    args.connection_timeout_ms = connection_info.operation_timeout_ms;
-    args.operation_timeout_ms = connection_info.connection_timeout_ms;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    if (connection_info.is_fdb)
+    {
+        zkutil::ZooKeeperArgs args;
+        args.fdb_cluster = connection_info.host;
+        args.fdb_prefix = "keeper-bench/";
+        return std::make_shared<Coordination::FDBKeeper>(args);
+    }
+    else
+    {
+        Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, connection_info.secure};
+        std::vector<Coordination::ZooKeeper::Node> nodes;
+        nodes.push_back(node);
+        zkutil::ZooKeeperArgs args;
+        args.session_timeout_ms = connection_info.session_timeout_ms;
+        args.connection_timeout_ms = connection_info.operation_timeout_ms;
+        args.operation_timeout_ms = connection_info.connection_timeout_ms;
+        return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    }
 }
 
-std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()
+std::vector<std::shared_ptr<Coordination::IKeeper>> Runner::refreshConnections()
 {
     std::lock_guard lock(connection_mutex);
     for (size_t connection_idx = 0; connection_idx < connections.size(); ++connection_idx)
@@ -456,5 +531,6 @@ Runner::~Runner()
     shutdown = true;
     pool->wait();
     generator->cleanup(*connections[0]);
+    DB::FoundationDBNetwork::shutdownIfNeed();
 }
 

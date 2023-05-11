@@ -178,6 +178,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_con
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
+add_subdirectory(Common/FoundationDB)
 
 set (all_modules)
 macro(add_object_library name common_path)
@@ -374,6 +375,7 @@ dbms_target_link_libraries (
         boost::program_options
         clickhouse_common_config
         clickhouse_common_zookeeper
+        clickhouse_common_foundationdb
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::lz4
@@ -603,6 +605,10 @@ if (ENABLE_TESTS)
         string_utils
         hilite_comparator)
 
+    if (TARGET clickhouse_common_foundationdb)
+        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_common_foundationdb)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
@@ -617,6 +623,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::fdb_c)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::fdb_c)
     endif()
 
     add_check(unit_tests_dbms)

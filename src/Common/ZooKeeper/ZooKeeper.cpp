@@ -10,6 +10,7 @@
 #include <ranges>
 #include <vector>
 
+#include <Common/FoundationDB/FDBKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -124,6 +125,10 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
+    }
+    else if (args.implementation == "fdbkeeper")
+    {
+        impl = std::make_unique<Coordination::FDBKeeper>(args);
     }
     else if (args.implementation == "testkeeper")
     {

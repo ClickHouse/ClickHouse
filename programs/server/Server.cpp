@@ -94,6 +94,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -595,6 +596,8 @@ try
     server_settings.loadSettingsFromConfig(config());
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
+
+    FoundationDBNetwork::setLibraryPath(config().getString("path", DBMS_DEFAULT_PATH) + "/libfdb_c.so");
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.

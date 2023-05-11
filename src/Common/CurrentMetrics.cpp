@@ -205,6 +205,7 @@
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
+    M(FDBClientBusyness, "A value where 0 indicates that the client is idle and 100 (or larger) indicates that the client is saturated") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

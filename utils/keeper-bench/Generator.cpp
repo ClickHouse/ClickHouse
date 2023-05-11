@@ -40,7 +40,7 @@ std::string generateRandomString(size_t length)
 }
 }
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+void removeRecursive(Coordination::IKeeper & zookeeper, const std::string & path)
 {
     namespace fs = std::filesystem;
 
@@ -208,7 +208,7 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
     return path_getter;
 }
 
-void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
+void PathGetter::initialize(Coordination::IKeeper & zookeeper)
 {
     for (const auto & parent_path : parent_paths)
     {
@@ -362,7 +362,7 @@ std::string RequestGetter::description() const
     return description + guard;
 }
 
-void RequestGetter::startup(Coordination::ZooKeeper & zookeeper)
+void RequestGetter::startup(Coordination::IKeeper & zookeeper)
 {
     for (const auto & request_generator : request_generators)
         request_generator->startup(zookeeper);
@@ -391,7 +391,7 @@ Coordination::ZooKeeperRequestPtr RequestGenerator::generate(const Coordination:
     return generateImpl(acls);
 }
 
-void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
+void RequestGenerator::startup(Coordination::IKeeper & zookeeper)
 {
     startupImpl(zookeeper);
 }
@@ -437,7 +437,7 @@ std::string CreateRequestGenerator::descriptionImpl()
         remove_factor_string);
 }
 
-void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void CreateRequestGenerator::startupImpl(Coordination::IKeeper & zookeeper)
 {
     parent_path.initialize(zookeeper);
 }
@@ -496,7 +496,7 @@ Coordination::ZooKeeperRequestPtr SetRequestGenerator::generateImpl(const Coordi
     return request;
 }
 
-void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void SetRequestGenerator::startupImpl(Coordination::IKeeper & zookeeper)
 {
     path.initialize(zookeeper);
 }
@@ -521,7 +521,7 @@ Coordination::ZooKeeperRequestPtr GetRequestGenerator::generateImpl(const Coordi
     return request;
 }
 
-void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void GetRequestGenerator::startupImpl(Coordination::IKeeper & zookeeper)
 {
     path.initialize(zookeeper);
 }
@@ -546,7 +546,7 @@ Coordination::ZooKeeperRequestPtr ListRequestGenerator::generateImpl(const Coord
     return request;
 }
 
-void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void ListRequestGenerator::startupImpl(Coordination::IKeeper & zookeeper)
 {
     path.initialize(zookeeper);
 }
@@ -590,18 +590,44 @@ Coordination::ZooKeeperRequestPtr MultiRequestGenerator::generateImpl(const Coor
     return std::make_shared<ZooKeeperMultiRequest>(ops, acls);
 }
 
-void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void MultiRequestGenerator::startupImpl(Coordination::IKeeper & zookeeper)
 {
     request_getter.startup(zookeeper);
 }
 
 Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 {
-    Coordination::ACL acl;
-    acl.permissions = Coordination::ACL::All;
-    acl.scheme = "world";
-    acl.id = "anyone";
-    default_acls.emplace_back(std::move(acl));
+    bool has_fdb = false;
+    Poco::Util::AbstractConfiguration::Keys connections_keys;
+    config.keys("connections", connections_keys);
+    for (const auto & key : connections_keys)
+    {
+        std::string connection_key = "connections." + key;
+        if (key.starts_with("host"))
+        {
+            if (config.getString(connection_key).starts_with("fdb://"))
+            {
+                has_fdb = true;
+                break;
+            }
+        }
+        else if (key.starts_with("connection") && key != "connection_timeout_ms")
+        {
+            if (config.getString(connection_key + ".host").starts_with("fdb://"))
+            {
+                has_fdb = true;
+                break;
+            }
+        }
+    }
+    if (!has_fdb)
+    {
+        Coordination::ACL acl;
+        acl.permissions = Coordination::ACL::All;
+        acl.scheme = "world";
+        acl.id = "anyone";
+        default_acls.emplace_back(std::move(acl));
+    }
 
     static const std::string generator_key = "generator";
 
@@ -708,7 +734,7 @@ std::shared_ptr<Generator::Node> Generator::Node::clone() const
     return new_node;
 }
 
-void Generator::Node::createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const
+void Generator::Node::createNode(Coordination::IKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const
 {
     auto path = std::filesystem::path(parent_path) / name.getString();
     auto promise = std::make_shared<std::promise<void>>();
@@ -727,7 +753,7 @@ void Generator::Node::createNode(Coordination::ZooKeeper & zookeeper, const std:
         child->createNode(zookeeper, path, acls);
 }
 
-void Generator::startup(Coordination::ZooKeeper & zookeeper)
+void Generator::startup(Coordination::IKeeper & zookeeper)
 {
     std::cerr << "---- Creating test data ----" << std::endl;
     for (const auto & node : root_nodes)
@@ -753,7 +779,7 @@ Coordination::ZooKeeperRequestPtr Generator::generate()
     return request_getter.getRequestGenerator()->generate(default_acls);
 }
 
-void Generator::cleanup(Coordination::ZooKeeper & zookeeper)
+void Generator::cleanup(Coordination::IKeeper & zookeeper)
 {
     std::cerr << "---- Cleaning up test data ----" << std::endl;
     for (const auto & node : root_nodes)

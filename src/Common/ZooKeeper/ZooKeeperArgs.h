@@ -44,6 +44,8 @@ struct ZooKeeperArgs
     double recv_sleep_probability = 0.0;
     UInt64 send_sleep_ms = 0;
     UInt64 recv_sleep_ms = 0;
+    String fdb_cluster;
+    String fdb_prefix;
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;

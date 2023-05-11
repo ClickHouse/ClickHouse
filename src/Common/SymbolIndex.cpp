@@ -456,6 +456,11 @@ void collectSymbolsFromELF(
 int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
+#    if defined(ch_has_feature)
+#        if ch_has_feature(memory_sanitizer)
+    __msan_unpoison(info, sizeof(*info));
+#        endif
+#    endif
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
     collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);

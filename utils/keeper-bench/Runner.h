@@ -31,7 +31,7 @@ public:
         std::optional<bool> continue_on_error_,
         std::optional<size_t> max_iterations_);
 
-    void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);
+    void thread(std::vector<std::shared_ptr<Coordination::IKeeper>> zookeepers);
 
     void printNumberOfRequestsExecuted(size_t num)
     {
@@ -81,14 +81,16 @@ private:
         int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
 
         size_t sessions = 1;
+
+        bool is_fdb = false;
     };
 
     std::mutex connection_mutex;
     std::vector<ConnectionInfo> connection_infos;
-    std::vector<std::shared_ptr<Coordination::ZooKeeper>> connections;
+    std::vector<std::shared_ptr<Coordination::IKeeper>> connections;
     std::unordered_map<size_t, size_t> connections_to_info_map;
 
     void createConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info);
-    std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
+    std::shared_ptr<Coordination::IKeeper> getConnection(const ConnectionInfo & connection_info);
+    std::vector<std::shared_ptr<Coordination::IKeeper>> refreshConnections();
 };

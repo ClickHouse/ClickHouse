@@ -117,15 +117,18 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
     node->args.push_back(mode);
 
+    bool create_parents = ParserKeyword{"PARENT"}.ignore(pos, expected);
+    node->args.push_back(Field{create_parents});
+
     return true;
 }
 
 void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    client->zookeeper->create(
-        client->getAbsolutePath(query->args[0].safeGet<String>()),
-        query->args[1].safeGet<String>(),
-        static_cast<int>(query->args[2].safeGet<Int64>()));
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    if (query->args[3].get<bool>())
+        client->zookeeper->createAncestors(path);
+    client->zookeeper->create(path, query->args[1].safeGet<String>(), static_cast<int>(query->args[2].safeGet<Int64>()));
 }
 
 bool TouchCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -370,14 +373,21 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
         return false;
     node->args.push_back(std::move(path));
 
+    bool force = ParserKeyword{"FORCE"}.ignore(pos, expected);
+    node->args.push_back(force);
+
     return true;
 }
 
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
-    client->askConfirmation(
-        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
+
+    if (query->args[1].get<bool>())
+        client->zookeeper->removeRecursive(path);
+    else
+        client->askConfirmation(
+            "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
 }
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const

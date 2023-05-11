@@ -13,6 +13,7 @@ target_link_libraries (clickhouse_common_zookeeper
         common
     PRIVATE
         string_utils
+        clickhouse_common_foundationdb
 )
 
 # for examples -- no logging (to avoid extra dependencies)
@@ -23,6 +24,7 @@ target_link_libraries (clickhouse_common_zookeeper_no_log
         common
     PRIVATE
         string_utils
+        clickhouse_common_foundationdb
 )
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
