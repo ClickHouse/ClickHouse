@@ -142,9 +142,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     OutdatedPartsLoadingThreadPool::initialize(
         config().getUInt("max_outdated_parts_loading_thread_pool_size", 16),
-        /*turbo=*/config().getUInt("max_active_parts_loading_thread_pool_size", 16),
         0, // We don't need any threads one all the parts will be loaded
         config().getUInt("max_outdated_parts_loading_thread_pool_size", 16));
+
+    OutdatedPartsLoadingThreadPool::setMaxTurboThreads(
+        config().getUInt("max_active_parts_loading_thread_pool_size", 16)
+    );
 
     PartsCleaningThreadPool::initialize(
         config().getUInt("max_parts_cleaning_thread_pool_size", 16),

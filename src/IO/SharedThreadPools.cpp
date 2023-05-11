@@ -25,158 +25,82 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+template <typename Derived>
+void StaticThreadPool<Derived>::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
+    if (Derived::instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The thread pool is initialized twice");
+
+    Derived::instance = std::make_unique<ThreadPool>(
+        Derived::threads_metric,
+        Derived::threads_active_metric,
+        max_threads,
+        max_free_threads,
+        queue_size,
+        /* shutdown_on_exception= */ false);
+}
+
+template <typename Derived>
+void StaticThreadPool<Derived>::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
+    if (!Derived::instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reload configuration of the uninitialized pool");
+
+    Derived::instance->setMaxThreads(max_threads);
+    Derived::instance->setMaxFreeThreads(max_free_threads);
+    Derived::instance->setQueueSize(queue_size);
+}
+
+template <typename Derived>
+ThreadPool & StaticThreadPool<Derived>::get()
+{
+    if (!Derived::instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The thread pool is not initialized");
+
+    return *Derived::instance;
+}
+
+
+template class StaticThreadPool<IOThreadPool>;
 std::unique_ptr<ThreadPool> IOThreadPool::instance;
+CurrentMetrics::Metric IOThreadPool::threads_metric = CurrentMetrics::IOThreads;
+CurrentMetrics::Metric IOThreadPool::threads_active_metric = CurrentMetrics::IOThreadsActive;
 
-void IOThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The IO thread pool is initialized twice");
-    }
-
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::IOThreads,
-        CurrentMetrics::IOThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
-        /* shutdown_on_exception= */ false);
-}
-
-ThreadPool & IOThreadPool::get()
-{
-    if (!instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The IO thread pool is not initialized");
-    }
-
-    return *instance;
-}
-
+template class StaticThreadPool<BackupsIOThreadPool>;
 std::unique_ptr<ThreadPool> BackupsIOThreadPool::instance;
+CurrentMetrics::Metric BackupsIOThreadPool::threads_metric = CurrentMetrics::BackupsIOThreads;
+CurrentMetrics::Metric BackupsIOThreadPool::threads_active_metric = CurrentMetrics::BackupsIOThreadsActive;
 
-void BackupsIOThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is initialized twice");
-    }
-
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::BackupsIOThreads,
-        CurrentMetrics::BackupsIOThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
-        /* shutdown_on_exception= */ false);
-}
-
-ThreadPool & BackupsIOThreadPool::get()
-{
-    if (!instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is not initialized");
-    }
-
-    return *instance;
-}
-
+template class StaticThreadPool<ActivePartsLoadingThreadPool>;
 std::unique_ptr<ThreadPool> ActivePartsLoadingThreadPool::instance;
+CurrentMetrics::Metric ActivePartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreePartsLoaderThreads;
+CurrentMetrics::Metric ActivePartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsLoaderThreadsActive;
 
-void ActivePartsLoadingThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The ActivePartsLoadingThreadPool thread pool is initialized twice");
-    }
+template class StaticThreadPool<PartsCleaningThreadPool>;
+std::unique_ptr<ThreadPool> PartsCleaningThreadPool::instance;
+CurrentMetrics::Metric PartsCleaningThreadPool::threads_metric = CurrentMetrics::MergeTreePartsCleanerThreads;
+CurrentMetrics::Metric PartsCleaningThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsCleanerThreadsActive;
 
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::MergeTreePartsLoaderThreads,
-        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
-        /* shutdown_on_exception= */ false);
-}
-
-ThreadPool & ActivePartsLoadingThreadPool::get()
-{
-    if (!instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The ActivePartsLoadingThreadPool thread pool is not initialized");
-    }
-
-    return *instance;
-}
-
-std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
+template class StaticThreadPool<OutdatedPartsLoadingThreadPool>;
 size_t OutdatedPartsLoadingThreadPool::max_threads_turbo;
-
-void OutdatedPartsLoadingThreadPool::initialize(size_t max_threads_, size_t max_threads_turbo_, size_t max_free_threads_, size_t queue_size_)
-{
-    if (instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is initialized twice");
-    }
-
-    max_threads_turbo = max_threads_turbo_;
-
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads,
-        CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive,
-        max_threads_,
-        max_free_threads_,
-        queue_size_,
-        /* shutdown_on_exception= */ false);
-}
+std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
+CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads;
+CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive;
 
 void OutdatedPartsLoadingThreadPool::turboMode()
 {
     if (!instance)
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
-    }
 
     instance->setMaxThreads(max_threads_turbo);
 }
 
-ThreadPool & OutdatedPartsLoadingThreadPool::get()
+void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo_)
 {
     if (!instance)
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
-    }
 
-    return *instance;
+    max_threads_turbo = max_threads_turbo_;
 }
-
-std::unique_ptr<ThreadPool> PartsCleaningThreadPool::instance;
-
-void PartsCleaningThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsCleaningThreadPool thread pool is initialized twice");
-    }
-
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::MergeTreePartsCleanerThreads,
-        CurrentMetrics::MergeTreePartsCleanerThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
-        /* shutdown_on_exception= */ false);
-}
-
-ThreadPool & PartsCleaningThreadPool::get()
-{
-    if (!instance)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsCleaningThreadPool thread pool is not initialized");
-    }
-
-    return *instance;
-}
-
 
 }
