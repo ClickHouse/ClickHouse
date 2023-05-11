@@ -106,7 +106,22 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    finalize();
+#ifndef NDEBUG
+    if (!finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromPocoSocket is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
 }
 
 }
