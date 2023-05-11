@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Accesses global state
-
 DROP TABLE IF EXISTS tbl1;
 CREATE TABLE tbl1 (x String) ENGINE=Memory;
 -- no commonalities between keys

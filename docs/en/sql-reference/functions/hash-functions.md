@@ -569,7 +569,7 @@ Time Hashing with Controllable Uniformity](https://doi.org/10.1145/3514221.35178
 
 Entropy-learned hashing has two phases:
 1. A training phase on a representative but typically small set of Strings to be hashed. Function `trainEntropyLearnedHash(data, id)`
-   calculates a minimal partial sub-key of `data` and stores it as `id`.
+   calculates a minimal partial sub-key of `data` and stores it as `id`. The training step outputs dummy `0` values.
 2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
    hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
 

@@ -34,7 +34,7 @@ using Key = String;
 using PartialKeyPositions = std::vector<size_t>;
 using Entropies = std::vector<size_t>;
 
-Key getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, Key & result)
+void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, Key & result)
 {
     result.clear();
     result.reserve(partial_key_positions.size());
@@ -42,17 +42,15 @@ Key getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_
     for (auto partial_key_position : partial_key_positions)
         if (partial_key_position < key.size())
             result.push_back(key[partial_key_position]);
-
-    return result;
 }
 
-bool allPartialKeysAreUnique(const std::vector<Key> & data, const PartialKeyPositions & partial_key_positions)
+bool allPartialKeysAreUnique(const std::vector<Key> & keys, const PartialKeyPositions & partial_key_positions)
 {
     std::unordered_set<Key> unique_partial_keys;
-    unique_partial_keys.reserve(data.size());
+    unique_partial_keys.reserve(keys.size());
     Key partial_key;
 
-    for (const auto & key : data)
+    for (const auto & key : keys)
     {
         getPartialKey(key, partial_key_positions, partial_key);
         if (!unique_partial_keys.insert(partial_key).second)
@@ -69,12 +67,13 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
     size_t best_position = 0;
 
     std::unordered_map<Key, size_t> count_table;
+    count_table.reserve(keys.size());
+
     Key partial_key;
 
     for (size_t i = 0; i < max_len; ++i)
     {
         count_table.clear();
-        count_table.reserve(keys.size());
 
         partial_key_positions.push_back(i);
         size_t collisions = 0;
@@ -94,15 +93,6 @@ std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, size_t max_len
 
     return {best_position, min_collisions};
 }
-
-// std::pair<size_t, size_t> nextByte(const std::vector<Key> & keys, PartialKeyPositions & partial_key_positions)
-// {
-//     size_t max_len = 0;
-//     for (const auto & key : keys)
-//         max_len = std::max(max_len, key.size());
-
-//     return nextByte(keys, max_len, partial_key_positions);
-// }
 
 std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<Key> & train_data)
 {
@@ -202,8 +192,8 @@ public:
             std::vector<Key> training_data;
             for (size_t i = 0; i < num_rows; ++i)
             {
-                std::string_view string_ref = col_data_string->getDataAt(i).toView();
-                training_data.emplace_back(string_ref.data(), string_ref.size());
+                std::string_view string_view = col_data_string->getDataAt(i).toView();
+                training_data.emplace_back(string_view.data(), string_view.size());
             }
 
             PartialKeyPositions partial_key_positions = chooseBytes(training_data).first;
