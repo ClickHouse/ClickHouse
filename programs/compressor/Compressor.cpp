@@ -95,7 +95,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         po::variables_map options;
         po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
 
-        if (options.count("help"))
+        if (options.count("help")
+            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
         {
             std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
             std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;

@@ -1238,6 +1238,7 @@ try
     po::store(parsed, options);
 
     if (options.count("help")
+        || (options.count("host") && options["host"].as<std::string>() == "elp")
         || !options.count("seed")
         || !options.count("input-format")
         || !options.count("output-format"))

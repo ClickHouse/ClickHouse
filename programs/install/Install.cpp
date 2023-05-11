@@ -229,7 +229,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.count("help")
+            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';

@@ -109,7 +109,9 @@ void DisksApp::init(std::vector<String> & common_arguments)
 
     po::notify(options);
 
-    if (options.count("help"))
+    if (options.count("help")
+        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
+
     {
         printHelpMessage(options_description);
         exit(0); // NOLINT(concurrency-mt-unsafe)

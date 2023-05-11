@@ -744,32 +744,14 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 #else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
-    std::cout << getHelpFooter() << "\n";
+//    std::cout << getHelpFooter() << "\n";
 #endif
 }
 
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
-    options_description.main_description->add_options()
-        ("table,N", po::value<std::string>(), "name of the initial table")
-
-        /// If structure argument is omitted then initial query is not generated
-        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
-
-        ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
-
-        ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
-        ("logger.log", po::value<std::string>(), "Log file name")
-        ("logger.level", po::value<std::string>(), "Log level")
-
-        ("no-system-tables", "do not attach system tables (better startup time)")
-        ("path", po::value<std::string>(), "Storage path")
-        ("only-system-tables", "attach only system tables from specified path")
-        ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
-        ;
+    cout << "If you want to have more information, you can go to https://clickhouse.com/docs"
 }
 
 

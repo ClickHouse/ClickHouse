@@ -72,7 +72,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         po::notify(options);
 
-        if (options.count("help"))
+        if (options.count("help")
+            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
         {
             std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;

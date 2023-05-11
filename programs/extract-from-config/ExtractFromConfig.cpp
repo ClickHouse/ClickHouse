@@ -144,7 +144,8 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::variables_map options;
         po::store(po::command_line_parser(argc, argv).options(options_desc).positional(positional_desc).run(), options);
 
-        if (options.count("help"))
+        if (options.count("help")
+            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
         {
             std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;

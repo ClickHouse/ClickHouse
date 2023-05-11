@@ -159,7 +159,8 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.empty() || options.count("help"))
+    if (options.empty() || options.count("help")
+        || (options.count("host") && options["host"].as<std::string>() == "elp"))
     {
         std::cout << description << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)

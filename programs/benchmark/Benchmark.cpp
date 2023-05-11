@@ -695,7 +695,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        settings.addProgramOptions(desc);
+//        settings.addProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -703,7 +703,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         clearPasswordFromCommandLine(argc, argv);
 
-        if (options.count("help"))
+        if (options.count("help")
+            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
