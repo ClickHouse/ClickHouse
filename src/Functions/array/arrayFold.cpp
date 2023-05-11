@@ -17,11 +17,11 @@ namespace ErrorCodes
 
 /** arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) - apply the expression to each element of the array (or set of parallel arrays).
   */
-class ArrayFoldOld : public IFunction
+class ArrayFold : public IFunction
 {
 public:
-    static constexpr auto name = "arrayFoldOld";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<ArrayFoldOld>(); }
+    static constexpr auto name = "arrayFold";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<ArrayFold>(); }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -66,7 +66,7 @@ public:
         return DataTypePtr(accumulator_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & column_with_type_and_name = arguments[0];
 
@@ -121,47 +121,95 @@ public:
                                                       recursiveRemoveLowCardinality(array_type->getNestedType()),
                                                       array_with_type_and_name.name));
         }
-        arrays.emplace_back(arguments.back());
 
-        MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-        size_t arr_cursor = 0;
-        for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
+        ssize_t rows_count = input_rows_count;
+        ssize_t data_row_count = arrays[0].column->size();
+        auto array_count = arrays.size();
+
+        MutableColumnPtr current_column;
+        current_column = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        if (rows_count == 0) 
+            return current_column;
+        current_column->insertMany((*arguments.back().column)[0], rows_count);
+
+        MutableColumnPtr result_data = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        
+        size_t max_array_size = 0;
+        auto& offsets = column_first_array->getOffsets();
+
+        //get columns of Nth array elements 
+        IColumn::Selector selector(data_row_count);
+        size_t cur_ind = 0;
+        ssize_t cur_arr = 0;
+
+        if (data_row_count) 
+            while (offsets[cur_arr] == 0)
+                ++cur_arr;
+
+        for (ssize_t i = 0; i < data_row_count; ++i)
         {
-            // Make accumulator column for this row. We initialize it
-            // with the starting value given as the last argument.
-            ColumnWithTypeAndName accumulator_column = arguments.back();
-            ColumnPtr acc(accumulator_column.column->cut(irow, 1));
-            auto accumulator = ColumnWithTypeAndName(acc,
-                                                     accumulator_column.type,
-                                                     accumulator_column.name);
-            ColumnPtr res(acc);
-            size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
-            for (; arr_cursor < arr_next; ++arr_cursor)
+            selector[i] = cur_ind++;
+            if (cur_ind > max_array_size)
+                max_array_size = cur_ind;
+            while (cur_arr < rows_count && cur_ind >= offsets[cur_arr] - offsets[cur_arr - 1])
             {
-                // Make slice of input arrays and accumulator for lambda
-                ColumnsWithTypeAndName iter_arrays;
-                iter_arrays.reserve(arrays.size() + 1);
-                for (size_t icolumn = 0; icolumn < arrays.size() - 1; ++icolumn)
-                {
-                    auto const & arr = arrays[icolumn];
-                    iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(arr_cursor, 1),
-                                                                   arr.type,
-                                                                   arr.name));
-                }
-                iter_arrays.emplace_back(accumulator);
-                // Calculate function on arguments
-                auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(ColumnArray::Offsets(column_first_array->getOffsets().size(), 1)));
-                auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-                replicated_column_function->appendArguments(iter_arrays);
-                auto lambda_result = replicated_column_function->reduce().column;
-                if (lambda_result->lowCardinality())
-                    lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-                res = lambda_result->cut(0, 1);
-                accumulator.column = res;
+                ++cur_arr;
+                cur_ind = 0;
             }
-            result->insert((*res)[0]);
         }
-        return result;
+            
+        std::vector<MutableColumns> data_arrays;        
+        data_arrays.resize(array_count);
+
+        for (size_t i = 0; i < array_count; ++i)
+            data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
+        
+        size_t prev_size = rows_count;
+        IColumn::Permutation inverse_permutation(rows_count);
+        size_t inverse_permutation_count = 0;
+
+        for (size_t ind = 0; ind < max_array_size; ++ind) 
+        {
+            IColumn::Selector prev_selector(prev_size);
+            size_t prev_ind = 0;
+            for (ssize_t irow = 0; irow < rows_count; ++irow)
+            {
+                if (offsets[irow] - offsets[irow - 1] > ind)
+                {
+                    prev_selector[prev_ind++] = 1;
+                }
+                else if (offsets[irow] - offsets[irow - 1] == ind) 
+                {
+                    inverse_permutation[inverse_permutation_count++] = irow;
+                    prev_selector[prev_ind++] = 0;
+                }
+            }
+            auto prev = current_column->scatter(2, prev_selector);
+
+            result_data->insertRangeFrom(*(prev[0]), 0, prev[0]->size());
+
+            auto res_lambda = column_function->cloneResized(prev[1]->size());
+            auto * res_lambda_ptr = typeid_cast<ColumnFunction *>(res_lambda.get());
+            
+            for (size_t i = 0; i < array_count; i++)
+                res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(data_arrays[i][ind]), arrays[i].type, arrays[i].name)}));
+            
+            res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(prev[1]), arguments.back().type, arguments.back().name)}));
+            
+            current_column = IColumn::mutate(res_lambda_ptr->reduce().column);
+            prev_size = current_column->size();
+        }
+
+        result_data->insertRangeFrom(*current_column, 0, current_column->size());
+        for (ssize_t irow = 0; irow < rows_count; ++irow)
+            if (offsets[irow] - offsets[irow - 1] == max_array_size)
+                inverse_permutation[inverse_permutation_count++] = irow;
+
+        IColumn::Permutation perm(rows_count);
+        for (ssize_t i = 0; i < rows_count; i++)
+            perm[inverse_permutation[i]] = i;
+        
+        return result_data->permute(perm, 0);
     }
 
 private:
@@ -172,9 +220,9 @@ private:
 };
 
 
-REGISTER_FUNCTION(ArrayFoldOld)
+REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<ArrayFoldOld>();
+    factory.registerFunction<ArrayFold>();
 }
 
 
