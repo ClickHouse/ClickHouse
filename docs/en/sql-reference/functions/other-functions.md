@@ -2617,18 +2617,13 @@ Generates random table structure in a format `column1_name column1_type, column2
 **Syntax**
 
 ``` sql
-generateRandomStructure([number_of_columns, seed, allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys])
+generateRandomStructure([number_of_columns, seed])
 ```
 
 **Arguments**
 
 - `number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
 - `seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
-- `allow_big_numbers` - Indicates if big number types (`Int128/UInt128/Int256/UInt256/Decimal128/Decinal256`) can be generated. Default value: true.
-- `allow_enums` - Indicates if enum types (`Enum8/Enum16`) can be generated. Default - true.
-- `allow_decimals` - Indicates if decimal types (`Decimal(P, S)`) can be generated. Default - true.
-- `allow_ip` - Indicates if ip types (`IPv4/IPv6`) can be generated. Default - true.
-- `allow_only_string_map_keys` - Indicates if Map key type can be only `String/FixedString`. Default - false.
 
 All arguments must be constant.
 
@@ -2671,41 +2666,16 @@ Result:
 Query:
 
 ``` sql
-SELECT generateRandomStructure(Null, 11)
+SELECT generateRandomStructure(NULL, 33)
 ```
 
 Result:
 
 ``` text
-┌─generateRandomStructure(0, 11)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ c1 Date32, c2 String, c3 IPv6, c4 DateTime, c5 UInt16, c6 Tuple(e1 UInt32, e2 Date, e3 Date, e4 IPv6, e5 Nested(e1 DateTime, e2 FixedString(110), e3 Int256, e4 Array(Decimal64(4)), e5 Decimal128(18), e6 Enum16('v0' = 0, 'v1' = 1, 'v2' = 2, 'v3' = 3, 'v4' = 4)), e6 DateTime64(4)), c7 DateTime, c8 DateTime64(6), c9 Bool │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─generateRandomStructure(NULL, 33)─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70))) │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-``` sql
-SELECT generateRandomStructure(6, Null, false, false)
-```
-
-Result:
-
-``` text
-┌─generateRandomStructure(6, NULL, false, false)───────────────────────────────────────────────────────┐
-│ c1 Float32, c2 Tuple(DateTime), c3 UInt8, c4 UInt16, c5 Int64, c6 Array(Map(FixedString(108), Date)) │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT generateRandomStructure(6, Null, false, false, false, false, true)
-```
-
-Result:
-
-``` text
-┌─generateRandomStructure(6, NULL, false, false, false, false, true)─────────────────────────────────────────────────┐
-│ c1 String, c2 UInt32, c3 Int32, c4 Int32, c5 Tuple(LowCardinality(Nullable(FixedString(101))), UInt8), c6 DateTime │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 
 This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
 
