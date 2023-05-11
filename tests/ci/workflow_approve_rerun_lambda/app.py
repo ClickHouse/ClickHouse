@@ -12,12 +12,11 @@ import boto3  # type: ignore
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
 SUSPICIOUS_PATTERNS = [
-    "tests/ci/*",
-    "docs/tools/*",
     ".github/*",
-    "utils/release/*",
     "docker/*",
-    "release",
+    "docs/tools/*",
+    "packages/*",
+    "tests/ci/*",
 ]
 
 # Number of retries for API calls.
@@ -313,11 +312,12 @@ def check_suspicious_changed_files(changed_files):
                 )
                 return True
 
-    print("No changed files match suspicious patterns, run will be approved")
+    print("No changed files match suspicious patterns, run could be approved")
     return False
 
 
 def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
+    print("Approving run")
     url = f"{workflow_description.api_url}/approve"
     _exec_post_with_retry(url, token)
 
@@ -478,6 +478,11 @@ def main(event):
     if is_trusted_contributor(author, author_orgs):
         print("Contributor is trusted, approving run")
         approve_run(workflow_description, token)
+        return
+
+    labels = {label["name"] for label in pull_request["labels"]}
+    if "can be tested" not in labels:
+        print("Label 'can be tested' is required for untrusted users")
         return
 
     changed_files = get_changed_files_for_pull_request(pull_request, token)
