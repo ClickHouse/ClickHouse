@@ -260,17 +260,6 @@ void PocoHTTPClient::makeRequestInternal(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-#if 0
-    auto provider_type = getProviderTypeFromURL(uri);
-
-    if (provider_type == ProviderType::GCS)
-    {
-        /// some GCS requests don't like S3 specific headers that the client sets
-        request.DeleteHeader("x-amz-api-version");
-        request.DeleteHeader("amz-sdk-invocation-id");
-        request.DeleteHeader("amz-sdk-request");
-    }
-#endif
 
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", uri);
