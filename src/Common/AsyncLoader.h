@@ -228,6 +228,14 @@ inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
     return result;
 }
 
+inline LoadJobSet getGoalsOr(const LoadTaskPtrs & tasks, const LoadJobSet & alternative)
+{
+    LoadJobSet result;
+    for (const auto & task : tasks)
+        result.insert(task->goals().begin(), task->goals().end());
+    return result.empty() ? alternative : result;
+}
+
 inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
 {
     LoadJobSet result;

@@ -87,7 +87,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         const auto & path_and_query = metadata.parsed_tables[table_name];
         auto task = databases[table_name.database]->loadTableFromMetadataAsync(
             async_loader,
-            load_dependency_tasks.empty() ? load_after : getGoals(load_dependency_tasks),
+            getGoalsOr(load_dependency_tasks, load_after),
             load_context,
             path_and_query.path,
             table_name,
@@ -117,21 +117,16 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     }
 
     /// Make startup database tasks
-    for (auto [database_name, startup_table_tasks] : startup_database)
+    for (auto & database_name : databases_to_load)
     {
         auto task = databases[database_name]->startupDatabaseAsync(
             async_loader,
-            getGoals(startup_table_tasks),
+            getGoalsOr(startup_database[database_name], startup_after),
             strictness_mode);
         startup_tasks.push_back(task);
     }
 
     return startup_tasks;
-}
-
-LoadJobSet TablesLoader::goals()
-{
-    return getGoals(startup_tasks);
 }
 
 void TablesLoader::buildDependencyGraph()

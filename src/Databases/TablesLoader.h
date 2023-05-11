@@ -63,9 +63,6 @@ public:
     /// Must be called only after `loadTablesAsync()`.
     [[nodiscard]] LoadTaskPtrs startupTablesAsync(LoadJobSet startup_after = {});
 
-    /// Set of goal jobs for the whole loading process. Useful for scheduling more tasks after table loading
-    LoadJobSet goals();
-
 private:
     ContextMutablePtr global_context;
     Databases databases;
