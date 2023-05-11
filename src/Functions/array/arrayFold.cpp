@@ -126,23 +126,22 @@ public:
         ssize_t data_row_count = arrays[0].column->size();
         auto array_count = arrays.size();
 
-        MutableColumnPtr current_column;
-        current_column = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-        if (rows_count == 0) 
-            return current_column;
-        current_column->insertMany((*arguments.back().column)[0], rows_count);
-
+        if (rows_count == 0)
+            return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        
+        ColumnPtr current_column;
+        current_column = arguments.back().column->convertToFullColumnIfConst();
         MutableColumnPtr result_data = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
         
         size_t max_array_size = 0;
         auto& offsets = column_first_array->getOffsets();
 
-        //get columns of Nth array elements 
+        //get columns of Nth array elements
         IColumn::Selector selector(data_row_count);
         size_t cur_ind = 0;
         ssize_t cur_arr = 0;
 
-        if (data_row_count) 
+        if (data_row_count)
             while (offsets[cur_arr] == 0)
                 ++cur_arr;
 
@@ -157,8 +156,8 @@ public:
                 cur_ind = 0;
             }
         }
-            
-        std::vector<MutableColumns> data_arrays;        
+
+        std::vector<MutableColumns> data_arrays;
         data_arrays.resize(array_count);
 
         for (size_t i = 0; i < array_count; ++i)
@@ -168,7 +167,7 @@ public:
         IColumn::Permutation inverse_permutation(rows_count);
         size_t inverse_permutation_count = 0;
 
-        for (size_t ind = 0; ind < max_array_size; ++ind) 
+        for (size_t ind = 0; ind < max_array_size; ++ind)
         {
             IColumn::Selector prev_selector(prev_size);
             size_t prev_ind = 0;
@@ -178,7 +177,7 @@ public:
                 {
                     prev_selector[prev_ind++] = 1;
                 }
-                else if (offsets[irow] - offsets[irow - 1] == ind) 
+                else if (offsets[irow] - offsets[irow - 1] == ind)
                 {
                     inverse_permutation[inverse_permutation_count++] = irow;
                     prev_selector[prev_ind++] = 0;
@@ -193,7 +192,6 @@ public:
             
             for (size_t i = 0; i < array_count; i++)
                 res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(data_arrays[i][ind]), arrays[i].type, arrays[i].name)}));
-            
             res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(prev[1]), arguments.back().type, arguments.back().name)}));
             
             current_column = IColumn::mutate(res_lambda_ptr->reduce().column);
@@ -208,7 +206,6 @@ public:
         IColumn::Permutation perm(rows_count);
         for (ssize_t i = 0; i < rows_count; i++)
             perm[inverse_permutation[i]] = i;
-        
         return result_data->permute(perm, 0);
     }
 
