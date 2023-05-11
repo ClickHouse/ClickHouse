@@ -170,7 +170,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
+            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
 }
