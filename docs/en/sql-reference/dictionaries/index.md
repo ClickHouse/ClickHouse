@@ -2218,8 +2218,6 @@ LAYOUT(regexp_tree)
 ...
 ```
 
-We only allow `YAMLRegExpTree` to work with regexp_tree dicitionary layout. If you want to use other sources, please set variable `regexp_dict_allow_other_sources` true.
-
 **Source**
 
 We introduce a type of source called `YAMLRegExpTree` representing the structure of Regexp Tree dictionary. An Example of a valid yaml config is like:

@@ -683,9 +683,11 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
 
 Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
 {
+
     auto it = regex_nodes.begin();
     size_t block_size = 0;
     BlocksList result;
+
     for (;;)
     {
         Block block;
@@ -694,6 +696,7 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
         auto col_regex = std::make_shared<DataTypeString>()->createColumn();
         auto col_keys = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())->createColumn();
         auto col_values = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())->createColumn();
+
         for (;it != regex_nodes.end() && block_size < max_block_size; it++, block_size++)
         {
             col_id->insert(it->first);
@@ -709,6 +712,7 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             col_keys->insert(Array(keys.begin(), keys.end()));
             col_values->insert(Array(values.begin(), values.end()));
         }
+
         block.insert(ColumnWithTypeAndName(std::move(col_id),std::make_shared<DataTypeUInt64>(),kId));
         block.insert(ColumnWithTypeAndName(std::move(col_pid),std::make_shared<DataTypeUInt64>(),kParentId));
         block.insert(ColumnWithTypeAndName(std::move(col_regex),std::make_shared<DataTypeString>(),kRegExp));
@@ -719,6 +723,7 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             break;
         block_size = 0;
     }
+
     return Pipe(std::make_shared<BlocksListSource>(std::move(result)));
 }
 

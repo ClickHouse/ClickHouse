@@ -93,7 +93,7 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `hasKeys`", name);
     }
 
-    Pipe read(const Names &, size_t, size_t) const override;
+    Pipe read(const Names & columns, size_t max_block_size, size_t num_streams) const override;
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
