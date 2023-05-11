@@ -61,26 +61,26 @@ public:
 
         offsets_to.resize(input_rows_count);
 
-        const IColumn & length_column = *arguments[0].column;
-        size_t summary_utf8_len = 0;
+        const IColumn & col_length = *arguments[0].column;
+        size_t total_codepoints = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            size_t utf8_len = length_column.getUInt(row_num);
-            summary_utf8_len += utf8_len;
+            size_t codepoints = col_length.getUInt(row_num);
+            total_codepoints += codepoints;
         }
 
         /* As we generate only assigned planes, the mathematical expectation of the number of bytes
          * per generated code point ~= 3.85. So, reserving for coefficient 4 will not be an overhead
          */
 
-        if (summary_utf8_len > (1 << 29))
+        if (total_codepoints > (1 << 29))
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-        size_t size_in_bytes_with_margin = summary_utf8_len * 4 + input_rows_count;
-        data_to.resize(size_in_bytes_with_margin);
-        pcg64_fast rng(randomSeed()); // TODO It is inefficient. We should use SIMD PRNG instead.
+        size_t max_byte_size = total_codepoints * 4 + input_rows_count;
+        data_to.resize(max_byte_size);
 
-        const auto generate_code_point = [](UInt32 rand) -> UInt32 {
+        const auto generate_code_point = [](UInt32 rand)
+        {
             /// We want to generate number in [0x0, 0x70000) and shift it if need
 
             /// Generate highest byte in [0, 6]
@@ -104,43 +104,41 @@ public:
             return code_point;
         };
 
+        pcg64_fast rng(randomSeed());
         IColumn::Offset offset = 0;
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            size_t utf8_len = length_column.getUInt(row_num);
+            size_t codepoints = col_length.getUInt(row_num);
             auto * pos = data_to.data() + offset;
 
-            size_t last_writen_bytes = 0;
-            size_t i = 0;
-            for (; i < utf8_len; i += 2)
+            for (size_t i = 0; i < codepoints; i +=2)
             {
-                UInt64 rand = rng();
+                UInt64 rand = rng(); /// that's the bottleneck
 
                 UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
-                UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
 
-                /// We have padding in column buffers that we can overwrite.
-                size_t length1 = UTF8::convertCodePointToUTF8(code_point1, pos, sizeof(int));
-                assert(length1 <= 4);
-                pos += length1;
+                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, pos, 4);
+                chassert(bytes1 <= 4);
+                pos += bytes1;
 
-                size_t length2 = UTF8::convertCodePointToUTF8(code_point2, pos, sizeof(int));
-                assert(length2 <= 4);
-                last_writen_bytes = length2;
-                pos += last_writen_bytes;
+                if (i + 1 != codepoints)
+                {
+                    UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
+                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, pos, 4);
+                    chassert(bytes2 <= 4);
+                    pos += bytes2;
+                }
             }
-            offset = pos - data_to.data() + 1;
-            if (i > utf8_len)
-            {
-                offset -= last_writen_bytes;
-            }
+
+            *pos = 0;
+            ++pos;
+
+            offset = pos - data_to.data();
             offsets_to[row_num] = offset;
         }
 
-        /// Put zero bytes in between.
-        auto * pos = data_to.data();
-        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            pos[offsets_to[row_num] - 1] = 0;
+        data_to.resize(offset);
 
         return col_to;
     }
