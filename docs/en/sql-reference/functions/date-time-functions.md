@@ -139,7 +139,7 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timeZone
 
-Returns the default timezone of the server for current session. This can be modified using `SET session_timezone = 'New/Value'`
+Returns the default timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
@@ -156,9 +156,13 @@ Alias: `timezone`.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
+**See also**
+
+- [serverTimeZone](#serverTimeZone)
+
 ## serverTimeZone
 
-Returns the actual timezone in which the server runs in.
+Returns the default timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 **Syntax**
@@ -174,6 +178,10 @@ Alias: `ServerTimezone`, `servertimezone`.
 -   Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [timeZone](#timeZone)
 
 ## toTimeZone
 
@@ -408,7 +416,7 @@ Result:
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
+Thes return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
 * `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
