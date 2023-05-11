@@ -50,7 +50,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
 #else
@@ -151,10 +151,8 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     /// Do not allow to use asynchronous version of LocalFSReadMethod.
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
-    // The buffer will unnecessarily allocate a Memory of size local_fs_buffer_size, which will then
-    // most likely be unused because we're swap()ping our own internal_buffer into
-    // implementation_buffer before each read. But we can't just set local_fs_buffer_size = 0 here
-    // because some buffer implementations actually use that memory (e.g. for prefetching).
+    if (use_external_buffer)
+        local_read_settings.local_fs_buffer_size = 0;
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
 
