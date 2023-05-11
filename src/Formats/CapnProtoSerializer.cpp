@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_CAPNP
+
 #include <Formats/CapnProtoSerializer.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/CapnProtoSchema.h>
@@ -1216,3 +1220,5 @@ void CapnProtoSerializer::readRow(MutableColumns & columns, capnp::DynamicStruct
 CapnProtoSerializer::~CapnProtoSerializer() = default;
 
 }
+
+#endif
