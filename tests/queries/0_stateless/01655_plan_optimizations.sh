@@ -56,7 +56,7 @@ $CLICKHOUSE_CLIENT -q "
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
-    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION _CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))"
+    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 4) :: 1, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4)) UInt8 : 2"
 $CLICKHOUSE_CLIENT -q "
     select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
