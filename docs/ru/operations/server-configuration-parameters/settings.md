@@ -1355,6 +1355,10 @@ Parameters:
 <timezone>Europe/Moscow</timezone>
 ```
 
+**См. также**
+
+- [session_timezone](../settings/settings.md#session_timezone)
+
 ## tcp_port {#server_configuration_parameters-tcp_port}
 
 Порт для взаимодействия с клиентами по протоколу TCP.

@@ -80,7 +80,8 @@ void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     readCSV(value, istr, time_zone);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
 }
-SerializationDate::SerializationDate(const TimezoneMixin & time_zone_) : TimezoneMixin(time_zone_)
+
+SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }
 

@@ -78,7 +78,8 @@ void SerializationDate32::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     readCSV(value, istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(value.getExtenedDayNum());
 }
-SerializationDate32::SerializationDate32(const TimezoneMixin & time_zone_) : TimezoneMixin(time_zone_)
+
+SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }
 }

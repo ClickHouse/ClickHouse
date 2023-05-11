@@ -4036,23 +4036,25 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## session_timezone {#session_timezone}
 
-If specified, sets an implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
-Setting this to `''` (empty string) effectively resets implicit timezone to server timezone.
+If specified, sets an implicit timezone (instead of [server default](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
+A value of `''` (empty string) configures the session timezone to the server default timezone.
+
 Examples:
 
-```clickhouse
+```sql
 SELECT timeZone(), serverTimezone() FORMAT TSV
 
 Europe/Berlin	Europe/Berlin
 ```
 
-```clickhouse
+```sql
 SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
 
 Asia/Novosibirsk	Europe/Berlin
 ```
 
-```clickhouse
+```sql
 SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
 
 1999-12-13 07:23:23.123
@@ -4063,6 +4065,10 @@ Possible values:
 -    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
 
 Default value: `''`.
+
+**See also**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 
 ## final {#final}
 
