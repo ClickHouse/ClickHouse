@@ -338,6 +338,9 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/libfiu"]
+	path = contrib/libfiu
+	url = https://github.com/ClickHouse/libfiu.git
 [submodule "contrib/isa-l"]
 	path = contrib/isa-l
 	url = https://github.com/ClickHouse/isa-l.git
