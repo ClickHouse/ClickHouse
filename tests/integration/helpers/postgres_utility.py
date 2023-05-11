@@ -87,7 +87,9 @@ def create_postgres_table(
     else:
         name = f"{database_name}.{table_name}"
     drop_postgres_table(cursor, name)
-    cursor.execute(template.format(name))
+    query = template.format(name)
+    cursor.execute(query)
+    print(f"Query: {query}")
     if replica_identity_full:
         cursor.execute(f"ALTER TABLE {name} REPLICA IDENTITY FULL;")
 
@@ -129,6 +131,9 @@ class PostgresManager:
             self.prepare()
             raise ex
 
+    def execute(self, query):
+        self.cursor.execute(query)
+
     def prepare(self):
         self.conn = get_postgres_conn(ip=self.ip, port=self.port)
         self.cursor = self.conn.cursor()
@@ -141,6 +146,7 @@ class PostgresManager:
                 database_name=self.default_database,
             )
             self.cursor = self.conn.cursor()
+            self.create_clickhouse_postgres_db()
 
     def clear(self):
         if self.conn.closed == 0:
@@ -164,11 +170,11 @@ class PostgresManager:
         return self.conn.cursor()
 
     def database_or_default(self, database_name):
-        if database_name == "" and self.default_database == "":
-            raise Exception("Database name is empty")
-        if database_name == "":
-            database_name = self.default_database
-        return database_name
+        if database_name != "":
+            return database_name
+        if self.default_database != "":
+            return self.default_database
+        raise Exception("Database name is empty")
 
     def create_postgres_db(self, database_name=""):
         database_name = self.database_or_default(database_name)
@@ -186,8 +192,11 @@ class PostgresManager:
         self,
         database_name="",
         schema_name="",
+        postgres_database="",
     ):
         database_name = self.database_or_default(database_name)
+        if postgres_database == "":
+            postgres_database = database_name
         self.drop_clickhouse_postgres_db(database_name)
         self.created_ch_postgres_db_list.add(database_name)
 
@@ -195,13 +204,13 @@ class PostgresManager:
             self.instance.query(
                 f"""
                     CREATE DATABASE {database_name}
-                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{database_name}', 'postgres', 'mysecretpassword')"""
+                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword')"""
             )
         else:
             self.instance.query(
                 f"""
                 CREATE DATABASE {database_name}
-                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{database_name}', 'postgres', 'mysecretpassword', '{schema_name}')"""
+                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword', '{schema_name}')"""
             )
 
     def drop_clickhouse_postgres_db(self, database_name=""):
@@ -239,6 +248,16 @@ class PostgresManager:
         if materialized_database in self.created_materialized_postgres_db_list:
             self.created_materialized_postgres_db_list.remove(materialized_database)
 
+    def create_postgres_schema(self, name):
+        create_postgres_schema(self.cursor, name)
+
+    def create_postgres_table(
+        self, table_name, database_name="", template=postgres_table_template
+    ):
+        create_postgres_table(
+            self.cursor, table_name, database_name=database_name, template=template
+        )
+
     def create_and_fill_postgres_table(self, table_name, database_name=""):
         create_postgres_table(self.cursor, table_name, database_name)
         database_name = self.database_or_default(database_name)
@@ -246,22 +265,14 @@ class PostgresManager:
             f"INSERT INTO {database_name}.{table_name} SELECT number, number from numbers(50)"
         )
 
-    def create_and_fill_postgres_tables(self, tables_num, numbers=50):
-        conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
-        cursor = conn.cursor()
-        self.create_and_fill_postgres_tables_from_cursor(
-            cursor, tables_num, numbers=numbers
-        )
-
-    def create_and_fill_postgres_tables_from_cursor(
-        self, cursor, tables_num, numbers=50
-    ):
+    def create_and_fill_postgres_tables(self, tables_num, numbers=50, database_name=""):
         for i in range(tables_num):
             table_name = f"postgresql_replica_{i}"
-            create_postgres_table(cursor, table_name)
+            create_postgres_table(self.cursor, table_name, database_name)
             if numbers > 0:
+                db = self.database_or_default(database_name)
                 self.instance.query(
-                    f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers({numbers})"
+                    f"INSERT INTO {db}.{table_name} SELECT number, number from numbers({numbers})"
                 )
 
 
