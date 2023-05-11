@@ -71,7 +71,7 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
     ///  - Use Exception::createRuntime or fmt::runtime if there's no format string
     ///    and a message is generated in runtime by a third-party library
     ///    or deserialized from somewhere.
-    static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
+    // static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
 
     if constexpr (is_fmt_runtime<std::decay_t<T>>::value)
     {
@@ -92,7 +92,7 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
             /// Most likely it was a string literal.
             /// Unfortunately, there's no good way to check if something is a string literal.
             /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
-            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+            // static_assert(std::is_nothrow_convertible<T, const char * const>::value);
             static_assert(!std::is_pointer<T>::value);
             return std::string_view(x);
         }

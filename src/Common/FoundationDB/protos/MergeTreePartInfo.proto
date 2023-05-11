@@ -1,0 +1,85 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+import "UUID.proto";
+import "Field.proto";
+
+
+message MergeTreePartDiskMeta {
+    string part_name = 1;
+    string disk_name = 2;
+    string path = 3;
+    string part_type = 4;
+}
+message MergeTreeDetachedPartMeta{
+    string disk_name=1;
+    string dir_name=2;
+    string part_name=3;
+}
+message MergeTreePartMeta {
+    string meta_name = 1;
+    UUID meta_uuid = 2;
+    uint64 meta_rows_count = 3;
+    uint64 meta_modification_time = 4;
+    uint64 meta_bytes_on_disk = 5;
+    repeated Range meta_minmax = 6;
+    map<string, Checksum> meta_checksums = 7;
+    repeated ColInfo meta_col = 8;
+    repeated IndexRowValue meta_index = 9;
+    TTLInfos meta_ttl_infos = 10;
+    repeated Field meta_partition = 11;
+    string meta_default_codec = 12;
+    bytes meta_serialization_infos = 13;
+
+    message Range {
+        Field left = 1;
+        bool left_included = 2;
+        Field right = 3;
+        bool right_included = 4;
+    }
+
+    message Checksum {
+        uint64 file_size = 1;
+        UInt128 file_hash = 2;
+        bool is_compressed = 3;
+        uint64 uncompressed_size = 4;
+        UInt128 uncompressed_hash = 5;
+    }
+
+    message RowValue {
+        string column_name = 1;
+        string column_type = 2;
+        bytes column_val = 3;
+    } 
+
+    message IndexRowValue {
+        repeated RowValue val = 1;
+    }
+
+    message TTLInfo {
+        uint64 min = 1;
+        uint64 max = 2;
+        bool finished = 3;
+    }
+
+    message TTLInfos {
+        uint64 part_min_ttl = 1;
+        uint64 part_max_ttl = 2;
+        map<string, TTLInfo> columns_ttl = 3;
+        TTLInfo table_ttl = 4;
+        map<string, TTLInfo> rows_where_ttl = 5;
+        map<string, TTLInfo> moves_ttl = 6;
+        map<string, TTLInfo> recompression_ttl = 7;
+        map<string, TTLInfo> group_by_ttl = 8;
+    }
+
+    message ColumnInfo {
+        string kind = 1;
+        uint64 num_rows = 2;
+        uint64 num_defaults = 3;
+    }
+
+    message ColInfo {
+        string column_name = 1;
+        string column_type = 2;
+    }
+}

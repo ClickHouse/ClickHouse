@@ -1,0 +1,7 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message UUID {
+    uint64 high_int64 = 1;
+    uint64 low_int64 = 2;
+}

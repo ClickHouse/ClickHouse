@@ -335,3 +335,7 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/foundationdb"]
+	path = contrib/foundationdb
+	url = https://git.moqi.ai/mqdb/ecnu/foundationdb.git
+	branch = main

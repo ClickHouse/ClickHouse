@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f069909c0..14e037c9d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -51,6 +51,8 @@ endif()
+ set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+ set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/lib)
+ 
++add_definitions(-Dbasename=_FDB_basename)
++
+ ################################################################################
+ # Packages used for bindings
+ ################################################################################

@@ -1,0 +1,6 @@
+<clickhouse>
+    <foundationdb>
+        <cluster_file>/etc/foundationdb/fdb.cluster</cluster_file>
+        <meta_node_id>instance-0</meta_node_id>
+    </foundationdb>
+</clickhouse>

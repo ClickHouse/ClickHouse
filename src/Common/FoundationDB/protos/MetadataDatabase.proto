@@ -1,0 +1,7 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message MetadataDatabase {
+    string name = 1;
+    string sql = 2;
+}

@@ -1,0 +1,6 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message IPv4 {
+    uint32 value = 1;
+}
