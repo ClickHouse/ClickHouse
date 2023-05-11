@@ -6,6 +6,11 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
+#include <Server/WebSocket/WriteBufferFromWebSocket.h>
+#include <Interpreters/executeQuery.h>
+
+#include <IO/ReadBufferFromString.h>
+
 
 #include <Poco/JSON/Object.h>
 #include <boost/noncopyable.hpp>
@@ -27,11 +32,9 @@ private:
     std::unique_ptr<Session> session;
 
     void processQuery(
-//        HTTPServerRequest & request,
-//        HTMLForm & params,
-//        WriteBuffer & simple_output,
-//        ReadBuffer & web_socket_input,
-//        std::optional<CurrentThread::QueryScope> & query_scope
+        Poco::JSON::Object & request,
+        WriteBuffer & output,
+        std::optional<CurrentThread::QueryScope> & query_scope
     );
 };
 }

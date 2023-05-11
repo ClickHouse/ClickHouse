@@ -10,34 +10,27 @@ namespace DB
 
 
 void WebSocketRequestHandler::processQuery(
-//    HTTPServerRequest & request,
-//    HTMLForm & params,
-//    WriteBuffer & simple_output,
-//    ReadBuffer & web_socket_input,
-//    std::optional<CurrentThread::QueryScope> & query_scope
+    Poco::JSON::Object & request,
+    WriteBuffer & output,
+    std::optional<CurrentThread::QueryScope> & query_scope
 )
 {
     // TODO: make appropriate changes to make this thing work
 //    using namespace Poco::Net;
-//
+
 //    /// The user could specify session identifier and session timeout.
 //    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-//    String session_id;
-//    std::chrono::steady_clock::duration session_timeout;
-//    bool session_is_set = params.has("session_id");
-//    const auto & config = server.config();
+//     const auto & config = server.config();
 //
-//    if (session_is_set)
-//    {
-//        session_id = params.get("session_id");
-////        session_timeout = parseSessionTimeout(config, params);
-//        std::string session_check = params.get("session_check", "");
-//        session->makeSessionContext(session_id, session_timeout, session_check == "1");
-//    }
-//    else
-//    {
-//        /// We should create it even if we don't have a session_id
-//        session->makeSessionContext();
+
+    ///temporary solution should be changed cause
+    /// The user could hold one session in one webSocket connection and maybe between them.
+    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+      session->makeSessionContext();
+      auto client_info = session->getClientInfo();
+      auto context = session->makeQueryContext(std::move(client_info));
+
+      query_scope.emplace(context);
 //    }
 //
 //    auto client_info = session->getClientInfo();
@@ -248,13 +241,23 @@ void WebSocketRequestHandler::processQuery(
 //
 //    ///TODO: add some result details callback
 //    /// TODO change web_socket_input to in
-////    executeQuery(web_socket_input, simple_output, /* allow_into_outfile = */ false, context,nullptr);
+
+
+    ReadBufferFromOwnString input(request.get("data").toString());
+
+    executeQuery(input, output, /* allow_into_outfile = */ false, context, nullptr);
 }
 
 void WebSocketRequestHandler::handleRequest(Poco::JSON::Object & request, DB::WebSocket & webSocket)
 {
     auto data = request.get("data").extract<std::string>();
-    webSocket.sendFrame(data.c_str(), std::min(std::max(0,static_cast<int>(data.size())), 10000000), 0x81);
+    WriteBufferFromWebSocket output(webSocket, true);
+
+    std::optional<CurrentThread::QueryScope> query_scope;
+
+
+    processQuery(request, output, query_scope);
+    //webSocket.sendFrame(data.c_str(), std::min(std::max(0,static_cast<int>(data.size())), 10000000), 0x81);
 
 }
 
