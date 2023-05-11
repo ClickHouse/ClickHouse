@@ -39,7 +39,9 @@ struct AsyncLoaderTest
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
         : loader(CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, max_threads, /* log_failures = */ false, /* log_progress = */ false)
-    {}
+    {
+        loader.stop(); // All tests call `start()` manually to better control ordering
+    }
 
     template <typename T>
     T randomInt(T from, T to)

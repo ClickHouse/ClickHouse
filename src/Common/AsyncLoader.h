@@ -352,7 +352,7 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
-    // Start workers to execute scheduled load jobs.
+    // Start workers to execute scheduled load jobs. Note that AsyncLoader is constructed as already started.
     void start();
 
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
@@ -423,7 +423,7 @@ private:
     size_t old_jobs = 0; // Number of jobs that were finished in previous busy period (for correct progress indication)
 
     mutable std::mutex mutex; // Guards all the fields below.
-    bool is_running = false;
+    bool is_running = true;
 
     // Full set of scheduled pending jobs along with scheduling info.
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs;
