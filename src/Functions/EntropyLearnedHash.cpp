@@ -187,7 +187,6 @@ public:
         {
             const size_t num_rows = col_data_string->size();
 
-            /// TODO this does some needless copying ... chooseBytes() should ideally understand the native ColumnString representation
             std::vector<std::string_view> training_data;
             for (size_t i = 0; i < num_rows; ++i)
             {
