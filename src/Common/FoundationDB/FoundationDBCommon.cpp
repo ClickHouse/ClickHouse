@@ -1,8 +1,15 @@
-#include "FoundationDBCommon.h"
+#include <cstdint>
+#include <cstring>
 #include <mutex>
+#include <dlfcn.h>
+#include <link.h>
 #include <foundationdb/fdb_c.h>
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
+#include <foundationdb/fdb_c_options.g.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
+#include "FoundationDBCommon.h"
+#include "FoundationDBHelpers.h"
 
 namespace DB
 {
@@ -27,7 +34,7 @@ void throwIfFDBError(fdb_error_t error_num)
 std::unique_ptr<ThreadFromGlobalPool> FoundationDBNetwork::network_thread;
 std::mutex FoundationDBNetwork::network_thread_mutex;
 
-void FoundationDBNetwork::ensureStarted()
+void FoundationDBNetwork::ensureStarted(int64_t thread)
 {
     std::lock_guard lock(network_thread_mutex);
 
@@ -36,6 +43,7 @@ void FoundationDBNetwork::ensureStarted()
         return;
     }
 
+    auto * log = &Poco::Logger::get("FoundationDBNetwork");
     throwIfFDBError(fdb_select_api_version(FDB_API_VERSION));
 
 #ifdef FDB_ENABLE_TRACE_LOG
@@ -73,9 +81,8 @@ void FoundationDBNetwork::ensureStarted()
 
     throwIfFDBError(fdb_setup_network());
     network_thread = std::make_unique<ThreadFromGlobalPool>(
-        []()
+        [log]()
         {
-            auto * log = &Poco::Logger::get("FoundationDBNetwork");
             try
             {
                 LOG_DEBUG(log, "Run network thread");
@@ -90,6 +97,7 @@ void FoundationDBNetwork::ensureStarted()
                 abort();
             }
         });
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 void FoundationDBNetwork::shutdownIfNeed()

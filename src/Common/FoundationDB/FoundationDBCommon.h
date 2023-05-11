@@ -32,7 +32,11 @@ public:
 
     /// ensureStarted() should be called before any fdb async api.
     /// It can be called multiple times, but only one network thread will be started.
-    static void ensureStarted();
+    ///
+    /// You can spawn multiple network threads by set thread > 1. `thread` only
+    /// effective when first ensureStarted(). Multithreading should only be used
+    /// during testing.
+    static void ensureStarted(int64_t thread = 1);
 
     /// shutdownIfNeed() should be called when the program ends.
     /// It will stop the network thread if exists.
