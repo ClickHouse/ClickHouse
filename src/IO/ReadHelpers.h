@@ -1160,8 +1160,7 @@ inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatTe
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 
-inline void readText(DayNum & x, ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readDateText(x, buf, time_zone); }
+inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readDateText(x, buf, time_zone); }
 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }

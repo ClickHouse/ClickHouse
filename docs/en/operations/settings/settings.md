@@ -4036,7 +4036,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## session_timezone {#session_timezone}
 
-If specified, sets an implicit timezone (instead of [server default](../server-configuration-parameters/settimgs.md#server_configuration_parameters-timezone).
+If specified, sets an implicit timezone (instead of [server default](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
 A value of `''` (empty string) configures the session timezone to the server default timezone.
 
