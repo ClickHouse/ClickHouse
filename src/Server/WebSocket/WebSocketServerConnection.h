@@ -12,12 +12,13 @@ namespace DB
 class WebSocketServerConnection : public Poco::Runnable
 {
     public:
-        WebSocketServerConnection(IServer& iServer, WebSocket& socket) :
+        WebSocketServerConnection(IServer& iServer, WebSocket& socket, std::shared_ptr<Session>& session_) :
             server(iServer),
             webSocket(socket),
             frame_buffer(0),
             message_buffer(0),
-            regular_handler(server)
+            control_frames_handler(),
+            regular_handler(server, session_)
         {
         }
 

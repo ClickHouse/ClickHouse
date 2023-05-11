@@ -361,7 +361,7 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     setThreadName("WebSocket");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::WEB_SOCKET, request.isSecure());
+    session = std::make_shared<Session>(server.context(), ClientInfo::Interface::WEB_SOCKET, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
 
@@ -380,7 +380,7 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         // TODO: maybe we should not allocate it on stack or everything will go down
         WebSocket ws(request, response);
-        auto connection = WebSocketServerConnection(server, ws);
+        auto connection = WebSocketServerConnection(server, ws, session);
         connection.run();
     }
     catch (WebSocketException& exc)

@@ -26,7 +26,7 @@ private:
     IServer & server;
     Poco::Logger * log;
 
-    std::unique_ptr<Session> session;
+    std::shared_ptr<Session> session;
 
     /// Reference to the immutable settings in the global context.
     /// Those settings are used only to extract a http request's parameters.

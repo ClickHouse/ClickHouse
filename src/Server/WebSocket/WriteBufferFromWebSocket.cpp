@@ -9,6 +9,9 @@ namespace DB
 {
 
 WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_, bool send_progress_) : ws(ws_){
+
+    out = std::make_unique<WriteBuffer>(working_buffer.begin(), 0);
+
     out->buffer() = buffer();
     out->position() = position();
 

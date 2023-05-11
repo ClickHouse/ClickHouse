@@ -18,18 +18,21 @@
 namespace DB
 {
 
+class Session;
+
 class WebSocketRequestHandler
 {
 public:
-    explicit WebSocketRequestHandler(IServer& /*iServer*/)
+    explicit WebSocketRequestHandler(IServer& /*iServer*/, std::shared_ptr<Session>& session_)
 //        : server(iServer)
+        :session(session_)
     {
     }
 
     void handleRequest(Poco::JSON::Object & request, WebSocket & webSocket);
 private:
 //    IServer& server;
-    std::unique_ptr<Session> session;
+    std::shared_ptr<Session>& session;
 
     void processQuery(
         Poco::JSON::Object & request,
