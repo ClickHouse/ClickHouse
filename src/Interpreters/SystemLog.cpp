@@ -152,19 +152,33 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
     else
     {
-        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        /// ENGINE expr is necessary.
         engine = "ENGINE = MergeTree";
+
+        /// PARTITION expr is not necessary.
+        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
         if (!partition_by.empty())
+        {
             engine += " PARTITION BY (" + partition_by + ")";
+        }
+
+        /// TTL expr is not necessary.
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
+        {
             engine += " TTL " + ttl;
+        }
 
-        engine += " ORDER BY ";
-        engine += TSystemLog::getDefaultOrderBy();
+        /// ORDER BY expr is necessary.
+        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        engine += " ORDER BY (" + order_by + ")";
+
+        /// STORAGE POLICY expr is not necessary.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
         if (!storage_policy.empty())
+        {
             engine += " SETTINGS storage_policy = " + quoteString(storage_policy);
+        }
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
