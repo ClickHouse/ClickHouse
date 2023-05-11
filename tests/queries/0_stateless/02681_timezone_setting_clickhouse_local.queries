@@ -1,0 +1,9 @@
+select '--- test 1 ----';
+
+select timezone();
+
+create table test_tz (d DateTime) Engine=Memory as select toDateTime('2000-01-01 00:00:00', 'UTC');
+
+select *, timezone() from test_tz where d = toDateTime('2000-01-01 00:00:00') settings session_timezone ='Asia/Novosibirsk';
+
+select *, timezone() from test_tz where d = '2000-01-01 00:00:00' settings session_timezone ='Asia/Novosibirsk';
