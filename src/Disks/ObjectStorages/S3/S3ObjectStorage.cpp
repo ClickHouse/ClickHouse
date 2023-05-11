@@ -443,7 +443,6 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
     s3_settings.set(std::move(new_s3_settings));
     client.set(std::move(new_client));
-    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
