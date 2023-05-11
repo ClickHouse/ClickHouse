@@ -125,7 +125,7 @@ message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 # Objcopy
 
 if (COMPILER_CLANG)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy" PATHS "/usr/local/opt/llvm/bin")
 endif ()
 
 if (OBJCOPY_PATH)
@@ -150,11 +150,11 @@ if (OS_DARWIN AND NOT CMAKE_TOOLCHAIN_FILE)
     # utils/list-licenses/list-licenses.sh (which generates system table system.licenses) needs the GNU versions of find and grep. These are
     # not available out-of-the-box on Mac. As a special case, Darwin builds in CI are cross-compiled from x86 Linux where the GNU userland is
     # available.
-    find_program(GFIND_PATH NAMES "gfind")
+    find_program(GFIND_PATH NAMES "gfind" PATHS "/usr/local/opt/findutils/bin")
     if (NOT GFIND_PATH)
         message (FATAL_ERROR "GNU find not found. You can install it with 'brew install findutils'.")
     endif()
-    find_program(GGREP_PATH NAMES "ggrep")
+    find_program(GGREP_PATH NAMES "ggrep" PATHS "/usr/local/opt/grep/bin")
     if (NOT GGREP_PATH)
         message (FATAL_ERROR "GNU grep not found. You can install it with 'brew install grep'.")
     endif()

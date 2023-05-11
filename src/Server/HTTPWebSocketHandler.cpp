@@ -370,18 +370,16 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     Application& app = Application::instance();
     try
     {
-
         HTMLForm params(default_settings, request);
-
         app.logger().information("Request URI: %s", request.getURI());
 
-        if (!authenticateUser(request, params, response))
+        if (!authenticateUser(request, params, response)) {
             return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
+        }
 
-        // TODO: maybe we should not allocate it on stack or everything will go down
         WebSocket ws(request, response);
-        auto connection = WebSocketServerConnection(server, ws, session);
-        connection.run();
+        auto connection = WebSocketServerConnection(server, ws, session, app.logger());
+        connection.start();
     }
     catch (WebSocketException& exc)
     {

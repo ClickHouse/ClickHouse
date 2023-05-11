@@ -12,6 +12,6 @@ namespace DB
 class WebSocketControlFramesHandler
 {
 public:
-    void handleRequest(std::string & /*request*/, WebSocket & /*webSocket*/);
+    void handleRequest(int opcode, std::string & payload, WebSocket & webSocket);
 };
 }

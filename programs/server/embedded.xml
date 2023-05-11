@@ -10,6 +10,8 @@
     <mysql_port>9004</mysql_port>
     <web_socket_port>1234</web_socket_port>
 
+    <listen_host>0.0.0.0</listen_host>
+
     <path>./</path>
 
     <mlock_executable>true</mlock_executable>
