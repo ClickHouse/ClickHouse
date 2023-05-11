@@ -218,13 +218,13 @@ struct ConvertImpl
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeIPv6>)
                 )
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
                                     TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
                 }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6> && !std::is_same_v<ToDataType, DataTypeIPv4>)
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6> && !(std::is_same_v<ToDataType, DataTypeIPv4> || std::is_same_v<FromDataType, DataTypeIPv4>))
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Conversion between numeric types and IPv6 is not supported. "
@@ -322,10 +322,32 @@ struct ConvertImpl
                                 }
                                 else
                                 {
-                                    dst[3] = src[15];
-                                    dst[2] = src[14];
-                                    dst[1] = src[13];
                                     dst[0] = src[12];
+                                    dst[1] = src[13];
+                                    dst[2] = src[14];
+                                    dst[3] = src[15];
+                                }
+                            }
+                            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv6> && std::is_same_v<FromDataType, DataTypeIPv4>)
+                            {
+                                const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+                                uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+                                std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+                                dst[10] = dst[11] = 0xff;
+
+                                if constexpr (std::endian::native == std::endian::little)
+                                {
+                                    dst[12] = src[3];
+                                    dst[13] = src[2];
+                                    dst[14] = src[1];
+                                    dst[15] = src[0];
+                                }
+                                else
+                                {
+                                    dst[12] = src[0];
+                                    dst[13] = src[1];
+                                    dst[14] = src[2];
+                                    dst[15] = src[3];
                                 }
                             }
                             else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
