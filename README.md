@@ -22,7 +22,7 @@ curl https://clickhouse.com/ | sh
 
 ## Upcoming Events
 
-* [**v23.4 Release Webinar**](https://clickhouse.com/company/events/v23-4-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-04) - April 26 - 23.4 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
+* [**v23.5 Release Webinar**](https://clickhouse.com/company/events/v23-5-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-05) - May 31 - 23.4 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
 * [**ClickHouse Meetup in Berlin**](https://www.meetup.com/clickhouse-berlin-user-group/events/292892466) - May 16 
 * [**ClickHouse Meetup in Barcelona**](https://www.meetup.com/clickhouse-barcelona-user-group/events/292892669) - May 25 
 * [**ClickHouse Meetup in London**](https://www.meetup.com/clickhouse-london-user-group/events/292892824) - May 25 
@@ -33,5 +33,5 @@ Also, keep an eye out for upcoming meetups in Amsterdam, Boston, NYC, Beijing, a
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v23.4 Release Webinar**]([https://www.youtube.com/watch?v=ISaGUjvBNao](https://www.youtube.com/watch?v=4rrf6bk_mOg)) UNDROP TABLE, server settings introspection, nested dynamic disks, MySQL compatibility, parseDate Time, Lightweight Deletes, Parallel Replicas, integrations updates, and so much more! Watch it now!
+* **Recording available**: [**v23.4 Release Webinar**](https://www.youtube.com/watch?v=4rrf6bk_mOg) Faster Parquet Reading, Asynchonous Connections to Reoplicas, Trailing Comma before FROM, extractKeyValuePairs, integrations updates, and so much more! Watch it now!
 * **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
