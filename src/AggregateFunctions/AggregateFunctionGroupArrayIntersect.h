@@ -73,7 +73,7 @@ public:
         auto & map = this->data(place).value;
         if (version == 1)
         {
-            
+
             for (const auto & elem: arr) {
                 map[static_cast<T>(elem.get<T>())] = version;
             }
@@ -91,7 +91,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        
+
         auto & map = this->data(place).value;
         auto & rhs_map = this->data(rhs).value;
         UInt64 version = this->data(place).version++;
@@ -123,15 +123,15 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        
+
         readVarUInt(this->data(place).version, buf);
         this->data(place).value.read(buf);
-      
+
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        
+
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
@@ -233,51 +233,65 @@ public:
         bool inserted;
         State::Map::LookupResult it;
         ++version;
-        
-        
+
+
         const auto arr = assert_cast<const ColumnArray &>(*columns[0])[row_num].get<Array &>();
+        const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPrt();
+        const auto offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsetsPtr();
+        const auto arr_size = arr.size();
+        const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
         if (version == 1)
         {
-            for (auto & elem: arr) {
-                
+
+            for (size_t i = 0; i < arr_size; ++i)
+            {
+
                 if constexpr (is_plain_column)
                 {
-                    map.emplace(ArenaKeyHolder{toString(elem), *arena}, it, inserted);
+                    map.emplace(ArenaKeyHolder{arr.getDataAt(offset + i), *arena}, it, inserted);
                 }
                 else
                 {
-                    //map.emplace(ArenaKeyHolder{toString(elem), arena}, it, inserted);
-                    //const char * begin = nullptr;
-                    //StringRef serialized = *columns[0].serializeValueIntoArena(row_num, *arena, begin);
-                    //St
-                    //assert(serialized.data != nullptr);
-                    //map.emplace(SerializedKeyHolder{serialized, arena}, it, inserted);
-                    map.emplace(ArenaKeyHolder{toString(elem), *arena}, it, inserted);
+                    const char * begin = nullptr;
+                    StringRef serialized = data_column.serializeValueIntoArena(offset + i, arena, begin);
+                    assert(serialized.data != nullptr);
+                    map.emplace(SerializedKeyHolder{serialized, arena}, it, inserted)
                 }
                 if (inserted)
                     new (&it->getMapped()) UInt64(version);
             }
-            //throw Exception(ErrorCodes::BAD_ARGUMENTS, "kekmek {}", map.size());
         }
         else {
-            for (auto & elem: arr) {
-                auto value = map.find(toString(elem));
+            for (size_t i = 0; i < arr_size; ++i)
+            {
+                Map::TValue value;
+                if constexpr (is_plain_column)
+                {
+                    value = map.find(arr.getDataAt(offset + i));
+                }
+                else
+                {
+                    const char * begin = nullptr;
+                    StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
+                    value = map.find(serialize)
+                    assert(serialized.data != nullptr);
+                    value = map.find(serialized);
+                }
                 if (value != nullptr)
                     ++value->getMapped();
             }
         }
-        //throw Exception(ErrorCodes::BAD_ARGUMENTS, "kekmek2 {} version{}", map.size(), version);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        
+
         auto & map = this->data(place).value;
         auto & rhs_map = this->data(rhs).value;
         UInt64 version = this->data(place).version++;
         UInt64 rhs_version = this->data(rhs).version;
         for (auto & rhs_elem : rhs_map)
-        {   
+        {
             if (rhs_elem.getMapped() != rhs_version)
                 continue;
             auto value = map.find(rhs_elem.getKey());
@@ -288,7 +302,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        
+
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
@@ -300,22 +314,20 @@ public:
             if (elem.getMapped() == version)
                 size++;
         offsets_to.push_back(offsets_to.back() + size);
-    
+
         for (auto & elem : map)
         {
             if (elem.getMapped() == version)
-            { 
-                
+            {
+
                 if constexpr (is_plain_column)
                 {
                     data_to.insertData(elem.getKey().data, elem.getKey().size);
                 }
                 else
                 {
-                    data_to.insertData(elem.getKey().data, elem.getKey().size);
-                    //data_to.insert(Field(String(elem.getKey())));
+                    data_to.deserializeAndInsertFromArena(elem.getKey().data);
                 }
-               // deserializeAndInsert<is_plain_column>(elem.getKey(), data_to);
             }
         }
     }
