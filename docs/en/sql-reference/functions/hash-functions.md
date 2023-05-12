@@ -279,6 +279,8 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
+Note that Google CityHash has changed the algorithm after it have been added it into ClickHouse. Now results of Google CityHash and ClickHouse cityHash64 are different. ClickHouse cityHash64 results are consistent with CityHash 1.0.2. Currently [farmhash64](#farmhash64) is consistent with Google CityHash.
+
 **Arguments**
 
 The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
