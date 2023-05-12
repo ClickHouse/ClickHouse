@@ -158,7 +158,7 @@ namespace
     };
 
     template <typename NumericType, bool is_bool_data_type = false>
-    static std::unique_ptr<ICapnProtoSerializer> createIntegerSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
+    std::unique_ptr<ICapnProtoSerializer> createIntegerSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
     {
         switch (capnp_type.which())
         {
@@ -1015,7 +1015,7 @@ namespace
         {
             assert(builder);
             auto & struct_builder = assert_cast<StructBuilder &>(*builder);
-            if (auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
+            if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
                 writeRow(tuple_column->getColumnsCopy(), struct_builder, row_num);
             else
                 writeRow(Columns{column}, struct_builder, row_num);
