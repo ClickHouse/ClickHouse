@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/topk
 sidebar_position: 108
 ---
 
@@ -7,7 +6,7 @@ sidebar_position: 108
 
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
-Implements the [Filtered Space-Saving](https://doi.org/10.1016/j.ins.2010.08.024) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://doi.org/10.1016/j.ins.2015.09.003).
+Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ``` sql
 topK(N)(column)
@@ -19,13 +18,13 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 **Arguments**
 
-- `N` – The number of elements to return.
+-   `N` – The number of elements to return.
 
 If the parameter is omitted, default value 10 is used.
 
 **Arguments**
 
-- `x` – The value to calculate frequency.
+-   `x` – The value to calculate frequency.
 
 **Example**
 

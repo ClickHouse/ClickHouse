@@ -25,26 +25,25 @@ namespace
 AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     if (params.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single parameter: bins count", name);
+        throw Exception("Function " + name + " requires single parameter: bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (params[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::UNSUPPORTED_PARAMETER, "Invalid type for bins count");
+        throw Exception("Invalid type for bins count", ErrorCodes::UNSUPPORTED_PARAMETER);
 
     UInt32 bins_count = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
 
     auto limit = AggregateFunctionHistogramData::bins_count_limit;
     if (bins_count > limit)
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Unsupported bins count. Should not be greater than {}", limit);
+        throw Exception("Unsupported bins count. Should not be greater than " + std::to_string(limit), ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     if (bins_count == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bin count should be positive");
+        throw Exception("Bin count should be positive", ErrorCodes::BAD_ARGUMENTS);
 
     assertUnary(name, arguments);
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionHistogram>(*arguments[0], bins_count, arguments, params));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument for aggregate function {}", arguments[0]->getName(), name);
+        throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }

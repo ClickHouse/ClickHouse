@@ -1,9 +1,7 @@
-#include <chrono>
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
 #include <Common/SipHash.h>
-#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -15,130 +13,129 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
-namespace
+static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
-     CoordinationMode validateAndGet(uint8_t candidate)
-    {
-        if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
-            return static_cast<CoordinationMode>(candidate);
+    size_t size = 0;
+    readVarUInt(size, buf);
 
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
+    if (size > MAX_RANGES_SIZE)
+        throw Poco::Exception("Too large ranges size.");
+
+    ranges.resize(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        readBinary(ranges[i].begin, buf);
+        readBinary(ranges[i].end, buf);
     }
 }
 
-void ParallelReadRequest::serialize(WriteBuffer & out) const
-{
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
-    /// Must be the first
-    writeIntBinary(version, out);
 
-    writeIntBinary(mode, out);
-    writeIntBinary(replica_num, out);
-    writeIntBinary(min_number_of_marks, out);
-    description.serialize(out);
+static void writeMarkRangesBinary(const MarkRanges & ranges, WriteBuffer & buf)
+{
+    writeVarUInt(ranges.size(), buf);
+
+    for (const auto & [begin, end] : ranges)
+    {
+        writeBinary(begin, buf);
+        writeBinary(end, buf);
+    }
 }
 
 
-String ParallelReadRequest::describe() const
+void PartitionReadRequest::serialize(WriteBuffer & out) const
+{
+    /// Must be the first
+    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
+
+    writeStringBinary(partition_id, out);
+    writeStringBinary(part_name, out);
+    writeStringBinary(projection_name, out);
+
+    writeVarInt(block_range.begin, out);
+    writeVarInt(block_range.end, out);
+
+    writeMarkRangesBinary(mark_ranges, out);
+}
+
+
+void PartitionReadRequest::describe(WriteBuffer & out) const
 {
     String result;
-    result += fmt::format("replica_num: {} \n", replica_num);
-    result += fmt::format("min_num_of_marks: {} \n", min_number_of_marks);
-    result += description.describe();
-    return result;
+    result += fmt::format("partition_id: {} \n", partition_id);
+    result += fmt::format("part_name: {} \n", part_name);
+    result += fmt::format("projection_name: {} \n", projection_name);
+    result += fmt::format("block_range: ({}, {}) \n", block_range.begin, block_range.end);
+    result += "mark_ranges: ";
+    for (const auto & range : mark_ranges)
+        result += fmt::format("({}, {}) ", range.begin, range.end);
+    result += '\n';
+    out.write(result.c_str(), result.size());
 }
 
-void ParallelReadRequest::deserialize(ReadBuffer & in)
+void PartitionReadRequest::deserialize(ReadBuffer & in)
 {
     UInt64 version;
-    readIntBinary(version, in);
+    readVarUInt(version, in);
     if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading "\
-            "from replicas differ. Got: {}, supported version: {}",
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
+            from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    uint8_t mode_candidate;
-    readIntBinary(mode_candidate, in);
-    mode = validateAndGet(mode_candidate);
-    readIntBinary(replica_num, in);
-    readIntBinary(min_number_of_marks, in);
-    description.deserialize(in);
+    readStringBinary(partition_id, in);
+    readStringBinary(part_name, in);
+    readStringBinary(projection_name, in);
+
+    readVarInt(block_range.begin, in);
+    readVarInt(block_range.end, in);
+
+    readMarkRangesBinary(mark_ranges, in);
 }
 
-void ParallelReadRequest::merge(ParallelReadRequest & other)
+UInt64 PartitionReadRequest::getConsistentHash(size_t buckets) const
 {
-    assert(mode == other.mode);
-    assert(replica_num == other.replica_num);
-    assert(min_number_of_marks == other.min_number_of_marks);
-    description.merge(other.description);
+    auto hash = SipHash();
+    hash.update(partition_id);
+    hash.update(part_name);
+    hash.update(projection_name);
+
+    hash.update(block_range.begin);
+    hash.update(block_range.end);
+
+    for (const auto & range : mark_ranges)
+    {
+        hash.update(range.begin);
+        hash.update(range.end);
+    }
+
+    return ConsistentHashing(hash.get64(), buckets);
 }
 
-void ParallelReadResponse::serialize(WriteBuffer & out) const
+
+void PartitionReadResponse::serialize(WriteBuffer & out) const
 {
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeIntBinary(version, out);
+    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
-    writeBoolText(finish, out);
-    description.serialize(out);
+    writeVarUInt(static_cast<UInt64>(denied), out);
+    writeMarkRangesBinary(mark_ranges, out);
 }
 
-String ParallelReadResponse::describe() const
-{
-    return fmt::format("{}. Finish: {}", description.describe(), finish);
-}
 
-void ParallelReadResponse::deserialize(ReadBuffer & in)
+void PartitionReadResponse::deserialize(ReadBuffer & in)
 {
     UInt64 version;
-    readIntBinary(version, in);
+    readVarUInt(version, in);
     if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading " \
-            "from replicas differ. Got: {}, supported version: {}",
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
+            from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    readBoolText(finish, in);
-    description.deserialize(in);
-}
-
-
-void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
-{
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
-    /// Must be the first
-    writeIntBinary(version, out);
-
-    writeIntBinary(mode, out);
-    description.serialize(out);
-    writeIntBinary(replica_num, out);
-}
-
-
-String InitialAllRangesAnnouncement::describe()
-{
-    String result;
-    result += description.describe();
-    result += fmt::format("----------\nReceived from {} replica\n", replica_num);
-    return result;
-}
-
-void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
-{
-    UInt64 version;
-    readIntBinary(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading " \
-            "from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-
-    uint8_t mode_candidate;
-    readIntBinary(mode_candidate, in);
-    mode = validateAndGet(mode_candidate);
-    description.deserialize(in);
-    readIntBinary(replica_num, in);
+    UInt64 value;
+    readVarUInt(value, in);
+    denied = static_cast<bool>(value);
+    readMarkRangesBinary(mark_ranges, in);
 }
 
 }

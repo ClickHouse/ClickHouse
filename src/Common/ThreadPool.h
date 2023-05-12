@@ -9,15 +9,11 @@
 #include <list>
 #include <optional>
 #include <atomic>
-#include <stack>
 
 #include <boost/heap/priority_queue.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -35,25 +31,15 @@ class ThreadPoolImpl
 {
 public:
     using Job = std::function<void()>;
-    using Metric = CurrentMetrics::Metric;
 
     /// Maximum number of threads is based on the number of physical cores.
-    ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_);
+    ThreadPoolImpl();
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(
-        Metric metric_threads_,
-        Metric metric_active_threads_,
-        size_t max_threads_);
+    explicit ThreadPoolImpl(size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(
-        Metric metric_threads_,
-        Metric metric_active_threads_,
-        size_t max_threads_,
-        size_t max_free_threads_,
-        size_t queue_size_,
-        bool shutdown_on_exception_ = true);
+    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -63,13 +49,13 @@ public:
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job, ssize_t priority = 0);
+    void scheduleOrThrowOnError(Job job, int priority = 0);
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0) noexcept;
+    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -93,23 +79,10 @@ public:
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
 
-    /// Adds a callback which is called in destructor after
-    /// joining of all threads. The order of calling callbacks
-    /// is reversed to the order of their addition.
-    /// It may be useful for static thread pools to call
-    /// function after joining of threads because order
-    /// of destructors of global static objects and callbacks
-    /// added by atexit is undefined for different translation units.
-    using OnDestroyCallback = std::function<void()>;
-    void addOnDestroyCallback(OnDestroyCallback && callback);
-
 private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
-
-    Metric metric_threads;
-    Metric metric_active_threads;
 
     size_t max_threads;
     size_t max_free_threads;
@@ -117,17 +90,15 @@ private:
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;
-    bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
     struct JobWithPriority
     {
         Job job;
-        ssize_t priority;
-        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
+        int priority;
 
-        JobWithPriority(Job job_, ssize_t priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
+        JobWithPriority(Job job_, int priority_)
+            : job(job_), priority(priority_) {}
 
         bool operator< (const JobWithPriority & rhs) const
         {
@@ -138,18 +109,13 @@ private:
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
-    std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
-    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
-    void startNewThreadsNoLock();
-
     void finalize();
-    void onDestroy();
 };
 
 
@@ -174,11 +140,11 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
     static std::unique_ptr<GlobalThreadPool> the_instance;
 
-    GlobalThreadPool(
-        size_t max_threads_,
-        size_t max_free_threads_,
-        size_t queue_size_,
-        bool shutdown_on_exception_);
+    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_,
+            size_t queue_size_, const bool shutdown_on_exception_)
+        : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
+            shutdown_on_exception_)
+    {}
 
 public:
     static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
@@ -188,18 +154,14 @@ public:
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
-  *
-  * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
-  *
   */
-template <bool propagate_opentelemetry_context = true>
-class ThreadFromGlobalPoolImpl : boost::noncopyable
+class ThreadFromGlobalPool : boost::noncopyable
 {
 public:
-    ThreadFromGlobalPoolImpl() = default;
+    ThreadFromGlobalPool() = default;
 
     template <typename Function, typename... Args>
-    explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+    explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<State>())
     {
         /// NOTE:
@@ -210,10 +172,7 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT(
-                state->thread_id = std::thread::id();
-                state->event.set();
-            );
+            SCOPE_EXIT(state->event.set());
 
             state->thread_id = std::this_thread::get_id();
 
@@ -226,19 +185,15 @@ public:
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
-        },
-        0, // default priority
-        0, // default wait_microseconds
-        propagate_opentelemetry_context
-        );
+        });
     }
 
-    ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPoolImpl & operator=(ThreadFromGlobalPoolImpl && rhs) noexcept
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
         if (initialized())
             abort();
@@ -246,7 +201,7 @@ public:
         return *this;
     }
 
-    ~ThreadFromGlobalPoolImpl()
+    ~ThreadFromGlobalPool()
     {
         if (initialized())
             abort();
@@ -278,12 +233,7 @@ public:
         return true;
     }
 
-    std::thread::id get_id() const
-    {
-        return state ? state->thread_id.load() : std::thread::id{};
-    }
-
-protected:
+private:
     struct State
     {
         /// Should be atomic() because of possible concurrent access between
@@ -304,28 +254,6 @@ protected:
     }
 };
 
-/// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
-///
-/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,
-/// you need to use class, or you need to use ThreadFromGlobalPool below.
-///
-/// See the comments of ThreadPool below to know how it works.
-using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
-
-/// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
-/// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-///
-/// The template parameter of ThreadFromGlobalPool is set to false to disable tracing context propagation to underlying worker.
-/// Because ThreadFromGlobalPool schedules a job upon GlobalThreadPool, this means there will be two workers to schedule a job in 'ThreadPool',
-/// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
-///
-/// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
-/// which means the tracing context initialized at underlying worker level won't be deleted for a very long time.
-/// This would cause wrong context for further jobs scheduled in ThreadPool.
-///
-/// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
-///
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;

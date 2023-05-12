@@ -135,7 +135,7 @@ def check_args_and_update_paths(args):
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call(
-        'docker ps --all --quiet --filter name={name} --format="{{{{.ID}}}}"'.format(
+        'docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(
             name=CONTAINER_NAME
         ),
         shell=True,
@@ -243,21 +243,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-random",
-        action="store",
-        dest="no_random",
-        help="Disable tests order randomization",
-    )
-
-    parser.add_argument(
-        "--pre-pull",
-        action="store_true",
-        default=False,
-        dest="pre_pull",
-        help="Pull images for docker_compose before all other actions",
-    )
-
-    parser.add_argument(
         "-t",
         "--tests_list",
         action="store",
@@ -308,10 +293,6 @@ if __name__ == "__main__":
     if args.parallel:
         parallel_args += "--dist=loadfile"
         parallel_args += " -n {}".format(args.parallel)
-
-    rand_args = ""
-    # if not args.no_random:
-    #     rand_args += f"--random-seed={os.getpid()}"
 
     net = ""
     if args.network:
@@ -369,7 +350,8 @@ if __name__ == "__main__":
         # randomizer, we should remove it after Sep 2022
         try:
             subprocess.check_call(
-                f"docker volume ls -q | grep '{VOLUME_NAME}_.*_volume' | xargs --no-run-if-empty docker volume rm",
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
                 shell=True,
             )
         except Exception as ex:
@@ -393,7 +375,7 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    cmd_base = "docker run {net} {tty} --rm --name {name} --privileged \
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
@@ -402,7 +384,7 @@ if __name__ == "__main__":
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
         -e XTABLES_LOCKFILE=/run/host/xtables.lock \
         -e PYTHONUNBUFFERED=1 \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} {rand} -vvv' {img}".format(
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -414,22 +396,16 @@ if __name__ == "__main__":
         env_tags=env_tags,
         env_cleanup=env_cleanup,
         parallel=parallel_args,
-        rand=rand_args,
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
-    )
-
-    cmd = cmd_base + " " + args.command
-    cmd_pre_pull = (
-        cmd_base
-        + " find /compose -name docker_compose_*.yml -exec docker-compose -f '{}' pull \;"
+        command=args.command,
     )
 
     containers = subprocess.check_output(
-        f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
         shell=True,
         universal_newlines=True,
     ).splitlines()
@@ -437,10 +413,6 @@ if __name__ == "__main__":
         print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
-
-    if args.pre_pull:
-        print(("Running pre pull as: '" + cmd_pre_pull + "'."))
-        subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)

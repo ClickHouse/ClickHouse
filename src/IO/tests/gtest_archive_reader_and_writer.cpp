@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "config.h"
+#include <Common/config.h>
 
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>

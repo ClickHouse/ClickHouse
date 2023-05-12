@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,11 +32,6 @@ template <typename DataType> struct DataTypeToTimeTypeMap {};
 template <> struct DataTypeToTimeTypeMap<DataTypeDate>
 {
     using TimeType = UInt16;
-};
-
-template <> struct DataTypeToTimeTypeMap<DataTypeDate32>
-{
-    using TimeType = Int32;
 };
 
 template <> struct DataTypeToTimeTypeMap<DataTypeDateTime>
@@ -78,7 +72,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}",
                 getName(),
-                arguments.size());
+                toString(arguments.size()));
 
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
@@ -89,7 +83,7 @@ public:
 
         WhichDataType first_argument_type(arguments[1].type);
 
-        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
+        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDateTime64()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
@@ -114,7 +108,6 @@ public:
         ColumnPtr res;
 
         if (!((res = executeType<DataTypeDate>(arguments, result_type))
-            || (res = executeType<DataTypeDate32>(arguments, result_type))
             || (res = executeType<DataTypeDateTime>(arguments, result_type))
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
@@ -276,7 +269,7 @@ private:
     {
         static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
-            const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            const auto day = ToDayOfWeekImpl::execute(source, timezone);
             static constexpr std::string_view day_names[] =
             {
                 "Monday",
@@ -352,7 +345,7 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateNameImpl>(FunctionFactory::CaseInsensitive);
 }
 
 }

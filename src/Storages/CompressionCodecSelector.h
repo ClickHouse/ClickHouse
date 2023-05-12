@@ -79,7 +79,7 @@ public:
         for (const auto & name : keys)
         {
             if (!startsWith(name, "case"))
-                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'case'", config_prefix, name);
+                throw Exception("Unknown element in config: " + config_prefix + "." + name + ", must be 'case'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
             elements.emplace_back(config, config_prefix + "." + name);
         }

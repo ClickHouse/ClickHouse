@@ -19,8 +19,8 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <base/insertAtEnd.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -96,7 +96,6 @@ RestorerFromBackup::RestorerFromBackup(
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
-    , tables_dependencies("RestorerFromBackup")
 {
 }
 
@@ -134,7 +133,6 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
     /// Create tables using the create queries read from the backup.
     setStage(Stage::CREATING_TABLES);
-    removeUnresolvedDependencies();
     createTables();
 
     /// All what's left is to insert data to tables.
@@ -145,16 +143,16 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
+    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
     current_stage = new_stage;
 
     if (restore_coordination)
     {
-        restore_coordination->setStage(new_stage, message);
+        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
         if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
         else
-            restore_coordination->waitForStage(new_stage);
+            restore_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 
@@ -316,7 +314,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
-    auto read_buffer = backup->readFile(*metadata_path);
+    auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
@@ -343,10 +341,9 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
+    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
-
-    tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context, table_name, create_table_query));
 
     if (partitions)
     {
@@ -410,7 +407,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 
     if (metadata_path)
     {
-        auto read_buffer = backup->readFile(*metadata_path);
+        auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -625,63 +622,21 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
-void RestorerFromBackup::removeUnresolvedDependencies()
-{
-    auto need_exclude_dependency = [this](const StorageID & table_id)
-    {
-        /// Table will be restored.
-        if (table_infos.contains(table_id.getQualifiedName()))
-            return false;
-
-        /// Table exists and it already exists
-        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
-        {
-            LOG_WARNING(
-                log,
-                "Tables {} in backup depend on {}, but seems like {} is not in the backup and does not exist. "
-                "Will try to ignore that and restore tables",
-                fmt::join(tables_dependencies.getDependents(table_id), ", "),
-                table_id,
-                table_id);
-        }
-
-        size_t num_dependencies, num_dependents;
-        tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
-        if (num_dependencies || !num_dependents)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
-                table_id);
-
-        return true; /// Exclude this dependency.
-    };
-
-    tables_dependencies.removeTablesIf(need_exclude_dependency);
-
-    if (tables_dependencies.getNumberOfTables() != table_infos.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");
-
-    if (tables_dependencies.hasCyclicDependencies())
-    {
-        LOG_WARNING(
-            log,
-            "Tables {} in backup have cyclic dependencies: {}. Will try to ignore that and restore tables",
-            fmt::join(tables_dependencies.getTablesWithCyclicDependencies(), ", "),
-            tables_dependencies.describeCyclicDependencies());
-    }
-}
-
 void RestorerFromBackup::createTables()
 {
-    /// We need to create tables considering their dependencies.
-    tables_dependencies.log();
-    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
-    for (const auto & table_id : tables_to_create)
+    while (true)
     {
-        auto table_name = table_id.getQualifiedName();
-        createTable(table_name);
-        checkTable(table_name);
-        insertDataToTable(table_name);
+        /// We need to create tables considering their dependencies.
+        auto tables_to_create = findTablesWithoutDependencies();
+        if (tables_to_create.empty())
+            break; /// We've already created all the tables.
+
+        for (const auto & table_name : tables_to_create)
+        {
+            createTable(table_name);
+            checkTable(table_name);
+            insertDataToTable(table_name);
+        }
     }
 }
 
@@ -795,6 +750,62 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         e.addMessage("While restoring data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+/// Returns the list of tables without dependencies or those which dependencies have been created before.
+std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencies() const
+{
+    std::vector<QualifiedTableName> tables_without_dependencies;
+    bool all_tables_created = true;
+
+    for (const auto & [key, table_info] : table_infos)
+    {
+        if (table_info.storage)
+            continue;
+
+        /// Found a table which is not created yet.
+        all_tables_created = false;
+
+        /// Check if all dependencies have been created before.
+        bool all_dependencies_met = true;
+        for (const auto & dependency : table_info.dependencies)
+        {
+            auto it = table_infos.find(dependency);
+            if ((it != table_infos.end()) && !it->second.storage)
+            {
+                all_dependencies_met = false;
+                break;
+            }
+        }
+
+        if (all_dependencies_met)
+            tables_without_dependencies.push_back(key);
+    }
+
+    if (!tables_without_dependencies.empty())
+        return tables_without_dependencies;
+
+    if (all_tables_created)
+        return {};
+
+    /// Cyclic dependency? We'll try to create those tables anyway but probably it's going to fail.
+    std::vector<QualifiedTableName> tables_with_cyclic_dependencies;
+    for (const auto & [key, table_info] : table_infos)
+    {
+        if (!table_info.storage)
+            tables_with_cyclic_dependencies.push_back(key);
+    }
+
+    /// Only show a warning here, proper exception will be thrown later on creating those tables.
+    LOG_WARNING(
+        log,
+        "Some tables have cyclic dependency from each other: {}",
+        boost::algorithm::join(
+            tables_with_cyclic_dependencies
+                | boost::adaptors::transformed([](const QualifiedTableName & table_name) -> String { return table_name.getFullName(); }),
+            ", "));
+
+    return tables_with_cyclic_dependencies;
 }
 
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)

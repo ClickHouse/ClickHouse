@@ -44,32 +44,8 @@ struct ClearableHashTableCell : public BaseCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
-    ClearableHashTableCell() {} /// NOLINT
+    ClearableHashTableCell() {} //-V730 /// NOLINT
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
-};
-
-using StringRefBaseCell = HashSetCellWithSavedHash<StringRef, DefaultHash<StringRef>, ClearableHashSetState>;
-
-/// specialization for StringRef to allow zero size key (empty string)
-template <>
-struct ClearableHashTableCell<StringRef, StringRefBaseCell> : public StringRefBaseCell
-{
-    using State = ClearableHashSetState;
-    using value_type = typename StringRefBaseCell::value_type;
-
-    UInt32 version;
-
-    bool isZero(const State & state) const { return version != state.version; }
-    static bool isZero(const StringRef & key_, const State & state_) { return StringRefBaseCell::isZero(key_, state_); }
-
-    /// Set the key value to zero.
-    void setZero() { version = 0; }
-
-    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
-    static constexpr bool need_zero_value_storage = true;
-
-    ClearableHashTableCell() { } /// NOLINT
-    ClearableHashTableCell(const StringRef & key_, const State & state) : StringRefBaseCell(key_, state), version(state.version) { }
 };
 
 template <
@@ -80,8 +56,6 @@ template <
 class ClearableHashSet
     : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
-    using Cell = ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>;
-
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
@@ -90,13 +64,6 @@ public:
     {
         ++this->version;
         this->m_size = 0;
-
-        if constexpr (Cell::need_zero_value_storage)
-        {
-            /// clear ZeroValueStorage
-            if (this->hasZero())
-                this->clearHasZero();
-        }
     }
 };
 
@@ -112,20 +79,11 @@ class ClearableHashSetWithSavedHash : public HashTable<
                                           Grower,
                                           Allocator>
 {
-    using Cell = ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>;
-
 public:
     void clear()
     {
         ++this->version;
         this->m_size = 0;
-
-        if constexpr (Cell::need_zero_value_storage)
-        {
-            /// clear ZeroValueStorage
-            if (this->hasZero())
-                this->clearHasZero();
-        }
     }
 };
 

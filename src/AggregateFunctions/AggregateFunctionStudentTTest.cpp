@@ -62,8 +62,8 @@ struct StudentTTestData : public TTestMoments<Float64>
         /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);
 
-        if (unlikely(!std::isfinite(t_stat)))
-            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+        if (isNaN(t_stat))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resulted t-statistics is NaN");
 
         auto student = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
         Float64 pvalue = 0;
@@ -82,10 +82,10 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() > 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one parameter.", name);
+        throw Exception("Aggregate function " + name + " requires zero or one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
+        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_shared<AggregateFunctionTTest<StudentTTestData>>(argument_types, parameters);
 }

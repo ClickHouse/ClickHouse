@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <utility>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Common/checkStackSize.h>
 #include <Storages/ColumnsDescription.h>
@@ -44,7 +43,7 @@ void addDefaultRequiredExpressionsRecursively(
     bool convert_null_to_default = false;
 
     if (is_column_in_query)
-        convert_null_to_default = null_as_default && isNullableOrLowCardinalityNullable(block.findByName(required_column_name)->type) && !isNullableOrLowCardinalityNullable(required_column_type);
+        convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
 
     if ((is_column_in_query && !convert_null_to_default) || added_columns.contains(required_column_name))
         return;
@@ -61,17 +60,11 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
-        auto required_type = std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName());
 
-        auto expr = makeASTFunction("_CAST", column_default_expr, required_type);
+        auto expr = makeASTFunction("_CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
 
         if (is_column_in_query && convert_null_to_default)
-        {
             expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
-            /// ifNull does not respect LowCardinality.
-            /// It may be fixed later or re-implemented properly for identical types.
-            expr = makeASTFunction("_CAST", std::move(expr), required_type);
-        }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
 
         added_columns.emplace(required_column_name);
@@ -105,14 +98,8 @@ void addDefaultRequiredExpressionsRecursively(
         /// This column is required, but doesn't have default expression, so lets use "default default"
         auto column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
-        ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
-        if (is_column_in_query && convert_null_to_default)
-        {
-            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
-            auto cast_expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
-            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(cast_expr));
-        }
-        default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
+        auto default_ast = std::make_shared<ASTLiteral>(default_value);
+        default_expr_list_accum->children.emplace_back(setAlias(default_ast, required_column_name));
         added_columns.emplace(required_column_name);
     }
 }
@@ -185,16 +172,6 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
-bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
-{
-    for (const auto & required_column : required_columns)
-    {
-        if (columns.has(required_column.name) && isNullableOrLowCardinalityNullable(header.findByName(required_column.name)->type) && !isNullableOrLowCardinalityNullable(required_column.type))
-            return true;
-    }
-    return false;
-}
-
 ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
@@ -203,63 +180,36 @@ ActionsDAGPtr evaluateMissingDefaults(
     bool save_unneeded_columns,
     bool null_as_default)
 {
-    if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
+    if (!columns.hasDefaults())
         return nullptr;
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
-static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
-    const NamesAndTypesList & available_columns, const Columns & res_columns)
+static bool arrayHasNoElementsRead(const IColumn & column)
 {
-    std::unordered_map<String, ColumnPtr> offsets_columns;
+    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
 
-    auto available_column = available_columns.begin();
-    for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
-    {
-        if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
-            continue;
+    if (!column_array)
+        return false;
 
-        auto serialization = IDataType::getSerialization(*available_column);
-        serialization->enumerateStreams([&](const auto & subpath)
-        {
-            if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
-                return;
+    size_t size = column_array->size();
+    if (!size)
+        return false;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
-            const auto & current_offsets_column = subpath.back().data.column;
+    size_t data_size = column_array->getData().size();
+    if (data_size)
+        return false;
 
-            /// If for some reason multiple offsets columns are present
-            /// for the same nested data structure, choose the one that is not empty.
-            if (current_offsets_column && !current_offsets_column->empty())
-            {
-                auto & offsets_column = offsets_columns[stream_name];
-                if (!offsets_column)
-                    offsets_column = current_offsets_column;
-
-            #ifndef NDEBUG
-                const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-                const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
-
-                if (offsets_data != current_offsets_data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                        offsets_data.size(), current_offsets_data.size(), stream_name);
-            #endif
-            }
-        }, available_column->type, res_columns[i]);
-    }
-
-    return offsets_columns;
+    size_t last_offset = column_array->getOffsets()[size - 1];
+    return last_offset != 0;
 }
 
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,
     const NamesAndTypesList & requested_columns,
-    const NamesAndTypesList & available_columns,
-    const NameSet & partially_read_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     size_t num_columns = requested_columns.size();
@@ -268,78 +218,64 @@ void fillMissingColumns(
             "Invalid number of columns passed to fillMissingColumns. Expected {}, got {}",
             num_columns, res_columns.size());
 
-    /// For a missing column of a nested data structure
-    /// we must create not a column of empty arrays,
-    /// but a column of arrays of correct length.
+    /// For a missing column of a nested data structure we must create not a column of empty
+    /// arrays, but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
 
-    /// Insert default values only for columns without default expressions.
+    std::unordered_map<String, ColumnPtr> offset_columns;
     auto requested_column = requested_columns.begin();
+    for (size_t i = 0; i < num_columns; ++i, ++requested_column)
+    {
+        if (res_columns[i] == nullptr)
+            continue;
+
+        if (const auto * array = typeid_cast<const ColumnArray *>(res_columns[i].get()))
+        {
+            String offsets_name = Nested::extractTableName(requested_column->name);
+            auto & offsets_column = offset_columns[offsets_name];
+
+            /// If for some reason multiple offsets columns are present for the same nested data structure,
+            /// choose the one that is not empty.
+            if (!offsets_column || offsets_column->empty())
+                offsets_column = array->getOffsetsPtr();
+        }
+    }
+
+    /// insert default values only for columns without default expressions
+    requested_column = requested_columns.begin();
     for (size_t i = 0; i < num_columns; ++i, ++requested_column)
     {
         const auto & [name, type] = *requested_column;
 
-        if (res_columns[i] && partially_read_columns.contains(name))
+        if (res_columns[i] && arrayHasNoElementsRead(*res_columns[i]))
             res_columns[i] = nullptr;
 
-        if (res_columns[i])
-            continue;
-
-        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
-            continue;
-
-        std::vector<ColumnPtr> current_offsets;
-        size_t num_dimensions = 0;
-
-        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-        if (array_type && !offsets_columns.empty())
+        if (res_columns[i] == nullptr)
         {
-            num_dimensions = getNumberOfDimensions(*array_type);
-            current_offsets.resize(num_dimensions);
+            if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
+                continue;
 
-            auto serialization = IDataType::getSerialization(*requested_column);
-            serialization->enumerateStreams([&](const auto & subpath)
+            String offsets_name = Nested::extractTableName(name);
+            auto offset_it = offset_columns.find(offsets_name);
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (offset_it != offset_columns.end() && array_type)
             {
-                if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
-                    return;
+                const auto & nested_type = array_type->getNestedType();
+                ColumnPtr offsets_column = offset_it->second;
+                size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
-                size_t level = ISerialization::getArrayLevel(subpath);
-                assert(level < num_dimensions);
+                ColumnPtr nested_column =
+                    nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
-                auto it = offsets_columns.find(stream_name);
-                if (it != offsets_columns.end())
-                    current_offsets[level] = it->second;
-            });
-
-            for (size_t j = 0; j < num_dimensions; ++j)
-            {
-                if (!current_offsets[j])
-                {
-                    current_offsets.resize(j);
-                    break;
-                }
+                res_columns[i] = ColumnArray::create(nested_column, offsets_column);
             }
-        }
-
-        if (!current_offsets.empty())
-        {
-            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
-            auto scalar_type = createArrayOfType(getBaseTypeOfArray(type), num_empty_dimensions);
-
-            size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-            res_columns[i] = scalar_type->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
-
-            for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
-                res_columns[i] = ColumnArray::create(res_columns[i], *it);
-        }
-        else
-        {
-            /// We must turn a constant column into a full column because the interpreter could infer
-            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            else
+            {
+                /// We must turn a constant column into a full column because the interpreter could infer
+                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            }
         }
     }
 }

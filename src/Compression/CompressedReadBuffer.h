@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class CompressedReadBuffer final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+class CompressedReadBuffer : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
     size_t size_compressed = 0;

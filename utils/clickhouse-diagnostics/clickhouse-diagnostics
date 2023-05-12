@@ -19,9 +19,9 @@ import tenacity
 import xmltodict
 import yaml
 
-SELECT_VERSION = r"SELECT version()"
+SELECT_VERSION = r'SELECT version()'
 
-SELECT_UPTIME = r"""
+SELECT_UPTIME = r'''
 {% if version_ge('21.3') -%}
 SELECT formatReadableTimeDelta(uptime())
 {% else -%}
@@ -29,18 +29,18 @@ SELECT
     toString(floor(uptime() / 3600 / 24)) || ' days ' ||
     toString(floor(uptime() % (24 * 3600) / 3600, 1)) || ' hours'
 {% endif -%}
-"""
+'''
 
 SELECT_SYSTEM_TABLES = "SELECT name FROM system.tables WHERE database = 'system'"
 
-SELECT_DATABASE_ENGINES = r"""SELECT
+SELECT_DATABASE_ENGINES = r'''SELECT
     engine,
     count() "count"
 FROM system.databases
 GROUP BY engine
-"""
+'''
 
-SELECT_DATABASES = r"""SELECT
+SELECT_DATABASES = r'''SELECT
     name,
     engine,
     tables,
@@ -62,17 +62,17 @@ LEFT JOIN
 ) AS db_stats ON db.name = db_stats.database
 ORDER BY bytes_on_disk DESC
 LIMIT 10
-"""
+'''
 
-SELECT_TABLE_ENGINES = r"""SELECT
+SELECT_TABLE_ENGINES = r'''SELECT
     engine,
     count() "count"
 FROM system.tables
 WHERE database != 'system'
 GROUP BY engine
-"""
+'''
 
-SELECT_DICTIONARIES = r"""SELECT
+SELECT_DICTIONARIES = r'''SELECT
     source,
     type,
     status,
@@ -80,13 +80,13 @@ SELECT_DICTIONARIES = r"""SELECT
 FROM system.dictionaries
 GROUP BY source, type, status
 ORDER BY status DESC, source
-"""
+'''
 
 SELECT_ACCESS = "SHOW ACCESS"
 
 SELECT_QUOTA_USAGE = "SHOW QUOTA"
 
-SELECT_REPLICAS = r"""SELECT
+SELECT_REPLICAS = r'''SELECT
     database,
     table,
     is_leader,
@@ -98,9 +98,9 @@ SELECT_REPLICAS = r"""SELECT
 FROM system.replicas
 ORDER BY absolute_delay DESC
 LIMIT 10
-"""
+'''
 
-SELECT_REPLICATION_QUEUE = r"""SELECT
+SELECT_REPLICATION_QUEUE = r'''SELECT
     database,
     table,
     replica_name,
@@ -121,9 +121,9 @@ SELECT_REPLICATION_QUEUE = r"""SELECT
 FROM system.replication_queue
 ORDER BY create_time ASC
 LIMIT 20
-"""
+'''
 
-SELECT_REPLICATED_FETCHES = r"""SELECT
+SELECT_REPLICATED_FETCHES = r'''SELECT
     database,
     table,
     round(elapsed, 1) "elapsed",
@@ -140,9 +140,9 @@ SELECT_REPLICATED_FETCHES = r"""SELECT
     to_detached,
     thread_id
 FROM system.replicated_fetches
-"""
+'''
 
-SELECT_PARTS_PER_TABLE = r"""SELECT
+SELECT_PARTS_PER_TABLE = r'''SELECT
         database,
     table,
     count() "partitions",
@@ -162,9 +162,9 @@ FROM
 GROUP BY database, table
 ORDER BY max_parts_per_partition DESC
 LIMIT 10
-"""
+'''
 
-SELECT_MERGES = r"""SELECT
+SELECT_MERGES = r'''SELECT
     database,
     table,
     round(elapsed, 1) "elapsed",
@@ -187,9 +187,9 @@ SELECT_MERGES = r"""SELECT
     formatReadableSize(memory_usage) "memory_usage"
 {% endif -%}
 FROM system.merges
-"""
+'''
 
-SELECT_MUTATIONS = r"""SELECT
+SELECT_MUTATIONS = r'''SELECT
     database,
     table,
     mutation_id,
@@ -206,9 +206,9 @@ SELECT_MUTATIONS = r"""SELECT
 FROM system.mutations
 WHERE NOT is_done
 ORDER BY create_time DESC
-"""
+'''
 
-SELECT_RECENT_DATA_PARTS = r"""SELECT
+SELECT_RECENT_DATA_PARTS = r'''SELECT
     database,
     table,
     engine,
@@ -242,9 +242,9 @@ SELECT_RECENT_DATA_PARTS = r"""SELECT
 FROM system.parts
 WHERE modification_time > now() - INTERVAL 3 MINUTE
 ORDER BY modification_time DESC
-"""
+'''
 
-SELECT_DETACHED_DATA_PARTS = r"""SELECT
+SELECT_DETACHED_DATA_PARTS = r'''SELECT
     database,
     table,
     partition_id,
@@ -255,9 +255,9 @@ SELECT_DETACHED_DATA_PARTS = r"""SELECT
     max_block_number,
     level
 FROM system.detached_parts
-"""
+'''
 
-SELECT_PROCESSES = r"""SELECT
+SELECT_PROCESSES = r'''SELECT
     elapsed,
     query_id,
     {% if normalize_queries -%}
@@ -285,9 +285,9 @@ SELECT_PROCESSES = r"""SELECT
     {% endif -%}
 FROM system.processes
 ORDER BY elapsed DESC
-"""
+'''
 
-SELECT_TOP_QUERIES_BY_DURATION = r"""SELECT
+SELECT_TOP_QUERIES_BY_DURATION = r'''SELECT
     type,
     query_start_time,
     query_duration_ms,
@@ -339,9 +339,9 @@ WHERE type != 'QueryStart'
   AND event_time >= now() - INTERVAL 1 DAY
 ORDER BY query_duration_ms DESC
 LIMIT 10
-"""
+'''
 
-SELECT_TOP_QUERIES_BY_MEMORY_USAGE = r"""SELECT
+SELECT_TOP_QUERIES_BY_MEMORY_USAGE = r'''SELECT
     type,
     query_start_time,
     query_duration_ms,
@@ -393,9 +393,9 @@ WHERE type != 'QueryStart'
   AND event_time >= now() - INTERVAL 1 DAY
 ORDER BY memory_usage DESC
 LIMIT 10
-"""
+'''
 
-SELECT_FAILED_QUERIES = r"""SELECT
+SELECT_FAILED_QUERIES = r'''SELECT
     type,
     query_start_time,
     query_duration_ms,
@@ -448,9 +448,9 @@ WHERE type != 'QueryStart'
   AND exception != ''
 ORDER BY query_start_time DESC
 LIMIT 10
-"""
+'''
 
-SELECT_STACK_TRACES = r"""SELECT
+SELECT_STACK_TRACES = r'''SELECT
     '\n' || arrayStringConcat(
        arrayMap(
            x,
@@ -459,9 +459,9 @@ SELECT_STACK_TRACES = r"""SELECT
            arrayMap(x -> demangle(addressToSymbol(x)), trace)),
        '\n') AS trace
 FROM system.stack_trace
-"""
+'''
 
-SELECT_CRASH_LOG = r"""SELECT
+SELECT_CRASH_LOG = r'''SELECT
     event_time,
     signal,
     thread_id,
@@ -470,7 +470,7 @@ SELECT_CRASH_LOG = r"""SELECT
     version
 FROM system.crash_log
 ORDER BY event_time DESC
-"""
+'''
 
 
 def retry(exception_types, max_attempts=5, max_interval=5):
@@ -481,8 +481,7 @@ def retry(exception_types, max_attempts=5, max_interval=5):
         retry=tenacity.retry_if_exception_type(exception_types),
         wait=tenacity.wait_random_exponential(multiplier=0.5, max=max_interval),
         stop=tenacity.stop_after_attempt(max_attempts),
-        reraise=True,
-    )
+        reraise=True)
 
 
 class ClickhouseError(Exception):
@@ -503,9 +502,9 @@ class ClickhouseClient:
     def __init__(self, *, host="localhost", port=8123, user="default", password):
         self._session = requests.Session()
         if user:
-            self._session.headers["X-ClickHouse-User"] = user
-            self._session.headers["X-ClickHouse-Key"] = password
-        self._url = f"http://{host}:{port}"
+            self._session.headers['X-ClickHouse-User'] = user
+            self._session.headers['X-ClickHouse-Key'] = password
+        self._url = f'http://{host}:{port}'
         self._timeout = 60
         self._ch_version = None
 
@@ -517,16 +516,7 @@ class ClickhouseClient:
         return self._ch_version
 
     @retry(requests.exceptions.ConnectionError)
-    def query(
-        self,
-        query,
-        query_args=None,
-        format=None,
-        post_data=None,
-        timeout=None,
-        echo=False,
-        dry_run=False,
-    ):
+    def query(self, query, query_args=None, format=None, post_data=None, timeout=None, echo=False, dry_run=False):
         """
         Execute query.
         """
@@ -534,30 +524,28 @@ class ClickhouseClient:
             query = self.render_query(query, **query_args)
 
         if format:
-            query += f" FORMAT {format}"
+            query += f' FORMAT {format}'
 
         if timeout is None:
             timeout = self._timeout
 
         if echo:
-            print(sqlparse.format(query, reindent=True), "\n")
+            print(sqlparse.format(query, reindent=True), '\n')
 
         if dry_run:
             return None
 
         try:
-            response = self._session.post(
-                self._url,
-                params={
-                    "query": query,
-                },
-                json=post_data,
-                timeout=timeout,
-            )
+            response = self._session.post(self._url,
+                                          params={
+                                              'query': query,
+                                          },
+                                          json=post_data,
+                                          timeout=timeout)
 
             response.raise_for_status()
 
-            if format in ("JSON", "JSONCompact"):
+            if format in ('JSON', 'JSONCompact'):
                 return response.json()
 
             return response.text.strip()
@@ -567,9 +555,7 @@ class ClickhouseClient:
     def render_query(self, query, **kwargs):
         env = jinja2.Environment()
 
-        env.globals["version_ge"] = lambda version: version_ge(
-            self.clickhouse_version, version
-        )
+        env.globals['version_ge'] = lambda version: version_ge(self.clickhouse_version, version)
 
         template = env.from_string(query)
         return template.render(kwargs)
@@ -592,13 +578,11 @@ class ClickhouseConfig:
 
     @classmethod
     def load(cls):
-        return ClickhouseConfig(
-            cls._load_config("/var/lib/clickhouse/preprocessed_configs/config.xml")
-        )
+        return ClickhouseConfig(cls._load_config('/var/lib/clickhouse/preprocessed_configs/config.xml'))
 
     @staticmethod
     def _load_config(config_path):
-        with open(config_path, "r") as file:
+        with open(config_path, 'r') as file:
             return xmltodict.parse(file.read())
 
     @classmethod
@@ -607,8 +591,8 @@ class ClickhouseConfig:
             for key, value in list(config.items()):
                 if isinstance(value, MutableMapping):
                     cls._mask_secrets(config[key])
-                elif key in ("password", "secret_access_key", "header", "identity"):
-                    config[key] = "*****"
+                elif key in ('password', 'secret_access_key', 'header', 'identity'):
+                    config[key] = '*****'
 
 
 class DiagnosticsData:
@@ -619,53 +603,53 @@ class DiagnosticsData:
     def __init__(self, args):
         self.args = args
         self.host = args.host
-        self._sections = [{"section": None, "data": {}}]
+        self._sections = [{'section': None, 'data': {}}]
 
     def add_string(self, name, value, section=None):
         self._section(section)[name] = {
-            "type": "string",
-            "value": value,
+            'type': 'string',
+            'value': value,
         }
 
     def add_xml_document(self, name, document, section=None):
         self._section(section)[name] = {
-            "type": "xml",
-            "value": document,
+            'type': 'xml',
+            'value': document,
         }
 
     def add_query(self, name, query, result, section=None):
         self._section(section)[name] = {
-            "type": "query",
-            "query": query,
-            "result": result,
+            'type': 'query',
+            'query': query,
+            'result': result,
         }
 
     def add_command(self, name, command, result, section=None):
         self._section(section)[name] = {
-            "type": "command",
-            "command": command,
-            "result": result,
+            'type': 'command',
+            'command': command,
+            'result': result,
         }
 
     def dump(self, format):
-        if format.startswith("json"):
+        if format.startswith('json'):
             result = self._dump_json()
-        elif format.startswith("yaml"):
+        elif format.startswith('yaml'):
             result = self._dump_yaml()
         else:
             result = self._dump_wiki()
 
-        if format.endswith(".gz"):
-            compressor = gzip.GzipFile(mode="wb", fileobj=sys.stdout.buffer)
+        if format.endswith('.gz'):
+            compressor = gzip.GzipFile(mode='wb', fileobj=sys.stdout.buffer)
             compressor.write(result.encode())
         else:
             print(result)
 
     def _section(self, name=None):
-        if self._sections[-1]["section"] != name:
-            self._sections.append({"section": name, "data": {}})
+        if self._sections[-1]['section'] != name:
+            self._sections.append({'section': name, 'data': {}})
 
-        return self._sections[-1]["data"]
+        return self._sections[-1]['data']
 
     def _dump_json(self):
         """
@@ -685,85 +669,85 @@ class DiagnosticsData:
         """
 
         def _write_title(buffer, value):
-            buffer.write(f"### {value}\n")
+            buffer.write(f'### {value}\n')
 
         def _write_subtitle(buffer, value):
-            buffer.write(f"#### {value}\n")
+            buffer.write(f'#### {value}\n')
 
         def _write_string_item(buffer, name, item):
-            value = item["value"]
-            if value != "":
-                value = f"**{value}**"
-            buffer.write(f"{name}: {value}\n")
+            value = item['value']
+            if value != '':
+                value = f'**{value}**'
+            buffer.write(f'{name}: {value}\n')
 
         def _write_xml_item(buffer, section_name, name, item):
             if section_name:
-                buffer.write(f"##### {name}\n")
+                buffer.write(f'##### {name}\n')
             else:
                 _write_subtitle(buffer, name)
 
-            _write_result(buffer, item["value"], format="XML")
+            _write_result(buffer, item['value'], format='XML')
 
         def _write_query_item(buffer, section_name, name, item):
             if section_name:
-                buffer.write(f"##### {name}\n")
+                buffer.write(f'##### {name}\n')
             else:
                 _write_subtitle(buffer, name)
 
-            _write_query(buffer, item["query"])
-            _write_result(buffer, item["result"])
+            _write_query(buffer, item['query'])
+            _write_result(buffer, item['result'])
 
         def _write_command_item(buffer, section_name, name, item):
             if section_name:
-                buffer.write(f"##### {name}\n")
+                buffer.write(f'##### {name}\n')
             else:
                 _write_subtitle(buffer, name)
 
-            _write_command(buffer, item["command"])
-            _write_result(buffer, item["result"])
+            _write_command(buffer, item['command'])
+            _write_result(buffer, item['result'])
 
         def _write_unknown_item(buffer, section_name, name, item):
             if section_name:
-                buffer.write(f"**{name}**\n")
+                buffer.write(f'**{name}**\n')
             else:
                 _write_subtitle(buffer, name)
 
             json.dump(item, buffer, indent=2)
 
         def _write_query(buffer, query):
-            buffer.write("**query**\n")
-            buffer.write("```sql\n")
+            buffer.write('**query**\n')
+            buffer.write('```sql\n')
             buffer.write(query)
-            buffer.write("\n```\n")
+            buffer.write('\n```\n')
 
         def _write_command(buffer, command):
-            buffer.write("**command**\n")
-            buffer.write("```\n")
+            buffer.write('**command**\n')
+            buffer.write('```\n')
             buffer.write(command)
-            buffer.write("\n```\n")
+            buffer.write('\n```\n')
 
         def _write_result(buffer, result, format=None):
-            buffer.write("**result**\n")
-            buffer.write(f"```{format}\n" if format else "```\n")
+            buffer.write('**result**\n')
+            buffer.write(f'```{format}\n' if format else '```\n')
             buffer.write(result)
-            buffer.write("\n```\n")
+            buffer.write('\n```\n')
 
         buffer = io.StringIO()
 
-        _write_title(buffer, f"Diagnostics data for host {self.host}")
+        _write_title(buffer, f'Diagnostics data for host {self.host}')
         for section in self._sections:
-            section_name = section["section"]
+            section_name = section['section']
             if section_name:
                 _write_subtitle(buffer, section_name)
 
-            for name, item in section["data"].items():
-                if item["type"] == "string":
+            for name, item in section['data'].items():
+                if item['type'] == 'string':
                     _write_string_item(buffer, name, item)
-                elif item["type"] == "query":
+                elif item['type'] == 'query':
                     _write_query_item(buffer, section_name, name, item)
-                elif item["type"] == "command":
+                elif item['type'] == 'command':
                     _write_command_item(buffer, section_name, name, item)
-                elif item["type"] == "xml":
+                elif item['type'] == 'xml':
                     _write_xml_item(buffer, section_name, name, item)
                 else:
                     _write_unknown_item(buffer, section_name, name, item)
@@ -776,196 +760,126 @@ def main():
     Program entry point.
     """
     args = parse_args()
-    timestamp = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
-    client = ClickhouseClient(
-        host=args.host, port=args.port, user=args.user, password=args.password
-    )
+    timestamp = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S')
+    client = ClickhouseClient(host=args.host, port=args.port, user=args.user, password=args.password)
     ch_config = ClickhouseConfig.load()
     version = client.clickhouse_version
-    system_tables = [
-        row[0]
-        for row in execute_query(client, SELECT_SYSTEM_TABLES, format="JSONCompact")[
-            "data"
-        ]
-    ]
+    system_tables = [row[0] for row in execute_query(client, SELECT_SYSTEM_TABLES, format='JSONCompact')['data']]
 
     diagnostics = DiagnosticsData(args)
-    diagnostics.add_string("Version", version)
-    diagnostics.add_string("Timestamp", timestamp)
-    diagnostics.add_string("Uptime", execute_query(client, SELECT_UPTIME))
+    diagnostics.add_string('Version', version)
+    diagnostics.add_string('Timestamp', timestamp)
+    diagnostics.add_string('Uptime', execute_query(client, SELECT_UPTIME))
 
-    diagnostics.add_xml_document("ClickHouse configuration", ch_config.dump())
+    diagnostics.add_xml_document('ClickHouse configuration', ch_config.dump())
 
-    if version_ge(version, "20.8"):
-        add_query(
-            diagnostics,
-            "Access configuration",
-            client=client,
-            query=SELECT_ACCESS,
-            format="TSVRaw",
-        )
-        add_query(
-            diagnostics,
-            "Quotas",
-            client=client,
-            query=SELECT_QUOTA_USAGE,
-            format="Vertical",
-        )
+    if version_ge(version, '20.8'):
+        add_query(diagnostics, 'Access configuration',
+                  client=client,
+                  query=SELECT_ACCESS,
+                  format='TSVRaw')
+        add_query(diagnostics, 'Quotas',
+                  client=client,
+                  query=SELECT_QUOTA_USAGE,
+                  format='Vertical')
 
-    add_query(
-        diagnostics,
-        "Database engines",
-        client=client,
-        query=SELECT_DATABASE_ENGINES,
-        format="PrettyCompactNoEscapes",
-        section="Schema",
-    )
-    add_query(
-        diagnostics,
-        "Databases (top 10 by size)",
-        client=client,
-        query=SELECT_DATABASES,
-        format="PrettyCompactNoEscapes",
-        section="Schema",
-    )
-    add_query(
-        diagnostics,
-        "Table engines",
-        client=client,
-        query=SELECT_TABLE_ENGINES,
-        format="PrettyCompactNoEscapes",
-        section="Schema",
-    )
-    add_query(
-        diagnostics,
-        "Dictionaries",
-        client=client,
-        query=SELECT_DICTIONARIES,
-        format="PrettyCompactNoEscapes",
-        section="Schema",
-    )
+    add_query(diagnostics, 'Database engines',
+              client=client,
+              query=SELECT_DATABASE_ENGINES,
+              format='PrettyCompactNoEscapes',
+              section='Schema')
+    add_query(diagnostics, 'Databases (top 10 by size)',
+              client=client,
+              query=SELECT_DATABASES,
+              format='PrettyCompactNoEscapes',
+              section='Schema')
+    add_query(diagnostics, 'Table engines',
+              client=client,
+              query=SELECT_TABLE_ENGINES,
+              format='PrettyCompactNoEscapes',
+              section='Schema')
+    add_query(diagnostics, 'Dictionaries',
+              client=client,
+              query=SELECT_DICTIONARIES,
+              format='PrettyCompactNoEscapes',
+              section='Schema')
 
-    add_query(
-        diagnostics,
-        "Replicated tables (top 10 by absolute delay)",
-        client=client,
-        query=SELECT_REPLICAS,
-        format="PrettyCompactNoEscapes",
-        section="Replication",
-    )
-    add_query(
-        diagnostics,
-        "Replication queue (top 20 oldest tasks)",
-        client=client,
-        query=SELECT_REPLICATION_QUEUE,
-        format="Vertical",
-        section="Replication",
-    )
-    if version_ge(version, "21.3"):
-        add_query(
-            diagnostics,
-            "Replicated fetches",
-            client=client,
-            query=SELECT_REPLICATED_FETCHES,
-            format="Vertical",
-            section="Replication",
-        )
+    add_query(diagnostics, 'Replicated tables (top 10 by absolute delay)',
+              client=client,
+              query=SELECT_REPLICAS,
+              format='PrettyCompactNoEscapes',
+              section='Replication')
+    add_query(diagnostics, 'Replication queue (top 20 oldest tasks)',
+              client=client,
+              query=SELECT_REPLICATION_QUEUE,
+              format='Vertical',
+              section='Replication')
+    if version_ge(version, '21.3'):
+        add_query(diagnostics, 'Replicated fetches',
+                  client=client,
+                  query=SELECT_REPLICATED_FETCHES,
+                  format='Vertical',
+                  section='Replication')
 
-    add_query(
-        diagnostics,
-        "Top 10 tables by max parts per partition",
-        client=client,
-        query=SELECT_PARTS_PER_TABLE,
-        format="PrettyCompactNoEscapes",
-    )
-    add_query(
-        diagnostics,
-        "Merges in progress",
-        client=client,
-        query=SELECT_MERGES,
-        format="Vertical",
-    )
-    add_query(
-        diagnostics,
-        "Mutations in progress",
-        client=client,
-        query=SELECT_MUTATIONS,
-        format="Vertical",
-    )
-    add_query(
-        diagnostics,
-        "Recent data parts (modification time within last 3 minutes)",
-        client=client,
-        query=SELECT_RECENT_DATA_PARTS,
-        format="Vertical",
-    )
+    add_query(diagnostics, 'Top 10 tables by max parts per partition',
+              client=client,
+              query=SELECT_PARTS_PER_TABLE,
+              format='PrettyCompactNoEscapes')
+    add_query(diagnostics, 'Merges in progress',
+              client=client,
+              query=SELECT_MERGES,
+              format='Vertical')
+    add_query(diagnostics, 'Mutations in progress',
+              client=client,
+              query=SELECT_MUTATIONS,
+              format='Vertical')
+    add_query(diagnostics, 'Recent data parts (modification time within last 3 minutes)',
+              client=client,
+              query=SELECT_RECENT_DATA_PARTS,
+              format='Vertical')
 
-    add_query(
-        diagnostics,
-        "system.detached_parts",
-        client=client,
-        query=SELECT_DETACHED_DATA_PARTS,
-        format="PrettyCompactNoEscapes",
-        section="Detached data",
-    )
-    add_command(
-        diagnostics,
-        "Disk space usage",
-        command="du -sh -L -c /var/lib/clickhouse/data/*/*/detached/* | sort -rsh",
-        section="Detached data",
-    )
+    add_query(diagnostics, 'system.detached_parts',
+              client=client,
+              query=SELECT_DETACHED_DATA_PARTS,
+              format='PrettyCompactNoEscapes',
+              section='Detached data')
+    add_command(diagnostics, 'Disk space usage',
+                command='du -sh -L -c /var/lib/clickhouse/data/*/*/detached/* | sort -rsh',
+                section='Detached data')
 
-    add_query(
-        diagnostics,
-        "Queries in progress (process list)",
-        client=client,
-        query=SELECT_PROCESSES,
-        format="Vertical",
-        section="Queries",
-    )
-    add_query(
-        diagnostics,
-        "Top 10 queries by duration",
-        client=client,
-        query=SELECT_TOP_QUERIES_BY_DURATION,
-        format="Vertical",
-        section="Queries",
-    )
-    add_query(
-        diagnostics,
-        "Top 10 queries by memory usage",
-        client=client,
-        query=SELECT_TOP_QUERIES_BY_MEMORY_USAGE,
-        format="Vertical",
-        section="Queries",
-    )
-    add_query(
-        diagnostics,
-        "Last 10 failed queries",
-        client=client,
-        query=SELECT_FAILED_QUERIES,
-        format="Vertical",
-        section="Queries",
-    )
+    add_query(diagnostics, 'Queries in progress (process list)',
+              client=client,
+              query=SELECT_PROCESSES,
+              format='Vertical',
+              section='Queries')
+    add_query(diagnostics, 'Top 10 queries by duration',
+              client=client,
+              query=SELECT_TOP_QUERIES_BY_DURATION,
+              format='Vertical',
+              section='Queries')
+    add_query(diagnostics, 'Top 10 queries by memory usage',
+              client=client,
+              query=SELECT_TOP_QUERIES_BY_MEMORY_USAGE,
+              format='Vertical',
+              section='Queries')
+    add_query(diagnostics, 'Last 10 failed queries',
+              client=client,
+              query=SELECT_FAILED_QUERIES,
+              format='Vertical',
+              section='Queries')
 
-    add_query(
-        diagnostics,
-        "Stack traces",
-        client=client,
-        query=SELECT_STACK_TRACES,
-        format="Vertical",
-    )
+    add_query(diagnostics, 'Stack traces',
+              client=client,
+              query=SELECT_STACK_TRACES,
+              format='Vertical')
 
-    if "crash_log" in system_tables:
-        add_query(
-            diagnostics,
-            "Crash log",
-            client=client,
-            query=SELECT_CRASH_LOG,
-            format="Vertical",
-        )
+    if 'crash_log' in system_tables:
+        add_query(diagnostics, 'Crash log',
+                  client=client,
+                  query=SELECT_CRASH_LOG,
+                  format='Vertical')
 
-    add_command(diagnostics, "uname", "uname -a")
+    add_command(diagnostics, 'uname', 'uname -a')
 
     diagnostics.dump(args.format)
 
@@ -975,34 +889,29 @@ def parse_args():
     Parse command-line arguments.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--format",
-        choices=["json", "yaml", "json.gz", "yaml.gz", "wiki", "wiki.gz"],
-        default="wiki",
-    )
-    parser.add_argument("--normalize-queries", action="store_true", default=False)
-    parser.add_argument("--host", dest="host", help="clickhouse host")
-    parser.add_argument(
-        "--port", dest="port", default=8123, help="clickhouse http port"
-    )
-    parser.add_argument(
-        "--user", dest="user", default="default", help="clickhouse user"
-    )
-    parser.add_argument("--password", dest="password", help="clickhouse password")
+    parser.add_argument('--format',
+                        choices=['json', 'yaml', 'json.gz', 'yaml.gz', 'wiki', 'wiki.gz'],
+                        default='wiki')
+    parser.add_argument('--normalize-queries',
+                        action='store_true',
+                        default=False)
+    parser.add_argument('--host', dest="host", help="clickhouse host")
+    parser.add_argument('--port', dest="port", default=8123, help="clickhouse http port")
+    parser.add_argument('--user', dest="user", default="default", help="clickhouse user")
+    parser.add_argument('--password', dest="password", help="clickhouse password")
     return parser.parse_args()
 
 
 def add_query(diagnostics, name, client, query, format, section=None):
     query_args = {
-        "normalize_queries": diagnostics.args.normalize_queries,
+        'normalize_queries': diagnostics.args.normalize_queries,
     }
     query = client.render_query(query, **query_args)
     diagnostics.add_query(
         name=name,
         query=query,
         result=execute_query(client, query, render_query=False, format=format),
-        section=section,
-    )
+        section=section)
 
 
 def execute_query(client, query, render_query=True, format=None):
@@ -1017,18 +926,14 @@ def execute_query(client, query, render_query=True, format=None):
 
 def add_command(diagnostics, name, command, section=None):
     diagnostics.add_command(
-        name=name, command=command, result=execute_command(command), section=section
-    )
+        name=name,
+        command=command,
+        result=execute_command(command),
+        section=section)
 
 
 def execute_command(command, input=None):
-    proc = subprocess.Popen(
-        command,
-        shell=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    proc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     if isinstance(input, str):
         input = input.encode()
@@ -1036,7 +941,7 @@ def execute_command(command, input=None):
     stdout, stderr = proc.communicate(input=input)
 
     if proc.returncode:
-        return f"failed with exit code {proc.returncode}\n{stderr.decode()}"
+        return f'failed with exit code {proc.returncode}\n{stderr.decode()}'
 
     return stdout.decode()
 
@@ -1052,8 +957,8 @@ def parse_version(version):
     """
     Parse version string.
     """
-    return [int(x) for x in version.strip().split(".") if x.isnumeric()]
+    return [int(x) for x in version.strip().split('.') if x.isnumeric()]
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

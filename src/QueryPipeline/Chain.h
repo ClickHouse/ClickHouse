@@ -2,15 +2,11 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 
 namespace DB
 {
 
-/// Has one unconnected input port and one unconnected output port.
-/// There may be other ports on the processors, but they must all be connected.
-/// The unconnected input must be on the first processor, output - on the last.
-/// The processors don't necessarily form an actual chain.
 class Chain
 {
 public:
@@ -31,7 +27,6 @@ public:
 
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
-    void appendChain(Chain chain);
 
     IProcessor & getSource();
     IProcessor & getSink();
@@ -49,11 +44,7 @@ public:
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
 
-    void attachResources(QueryPlanResourceHolder holder_)
-    {
-        /// This operator "=" actually merges holder_ into holder, doesn't replace.
-        holder = std::move(holder_);
-    }
+    void attachResources(QueryPlanResourceHolder holder_) { holder = std::move(holder_); }
     QueryPlanResourceHolder detachResources() { return std::move(holder); }
 
     void reset();

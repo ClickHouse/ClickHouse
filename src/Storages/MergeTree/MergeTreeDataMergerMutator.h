@@ -45,7 +45,7 @@ public:
                                                         const MergeTreeTransaction *,
                                                         String *)>;
 
-    explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -111,11 +111,10 @@ public:
         ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
-        bool need_prefix = true,
-        IMergeTreeDataPart * parent_part = nullptr,
+        const IMergeTreeDataPart * parent_part = nullptr,
+        const IDataPartStorageBuilder * parent_path_storage_builder = nullptr,
         const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
@@ -128,14 +127,14 @@ public:
         ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder,
-        bool need_prefix = true);
+        TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         const MergeTreeTransactionPtr & txn,
-        MergeTreeData::Transaction & out_transaction);
+        MergeTreeData::Transaction & out_transaction,
+        DataPartStorageBuilderPtr builder);
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
@@ -158,6 +157,7 @@ public :
 
 private:
     MergeTreeData & data;
+    const size_t max_tasks_count;
 
     Poco::Logger * log;
 

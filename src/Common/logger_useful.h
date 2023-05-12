@@ -6,40 +6,33 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/LoggingFormatStringHelpers.h>
 
-namespace Poco { class Logger; }
-
-
-#define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
-#define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterIml>(x, y)
 
 namespace
 {
-    [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; }
-    [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); }
-    [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLogger(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
-    [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLogger(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
-}
+    template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
+    template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
+    /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
+    template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
 
-#define LOG_IMPL_FIRST_ARG(X, ...) X
+    [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; };
+    [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); };
+}
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
-///  the first argument is interpreted as a template with {}-substitutions
-///  and the latter arguments are treated as values to substitute.
-/// If only one argument is provided, it is treated as a message without substitutions.
+///  the first argument is interpreted as template with {}-substitutions
+///  and the latter arguments treat as values to substitute.
+/// If only one argument is provided, it is threat as message without substitutions.
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                              \
 {                                                                                 \
     auto _logger = ::getLogger(logger);                                           \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
-        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));            \
-    if (_is_clients_log || _logger->is((PRIORITY)))                               \
+        (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
+    if (_logger->is((PRIORITY)) || _is_clients_log)                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
-        formatStringCheckArgsNum(__VA_ARGS__);                                    \
         if (auto _channel = _logger->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \
@@ -47,10 +40,9 @@ namespace
             file_function += "; ";                                                \
             file_function += __PRETTY_FUNCTION__;                                 \
             Poco::Message poco_message(_logger->name(), formatted_message,        \
-                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__))); \
+                                 (PRIORITY), file_function.c_str(), __LINE__);    \
             _channel->log(poco_message);                                          \
         }                                                                         \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                          \
     }                                                                             \
 } while (false)
 

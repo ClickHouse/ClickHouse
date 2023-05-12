@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -44,8 +44,9 @@ public:
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                "Must be String or FixedString", arg->getName(), std::to_string(1), getName());
+            throw Exception(
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be String or FixedString",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -67,7 +68,7 @@ public:
         else if (const ColumnConst * h3index_const_fixed = checkAndGetColumnConst<ColumnFixedString>(col_hindex))
             execute<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*h3index_const_fixed), dst_data);
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column as argument of function {}", getName());
+            throw Exception("Illegal column as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         return dst;
     }
@@ -88,7 +89,7 @@ private:
 
             if (res_data[row_num] == 0)
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", h3index_str);
+                throw Exception("Invalid H3 index: " + h3index_str, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             h3index_source.next();

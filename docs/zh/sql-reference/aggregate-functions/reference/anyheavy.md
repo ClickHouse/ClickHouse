@@ -1,11 +1,10 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/anyheavy
 sidebar_position: 103
 ---
 
 # anyHeavy {#anyheavyx}
 
-选择一个频繁出现的值，使用[heavy hitters](https://doi.org/10.1145/762471.762473) 算法。 如果某个值在查询的每个执行线程中出现的情况超过一半，则返回此值。 通常情况下，结果是不确定的。
+选择一个频繁出现的值，使用[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) 算法。 如果某个值在查询的每个执行线程中出现的情况超过一半，则返回此值。 通常情况下，结果是不确定的。
 
 ``` sql
 anyHeavy(column)

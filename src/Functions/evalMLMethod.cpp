@@ -58,13 +58,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());
+            throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
         const auto * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Argument for function {} must have type AggregateFunction - state "
-                            "of aggregate function.", getName());
+            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type->getReturnTypeToPredict();
     }
@@ -72,7 +71,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());
+            throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
         const auto * model = arguments[0].column.get();
 
@@ -82,8 +81,8 @@ public:
         const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
 
         if (!agg_function)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                            arguments[0].column->getName(), getName());
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         return agg_function->predictValues(arguments, context);
     }

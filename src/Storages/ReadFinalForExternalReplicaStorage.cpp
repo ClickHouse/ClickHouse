@@ -35,7 +35,7 @@ void readFinalFromNestedStorage(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned int num_streams)
 {
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
@@ -59,8 +59,7 @@ void readFinalFromNestedStorage(
     }
 
     auto nested_snapshot = nested_storage->getStorageSnapshot(nested_metadata, context);
-    nested_storage->read(
-        query_plan, require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    nested_storage->read(query_plan, require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (!query_plan.isInitialized())
     {

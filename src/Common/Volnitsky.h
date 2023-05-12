@@ -11,10 +11,6 @@
 #include <Common/UTF8Helpers.h>
 #include <base/unaligned.h>
 
-#ifdef __SSE4_1__
-    #include <smmintrin.h>
-#endif
-
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
@@ -197,8 +193,8 @@ namespace VolnitskyTraits
                         chars.c1 = seq_l[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
-                        chars.c0 = seq_r[seq_ngram_offset];
-                        chars.c1 = seq_r[seq_ngram_offset + 1];
+                        chars.c0 = seq_r[seq_ngram_offset]; //-V519
+                        chars.c1 = seq_r[seq_ngram_offset + 1]; //-V519
                         putNGramBase(n, offset);
 
                     }
@@ -321,7 +317,7 @@ namespace VolnitskyTraits
                     {
                         /// ngram for Ul
                         chars.c0 = c0u;
-                        chars.c1 = c1l;
+                        chars.c1 = c1l; //-V1048
                         putNGramBase(n, offset);
                     }
 
@@ -406,8 +402,7 @@ public:
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
-                needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
 
             /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
               * are represented by different number of bytes or code points.
@@ -430,10 +425,6 @@ public:
             return haystack;
 
         const auto * haystack_end = haystack + haystack_size;
-
-#ifdef __SSE4_1__
-        return fallback_searcher.search(haystack, haystack_end);
-#endif
 
         if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);
@@ -504,7 +495,7 @@ private:
     /// last index of offsets that was not processed
     size_t last;
 
-    /// limit for adding to hashtable. In worst case with case insensitive search, the table will be filled at most as half
+    /// limit for adding to hashtable. In worst case with case insentive search, the table will be filled at most as half
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:

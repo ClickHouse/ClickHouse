@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_ORC
 #include <IO/WriteBuffer.h>
@@ -44,7 +44,6 @@ public:
 private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
 
     std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
 

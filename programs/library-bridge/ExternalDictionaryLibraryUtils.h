@@ -2,6 +2,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Block.h>
+#include <base/bit_cast.h>
 #include <base/range.h>
 
 #include "ExternalDictionaryLibraryAPI.h"

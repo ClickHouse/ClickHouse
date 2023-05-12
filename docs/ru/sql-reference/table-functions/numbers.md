@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/numbers
 sidebar_position: 39
 sidebar_label: numbers
 ---
@@ -25,3 +24,4 @@ SELECT * FROM system.numbers LIMIT 10;
 -- генерация последовательности всех дат от 2010-01-01 до 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
+

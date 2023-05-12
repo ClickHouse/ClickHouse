@@ -1,6 +1,6 @@
 #include <boost/program_options.hpp>
 
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>

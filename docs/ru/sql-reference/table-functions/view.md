@@ -1,6 +1,3 @@
----
-slug: /ru/sql-reference/table-functions/view
----
 ## view {#view}
 
 Преобразовывает подзапрос в таблицу. Функция реализовывает представления (смотрите [CREATE VIEW](https://clickhouse.com/docs/ru/sql-reference/statements/create/view/#create-view)). Результирующая таблица не хранит данные, а только сохраняет указанный запрос `SELECT`. При чтении из таблицы, ClickHouse выполняет запрос и удаляет все ненужные столбцы из результата.
@@ -62,3 +59,5 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 **Смотрите также**
 
 -   [view](https://clickhouse.com/docs/ru/engines/table-engines/special/view/#table_engines-view)
+
+[Оригинальная статья](https://clickhouse.com/docs/en/sql-reference/table-functions/view/) <!--hide-->

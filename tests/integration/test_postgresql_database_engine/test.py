@@ -282,7 +282,6 @@ def test_predefined_connection_configuration(started_cluster):
     result = node1.query(
         "select create_table_query from system.tables where database ='postgres_database'"
     )
-    print(f"kssenii: {result}")
     assert result.strip().endswith(
         "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
     )
@@ -327,17 +326,6 @@ def test_predefined_connection_configuration(started_cluster):
         node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
-    node1.query(
-        """
-        DROP DATABASE postgres_database;
-        CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, use_table_cache=1);
-        """
-    )
-    assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
-        == "100"
-    )
-    assert node1.contains_in_log("Cached table `test_table`")
 
     node1.query("DROP DATABASE postgres_database")
     cursor.execute(f"DROP TABLE test_table ")
@@ -382,19 +370,6 @@ def test_postgresql_fetch_tables(started_cluster):
 
     cursor.execute(f"DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
-
-
-def test_datetime(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("drop table if exists test")
-    cursor.execute("create table test (u timestamp)")
-
-    node1.query("drop database if exists pg")
-    node1.query("create database pg engine = PostgreSQL(postgres1)")
-    assert "DateTime64(6)" in node1.query("show create table pg.test")
-    node1.query("detach table pg.test")
-    node1.query("attach table pg.test")
-    assert "DateTime64(6)" in node1.query("show create table pg.test")
 
 
 if __name__ == "__main__":

@@ -50,10 +50,6 @@ struct StorageInMemoryMetadata
 
     String comment;
 
-    /// Version of metadata. Managed properly by ReplicatedMergeTree only
-    /// (zero-initialization is important)
-    int32_t metadata_version = 0;
-
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -62,7 +58,7 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
     StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
 
-    /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
+    /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
 
@@ -81,6 +77,15 @@ struct StorageInMemoryMetadata
     /// Sets projections
     void setProjections(ProjectionsDescription projections_);
 
+    /// Set partition key for storage (methods below, are just wrappers for this struct).
+    void setPartitionKey(const KeyDescription & partition_key_);
+    /// Set sorting key for storage (methods below, are just wrappers for this struct).
+    void setSortingKey(const KeyDescription & sorting_key_);
+    /// Set primary key for storage (methods below, are just wrappers for this struct).
+    void setPrimaryKey(const KeyDescription & primary_key_);
+    /// Set sampling key for storage (methods below, are just wrappers for this struct).
+    void setSamplingKey(const KeyDescription & sampling_key_);
+
     /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
@@ -93,11 +98,6 @@ struct StorageInMemoryMetadata
 
     /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
-
-    /// Set version of metadata.
-    void setMetadataVersion(int32_t metadata_version_);
-    /// Get copy of current metadata with metadata_version_
-    StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -226,9 +226,6 @@ struct StorageInMemoryMetadata
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
-
-    /// Get version of metadata
-    int32_t getMetadataVersion() const { return metadata_version; }
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

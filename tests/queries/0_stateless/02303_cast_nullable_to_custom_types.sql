@@ -12,7 +12,6 @@ select CAST(number % 2 ? 'true' : NULL, 'Nullable(Bool)') from numbers(2);
 select CAST(number % 2 ? '0.0.0.0' : NULL, 'Nullable(IPv4)') from numbers(2);
 select CAST(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL, 'Nullable(IPv6)') from numbers(2);
 
-set cast_keep_nullable = 1;
 select toBool(number % 2 ? 'true' : NULL) from numbers(2);
 select toIPv4(number % 2 ? '0.0.0.0' : NULL) from numbers(2);
 select toIPv4OrDefault(number % 2 ? '' : NULL) from numbers(2);

@@ -2,6 +2,7 @@
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
+            "docker/test/split_build_smoke_test",
             "docker/test/codebrowser"
         ]
     },
@@ -43,8 +44,7 @@
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress",
-            "docker/test/upgrade"
+            "docker/test/stress"
         ]
     },
     "docker/test/unit": {
@@ -55,8 +55,8 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
-    "docker/test/upgrade": {
-        "name": "clickhouse/upgrade-check",
+    "docker/test/split_build_smoke_test": {
+        "name": "clickhouse/split-build-smoke-test",
         "dependent": []
     },
     "docker/test/codebrowser": {
@@ -66,6 +66,10 @@
     "docker/test/integration/runner": {
         "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
+        "dependent": []
+    },
+    "docker/test/testflows/runner": {
+        "name": "clickhouse/testflows-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
@@ -123,8 +127,7 @@
             "docker/test/stateless",
             "docker/test/integration/base",
             "docker/test/fuzzer",
-            "docker/test/keeper-jepsen",
-            "docker/test/server-jepsen"
+            "docker/test/keeper-jepsen"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -140,25 +143,9 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
-    "docker/test/server-jepsen": {
-        "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
-    "docker/test/install/deb": {
-        "name": "clickhouse/install-deb-test",
-        "dependent": []
-    },
-    "docker/test/install/rpm": {
-        "name": "clickhouse/install-rpm-test",
-        "dependent": []
-    },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
         ]
-    },
-    "docker/test/sqllogic": {
-        "name": "clickhouse/sqllogic-test",
-        "dependent": []
     }
 }

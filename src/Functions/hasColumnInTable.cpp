@@ -65,7 +65,8 @@ public:
 DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 3 || arguments.size() > 6)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
+        throw Exception{"Invalid number of arguments for function " + getName(),
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
     for (size_t i = 0; i < arguments.size(); ++i)
@@ -74,8 +75,8 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 
         if (!checkColumnConst<ColumnString>(argument.column.get()))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} argument for function {} must be const String.",
-                            arg_pos_description[i], getName());
+            throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -110,7 +111,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     String column_name = get_string_from_columns(arguments[arg++]);
 
     if (table_name.empty())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
+        throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
 
     bool has_column;
     if (host_name.empty())
@@ -130,18 +131,14 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-        ClusterConnectionParameters params{
+        auto cluster = std::make_shared<Cluster>(
+            getContext()->getSettings(),
+            host_names,
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
             treat_local_as_remote,
-            treat_local_port_as_remote,
-            /* secure= */ false,
-            /* priority= */ 1,
-            /* cluster_name= */ "",
-            /* password= */ ""
-        };
-        auto cluster = std::make_shared<Cluster>(getContext()->getSettings(), host_names, params);
+            treat_local_port_as_remote);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required

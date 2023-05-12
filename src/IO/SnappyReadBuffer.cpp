@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SNAPPY
 #include <memory>
@@ -37,7 +37,7 @@ bool SnappyReadBuffer::nextImpl()
         bool success = snappy::Uncompress(compress_buffer.data(), wb.count(), &uncompress_buffer);
         if (!success)
         {
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncomress failed: ");
+            throw Exception("snappy uncomress failed: ", ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
         }
         BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
         return true;
@@ -55,13 +55,14 @@ off_t SnappyReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_pos = count() + off;
     else
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
+        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
     working_buffer = internal_buffer;
     if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-                        "Cannot seek through buffer because seek position ({}) is out of bounds [0, {}]",
-                        new_pos, working_buffer.size());
+        throw Exception(
+            String("Cannot seek through buffer") + " because seek position (" + toString(new_pos) + ") is out of bounds [0, "
+                + toString(working_buffer.size()) + "]",
+            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
     position() = working_buffer.begin() + new_pos;
     return new_pos;
 }

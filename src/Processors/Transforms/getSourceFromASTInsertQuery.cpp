@@ -37,17 +37,17 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+        throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
 
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
+        throw Exception("Query has infile and was send directly to server", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     if (ast_insert_query->format.empty())
     {
         if (input_function)
-            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
+            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: INSERT query requires format to be set");
+            throw Exception("Logical error: INSERT query requires format to be set", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
@@ -64,13 +64,15 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     return source;
 }
 
-Pipe getSourceFromInputFormat(
+Pipe getSourceFromASTInsertQuery(
     const ASTPtr & ast,
-    InputFormatPtr format,
+    bool with_buffers,
+    const Block & header,
     ContextPtr context,
     const ASTPtr & input_function)
 {
-    Pipe pipe(format);
+    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
+    Pipe pipe(source);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
@@ -82,23 +84,12 @@ Pipe getSourceFromInputFormat(
         {
             pipe.addSimpleTransform([&](const Block & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, context);
             });
         }
     }
 
     return pipe;
-}
-
-Pipe getSourceFromASTInsertQuery(
-    const ASTPtr & ast,
-    bool with_buffers,
-    const Block & header,
-    ContextPtr context,
-    const ASTPtr & input_function)
-{
-    auto format = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
-    return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)

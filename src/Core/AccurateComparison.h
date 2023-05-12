@@ -67,7 +67,7 @@ bool lessOp(A a, B b)
 
     static_assert(is_integer<A> || std::is_floating_point_v<A>);
     static_assert(is_integer<B> || std::is_floating_point_v<B>);
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 template <typename A, typename B>
@@ -168,7 +168,7 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
         if (isNaN(value))
         {
-            result = static_cast<To>(value);
+            result = value;
             return true;
         }
 

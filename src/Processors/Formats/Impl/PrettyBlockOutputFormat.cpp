@@ -1,3 +1,8 @@
+#include <sys/ioctl.h>
+#if defined(OS_SUNOS)
+#  include <sys/termios.h>
+#endif
+#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
@@ -5,16 +10,22 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/PODArray.h>
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+}
+
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
 {
+    struct winsize w;
+    if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
+        terminal_width = w.ws_col;
 }
 
 
@@ -26,8 +37,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 {
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
-    /// len(num_rows + total_rows) + len(". ")
-    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
+    /// len(num_rows) + len(". ")
+    row_number_width = std::floor(std::log10(num_rows)) + 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -137,25 +148,21 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         total_rows += chunk.getNumRows();
         return;
     }
-
-    if (mono_block
-        || (format_settings.pretty.squash_milliseconds
-            && time_after_previous_chunk.elapsedMilliseconds() <= format_settings.pretty.squash_milliseconds))
+    if (mono_block)
     {
         if (port_kind == PortKind::Main)
         {
-            if (squashed_chunk)
-                squashed_chunk.append(chunk);
+            if (mono_chunk)
+                mono_chunk.append(chunk);
             else
-                squashed_chunk = std::move(chunk);
+                mono_chunk = std::move(chunk);
             return;
         }
 
         /// Should be written from writeSuffix()
-        assert(!squashed_chunk);
+        assert(!mono_chunk);
     }
 
-    writeSquashedChunkIfNeeded();
     writeChunk(chunk, port_kind);
 }
 
@@ -288,7 +295,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+            auto row_num_string = std::to_string(i + 1) + ". ";
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
             {
                 writeCString(" ", out);
@@ -393,20 +400,18 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 }
 
 
-void PrettyBlockOutputFormat::writeSquashedChunkIfNeeded()
+void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
 {
-    if (squashed_chunk)
+    if (mono_chunk)
     {
-        writeChunk(squashed_chunk, PortKind::Main);
-        squashed_chunk.clear();
-        if (format_settings.pretty.squash_milliseconds)
-            time_after_previous_chunk.restart();
+        writeChunk(mono_chunk, PortKind::Main);
+        mono_chunk.clear();
     }
 }
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
-    writeSquashedChunkIfNeeded();
+    writeMonoChunkIfNeeded();
 
     if (total_rows >= format_settings.pretty.max_rows)
     {

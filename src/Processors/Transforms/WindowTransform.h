@@ -8,10 +8,6 @@
 
 #include <deque>
 
-/// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-
 
 namespace DB
 {
@@ -38,7 +34,7 @@ struct WindowFunctionWorkspace
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
-    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
+    uint64_t cached_block_number = std::numeric_limits<uint64_t>::max();
 };
 
 struct WindowTransformBlock
@@ -52,14 +48,28 @@ struct WindowTransformBlock
 
 struct RowNumber
 {
-    UInt64 block = 0;
-    UInt64 row = 0;
+    uint64_t block = 0;
+    uint64_t row = 0;
 
-    auto operator <=>(const RowNumber &) const = default;
+    bool operator < (const RowNumber & other) const
+    {
+        return block < other.block
+            || (block == other.block && row < other.row);
+    }
+
+    bool operator == (const RowNumber & other) const
+    {
+        return block == other.block && row == other.row;
+    }
+
+    bool operator <= (const RowNumber & other) const
+    {
+        return *this < other || *this == other;
+    }
 };
 
-
-/* Computes several window functions that share the same window. The input must
+/*
+ * Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
  * We need to track the following pointers:
  * 1) boundaries of partition -- rows that compare equal w/PARTITION BY.
@@ -93,16 +103,19 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* (former) Implementation of ISimpleTransform.
+    /*
+     * (former) Implementation of ISimpleTransform.
      */
     void appendChunk(Chunk & chunk) /*override*/;
 
-    /* Implementation of IProcessor;
+    /*
+     * Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
 
-    /* Implementation details.
+    /*
+     * Implementation details.
      */
     void advancePartitionEnd();
 
@@ -133,14 +146,14 @@ public:
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    auto & blockAt(const UInt64 block_number)
+    auto & blockAt(const uint64_t block_number)
     {
         assert(block_number >= first_block_number);
         assert(block_number - first_block_number < blocks.size());
         return blocks[block_number - first_block_number];
     }
 
-    const auto & blockAt(const UInt64 block_number) const
+    const auto & blockAt(const uint64_t block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
@@ -175,7 +188,7 @@ public:
         const auto block_rows = blockAt(x).rows;
         assert(x.row < block_rows);
 
-        ++x.row;
+        x.row++;
         if (x.row < block_rows)
         {
             return;
@@ -224,16 +237,20 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {
         assert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
+        {
             assert(x.row == 0);
+        }
         else
+        {
             assert(x.row < blockRowsNumber(x));
+        }
     }
 
     RowNumber blocksEnd() const
@@ -246,7 +263,8 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /* Data (formerly) inherited from ISimpleTransform, needed for the
+    /*
+     * Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
      */
     InputPort & input;
@@ -258,7 +276,8 @@ public:
     bool has_output = false;
     Port::Data output_data;
 
-    /* Data for window transform itself.
+    /*
+     * Data for window transform itself.
      */
     Block input_header;
 
@@ -281,9 +300,9 @@ public:
     // have an always-incrementing index. The index of the first block is in
     // `first_block_number`.
     std::deque<WindowTransformBlock> blocks;
-    UInt64 first_block_number = 0;
+    uint64_t first_block_number = 0;
     // The next block we are going to pass to the consumer.
-    UInt64 next_output_block_number = 0;
+    uint64_t next_output_block_number = 0;
     // The first row for which we still haven't calculated the window functions.
     // Used to determine which resulting blocks we can pass to the consumer.
     RowNumber first_not_ready_row;
@@ -307,9 +326,9 @@ public:
     RowNumber peer_group_start;
 
     // Row and group numbers in partition for calculating rank() and friends.
-    UInt64 current_row_number = 1;
-    UInt64 peer_group_start_row_number = 1;
-    UInt64 peer_group_number = 1;
+    uint64_t current_row_number = 1;
+    uint64_t peer_group_start_row_number = 1;
+    uint64_t peer_group_number = 1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
@@ -334,13 +353,34 @@ public:
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
     // each row would be slow.
-    std::function<int(
+    int (* compare_values_with_offset) (
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
         const Field & offset,
-        bool offset_is_preceding)> compare_values_with_offset;
+        bool offset_is_preceding);
 };
 
 }
 
-#pragma clang diagnostic pop
+/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
+template <>
+struct fmt::formatter<DB::RowNumber>
+{
+    static constexpr auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::RowNumber & x, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}:{}", x.block, x.row);
+    }
+};

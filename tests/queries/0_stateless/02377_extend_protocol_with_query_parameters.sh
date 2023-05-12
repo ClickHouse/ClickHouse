@@ -68,27 +68,13 @@ $CLICKHOUSE_CLIENT -n -q "select {n: UInt8} -- { serverError 456 }"
 $CLICKHOUSE_CLIENT -n -q "set param_n = 12; set param_n = 13; select {n: UInt8}"
 
 
-# multiple different parameters could be defined within each session
+# but multiple different parameters could be defined within each session
 $CLICKHOUSE_CLIENT -n -q "
   set param_a = 13, param_b = 'str';
   set param_c = '2022-08-04 18:30:53';
   set param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
   select {a: UInt32}, {b: String}, {c: DateTime}, {d: Map(String, Array(UInt8))}"
 
-
 # empty parameter name is not allowed
 $CLICKHOUSE_CLIENT --param_="" -q "select 1" 2>&1 | grep -c 'Code: 36'
 $CLICKHOUSE_CLIENT -q "set param_ = ''" 2>&1 | grep -c 'Code: 36'
-
-
-# parameters are also supported for DESCRIBE TABLE queries
-$CLICKHOUSE_CLIENT \
-  --param_id="42" \
-  --param_arr="[1, 2, 3]" \
-  --param_map="{'abc': 22, 'def': 33}" \
-  --param_mul_arr="[[4, 5, 6], [7], [8, 9]]" \
-  --param_map_arr="{10: [11, 12], 13: [14, 15]}" \
-  --param_map_map_arr="{'ghj': {'klm': [16, 17]}, 'nop': {'rst': [18]}}" \
-  -q "describe table(select {id: Int64}, {arr: Array(UInt8)}, {map: Map(String, UInt8)}, {mul_arr: Array(Array(UInt8))}, {map_arr: Map(UInt8, Array(UInt8))}, {map_map_arr: Map(String, Map(String, Array(UInt8)))})"
-
-$CLICKHOUSE_CLIENT --param_p=42 -q "describe table (select * from (select {p:Int8} as a group by a) order by a)"

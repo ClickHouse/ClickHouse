@@ -17,19 +17,12 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/CurrentMetrics.h>
 
 
 using Key = UInt64;
 using Value = UInt64;
 using Source = std::vector<Key>;
 
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-}
 
 template <typename Map>
 struct AggregateIndependent
@@ -68,6 +61,11 @@ struct AggregateIndependent
         pool.wait();
     }
 };
+
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 template <typename Map>
 struct AggregateIndependentWithSequentialKeysOptimization
@@ -116,6 +114,11 @@ struct AggregateIndependentWithSequentialKeysOptimization
         pool.wait();
     }
 };
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 
 template <typename Map>
 struct MergeSequential
@@ -262,10 +265,19 @@ struct Creator
     void operator()(Value &) const {}
 };
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 struct Updater
 {
     void operator()(Value & x) const { ++x; }
 };
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 struct Merger
 {
@@ -281,7 +293,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads);
+    ThreadPool pool(num_threads);
 
     Source data(n);
 

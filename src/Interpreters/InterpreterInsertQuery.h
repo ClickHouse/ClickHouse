@@ -4,16 +4,12 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/ThreadStatus.h>
 
 namespace DB
 {
 
 class Chain;
 class ThreadStatus;
-
-struct ThreadStatusesHolder;
-using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
 
 /** Interprets the INSERT query.
   */
@@ -41,19 +37,16 @@ public:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
-        ThreadStatusesHolderPtr thread_status_holder = {},
+        ThreadStatus * thread_status = nullptr,
         std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
-
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     bool supportsTransactions() const override { return true; }
-
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
 private:
     Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
@@ -64,21 +57,12 @@ private:
     const bool no_destination;
     const bool async_insert;
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
-
-    Chain buildSink(
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        ThreadStatusesHolderPtr thread_status_holder,
-        ThreadGroupPtr running_group,
-        std::atomic_uint64_t * elapsed_counter_ms);
-
-    Chain buildPreSinkChain(
-        const Block & subsequent_header,
+    Chain buildChainImpl(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Block & query_sample_block,
-        ThreadStatusesHolderPtr thread_status_holder);
+        ThreadStatus * thread_status,
+        std::atomic_uint64_t * elapsed_counter_ms);
 };
 
 

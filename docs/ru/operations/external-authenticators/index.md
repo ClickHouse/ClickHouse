@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/external-authenticators/
 sidebar_position: 48
 sidebar_label: "Внешние аутентификаторы пользователей и каталоги"
 ---
@@ -13,3 +12,5 @@ ClickHouse поддерживает аутентификацию и управл
 - [LDAP](./ldap.md#external-authenticators-ldap) [аутентификатор](./ldap.md#ldap-external-authenticator) и [каталог](./ldap.md#ldap-external-user-directory)
 - Kerberos [аутентификатор](./kerberos.md#external-authenticators-kerberos)
 - [SSL X.509 аутентификация](./ssl-x509.md#ssl-external-authentication)
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/operations/external-authenticators/index/) <!--hide-->

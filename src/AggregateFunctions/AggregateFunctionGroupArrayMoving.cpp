@@ -21,21 +21,18 @@ namespace ErrorCodes
 namespace
 {
 
+/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
-    using Data = MovingSumData<std::conditional_t<is_decimal<T>,
-        std::conditional_t<sizeof(T) <= sizeof(Decimal128), Decimal128, Decimal256>,
-        NearestFieldType<T>>>;
+    using Data = MovingSumData<std::conditional_t<is_decimal<T>, Decimal128, NearestFieldType<T>>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using Data = MovingAvgData<std::conditional_t<is_decimal<T>,
-        std::conditional_t<sizeof(T) <= sizeof(Decimal128), Decimal128, Decimal256>,
-        Float64>>;
+    using Data = MovingAvgData<std::conditional_t<is_decimal<T>, Decimal128, Float64>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
@@ -53,8 +50,8 @@ inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string 
         res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                        argument_type->getName(), name);
+        throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }
@@ -77,18 +74,18 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
+               throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
 
         if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
+            throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
 
         limit_size = true;
         max_elems = parameters[0].get<UInt64>();
     }
     else
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
+        throw Exception("Incorrect number of parameters for aggregate function " + name + ", should be 0 or 1",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const DataTypePtr & argument_type = argument_types[0];
     if (!limit_size)
