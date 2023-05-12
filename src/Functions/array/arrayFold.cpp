@@ -1,6 +1,7 @@
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 #include <Common/Exception.h>
+#include <Common/Documentation.h>
 
 namespace DB
 {
@@ -13,7 +14,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
 }
-
 
 /** arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) - apply the expression to each element of the array (or set of parallel arrays).
   */
@@ -128,11 +128,11 @@ public:
 
         if (rows_count == 0)
             return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-        
+
         ColumnPtr current_column;
         current_column = arguments.back().column->convertToFullColumnIfConst();
         MutableColumnPtr result_data = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-        
+
         size_t max_array_size = 0;
         auto& offsets = column_first_array->getOffsets();
 
@@ -162,7 +162,7 @@ public:
 
         for (size_t i = 0; i < array_count; ++i)
             data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
-        
+
         size_t prev_size = rows_count;
         IColumn::Permutation inverse_permutation(rows_count);
         size_t inverse_permutation_count = 0;
@@ -189,7 +189,7 @@ public:
 
             auto res_lambda = column_function->cloneResized(prev[1]->size());
             auto * res_lambda_ptr = typeid_cast<ColumnFunction *>(res_lambda.get());
-            
+
             for (size_t i = 0; i < array_count; i++)
                 res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(data_arrays[i][ind]), arrays[i].type, arrays[i].name)}));
             res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(prev[1]), arguments.back().type, arguments.back().name)}));
@@ -218,17 +218,6 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    {
-        R"(
-Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
-This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
-The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-It returns a BLAKE3 hash as a byte array with type FixedString(32).
-)",
-        Documentation::Examples{
-            {"hash", "SELECT hex(BLAKE3('ABC'))"}},
-        Documentation::Categories{"Hash"}
-    },
     factory.registerFunction<ArrayFold>("arrayFold", {R"(
         Function arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) applies lambda function to a number of same sized array columns
         and collects result in accumulator. Accumulator can be either constant or column.
