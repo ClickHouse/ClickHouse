@@ -65,9 +65,11 @@ class PartsCleaningThreadPool : public StaticThreadPool<PartsCleaningThreadPool>
 class OutdatedPartsLoadingThreadPool : public StaticThreadPool<OutdatedPartsLoadingThreadPool>
 {
     friend class StaticThreadPool;
+    static std::mutex mutex;
     static size_t max_threads_turbo;
     static size_t max_threads;
-    static bool turbo_mode_enabled;
+    /// If this counter is > 0 - this specific mode is enabled
+    static size_t turbo_mode_enabled;
     static std::unique_ptr<ThreadPool> instance;
     static CurrentMetrics::Metric threads_metric;
     static CurrentMetrics::Metric threads_active_metric;

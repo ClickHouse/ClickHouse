@@ -1620,7 +1620,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    auto runner = threadPoolCallbackRunner<void>(OutdatedPartsLoadingThreadPool::get(), "ActiveParts");
+    auto runner = threadPoolCallbackRunner<void>(ActivePartsLoadingThreadPool::get(), "ActiveParts");
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
 
     std::vector<std::future<void>> disks_futures;
@@ -1957,11 +1957,11 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
         return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
     });
 
-    if (outdated_data_parts_loading_canceled)
-        throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of outdated data parts was canceled");
-
     /// Let's lower the number of threads e.g. for later ATTACH queries to behave as usual
     OutdatedPartsLoadingThreadPool::disableTurboMode();
+
+    if (outdated_data_parts_loading_canceled)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of outdated data parts was canceled");
 
     LOG_TRACE(log, "Finished waiting for outdated data parts to be loaded");
 }

@@ -82,9 +82,10 @@ CurrentMetrics::Metric PartsCleaningThreadPool::threads_metric = CurrentMetrics:
 CurrentMetrics::Metric PartsCleaningThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsCleanerThreadsActive;
 
 template class StaticThreadPool<OutdatedPartsLoadingThreadPool>;
+std::mutex OutdatedPartsLoadingThreadPool::mutex;
 size_t OutdatedPartsLoadingThreadPool::max_threads_turbo = 0;
 size_t OutdatedPartsLoadingThreadPool::max_threads = 0;
-bool OutdatedPartsLoadingThreadPool::turbo_mode_enabled = false;
+size_t OutdatedPartsLoadingThreadPool::turbo_mode_enabled = 0;
 std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
 CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads;
 CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive;
@@ -94,8 +95,11 @@ void OutdatedPartsLoadingThreadPool::enableTurboMode()
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
 
-    turbo_mode_enabled = true;
-    instance->setMaxThreads(max_threads_turbo);
+    std::lock_guard lock(mutex);
+
+    ++turbo_mode_enabled;
+    if (turbo_mode_enabled == 1)
+        instance->setMaxThreads(max_threads_turbo);
 }
 
 void OutdatedPartsLoadingThreadPool::disableTurboMode()
@@ -103,8 +107,11 @@ void OutdatedPartsLoadingThreadPool::disableTurboMode()
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
 
-    turbo_mode_enabled = false;
-    instance->setMaxThreads(max_threads);
+    std::lock_guard lock(mutex);
+
+    --turbo_mode_enabled;
+    if (turbo_mode_enabled == 0)
+        instance->setMaxThreads(max_threads);
 }
 
 void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo_)
@@ -112,8 +119,10 @@ void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
 
+    std::lock_guard lock(mutex);
+
     max_threads_turbo = max_threads_turbo_;
-    if (turbo_mode_enabled)
+    if (turbo_mode_enabled > 0)
         instance->setMaxThreads(max_threads_turbo);
 }
 
