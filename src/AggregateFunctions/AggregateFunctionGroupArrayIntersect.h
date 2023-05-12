@@ -73,7 +73,6 @@ public:
         auto & map = this->data(place).value;
         if (version == 1)
         {
-
             for (const auto & elem: arr) {
                 map[static_cast<T>(elem.get<T>())] = version;
             }
@@ -91,7 +90,6 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-
         auto & map = this->data(place).value;
         auto & rhs_map = this->data(rhs).value;
         UInt64 version = this->data(place).version++;
@@ -131,7 +129,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
@@ -285,7 +282,6 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-
         auto & map = this->data(place).value;
         auto & rhs_map = this->data(rhs).value;
         UInt64 version = this->data(place).version++;
@@ -302,7 +298,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
