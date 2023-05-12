@@ -60,12 +60,12 @@ private:
 class BucketMemStore
 {
 public:
-    typedef std::string Key;
-    typedef std::string Data;
-    typedef std::string ETag;
-    typedef std::string MPU_ID;
-    typedef std::map<ETag, Data> MPUPartsInProgress;
-    typedef std::vector<Data> MPUParts;
+    using Key = std::string;
+    using Data = std::string;
+    using ETag = std::string;
+    using MPU_ID = std::string;
+    using MPUPartsInProgress = std::map<ETag, Data>;
+    using MPUParts = std::vector<Data>;
 
 
     std::map<Key, Data> objects;
@@ -129,7 +129,7 @@ public:
     {
         std::vector<size_t> result;
         result.reserve(parts.size());
-        for (auto & part_data : parts)
+        for (const auto & part_data : parts)
             result.push_back(part_data.size());
 
         return result;
@@ -142,7 +142,7 @@ class S3MemStrore
 public:
     void CreateBucket(const std::string & bucket)
     {
-        assert(buckets.count(bucket) == 0);
+        assert(!buckets.contains(bucket));
         buckets.emplace(bucket, BucketMemStore{});
     }
 
@@ -193,14 +193,14 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    Client(std::shared_ptr<S3MemStrore> mock_s3_store)
+    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
         : DB::S3::Client(
                100,
                DB::S3::ServerSideEncryptionKMSConfig(),
                std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
                GetClientConfiguration(),
                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               /* useVirtualAddressing = */ true)
+               /* use_virtual_addressing = */ true)
         , store(mock_s3_store)
     { }
 
@@ -425,8 +425,8 @@ struct BaseSyncPolicy
 {
     virtual ~BaseSyncPolicy() = default;
     virtual DB::ThreadPoolCallbackRunner<void> getScheduler() { return {}; }
-    virtual void execute(size_t = 0) {}
-    virtual void setAutoExecute(bool = true) {}
+    virtual void execute(size_t) {}
+    virtual void setAutoExecute(bool) {}
 
     virtual size_t size() const { return 0; }
     virtual bool empty() const { return size() == 0; }
@@ -437,7 +437,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
     bool auto_execute = false;
     std::deque<std::packaged_task<void()>> queue;
 
-    virtual DB::ThreadPoolCallbackRunner<void> getScheduler() override
+    DB::ThreadPoolCallbackRunner<void> getScheduler() override
     {
         return [this] (std::function<void()> && operation, size_t /*priority*/)
         {
@@ -453,7 +453,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
         };
     }
 
-    virtual void execute(size_t limit = 0) override
+    void execute(size_t limit) override
     {
         if (limit == 0)
             limit = queue.size();
@@ -468,14 +468,14 @@ struct SimpleAsyncTasks : BaseSyncPolicy
         }
     }
 
-    virtual void setAutoExecute(bool value = true) override
+    void setAutoExecute(bool value) override
     {
         auto_execute = value;
         if (auto_execute)
-            execute();
+            execute(0);
     }
 
-    virtual size_t size() const override { return queue.size(); }
+    size_t size() const override { return queue.size(); }
 };
 
 }
@@ -545,7 +545,7 @@ public:
             auto buffer = getWriteBuffer("file");
             writeMethod(*buffer, size);
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
 
             expected_counters.writtenSize = size;
@@ -585,13 +585,13 @@ protected:
     std::shared_ptr<MockS3::Client> client;
     std::unique_ptr<MockS3::BaseSyncPolicy> async_policy;
 
-    virtual void SetUp() override
+    void SetUp() override
     {
         client = MockS3::Client::CreateClient(bucket);
         async_policy = std::make_unique<MockS3::BaseSyncPolicy>();
     }
 
-    virtual void TearDown() override
+    void TearDown() override
     {
         client.reset();
         async_policy.reset();
@@ -603,13 +603,13 @@ class SyncAsync : public WBS3Test, public ::testing::WithParamInterface<bool>
 protected:
     bool test_with_pool = false;
 
-    virtual void SetUp() override
+    void SetUp() override
     {
         test_with_pool = GetParam();
         client = MockS3::Client::CreateClient(bucket);
         if (test_with_pool)
             async_policy = std::make_unique<MockS3::SimpleAsyncTasks>();
-         else
+        else
             async_policy = std::make_unique<MockS3::BaseSyncPolicy>();
     }
 };
@@ -622,7 +622,7 @@ INSTANTIATE_TEST_SUITE_P(WBS3
         return name;
   });
 
-TEST_P(SyncAsync, exception_on_head) {
+TEST_P(SyncAsync, ExceptionOnHead) {
     setInjectionModel(std::make_shared<MockS3::HeadObjectFailIngection>());
 
     getSettings().s3_check_objects_after_upload = true;
@@ -633,7 +633,7 @@ TEST_P(SyncAsync, exception_on_head) {
             buffer->write('A');
             buffer->next();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -645,7 +645,7 @@ TEST_P(SyncAsync, exception_on_head) {
     }, DB::S3Exception);
 }
 
-TEST_P(SyncAsync, exception_on_put) {
+TEST_P(SyncAsync, ExceptionOnPut) {
     setInjectionModel(std::make_shared<MockS3::PutObjectFailIngection>());
 
     EXPECT_THROW({
@@ -655,7 +655,7 @@ TEST_P(SyncAsync, exception_on_put) {
             buffer->write('A');
             buffer->next();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -671,7 +671,7 @@ TEST_P(SyncAsync, exception_on_put) {
             auto buffer = getWriteBuffer("exception_on_put_2");
             buffer->write('A');
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -686,10 +686,10 @@ TEST_P(SyncAsync, exception_on_put) {
         try {
             auto buffer = getWriteBuffer("exception_on_put_3");
             buffer->write('A');
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->preFinalize();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -702,7 +702,7 @@ TEST_P(SyncAsync, exception_on_put) {
 
 }
 
-TEST_P(SyncAsync, exception_on_create_mpu) {
+TEST_P(SyncAsync, ExceptionOnCreateMPU) {
     setInjectionModel(std::make_shared<MockS3::CreateMPUFailIngection>());
 
     getSettings().s3_max_single_part_upload_size = 0; // no single part
@@ -716,7 +716,7 @@ TEST_P(SyncAsync, exception_on_create_mpu) {
             buffer->write('A');
             buffer->next();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -733,7 +733,7 @@ TEST_P(SyncAsync, exception_on_create_mpu) {
             buffer->write('A');
             buffer->preFinalize();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -749,7 +749,7 @@ TEST_P(SyncAsync, exception_on_create_mpu) {
             auto buffer = getWriteBuffer("exception_on_create_mpu_2");
             buffer->write('A');
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch( const DB::Exception& e )
@@ -762,7 +762,7 @@ TEST_P(SyncAsync, exception_on_create_mpu) {
 }
 
 
-TEST_P(SyncAsync, exception_on_complete_mpu) {
+TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());
 
     getSettings().s3_max_single_part_upload_size = 0; // no single part
@@ -773,7 +773,7 @@ TEST_P(SyncAsync, exception_on_complete_mpu) {
             auto buffer = getWriteBuffer("exception_on_complete_mpu_1");
             buffer->write('A');
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch(const DB::Exception & e)
@@ -785,7 +785,7 @@ TEST_P(SyncAsync, exception_on_complete_mpu) {
       }, DB::S3Exception);
 }
 
-TEST_P(SyncAsync, exception_on_upload_part) {
+TEST_P(SyncAsync, ExceptionOnUploadPart) {
     setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());
 
     getSettings().s3_max_single_part_upload_size = 0; // no single part
@@ -804,7 +804,7 @@ TEST_P(SyncAsync, exception_on_upload_part) {
             buffer->write('A');
             buffer->next();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
 
             buffer->finalize();
         }
@@ -820,7 +820,7 @@ TEST_P(SyncAsync, exception_on_upload_part) {
     EXPECT_THROW({
         try {
             auto buffer = getWriteBuffer("exception_on_upload_part_2");
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
 
             buffer->write('A');
             buffer->next();
@@ -848,7 +848,7 @@ TEST_P(SyncAsync, exception_on_upload_part) {
 
             buffer->preFinalize();
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch(const DB::Exception & e)
@@ -865,7 +865,7 @@ TEST_P(SyncAsync, exception_on_upload_part) {
             auto buffer = getWriteBuffer("exception_on_upload_part_4");
             buffer->write('A');
 
-            getAsyncPolicy().setAutoExecute();
+            getAsyncPolicy().setAutoExecute(true);
             buffer->finalize();
         }
         catch(const DB::Exception & e)
@@ -879,7 +879,7 @@ TEST_P(SyncAsync, exception_on_upload_part) {
 }
 
 
-TEST_F(WBS3Test, prefinalize_called_multiple_times) {
+TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 #ifdef ABORT_ON_LOGICAL_ERROR
     GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if ABORT_ON_LOGICAL_ERROR is not defined";
 #else
@@ -904,14 +904,14 @@ TEST_F(WBS3Test, prefinalize_called_multiple_times) {
 #endif
 }
 
-TEST_P(SyncAsync, empty_file) {
+TEST_P(SyncAsync, EmptyFile) {
     getSettings().s3_check_objects_after_upload = true;
 
     MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
     runSimpleScenario(counters, 0);
 }
 
-TEST_P(SyncAsync, manual_next_calls) {
+TEST_P(SyncAsync, ManualNextCalls) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
@@ -920,7 +920,7 @@ TEST_P(SyncAsync, manual_next_calls) {
         auto buffer = getWriteBuffer("manual_next_calls_1");
         buffer->next();
 
-        getAsyncPolicy().setAutoExecute();
+        getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
 
         assertCountersEQ(counters);
@@ -933,7 +933,7 @@ TEST_P(SyncAsync, manual_next_calls) {
         buffer->next();
         buffer->next();
 
-        getAsyncPolicy().setAutoExecute();
+        getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
 
         assertCountersEQ(counters);
@@ -947,7 +947,7 @@ TEST_P(SyncAsync, manual_next_calls) {
         buffer->write('A');
         buffer->next();
 
-        getAsyncPolicy().setAutoExecute();
+        getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
 
         assertCountersEQ(counters);
@@ -963,14 +963,14 @@ TEST_P(SyncAsync, manual_next_calls) {
         buffer->next();
         buffer->next();
 
-        getAsyncPolicy().setAutoExecute();
+        getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
 
         assertCountersEQ(counters);
      }
 }
 
-TEST_P(SyncAsync, small_file_is_one_put_request) {
+TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
@@ -999,7 +999,7 @@ TEST_P(SyncAsync, small_file_is_one_put_request) {
     }
 }
 
-TEST_P(SyncAsync, little_bigger_file_is_multi_part_upload) {
+TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
@@ -1026,7 +1026,7 @@ TEST_P(SyncAsync, little_bigger_file_is_multi_part_upload) {
     }
 }
 
-TEST_P(SyncAsync, bigger_file_is_multi_part_upload) {
+TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
@@ -1059,7 +1059,7 @@ TEST_P(SyncAsync, bigger_file_is_multi_part_upload) {
     }
 }
 
-TEST_P(SyncAsync, increase_upload_buffer) {
+TEST_P(SyncAsync, IncreaseUploadBuffer) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
@@ -1092,7 +1092,7 @@ TEST_P(SyncAsync, increase_upload_buffer) {
     }
 }
 
-TEST_P(SyncAsync, increase_limited) {
+TEST_P(SyncAsync, IncreaseLimited) {
     getSettings().s3_check_objects_after_upload = true;
 
     {
