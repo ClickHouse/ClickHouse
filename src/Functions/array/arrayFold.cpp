@@ -1,7 +1,6 @@
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/Documentation.h>
 
 namespace DB
 {
