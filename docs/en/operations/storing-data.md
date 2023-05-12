@@ -172,7 +172,7 @@ Example of configuration for versions earlier than 22.8:
     </storage_configuration>
 ```
 
-File Cache **configuration settings**:
+File Cache **disk configuration settings**:
 
 These settings should be defined in the disk configuration section.
 
@@ -180,7 +180,7 @@ These settings should be defined in the disk configuration section.
 
 - `max_size` - maximum size of the cache in bytes or in readable format, e.g. `ki, Mi, Gi, etc`, example `10Gi` (such format works starting from `22.10` version). When the limit is reached, cache files are evicted according to the cache eviction policy. Default: None, this setting is obligatory.
 
-- `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. 
+- `cache_on_write_operations` - allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
 
 - `enable_filesystem_query_cache_limit` - allow to limit the size of cache which is downloaded within each query (depends on user setting `max_query_cache_size`). Default: `false`.
 
@@ -192,23 +192,23 @@ These settings should be defined in the disk configuration section.
 
 - `max_elements` - a limit for a number of cache files. Default: `1048576`.
 
-File Cache **query settings**:
+File Cache **query/profile settings**:
 
-Some of these settings will disable cache per query features that are enabled by default. For example, setting `cache_on_write_operations` to 1 means that general file and per query cache are enabled but also setting `enable_filesystem_cache_on_write_operations` to 1 means that file cache is enabled but disabled per query cache. The same approach must be used for `enable_filesystem_cache`, if set to 1, cache per query is disabled.
+Some of these settings will disable cache features per query/profile that are enabled by default. For example, you can enable cache in disk configuration and disable it per query/profile setting `enable_filesystem_cache` to `false`. Also setting `cache_on_write_operations` to `true` in disk configuration means that general file and per query cache are enabled. But if you need to disable this general setting per specific queries then setting `enable_filesystem_cache_on_write_operations` to `false` means that write operations cache will be disabled for a specific query/profile.
 
-- `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`. This setting should be defined in the disk configuration section.
+- `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`.
 
-- `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`. This is a profile level configuration setting.
+- `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
 
-- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. This setting should be defined in the disk configuration section.
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`.
 
-- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. Default: `false`. This is a profile level configuration setting.
+- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. It can be turn on for specific queries or enabled in a profile. Default: `false`.
 
-- `max_query_cache_size` - a limit for the cache size, which can be written to local cache storage. Requires enabled `enable_filesystem_query_cache_limit` in cache configuration. Default: `false`. This setting should be defined in the disk configuration section.
+- `max_query_cache_size` - a limit for the cache size, which can be written to local cache storage. Requires enabled `enable_filesystem_query_cache_limit` in cache configuration. Default: `false`.
 
-- `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recently used` behaviour while keeping query cache limit. This is a profile level configuration setting.
+- `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recently used` behaviour while keeping query cache limit.
 
-** Warning **
+**Warning**
 Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
 
 Cache **system tables**:
