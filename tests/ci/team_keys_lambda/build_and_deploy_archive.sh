@@ -5,7 +5,7 @@ WORKDIR=$(dirname "$0")
 WORKDIR=$(readlink -f "${WORKDIR}")
 cd "$WORKDIR"
 
-PY_VERSION=3.9
+PY_VERSION=3.10
 PY_EXEC="python${PY_VERSION}"
 DOCKER_IMAGE="python:${PY_VERSION}-slim"
 LAMBDA_NAME=$(basename "$WORKDIR")
