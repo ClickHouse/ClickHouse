@@ -171,6 +171,7 @@ private:
     DelayedBlocksTaskPtr task;
     Chunk output_chunk;
 
+    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
     bool left_delayed_stream_finished = false;
     bool setup_non_joined_stream = false;
     IBlocksStreamPtr non_joined_delayed_stream = nullptr;
