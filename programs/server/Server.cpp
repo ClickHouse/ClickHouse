@@ -764,32 +764,32 @@ try
     });
 #endif
 
-    IOThreadPool::initialize(
+    getIOThreadPool().initialize(
         server_settings.max_io_thread_pool_size,
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
 
-    BackupsIOThreadPool::initialize(
+    getBackupsIOThreadPool().initialize(
         server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
-    ActivePartsLoadingThreadPool::initialize(
+    getActivePartsLoadingThreadPool().initialize(
         server_settings.max_active_parts_loading_thread_pool_size,
         0, // We don't need any threads once all the parts will be loaded
         server_settings.max_active_parts_loading_thread_pool_size);
 
-    OutdatedPartsLoadingThreadPool::initialize(
+    getOutdatedPartsLoadingThreadPool().initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
         0, // We don't need any threads once all the parts will be loaded
         server_settings.max_outdated_parts_loading_thread_pool_size);
 
     /// It could grow if we need to synchronously wait until all the data parts will be loaded.
-    OutdatedPartsLoadingThreadPool::setMaxTurboThreads(
+    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
         server_settings.max_active_parts_loading_thread_pool_size
     );
 
-    PartsCleaningThreadPool::initialize(
+    getPartsCleaningThreadPool().initialize(
         server_settings.max_parts_cleaning_thread_pool_size,
         0, // We don't need any threads one all the parts will be deleted
         server_settings.max_parts_cleaning_thread_pool_size);
@@ -1339,32 +1339,32 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
-            IOThreadPool::reloadConfiguration(
+            getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,
                 server_settings.max_io_thread_pool_free_size,
                 server_settings.io_thread_pool_queue_size);
 
-            BackupsIOThreadPool::reloadConfiguration(
+            getBackupsIOThreadPool().reloadConfiguration(
                 server_settings.max_backups_io_thread_pool_size,
                 server_settings.max_backups_io_thread_pool_free_size,
                 server_settings.backups_io_thread_pool_queue_size);
 
-            ActivePartsLoadingThreadPool::reloadConfiguration(
+            getActivePartsLoadingThreadPool().reloadConfiguration(
                 server_settings.max_active_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
                 server_settings.max_active_parts_loading_thread_pool_size);
 
-            OutdatedPartsLoadingThreadPool::reloadConfiguration(
+            getOutdatedPartsLoadingThreadPool().reloadConfiguration(
                 server_settings.max_outdated_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
                 server_settings.max_outdated_parts_loading_thread_pool_size);
 
             /// It could grow if we need to synchronously wait until all the data parts will be loaded.
-            OutdatedPartsLoadingThreadPool::setMaxTurboThreads(
+            getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
                 server_settings.max_active_parts_loading_thread_pool_size
             );
 
-            PartsCleaningThreadPool::reloadConfiguration(
+            getPartsCleaningThreadPool().reloadConfiguration(
                 server_settings.max_parts_cleaning_thread_pool_size,
                 0, // We don't need any threads one all the parts will be deleted
                 server_settings.max_parts_cleaning_thread_pool_size);

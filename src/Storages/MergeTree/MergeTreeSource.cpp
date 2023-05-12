@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunner<void>(IOThreadPool::get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()

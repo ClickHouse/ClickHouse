@@ -1427,12 +1427,12 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 {
     const size_t num_parts = parts_to_load.size();
 
-    LOG_DEBUG(log, "Will load {} number of parts using {} threads", num_parts, ActivePartsLoadingThreadPool::get().getMaxThreads());
+    LOG_DEBUG(log, "Will load {} number of parts using {} threads", num_parts, getActivePartsLoadingThreadPool().get().getMaxThreads());
 
     /// Shuffle all the parts randomly to possible speed up loading them from JBOD.
     std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);
 
-    auto runner = threadPoolCallbackRunner<void>(ActivePartsLoadingThreadPool::get(), "ActiveParts");
+    auto runner = threadPoolCallbackRunner<void>(getActivePartsLoadingThreadPool().get(), "ActiveParts");
     std::vector<std::future<void>> parts_futures;
 
     std::mutex part_select_mutex;
@@ -1620,7 +1620,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    auto runner = threadPoolCallbackRunner<void>(ActivePartsLoadingThreadPool::get(), "ActiveParts");
+    auto runner = threadPoolCallbackRunner<void>(getActivePartsLoadingThreadPool().get(), "ActiveParts");
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
 
     std::vector<std::future<void>> disks_futures;
@@ -1868,7 +1868,7 @@ try
 
     std::atomic_size_t num_loaded_parts = 0;
 
-    auto runner = threadPoolCallbackRunner<void>(OutdatedPartsLoadingThreadPool::get(), "OutdatedParts");
+    auto runner = threadPoolCallbackRunner<void>(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
     std::vector<std::future<void>> parts_futures;
 
     while (true)
@@ -1946,7 +1946,7 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
         return;
 
     /// We need to load parts as fast as possible
-    OutdatedPartsLoadingThreadPool::enableTurboMode();
+    getOutdatedPartsLoadingThreadPool().enableTurboMode();
 
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
 
@@ -1958,7 +1958,7 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     });
 
     /// Let's lower the number of threads e.g. for later ATTACH queries to behave as usual
-    OutdatedPartsLoadingThreadPool::disableTurboMode();
+    getOutdatedPartsLoadingThreadPool().disableTurboMode();
 
     if (outdated_data_parts_loading_canceled)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of outdated data parts was canceled");
@@ -2380,7 +2380,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     /// Parallel parts removal.
     std::mutex part_names_mutex;
-    auto runner = threadPoolCallbackRunner<void>(PartsCleaningThreadPool::get(), "PartsCleaning");
+    auto runner = threadPoolCallbackRunner<void>(getPartsCleaningThreadPool().get(), "PartsCleaning");
 
     /// This flag disallow straightforward concurrent parts removal. It's required only in case
     /// when we have parts on zero-copy disk + at least some of them were mutated.

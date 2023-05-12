@@ -416,7 +416,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
 
         res = std::make_unique<ParallelReadBuffer>(
             std::move(buf_factory),
-            threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
+            threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
             max_download_threads,
             settings.max_download_buffer_size);
     }

@@ -25,75 +25,57 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Derived>
-void StaticThreadPool<Derived>::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (Derived::instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The thread pool is initialized twice");
 
-    Derived::instance = std::make_unique<ThreadPool>(
-        Derived::threads_metric,
-        Derived::threads_active_metric,
+StaticThreadPool::StaticThreadPool(
+    const String & name_,
+    CurrentMetrics::Metric threads_metric_,
+    CurrentMetrics::Metric threads_active_metric_)
+    : name(name_)
+    , threads_metric(threads_metric_)
+    , threads_active_metric(threads_active_metric_)
+{
+}
+
+void StaticThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
+    if (instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is initialized twice", name);
+
+    /// By default enabling "turbo mode" won't affect the number of threads anyhow
+    max_threads_turbo = max_threads;
+    max_threads_normal = max_threads;
+    instance = std::make_unique<ThreadPool>(
+        threads_metric,
+        threads_active_metric,
         max_threads,
         max_free_threads,
         queue_size,
         /* shutdown_on_exception= */ false);
 }
 
-template <typename Derived>
-void StaticThreadPool<Derived>::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
-{
-    if (!Derived::instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reload configuration of the uninitialized pool");
-
-    Derived::instance->setMaxThreads(max_threads);
-    Derived::instance->setMaxFreeThreads(max_free_threads);
-    Derived::instance->setQueueSize(queue_size);
-}
-
-template <typename Derived>
-ThreadPool & StaticThreadPool<Derived>::get()
-{
-    if (!Derived::instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The thread pool is not initialized");
-
-    return *Derived::instance;
-}
-
-
-template class StaticThreadPool<IOThreadPool>;
-std::unique_ptr<ThreadPool> IOThreadPool::instance;
-CurrentMetrics::Metric IOThreadPool::threads_metric = CurrentMetrics::IOThreads;
-CurrentMetrics::Metric IOThreadPool::threads_active_metric = CurrentMetrics::IOThreadsActive;
-
-template class StaticThreadPool<BackupsIOThreadPool>;
-std::unique_ptr<ThreadPool> BackupsIOThreadPool::instance;
-CurrentMetrics::Metric BackupsIOThreadPool::threads_metric = CurrentMetrics::BackupsIOThreads;
-CurrentMetrics::Metric BackupsIOThreadPool::threads_active_metric = CurrentMetrics::BackupsIOThreadsActive;
-
-template class StaticThreadPool<ActivePartsLoadingThreadPool>;
-std::unique_ptr<ThreadPool> ActivePartsLoadingThreadPool::instance;
-CurrentMetrics::Metric ActivePartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreePartsLoaderThreads;
-CurrentMetrics::Metric ActivePartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsLoaderThreadsActive;
-
-template class StaticThreadPool<PartsCleaningThreadPool>;
-std::unique_ptr<ThreadPool> PartsCleaningThreadPool::instance;
-CurrentMetrics::Metric PartsCleaningThreadPool::threads_metric = CurrentMetrics::MergeTreePartsCleanerThreads;
-CurrentMetrics::Metric PartsCleaningThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsCleanerThreadsActive;
-
-template class StaticThreadPool<OutdatedPartsLoadingThreadPool>;
-std::mutex OutdatedPartsLoadingThreadPool::mutex;
-size_t OutdatedPartsLoadingThreadPool::max_threads_turbo = 0;
-size_t OutdatedPartsLoadingThreadPool::max_threads = 0;
-size_t OutdatedPartsLoadingThreadPool::turbo_mode_enabled = 0;
-std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
-CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads;
-CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive;
-
-void OutdatedPartsLoadingThreadPool::enableTurboMode()
+void StaticThreadPool::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (!instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
+
+    instance->setMaxThreads(max_threads);
+    instance->setMaxFreeThreads(max_free_threads);
+    instance->setQueueSize(queue_size);
+}
+
+
+ThreadPool & StaticThreadPool::get()
+{
+    if (!instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
+
+    return *instance;
+}
+
+void StaticThreadPool::enableTurboMode()
+{
+    if (!instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
 
     std::lock_guard lock(mutex);
 
@@ -102,28 +84,58 @@ void OutdatedPartsLoadingThreadPool::enableTurboMode()
         instance->setMaxThreads(max_threads_turbo);
 }
 
-void OutdatedPartsLoadingThreadPool::disableTurboMode()
+void StaticThreadPool::disableTurboMode()
 {
     if (!instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
 
     std::lock_guard lock(mutex);
 
     --turbo_mode_enabled;
     if (turbo_mode_enabled == 0)
-        instance->setMaxThreads(max_threads);
+        instance->setMaxThreads(max_threads_normal);
 }
 
-void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo_)
+void StaticThreadPool::setMaxTurboThreads(size_t max_threads_turbo_)
 {
     if (!instance)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
 
     std::lock_guard lock(mutex);
 
     max_threads_turbo = max_threads_turbo_;
     if (turbo_mode_enabled > 0)
         instance->setMaxThreads(max_threads_turbo);
+}
+
+StaticThreadPool & getIOThreadPool()
+{
+    static StaticThreadPool instance("IOThreadPool", CurrentMetrics::IOThreads, CurrentMetrics::IOThreadsActive);
+    return instance;
+}
+
+StaticThreadPool & getBackupsIOThreadPool()
+{
+    static StaticThreadPool instance("BackupsIOThreadPool", CurrentMetrics::BackupsIOThreads, CurrentMetrics::BackupsIOThreadsActive);
+    return instance;
+}
+
+StaticThreadPool & getActivePartsLoadingThreadPool()
+{
+    static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive);
+    return instance;
+}
+
+StaticThreadPool & getPartsCleaningThreadPool()
+{
+    static StaticThreadPool instance("MergeTreePartsCleanerThreadPool", CurrentMetrics::MergeTreePartsCleanerThreads, CurrentMetrics::MergeTreePartsCleanerThreadsActive);
+    return instance;
+}
+
+StaticThreadPool & getOutdatedPartsLoadingThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeOutdatedPartsLoaderThreadPool", CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads, CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive);
+    return instance;
 }
 
 }
