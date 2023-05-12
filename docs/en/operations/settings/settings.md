@@ -1366,6 +1366,12 @@ Possible values:
 
 Default value: `default`.
 
+## allow_experimental_parallel_reading_from_replicas
+
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+
+Default value: `false`.
+
 ## compile_expressions {#compile-expressions}
 
 Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
