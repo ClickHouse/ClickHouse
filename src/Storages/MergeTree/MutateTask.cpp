@@ -1838,6 +1838,9 @@ bool MutateTask::prepare()
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
+        /// In case of replicated merge tree with zero copy replication
+        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
@@ -1867,6 +1870,10 @@ bool MutateTask::prepare()
             ctx->for_file_renames,
             ctx->mrk_extension);
 
+        /// In case of replicated merge tree with zero copy replication
+        /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state
+        /// Some of the files within the blobs are shared with source part, some belongs only to the part
+        /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
