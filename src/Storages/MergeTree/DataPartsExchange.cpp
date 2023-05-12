@@ -919,6 +919,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
         new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         new_data_part->is_temp = true;
+        /// In case of replicated merge tree with zero copy replication
+        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
         new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
         new_data_part->loadColumnsChecksumsIndexes(true, false);
