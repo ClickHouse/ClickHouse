@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
+#include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
