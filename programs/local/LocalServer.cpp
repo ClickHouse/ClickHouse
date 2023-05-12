@@ -135,24 +135,26 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
+
+    const size_t active_parts_loading_threads = config().getUInt("max_active_parts_loading_thread_pool_size", 64);
     ActivePartsLoadingThreadPool::initialize(
-        config().getUInt("max_active_parts_loading_thread_pool_size", 16),
+        active_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
-        config().getUInt("max_active_parts_loading_thread_pool_size", 16));
+        active_parts_loading_threads);
 
+    const size_t outdated_parts_loading_threads = config().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
     OutdatedPartsLoadingThreadPool::initialize(
-        config().getUInt("max_outdated_parts_loading_thread_pool_size", 16),
+        outdated_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
-        config().getUInt("max_outdated_parts_loading_thread_pool_size", 16));
+        outdated_parts_loading_threads);
 
-    OutdatedPartsLoadingThreadPool::setMaxTurboThreads(
-        config().getUInt("max_active_parts_loading_thread_pool_size", 16)
-    );
+    OutdatedPartsLoadingThreadPool::setMaxTurboThreads(active_parts_loading_threads);
 
+    const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
     PartsCleaningThreadPool::initialize(
-        config().getUInt("max_parts_cleaning_thread_pool_size", 16),
+        cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
-        config().getUInt("max_parts_cleaning_thread_pool_size", 16));
+        cleanup_threads);
 }
 
 
