@@ -4,6 +4,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -17,6 +18,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+
+
 
 #include <Core/Field.h>
 
@@ -231,26 +234,23 @@ public:
         State::Map::LookupResult it;
         ++version;
 
-
         const auto arr = assert_cast<const ColumnArray &>(*columns[0])[row_num].get<Array &>();
-        const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPrt();
-        const auto offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsetsPtr();
+        const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto arr_size = arr.size();
-        const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
+        const size_t offset = assert_cast<const ColumnArray &>(*columns[0]).getOffsets()[static_cast<ssize_t>(row_num) - 1];
         if (version == 1)
         {
 
             for (size_t i = 0; i < arr_size; ++i)
             {
-
                 if constexpr (is_plain_column)
                 {
-                    map.emplace(ArenaKeyHolder{arr.getDataAt(i), *arena}, it, inserted);
+                    map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
                 }
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column.serializeValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
                     map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
@@ -261,20 +261,19 @@ public:
         else {
             for (size_t i = 0; i < arr_size; ++i)
             {
-                Map::TValue value;
                 if constexpr (is_plain_column)
                 {
-                    value = map.find(arr.getDataAt(i));
+                    it = map.find(data_column->getDataAt(offset + i));
                 }
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = column.serializeValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
-                    value = map.find(serialized);
+                    it = map.find(serialized);
                 }
-                if (value != nullptr)
-                    ++value->getMapped();
+                if (it != nullptr)
+                    ++(it->getMapped());
             }
         }
     }
