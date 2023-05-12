@@ -279,7 +279,7 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
-Note that Google CityHash has changed the algorithm after it have been added to ClickHouse. Now results of Google CityHash and ClickHouse cityHash64 are different. ClickHouse cityHash64 results are consistent with CityHash 1.0.2. Currently [farmhash64](#farmhash64) is consistent with Google CityHash.
+Note that Google changed the algorithm of CityHash after it has been added to ClickHouse. In other words, ClickHouse's cityHash64 and Google's upstrea CityHash now produce different results. ClickHouse cityHash64 corresponds to CityHash v1.0.2.
 
 **Arguments**
 
