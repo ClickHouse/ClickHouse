@@ -1,4 +1,3 @@
-With Where:
 100
 101
 102
@@ -41,7 +40,6 @@ With Where:
 218	-864
 219	-868
 220	-872
-With Transform:
 30	500
 30	525
 30	550
@@ -114,7 +112,6 @@ With Transform:
 2	268	Desc
 -1	259	Desc
 -1	269	Desc
-With Double Key:
 5	-4	960
 5	11	963
 5	26	966
