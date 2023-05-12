@@ -4035,6 +4035,26 @@ private:
                     return true;
                 }
             }
+            else if constexpr (WhichDataType(FromDataType::type_id).isIPv6() && WhichDataType(ToDataType::type_id).isIPv4())
+            {
+                ret = [cast_ipv4_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
+                                ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
+                        -> ColumnPtr
+                {
+                    if (!WhichDataType(result_type).isIPv4())
+                        throw Exception(
+                            ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
+
+                    const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                    if (cast_ipv4_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
+                    else
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
+                };
+
+                return true;
+            }
+
             if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
             {
                 if (from_type->getCustomSerialization())
