@@ -2244,7 +2244,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist)
+            print(processlist.decode())
             print(get_transactions_list(args))
 
             print_stacktraces()

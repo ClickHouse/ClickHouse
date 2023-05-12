@@ -105,6 +105,7 @@ add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
 add_contrib (h3-cmake h3)
 add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
+add_contrib (libfiu-cmake libfiu)
 
 if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
