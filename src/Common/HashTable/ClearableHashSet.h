@@ -10,6 +10,10 @@
   * Instead of this class, you could just use the pair (version, key) in the HashSet as the key
   * but then the table would accumulate all the keys that it ever stored, and it was unreasonably growing.
   * This class goes a step further and considers the keys with the old version empty in the hash table.
+  *
+  * Zero values note:
+  * A cell in ClearableHashSet can store a zero values as normal value
+  * If its version is equal to the version of the set itself, then it's not considered as empty even key's value is zero value of the corresponding type
   */
 
 
