@@ -473,6 +473,29 @@ def test_incremental_backup_for_log_family():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_incremental_backup_append_table_def():
+    backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("ALTER TABLE test.table MODIFY SETTING parts_to_throw_insert=100")
+
+    incremental_backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {incremental_backup_name}")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    assert "parts_to_throw_insert = 100" in instance.query(
+        "SHOW CREATE TABLE test.table"
+    )
+
+
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 

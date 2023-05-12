@@ -267,7 +267,10 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/VectorCamp/vectorscan
+	# FIXME: update once upstream fixes will be merged:
+	# - https://github.com/VectorCamp/vectorscan/pull/148
+	# - https://github.com/VectorCamp/vectorscan/pull/149
+	url = https://github.com/azat-ch/vectorscan
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
