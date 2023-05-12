@@ -358,7 +358,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
 
 /// Converts database with Ordinary engine to Atomic. Does nothing if database is not Ordinary.
 /// Can be called only during server startup when there are no queries from users.
-static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, bool tables_started)
+static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, LoadTaskPtrs * startup_tasks = nullptr)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
@@ -385,10 +385,11 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
     try
     {
-        if (!tables_started)
+        if (startup_tasks) // NOTE: only for system database
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            startupSystemTables(context); // NOTE: tables_started can be false only for system tables
+            scheduleAndWaitLoad(*startup_tasks);
+            startup_tasks->clear();
         }
 
         auto local_context = Context::createCopy(context);
@@ -441,8 +442,10 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         scheduleAndWaitLoad(loader.loadTablesAsync());
 
         /// Startup tables if they were started before conversion and detach/attach
-        if (tables_started)
-            scheduleAndWaitLoad(loader.startupTablesAsync());
+        if (startup_tasks) // NOTE: only for system database
+            *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
+        else
+            scheduleAndWaitLoad(loader.startupTablesAsync()); // An old database was already loaded, so we should load new one as well
     }
     catch (Exception & e)
     {
@@ -454,13 +457,13 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     }
 }
 
-void maybeConvertSystemDatabase(ContextMutablePtr context)
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
     if (context->getSettingsRef().allow_deprecated_database_ordinary)
         return;
 
-    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, /* tables_started */ false);
+    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, *system_startup_tasks);
 }
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
@@ -477,18 +480,13 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
-            maybeConvertOrdinaryDatabaseToAtomic(context, name, /* tables_started */ true);
+            maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
     LOG_INFO(&Poco::Logger::get("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
 }
 
-void startupSystemTables(ContextMutablePtr context)
-{
-    DatabaseCatalog::instance().getSystemDatabase()->startupTablesAndDatabase(context->getAsyncLoader(), LoadingStrictnessLevel::FORCE_RESTORE);
-}
-
-void loadMetadataSystem(ContextMutablePtr context)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
@@ -502,7 +500,9 @@ void loadMetadataSystem(ContextMutablePtr context)
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
     scheduleAndWaitLoad(loader.loadTablesAsync());
+
     /// Will startup tables in system database after all databases are loaded.
+    return loader.startupTablesAsync();
 }
 
 }

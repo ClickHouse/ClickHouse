@@ -47,7 +47,9 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     }
 
     if (databases_to_load.empty())
-        return load_tasks;
+        return {};
+
+    LoadTaskPtrs result;
 
     /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
     for (auto & database_name : databases_to_load)
@@ -94,15 +96,17 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
             path_and_query.ast,
             strictness_mode);
         load_table[table_id.uuid] = task;
-        load_tasks.push_back(task);
+        result.push_back(task);
     }
 
-    return load_tasks;
+    return result;
 }
 
 LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 {
+    LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
+
     for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
     {
         // Make startup table task
@@ -113,7 +117,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
             table_name,
             strictness_mode);
         startup_database[table_name.database].push_back(task);
-        startup_tasks.push_back(task);
+        result.push_back(task);
     }
 
     /// Make startup database tasks
@@ -123,10 +127,10 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
             async_loader,
             getGoalsOr(startup_database[database_name], startup_after),
             strictness_mode);
-        startup_tasks.push_back(task);
+        result.push_back(task);
     }
 
-    return startup_tasks;
+    return result;
 }
 
 void TablesLoader::buildDependencyGraph()
@@ -150,7 +154,6 @@ void TablesLoader::buildDependencyGraph()
     referential_dependencies.log();
     all_loading_dependencies.log();
 }
-
 
 void TablesLoader::removeUnresolvableDependencies()
 {

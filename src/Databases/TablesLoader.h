@@ -79,8 +79,6 @@ private:
 
     AsyncLoader & async_loader;
     std::unordered_map<UUID, LoadTaskPtr> load_table; /// table uuid -> load task
-    LoadTaskPtrs load_tasks; /// Tasks to load all tables
-    LoadTaskPtrs startup_tasks; /// Tasks to startup all tables and databases after loading
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();

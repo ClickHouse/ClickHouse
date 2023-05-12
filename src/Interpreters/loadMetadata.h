@@ -19,7 +19,7 @@ void loadMetadataSystem(ContextMutablePtr context);
 void startupSystemTables(ContextMutablePtr context);
 
 /// Converts `system` database from Ordinary to Atomic (if needed)
-void maybeConvertSystemDatabase(ContextMutablePtr context);
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks);
 
 /// Converts all databases (except system) from Ordinary to Atomic if convert_ordinary_to_atomic flag exists
 /// Waits for `load_metadata` task before conversions

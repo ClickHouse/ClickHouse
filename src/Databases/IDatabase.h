@@ -182,7 +182,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    /// Start all tables and the database itself
+    /// TODO(serxa): remove this method. Start all tables and the database itself
     virtual void startupTablesAndDatabase(AsyncLoader & /*async_loader*/, LoadingStrictnessLevel /*mode*/) {}
 
     /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
