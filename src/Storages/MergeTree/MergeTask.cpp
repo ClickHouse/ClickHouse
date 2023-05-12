@@ -209,6 +209,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;

@@ -3608,6 +3608,9 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
+        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name)
+            continue;
+
         auto storage_column = columns.getPhysical(part_column.name);
         if (!storage_column.type->hasDynamicSubcolumns())
             continue;
@@ -8282,6 +8285,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
     new_data_part_storage->beginTransaction();
