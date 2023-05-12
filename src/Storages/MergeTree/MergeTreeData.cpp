@@ -1650,7 +1650,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }, 0));
     }
 
-    /// For for iteration to be completed
+    /// For iteration to be completed
     /// Any exception will be re-thrown.
     for (auto & future : disks_futures)
         future.get();
