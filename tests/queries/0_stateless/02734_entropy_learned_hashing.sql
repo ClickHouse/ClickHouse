@@ -14,8 +14,8 @@ DROP TABLE IF EXISTS tbl2;
 CREATE TABLE tbl2 (x String) ENGINE=Memory;
 -- with commonalities between keys
 INSERT INTO tbl2 VALUES ('aa'), ('ba'), ('ca');
-SELECT trainEntropyLearnedHash(x, 'id1') FROM tbl2;
-SELECT entropyLearnedHash(x, 'id1') FROM tbl2;
+SELECT trainEntropyLearnedHash(x, 'id2') FROM tbl2;
+SELECT entropyLearnedHash(x, 'id2') FROM tbl2;
 
 DROP TABLE tbl1;
 DROP TABLE tbl2;
