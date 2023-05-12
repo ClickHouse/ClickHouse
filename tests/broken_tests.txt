@@ -57,7 +57,6 @@
 01585_use_index_for_global_in_with_null
 01586_columns_pruning
 01615_random_one_shard_insertion
-01624_soft_constraints
 01651_bugs_from_15889
 01655_plan_optimizations
 01655_plan_optimizations_optimize_read_in_window_order
