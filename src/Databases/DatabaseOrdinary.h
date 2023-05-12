@@ -43,8 +43,6 @@ public:
         const ASTPtr & ast,
         LoadingStrictnessLevel mode) override;
 
-    void startupTablesAndDatabase(AsyncLoader & async_loader, LoadingStrictnessLevel mode) override;
-
     LoadTaskPtr startupTableAsync(
         AsyncLoader & async_loader,
         LoadJobSet startup_after,

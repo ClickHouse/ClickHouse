@@ -199,20 +199,6 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     return load_table[name.table] = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseOrdinary::startupTablesAndDatabase(AsyncLoader & async_loader, LoadingStrictnessLevel mode)
-{
-    LOG_INFO(log, "Starting up tables.");
-    LoadTaskPtrs tasks;
-    for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
-        tasks.push_back(startupTableAsync(
-            async_loader,
-            {},
-            QualifiedTableName{.database = getDatabaseName(), .table = table.first},
-            mode));
-    scheduleAndWaitLoad(tasks);
-    scheduleAndWaitLoad(startupDatabaseAsync(async_loader, {}, mode));
-}
-
 LoadTaskPtr DatabaseOrdinary::startupTableAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,

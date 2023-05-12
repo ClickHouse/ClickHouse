@@ -239,13 +239,11 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     if (!async_load_databases) {
         // First, load all tables
-        scheduleLoad(load_tasks);
-        waitLoad(load_tasks);
+        scheduleAndWaitLoad(load_tasks);
 
         // Then, startup all tables. This is done to postpone merges and mutations
         // Note that with async loader it would be a total barrier, which is unacceptable for the purpose of waiting.
-        scheduleLoad(startup_tasks);
-        waitLoad(startup_tasks);
+        scheduleAndWaitLoad(startup_tasks);
         return {};
     } else {
         // Schedule all the jobs.
@@ -463,7 +461,7 @@ void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system
     if (context->getSettingsRef().allow_deprecated_database_ordinary)
         return;
 
-    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, *system_startup_tasks);
+    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, &system_startup_tasks);
 }
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)

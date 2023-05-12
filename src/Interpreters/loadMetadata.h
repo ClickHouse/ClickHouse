@@ -8,15 +8,16 @@ namespace DB
 
 /// Load tables from system database. Only real tables like query_log, part_log.
 /// You should first load system database, then attach system tables that you need into it, then load other databases.
-void loadMetadataSystem(ContextMutablePtr context);
-
-/// Load tables from databases and add them to context. Database 'system' and 'information_schema' is ignored.
-/// Use separate function to load system tables.
-[[nodiscard]] LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name = {}, bool async_load_databases = false);
-
+/// It returns tasks to startup system tables.
 /// Background operations in system tables may slowdown loading of the rest tables,
 /// so we startup system tables after all databases are loaded.
-void startupSystemTables(ContextMutablePtr context);
+[[nodiscard]] LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context);
+
+/// Load tables from databases and add them to context. Databases 'system' and 'information_schema' are ignored.
+/// Use separate function to load system tables.
+/// If `async_load_databases = true` returns tasks for asynchronous load and startup of all tables
+/// Note that returned tasks are already scheduled.
+[[nodiscard]] LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name = {}, bool async_load_databases = false);
 
 /// Converts `system` database from Ordinary to Atomic (if needed)
 void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks);
