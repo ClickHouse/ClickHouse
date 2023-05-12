@@ -82,17 +82,29 @@ CurrentMetrics::Metric PartsCleaningThreadPool::threads_metric = CurrentMetrics:
 CurrentMetrics::Metric PartsCleaningThreadPool::threads_active_metric = CurrentMetrics::MergeTreePartsCleanerThreadsActive;
 
 template class StaticThreadPool<OutdatedPartsLoadingThreadPool>;
-size_t OutdatedPartsLoadingThreadPool::max_threads_turbo;
+size_t OutdatedPartsLoadingThreadPool::max_threads_turbo = 0;
+size_t OutdatedPartsLoadingThreadPool::max_threads = 0;
+bool OutdatedPartsLoadingThreadPool::turbo_mode_enabled = false;
 std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
 CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads;
 CurrentMetrics::Metric OutdatedPartsLoadingThreadPool::threads_active_metric = CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive;
 
-void OutdatedPartsLoadingThreadPool::turboMode()
+void OutdatedPartsLoadingThreadPool::enableTurboMode()
 {
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
 
+    turbo_mode_enabled = true;
     instance->setMaxThreads(max_threads_turbo);
+}
+
+void OutdatedPartsLoadingThreadPool::disableTurboMode()
+{
+    if (!instance)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
+
+    turbo_mode_enabled = false;
+    instance->setMaxThreads(max_threads);
 }
 
 void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo_)
@@ -101,6 +113,8 @@ void OutdatedPartsLoadingThreadPool::setMaxTurboThreads(size_t max_threads_turbo
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
 
     max_threads_turbo = max_threads_turbo_;
+    if (turbo_mode_enabled)
+        instance->setMaxThreads(max_threads_turbo);
 }
 
 }

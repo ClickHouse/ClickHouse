@@ -61,18 +61,21 @@ class PartsCleaningThreadPool : public StaticThreadPool<PartsCleaningThreadPool>
 /// This ThreadPool used for the loading of Outdated data parts for MergeTree tables.
 /// Normally we will just load Outdated data parts concurrently in background, but in
 /// case when we need to synchronously wait for the loading to be finished, we can increase
-/// the number of threads by calling turboMode() :-)
+/// the number of threads by calling enableTurboMode() :-)
 class OutdatedPartsLoadingThreadPool : public StaticThreadPool<OutdatedPartsLoadingThreadPool>
 {
     friend class StaticThreadPool;
     static size_t max_threads_turbo;
+    static size_t max_threads;
+    static bool turbo_mode_enabled;
     static std::unique_ptr<ThreadPool> instance;
     static CurrentMetrics::Metric threads_metric;
     static CurrentMetrics::Metric threads_active_metric;
 
 public:
     static void setMaxTurboThreads(size_t max_threads_turbo_);
-    static void turboMode();
+    static void enableTurboMode();
+    static void disableTurboMode();
 };
 
 
