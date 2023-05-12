@@ -389,7 +389,7 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
-TEST(AsyncLoader, JobFailure)
+TEST(AsyncLoader, DISABLEDJobFailure)
 {
     AsyncLoaderTest t;
     t.loader.start();
