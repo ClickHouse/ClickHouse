@@ -710,15 +710,46 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
+bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
+    if (unlikely(source_block_.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block_.rows());
+
+    Block source_block = source_block_;
+    if (strictness == JoinStrictness::Asof)
+    {
+        chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
+        // Filter out rows with NULLs in asof key
+        const auto & asof_key_name = table_join->getOnlyClause().key_names_right.back();
+        auto & asof_column = source_block.getByName(asof_key_name);
+
+        if (asof_column.type->isNullable())
+        {
+            /// filter rows with nulls in asof key
+            if (const auto * asof_const_column = typeid_cast<const ColumnConst *>(asof_column.column.get()))
+            {
+                if (asof_const_column->isNullAt(0))
+                    return false;
+            }
+            else
+            {
+                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
+
+                NullMap negative_null_map(asof_column_nullable.size());
+                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
+                    negative_null_map[i] = !asof_column_nullable[i];
+
+                for (auto & column : source_block)
+                    column.column = column.column->filter(negative_null_map, -1);
+            }
+        }
+    }
 
     size_t rows = source_block.rows();
 
