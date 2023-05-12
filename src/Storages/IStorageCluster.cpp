@@ -77,7 +77,7 @@ Pipe IStorageCluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     if (!structure_argument_was_provided)
-        addColumnsStructureToQuery(query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
+        addColumnsStructureToQuery(query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -89,7 +89,7 @@ Pipe IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
-    auto new_context = updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    auto new_context = updateSettings(context, context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
@@ -129,7 +129,7 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-ContextPtr IStorageCluster::updateSettingsForTableFunctionCluster(ContextPtr context, const Settings & settings)
+ContextPtr IStorageCluster::updateSettings(ContextPtr context, const Settings & settings)
 {
     Settings new_settings = settings;
 

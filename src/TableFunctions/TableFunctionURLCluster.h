@@ -2,6 +2,7 @@
 
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionURL.h>
+#include <TableFunctions/ITableFunctionCluster.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageURLCluster.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -20,13 +21,24 @@ class Context;
  * On worker node it asks initiator about next task to process, processes it.
  * This is repeated until the tasks are finished.
  */
-class TableFunctionURLCluster : public TableFunctionURL
+class TableFunctionURLCluster : public ITableFunctionCluster<TableFunctionURL>
 {
 public:
     static constexpr auto name = "urlCluster";
-    std::string getName() const override
+    static constexpr auto signature = " - cluster, uri\n"
+                                      " - cluster, uri, format\n"
+                                      " - cluster, uri, format, structure\n"
+                                      " - cluster, uri, format, structure, compression_method\n"
+                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+
+    String getName() const override
     {
         return name;
+    }
+
+    String getSignature() const override
+    {
+        return signature;
     }
 
 protected:
@@ -35,14 +47,6 @@ protected:
         const std::string & table_name, const String & compression_method_) const override;
 
     const char * getStorageTypeName() const override { return "URLCluster"; }
-
-    AccessType getSourceAccessType() const override { return AccessType::URL; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr) const override;
-    void parseArguments(const ASTPtr &, ContextPtr) override;
-
-    String cluster_name;
-
 };
 
 }

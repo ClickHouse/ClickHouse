@@ -4,19 +4,22 @@
 
 #if USE_AWS_S3
 
-#include "Common/Exception.h"
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageURL.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/getVirtualsForStorage.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/getVirtualsForStorage.h>
+#include <Common/Exception.h>
+#include <Parsers/queryToString.h>
+#include <TableFunctions/TableFunctionS3Cluster.h>
 
 #include <memory>
 #include <string>
@@ -61,9 +64,13 @@ StorageS3Cluster::StorageS3Cluster(
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
-void StorageS3Cluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure)
+void StorageS3Cluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
-    addColumnsStructureToQueryWithS3ClusterEngine(query, structure);
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function s3Cluster, got '{}'", queryToString(query));
+
+    TableFunctionS3Cluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
 void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
@@ -71,7 +78,7 @@ void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
     s3_configuration.update(local_context);
 }
 
-RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
         *s3_configuration.client, s3_configuration.url, query, virtual_block, context);

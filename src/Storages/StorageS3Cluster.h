@@ -34,7 +34,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);
@@ -42,7 +42,7 @@ protected:
 private:
     void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
 
-    void addColumnsStructureToQuery(ASTPtr & query, const String & structure) override;
+    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 
     StorageS3::Configuration s3_configuration;
     NamesAndTypesList virtual_columns;
