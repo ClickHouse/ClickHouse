@@ -4,6 +4,9 @@
 #include <Common/SettingsChanges.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Server/WebSocket/WebSocketRequestHandler.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 
 namespace DB
 {
@@ -26,15 +29,12 @@ void WebSocketRequestHandler::processQuery(
     ///temporary solution should be changed cause
     /// The user could hold one session in one webSocket connection and maybe between them.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-     auto session_ = std::make_shared<Session>(server.context(), ClientInfo::Interface::WEB_SOCKET, true);
+    auto client_info = session->getClientInfo();
+    auto context = session->makeQueryContext(std::move(client_info));
 
-     session_->makeSessionContext();
-      auto client_info = session_->getClientInfo();
-      auto context = session_->makeQueryContext(std::move(client_info));
+    context->setCurrentQueryId("");
 
-      context->setCurrentQueryId("");
-
-      query_scope.emplace(context);
+    query_scope.emplace(context);
 
 
     ReadBufferFromOwnString input(request.get("data").toString());
@@ -45,11 +45,17 @@ void WebSocketRequestHandler::processQuery(
 void WebSocketRequestHandler::handleRequest(Poco::JSON::Object & request, DB::WebSocket & webSocket)
 {
     auto data = request.get("data").extract<std::string>();
-    WriteBufferFromWebSocket output(webSocket, true);
+    //WriteBufferFromWebSocket output(webSocket, true);
+    std::string str;
+    WriteBufferFromOwnString output;
 
     std::optional<CurrentThread::QueryScope> query_scope;
 
     processQuery(request, output, query_scope);
+
+
+    webSocket.sendFrame(output.str().c_str(), static_cast<int>(output.str().size()), WebSocket::FRAME_TEXT);
+
     //webSocket.sendFrame(data.c_str(), std::min(std::max(0,static_cast<int>(data.size())), 10000000), 0x81);
 
 }
