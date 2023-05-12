@@ -44,6 +44,14 @@ Number of threads in the Aggregator thread pool.
 
 Number of threads in the Aggregator thread pool running a task.
 
+### AsyncLoaderThreads
+
+Number of threads in the async loader thread pool.
+
+### AsyncLoaderThreadsActive
+
+Number of threads in the async loader thread pool running a task.
+
 ### AsyncInsertCacheSize
 
 Number of async insert hash id in cache
@@ -195,14 +203,6 @@ Number of threads in the DatabaseOnDisk thread pool.
 ### DatabaseOnDiskThreadsActive
 
 Number of threads in the DatabaseOnDisk thread pool running a task.
-
-### DatabaseOrdinaryThreads
-
-Number of threads in the Ordinary database thread pool.
-
-### DatabaseOrdinaryThreadsActive
-
-Number of threads in the Ordinary database thread pool running a task.
 
 ### DelayedInserts
 
@@ -624,14 +624,6 @@ Number of connections that are sending data for external tables to remote server
 
 Number of connections that are sending data for scalars to remote servers.
 
-### StartupSystemTablesThreads
-
-Number of threads in the StartupSystemTables thread pool.
-
-### StartupSystemTablesThreadsActive
-
-Number of threads in the StartupSystemTables thread pool running a task.
-
 ### StorageBufferBytes
 
 Number of bytes in buffers of Buffer tables
@@ -675,14 +667,6 @@ Number of threads in the system.replicas thread pool running a task.
 ### TCPConnection
 
 Number of connections to TCP server (clients with native interface), also included server-server distributed query connections
-
-### TablesLoaderThreads
-
-Number of threads in the tables loader thread pool.
-
-### TablesLoaderThreadsActive
-
-Number of threads in the tables loader thread pool running a task.
 
 ### TablesToDropQueueSize
 
