@@ -326,6 +326,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (!ctx->need_remove_expired_values)
     {
         size_t expired_columns = 0;
+        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
 
         for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
         {
@@ -335,6 +336,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
                 LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
                 std::erase(global_ctx->gathering_column_names, column_name);
                 std::erase(global_ctx->merging_column_names, column_name);
+                std::erase(global_ctx->all_column_names, column_name);
+                part_serialization_infos.erase(column_name);
                 ++expired_columns;
             }
         }
@@ -343,6 +346,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             global_ctx->gathering_columns = global_ctx->gathering_columns.filter(global_ctx->gathering_column_names);
             global_ctx->merging_columns = global_ctx->merging_columns.filter(global_ctx->merging_column_names);
+            global_ctx->storage_columns = global_ctx->storage_columns.filter(global_ctx->all_column_names);
+
+            global_ctx->new_data_part->setColumns(
+                global_ctx->storage_columns,
+                part_serialization_infos,
+                global_ctx->metadata_snapshot->getMetadataVersion());
         }
     }
 
