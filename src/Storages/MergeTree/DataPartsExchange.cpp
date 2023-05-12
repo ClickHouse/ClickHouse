@@ -369,7 +369,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
-    const String & zookeeper_name,
     const String & replica_path,
     const String & host,
     int port,
@@ -408,7 +407,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     uri.setPort(port);
     uri.setQueryParameters(
     {
-        {"endpoint",                getEndpointId(zookeeper_name + ":" +  replica_path)},
+        {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
         {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
@@ -631,15 +630,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
-            return fetchSelectedPart(
-                metadata_snapshot,
-                context,
-                part_name,
-                zookeeper_name,
-                replica_path,
-                host,
-                port,
-                timeouts,
+            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
