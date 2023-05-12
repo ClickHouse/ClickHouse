@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS test_zk_connection_table;
 
 CREATE TABLE test_zk_connection_table (
