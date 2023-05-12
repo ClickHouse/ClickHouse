@@ -34,7 +34,7 @@ select * from urlCluster('test_cluster_one_shard_three_replicas_localhost', 'htt
 
 drop table if exists test;
 create table test (x UInt32, y UInt32, z UInt32) engine=Memory();
-insert into test select * from s3Cluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/a.tsv', 'TSV');
+insert into test select * from urlCluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/a.tsv', 'TSV');
 select * from test;
 drop table test;
 
