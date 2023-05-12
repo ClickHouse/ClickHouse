@@ -40,3 +40,5 @@ None
 3	30
 4	40
 No problematic policy, select works
+Policy for table `*` does not affect other tables in the database
+other	100	20

@@ -36,10 +36,18 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
     auto it = loaded->find({database, table_name, filter_type});
     if (it == loaded->end())
     {   /// Look for a policy for database if a table policy not found
-        it = loaded->find({database, RowPolicy::ANY_TABLE_MARK, filter_type});
+        it = loaded->find({database, RowPolicyName::ANY_TABLE_MARK, filter_type});
         if (it == loaded->end())
         {
             return {};
+        }
+        else
+        {
+            // deep copy found policy for database and change its table name to the actual one
+            auto policy_for_database = std::make_shared<RowPolicyFilter>(*it->second);
+            auto database_and_table_name = std::make_shared<std::pair<String, String>>(database, table_name);
+            policy_for_database->database_and_table_name = database_and_table_name;
+            return policy_for_database;
         }
     }
 
