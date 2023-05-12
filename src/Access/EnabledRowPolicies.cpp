@@ -41,14 +41,6 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
         {
             return {};
         }
-        else
-        {
-            // deep copy found policy for database and change its table name to the actual one
-            auto policy_for_database = std::make_shared<RowPolicyFilter>(*it->second);
-            auto database_and_table_name = std::make_shared<std::pair<String, String>>(database, table_name);
-            policy_for_database->database_and_table_name = database_and_table_name;
-            return policy_for_database;
-        }
     }
 
     return it->second;
