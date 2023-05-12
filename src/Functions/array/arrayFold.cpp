@@ -218,13 +218,9 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<ArrayFold>("arrayFold", {R"(
+    factory.registerFunction<ArrayFold>(FunctionDocumentation{.description=R"(
         Function arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) applies lambda function to a number of same sized array columns
         and collects result in accumulator. Accumulator can be either constant or column.
-        )",
-        Documentation::Examples{
-            {"sum", "SELECT arrayFold(x,acc -> acc + x, [1,2,3,4], toInt64(0));"}},
-        Documentation::Categories{}
-    });
+        )", .categories{"Array"}, .examples{{"sum", "SELECT arrayFold(x,acc -> acc + x, [1,2,3,4], toInt64(1));", "11"}}});
 }
 }
