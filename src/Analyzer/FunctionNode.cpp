@@ -210,7 +210,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     }
 
     auto new_options = options;
-    if (function_name == "_CAST")
+    /// To avoid surrounding constants with several internal casts.
+    if (function_name == "_CAST" && (*getArguments().begin())->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
 
     const auto & parameters = getParameters();
