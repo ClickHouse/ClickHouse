@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/PlanFragment.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -203,6 +204,79 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     return last_pipeline;
 }
+
+PlanFragmentPtrs QueryPlan::createPlanFragments(Node & single_node_plan)
+{
+    PlanFragmentPtrs fragments;
+    createPlanFragments(single_node_plan, fragments);
+    return fragments;
+}
+
+PlanFragmentPtr QueryPlan::createPlanFragments(Node & root_node, PlanFragmentPtrs & fragments)
+{
+    PlanFragmentPtrs childFragments;
+    for (Node * child : root->children) {
+        childFragments.emplace_back(createPlanFragments(*child, fragments));
+    }
+
+    PlanFragmentPtr result;
+    if (dynamic_cast<ISourceStep *>(root_node.step.get())) {
+        result = createScanFragment(root_node);
+        fragments.emplace_back(std::move(result));
+//    } else if (root instanceof TableFunctionNode) {
+//        result = createTableFunctionFragment(root, childFragments.get(0));
+//    } else if (root instanceof HashJoinNode) {
+//        Preconditions.checkState(childFragments.size() == 2);
+//        result = createHashJoinFragment((HashJoinNode) root,
+//                                        childFragments.get(1), childFragments.get(0), fragments);
+//    } else if (root instanceof NestedLoopJoinNode) {
+//        result = createNestedLoopJoinFragment((NestedLoopJoinNode) root, childFragments.get(1),
+//                                              childFragments.get(0));
+//    } else if (root instanceof SelectNode) {
+//        result = createSelectNodeFragment((SelectNode) root, childFragments);
+//    } else if (root instanceof SetOperationNode) {
+//        result = createSetOperationNodeFragment((SetOperationNode) root, childFragments, fragments);
+
+//    } else if (root instanceof AggregationNode) {
+//        result = createAggregationFragment((AggregationNode) root, childFragments.get(0), fragments);
+//    } else if (root instanceof SortNode) {
+//        if (((SortNode) root).isAnalyticSort()) {
+//            // don't parallelize this like a regular SortNode
+//            result = createAnalyticFragment((SortNode) root, childFragments.get(0), fragments);
+//        } else {
+//            result = createOrderByFragment((SortNode) root, childFragments.get(0));
+//        }
+//    } else if (root instanceof AnalyticEvalNode) {
+//        result = createAnalyticFragment(root, childFragments.get(0), fragments);
+//    } else if (root instanceof EmptySetNode) {
+//        result = new PlanFragment(ctx.getNextFragmentId(), root, DataPartition.UNPARTITIONED);
+//    } else if (root instanceof RepeatNode) {
+//        result = createRepeatNodeFragment((RepeatNode) root, childFragments.get(0), fragments);
+//    } else if (root instanceof AssertNumRowsNode) {
+//        result = createAssertFragment(root, childFragments.get(0));
+//    } else {
+//        throw new UserException(
+//            "Cannot create plan fragment for this node type: " + root.getExplainString());
+//    }
+//    // move 'result' to end, it depends on all of its children
+//    fragments.remove(result);
+//    fragments.add(result);
+//    if ((!isPartitioned && result.isPartitioned() && result.getPlanRoot().getNumInstances() > 1)
+//        || (!(root instanceof SortNode) && root.hasOffset())) {
+//        result = createMergeFragment(result);
+//        fragments.add(result);
+    }
+
+    return result;
+}
+
+
+PlanFragmentPtr QueryPlan::createScanFragment(Node & node)
+{
+//    UInt32 a = 1;
+    return std::make_unique<PlanFragment>(/*a,*/ node);
+}
+
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {

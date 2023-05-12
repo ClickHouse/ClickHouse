@@ -31,6 +31,11 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
+class PlanFragment;
+using PlanFragmentPtr = std::unique_ptr<PlanFragment>;
+using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
+
+
 namespace JSONBuilder
 {
     class IItem;
@@ -104,6 +109,10 @@ public:
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
     };
+
+    PlanFragmentPtrs createPlanFragments(Node & single_node_plan);
+    PlanFragmentPtr createPlanFragments(Node & root_node, PlanFragmentPtrs & fragments);
+    PlanFragmentPtr createScanFragment(Node & node);
 
     const Node * getRootNode() const { return root; }
 
