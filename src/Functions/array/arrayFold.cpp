@@ -193,7 +193,7 @@ public:
             for (size_t i = 0; i < array_count; i++)
                 res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(data_arrays[i][ind]), arrays[i].type, arrays[i].name)}));
             res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(prev[1]), arguments.back().type, arguments.back().name)}));
-            
+
             current_column = IColumn::mutate(res_lambda_ptr->reduce().column);
             prev_size = current_column->size();
         }
@@ -216,16 +216,11 @@ private:
     }
 };
 
-
 REGISTER_FUNCTION(ArrayFold)
 {
-    
     factory.registerFunction<ArrayFold>(R"(
         Function arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) applies lambda function to a number of same sized array columns 
         and collects result in accumulator. Accumulator can be either constant or column.
         )");
-    
 }
-
-
 }
