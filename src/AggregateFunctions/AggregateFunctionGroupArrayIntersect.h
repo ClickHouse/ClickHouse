@@ -95,7 +95,7 @@ public:
         UInt64 version = this->data(place).version++;
         UInt64 rhs_version = this->data(rhs).version;
         for (auto & rhs_elem : rhs_map)
-        {   
+        {
             if (rhs_elem.getMapped() != rhs_version)
                 continue;
             auto value = map.find(rhs_elem.getKey());
@@ -146,7 +146,7 @@ public:
         data_to.resize(old_size + size);
 
         size_t i = 0;
-        for (auto it = map.begin(); it != map.end(); ++it) 
+        for (auto it = map.begin(); it != map.end(); ++it)
         {
             if (version == it->getMapped())
                 data_to[old_size + i++] = it->getKey();
@@ -245,14 +245,14 @@ public:
 
                 if constexpr (is_plain_column)
                 {
-                    map.emplace(ArenaKeyHolder{arr.getDataAt(offset + i), *arena}, it, inserted);
+                    map.emplace(ArenaKeyHolder{arr.getDataAt(i), *arena}, it, inserted);
                 }
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column.serializeValueIntoArena(offset + i, arena, begin);
+                    StringRef serialized = data_column.serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
-                    map.emplace(SerializedKeyHolder{serialized, arena}, it, inserted)
+                    map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
                 if (inserted)
                     new (&it->getMapped()) UInt64(version);
@@ -264,13 +264,12 @@ public:
                 Map::TValue value;
                 if constexpr (is_plain_column)
                 {
-                    value = map.find(arr.getDataAt(offset + i));
+                    value = map.find(arr.getDataAt(i));
                 }
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
-                    value = map.find(serialize)
+                    StringRef serialized = column.serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
                     value = map.find(serialized);
                 }
