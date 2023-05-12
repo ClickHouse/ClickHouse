@@ -111,6 +111,7 @@ Checks: '*,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-confusable-identifiers, # useful but slooow
+    -misc-use-anonymous-namespace,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
