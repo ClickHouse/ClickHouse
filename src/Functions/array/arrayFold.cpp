@@ -218,7 +218,7 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<ArrayFold>(R"(
+    factory.registerFunction<ArrayFold>("arrayFold", R"(
         Function arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, init_accum) applies lambda function to a number of same sized array columns
         and collects result in accumulator. Accumulator can be either constant or column.
         )");
