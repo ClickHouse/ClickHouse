@@ -16,11 +16,6 @@
 #include <vector>
 #include <list>
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
 /**
