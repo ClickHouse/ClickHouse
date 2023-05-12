@@ -2030,7 +2030,9 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto cryptographic_mode = getSettings()->cryptographic_mode;
+    auto settings = getSettings();
+    auto cryptographic_mode = settings->cryptographic_mode;
+    auto hash_function = settings->hash_function;
     bool fill_merkle_tree = merkle_tree.empty();
 
     for (auto & part : data_parts)
@@ -2041,7 +2043,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, cryptographic_mode);
+                auto calculated_checksums = checkDataPart(part, false, cryptographic_mode, hash_function);
                 calculated_checksums.checkEqual(part->checksums, true);
 
                 auto checksum_hex = calculated_checksums.getTotalChecksumHex();
@@ -2063,7 +2065,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, true, cryptographic_mode);
+                auto calculated_checksums = checkDataPart(part, true, cryptographic_mode, hash_function);
 
                 if (fill_merkle_tree) {
                     auto checksum_hex = calculated_checksums.getTotalChecksumHex();

@@ -13,20 +13,13 @@ namespace DB
 class AbstractHashingWriteBuffer
 {
 public:
-    using uint128 = std::pair<uint64_t, uint64_t>;
-
     AbstractHashingWriteBuffer(WriteBuffer & out_, bool cryptographic_mode_, HashFn hashFnType)
         : cryptographic_mode(cryptographic_mode_)
     {
         if (!cryptographic_mode) {
             underlying_buf.emplace<HashingWriteBuffer>(out_);
         } else {
-            switch (hashFnType) {
-                case HashFn::SipHash:
-                    underlying_buf.emplace<CryptoHashingWriteBuffer>(out_);
-                    break;
-                default:
-            }
+            underlying_buf.emplace<CryptoHashingWriteBuffer>(out_, chooseHashFunction(hashFnType));
         }
     }
 private:

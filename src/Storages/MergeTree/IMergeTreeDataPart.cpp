@@ -1096,8 +1096,9 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        auto settings = storage.getSettings();
 
-        checksums = checkDataPart(shared_from_this(), false, storage.getSettings()->cryptographic_mode);
+        checksums = checkDataPart(shared_from_this(), false, settings->cryptographic_mode, settings->hash_function);
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
@@ -2012,9 +2013,9 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
         return {};
     }
     std::unique_ptr<ReadBufferFromFileBase> in_file = getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-
-    if (storage.getSettings()->cryptographic_mode) {
-        CryptoHashingReadBuffer in_hash(*in_file);
+    auto settings = storage.getSettings();
+    if (settings->cryptographic_mode) {
+        CryptoHashingReadBuffer in_hash(*in_file, chooseHashFunction(settings->hash_function));
         String value;
         readStringUntilEOF(value, in_hash);
         return in_hash.getHash();

@@ -4,23 +4,84 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
+#include <Core/SettingsEnums.h>
 #include <Common/SipHash.h>
+
+#if USE_SSL
+#    include <openssl/md4.h>
+#    include <openssl/md5.h>
+#    include <openssl/sha.h>
+#endif
+
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
+typedef std::pair<uint64_t, uint64_t> uint128;
+typedef uint128 (*HashFnApplier) (const char*, const size_t);
 
 namespace DB
 {
 
-inline std::pair<uint64_t, uint64_t> SipHashApplier(const char* begin, const size_t size) {
+inline uint128 SipHashApplier(const char* begin, const size_t size) {
     auto hashed = sipHash128(begin, size);
     return {hashed & (~(0llu)), hashed >> 64};
+}
+
+#if USE_SSL
+inline uint128 SHA256Applier(const char* begin, const size_t size) {
+    uint64_t buf[4];
+
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+    SHA256_Final(reinterpret_cast<unsigned char*>(&buf), &ctx);
+
+    return {buf[0], buf[1]};
+}
+
+inline uint128 MD4Applier(const char* begin, const size_t size) {
+    uint64_t buf[4];
+
+    MD4_CTX ctx;
+    MD4_Init(&ctx);
+    MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+    MD4_Final(reinterpret_cast<unsigned char*>(&buf), &ctx);
+
+    return {buf[0], buf[1]};
+}
+
+inline uint128 MD5Applier(const char* begin, const size_t size) {
+    uint64_t buf[4];
+
+    MD5_CTX ctx;
+    MD5_Init(&ctx);
+    MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+    MD5_Final(reinterpret_cast<unsigned char*>(&buf), &ctx);
+
+    return {buf[0], buf[1]};
+}
+#endif
+
+inline HashFnApplier chooseHashFunction(HashFn hashFnType) {
+        switch (hashFnType)
+        {
+            case HashFn::SipHash:
+                return &SipHashApplier;
+#if USE_SSL
+            case HashFn::MD4:
+                return &MD4Applier;
+            case HashFn::MD5:
+                return &MD5Applier;
+            case HashFn::SHA256:
+                return &SHA256Applier;
+#endif
+            default:
+                return &SipHashApplier;
+        }
 }
 
 template <typename Buffer>
 class ICryptoHashingBuffer : public BufferWithOwnMemory<Buffer> {
 public:
-    using uint128 = std::pair<uint64_t, uint64_t>;
-    using HashFnApplier = uint128 (*)(const char*, const size_t);
-    explicit ICryptoHashingBuffer(size_t block_size_= DBMS_DEFAULT_HASHING_BLOCK_SIZE, HashFnApplier hasher_ = &SipHashApplier)
+    explicit ICryptoHashingBuffer(HashFnApplier hasher_, size_t block_size_= DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_)
         , block_pos(0)
         , block_size(block_size_)
@@ -71,8 +132,9 @@ private:
 public:
     explicit CryptoHashingWriteBuffer(
         WriteBuffer& out_,
+        HashFnApplier hasher_,
         size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
-        : ICryptoHashingBuffer<DB::WriteBuffer>(block_size_), out(out_)
+        : ICryptoHashingBuffer<DB::WriteBuffer>(hasher_, block_size_), out(out_)
     {
         // clear buffer in case there is something
         out.next();

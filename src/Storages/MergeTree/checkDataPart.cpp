@@ -54,6 +54,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     const NameSet & files_without_checksums,
     bool require_checksums,
     bool cryptographic_mode,
+    HashFn hashFnType,
     std::function<bool()> is_cancelled)
 {
     /** Responsibility:
@@ -80,14 +81,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
     IMergeTreeDataPart::Checksums checksums_data;
 
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
-    auto checksum_compressed_file = [&cryptographic_mode](const IDataPartStorage & data_part_storage_, const String & file_path)
+    auto checksum_compressed_file = [&cryptographic_mode, hashFnType](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
         auto file_buf = data_part_storage_.readFile(file_path, {}, std::nullopt, std::nullopt);
 
         if (cryptographic_mode) {
-            CryptoHashingReadBuffer compressed_hashing_buf(*file_buf);
+            CryptoHashingReadBuffer compressed_hashing_buf(*file_buf, chooseHashFunction(hashFnType));
             CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
-            CryptoHashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
+            CryptoHashingReadBuffer uncompressed_hashing_buf(uncompressing_buf, chooseHashFunction(hashFnType));
 
             uncompressed_hashing_buf.ignoreAll();
             return IMergeTreeDataPart::Checksums::Checksum
@@ -132,7 +133,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto file_buf = data_part_storage.readFile(file_name, {}, std::nullopt, std::nullopt);
 
         if (cryptographic_mode) {
-            CryptoHashingReadBuffer hashing_buf(*file_buf);
+            CryptoHashingReadBuffer hashing_buf(*file_buf, chooseHashFunction(hashFnType));
             hashing_buf.ignoreAll();
             checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
             return;
@@ -225,7 +226,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             projection, *data_part_storage.getProjection(projection_file),
             projection->getColumns(), projection->getType(),
             projection->getFileNamesWithoutChecksums(),
-            require_checksums, cryptographic_mode, is_cancelled);
+            require_checksums, cryptographic_mode, hashFnType, is_cancelled);
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
             projection_checksums.getTotalSizeOnDisk(),
@@ -262,6 +263,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     bool cryptographic_mode,
+    HashFn hashFnType,
     std::function<bool()> is_cancelled)
 {
     if (auto part_in_memory = asInMemoryPart(data_part))
@@ -275,6 +277,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         data_part->getFileNamesWithoutChecksums(),
         require_checksums,
         cryptographic_mode,
+        hashFnType,
         is_cancelled);
 }
 

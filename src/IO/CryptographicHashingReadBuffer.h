@@ -8,8 +8,8 @@ namespace DB {
 class CryptoHashingReadBuffer : public ICryptoHashingBuffer<ReadBuffer>
 {
 public:
-    explicit CryptoHashingReadBuffer(ReadBuffer & in_, size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
-        : ICryptoHashingBuffer<ReadBuffer>(block_size_), in(in_)
+    explicit CryptoHashingReadBuffer(ReadBuffer & in_, HashFnApplier hasher_, size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
+        : ICryptoHashingBuffer<ReadBuffer>(hasher_, block_size_), in(in_)
     {
         working_buffer = in.buffer();
         pos = in.position();
