@@ -1007,7 +1007,7 @@ namespace
             catch (Exception & e)
             {
                 e.addMessage("(while converting column {})", column_name);
-                throw e;
+                throw std::move(e);
             }
         }
 
@@ -1015,7 +1015,7 @@ namespace
         {
             assert(builder);
             auto & struct_builder = assert_cast<StructBuilder &>(*builder);
-            if (auto tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
+            if (auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
                 writeRow(tuple_column->getColumnsCopy(), struct_builder, row_num);
             else
                 writeRow(Columns{column}, struct_builder, row_num);
