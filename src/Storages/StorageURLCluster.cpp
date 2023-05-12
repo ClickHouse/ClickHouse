@@ -13,13 +13,14 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Processors/Sources/RemoteSource.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/StorageURL.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
+#include <Storages/StorageURL.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+
+#include <TableFunctions/TableFunctionURLCluster.h>
 
 #include <memory>
 
@@ -62,12 +63,16 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure)
+void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
-    addColumnsStructureToQueryWithURLClusterEngine(query, structure);
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+
+    TableFunctionURLCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });

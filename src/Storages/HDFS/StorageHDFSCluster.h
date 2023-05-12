@@ -35,10 +35,10 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
 private:
-    void addColumnsStructureToQuery(ASTPtr & query, const String & structure) override;
+    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 
     String uri;
     String format_name;

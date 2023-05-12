@@ -15,12 +15,14 @@
 
 #include <Processors/Sources/RemoteSource.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/queryToString.h>
 
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/HDFS/HDFSCommon.h>
-#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 
+#include <TableFunctions/TableFunctionHDFSCluster.h>
 #include <memory>
 
 
@@ -59,13 +61,17 @@ StorageHDFSCluster::StorageHDFSCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageHDFSCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure)
+void StorageHDFSCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
-    addColumnsStructureToQueryWithHDFSClusterEngine(query, structure);
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function hdfsCluster, got '{}'", queryToString(query));
+
+    TableFunctionHDFSCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
 
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const
+RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
     auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
