@@ -29,12 +29,16 @@ void WebSocketServerConnection::run()
         auto opcode = flags_and_opcode & WebSocket::FRAME_OP_BITMASK;
         auto flag = flags_and_opcode & WebSocket::FRAME_FLAG_BITMASK;
 
+
+        auto str1 = std::string(message_buffer.begin(), message_buffer.end());
+
         app.logger().information(
-            Poco::format("Frame received (length=%d, flags=0x%x, op_flags=0x%x, frame_flags=0x%x).",
+            Poco::format("Frame received (length=%d, flags=0x%x, op_flags=0x%x, frame_flags=0x%x). \n message:%s",
              received_bytes,
              unsigned(flags_and_opcode),
              unsigned(opcode),
-             unsigned(flag)
+             unsigned(flag),
+             str1
         ));
 
         switch (opcode) {
@@ -62,15 +66,16 @@ void WebSocketServerConnection::run()
         if (flag == WebSocket::FRAME_FLAG_FIN) {
             try {
                 // TODO: parse actual request JSON
-                auto request = parser.parse(std::string(message_buffer.begin(), message_buffer.end())).extract<Object::Ptr>();
+                auto str = std::string(message_buffer.begin(), message_buffer.end());
+                auto request = parser.parse(str).extract<Object::Ptr>();
                 regular_handler.handleRequest(*request, webSocket);
-                message_buffer.setCapacity(0,false);
+                message_buffer.setCapacity(0);
             } catch (const Exception& e) {
                 //TODO: add a reasonable exception wrapper here
                 throw Exception(e);
             }
         }
-        frame_buffer.setCapacity(0,false);
+        frame_buffer.setCapacity(0);
 
     }
 }

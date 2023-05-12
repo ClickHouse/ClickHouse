@@ -45,18 +45,16 @@ void WebSocketRequestHandler::processQuery(
 void WebSocketRequestHandler::handleRequest(Poco::JSON::Object & request, DB::WebSocket & webSocket)
 {
     auto data = request.get("data").extract<std::string>();
-    //WriteBufferFromWebSocket output(webSocket, true);
-    std::string str;
-    WriteBufferFromOwnString output;
+    WriteBufferFromWebSocket output(webSocket, true);
+//    std::string str;
+//    WriteBufferFromOwnString output;
 
     std::optional<CurrentThread::QueryScope> query_scope;
 
     processQuery(request, output, query_scope);
 
 
-    webSocket.sendFrame(output.str().c_str(), static_cast<int>(output.str().size()), WebSocket::FRAME_TEXT);
-
-    //webSocket.sendFrame(data.c_str(), std::min(std::max(0,static_cast<int>(data.size())), 10000000), 0x81);
+    //webSocket.sendFrame(output.str().c_str(), static_cast<int>(output.str().size()), WebSocket::FRAME_TEXT);
 
 }
 
