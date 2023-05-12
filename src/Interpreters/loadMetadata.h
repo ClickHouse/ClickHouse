@@ -12,7 +12,7 @@ void loadMetadataSystem(ContextMutablePtr context);
 
 /// Load tables from databases and add them to context. Database 'system' and 'information_schema' is ignored.
 /// Use separate function to load system tables.
-[[nodiscard]] LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name = {});
+[[nodiscard]] LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name = {}, bool async_load_databases = false);
 
 /// Background operations in system tables may slowdown loading of the rest tables,
 /// so we startup system tables after all databases are loaded.

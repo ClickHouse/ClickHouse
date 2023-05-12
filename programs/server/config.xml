@@ -349,6 +349,11 @@
     <async_loader_pool_size>16</async_loader_pool_size>
     -->
 
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <async_load_databases>false</async_load_databases>
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>

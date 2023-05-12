@@ -1945,6 +1945,7 @@ size_t Context::getAsyncLoaderPoolSize() const
     // After server is started incoming queries can compete for resources with loading of the rest of the tables.
     // Thus it can be advantageous to lower number of threads after start using server setting `async_loader_pool_size`.
     // TODO(serxa): set async_loader max threads during server_start_job
+    // TODO(serxa): we need to add `turboMode()` if there are waiting queries. But how to create more workers only for foreground work?
     return shared->server_start_job && shared->server_start_job->status() == LoadStatus::OK ?
         shared->server_settings.async_loader_pool_size : getNumberOfPhysicalCPUCores();
 }

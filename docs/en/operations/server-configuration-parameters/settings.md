@@ -1192,6 +1192,21 @@ Possible values:
 
 Default value: 128.
 
+## async_load_databases {#async_load_databases}
+
+Asynchronous loading of databases and tables.
+
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after ClickHouse server start up. Loading is done by AsyncLoader (see `system.async_loader` table and `async_loader_pool_size` server setting). Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+
+If `false`, all databases are loaded when the server starts.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_databases>true</async_load_databases>
+```
 
 ## async_loader_pool_size {#async_loader_pool_size}
 

@@ -1626,9 +1626,6 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
-    /// Tasks for loading and starting up all databases except system
-    LoadTaskPtrs load_metadata;
-
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1649,7 +1646,7 @@ try
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
-        load_metadata = loadMetadata(global_context, default_database);
+        auto load_metadata = loadMetadata(global_context, default_database, server_settings.async_load_databases);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata, global_context);
         startupSystemTables(global_context);
@@ -1664,6 +1661,7 @@ try
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created

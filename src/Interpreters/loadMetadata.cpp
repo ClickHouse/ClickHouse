@@ -152,19 +152,29 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     }
 }
 
-LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name)
+LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
     String path = context->getPath() + "metadata";
 
-    /** There may exist 'force_restore_data' file, that means,
-      *  skip safety threshold on difference of data parts while initializing tables.
-      * This file is deleted after successful loading of tables.
-      * (flag is "one-shot")
-      */
+    /// There may exist 'force_restore_data' file, which means skip safety threshold
+    /// on difference of data parts while initializing tables.
+    /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
     bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
+    if (has_force_restore_data_flag)
+    {
+        try
+        {
+            fs::remove(force_restore_data_flag_file);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
+        }
+    }
+
 
     /// Loop over databases.
     std::map<String, String> databases;
@@ -227,27 +237,27 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
 
-    // First, load all tables
-    scheduleLoad(load_tasks);
-    waitLoad(load_tasks); // TODO(serxa): only wait for tables that must be loaded before server start
+    if (!async_load_databases) {
+        // First, load all tables
+        scheduleLoad(load_tasks);
+        waitLoad(load_tasks);
 
-    // Then, startup all tables
-    scheduleLoad(startup_tasks);
-    waitLoad(startup_tasks); // TODO(serxa): only wait for tables that must be started before server start
+        // Then, startup all tables. This is done to postpone merges and mutations
+        // Note that with async loader it would be a total barrier, which is unacceptable for the purpose of waiting.
+        scheduleLoad(startup_tasks);
+        waitLoad(startup_tasks);
+        return {};
+    } else {
+        // Schedule all the jobs.
+        // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
+        // All startup jobs have lower priorities than load jobs.
+        // So _almost_ all tables will finish loading before the first table startup it there are no queries.
+        // Query waiting for a table boost its priority to finish table startup faster than load of the other tables.
+        scheduleLoadAll(load_tasks, startup_tasks);
 
-    if (has_force_restore_data_flag)
-    {
-        try
-        {
-            fs::remove(force_restore_data_flag_file); // TODO(serxa): when we should remove it with async loading? should we disable async loading with restore?
-        }
-        catch (...)
-        {
-            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
-        }
+        // Do NOT wait, just return tasks for continuation or later wait.
+        return joinTasks(load_tasks, startup_tasks);
     }
-
-    return joinTasks(load_tasks, startup_tasks);
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
