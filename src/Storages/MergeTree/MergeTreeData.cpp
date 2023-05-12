@@ -2482,7 +2482,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     /// Any exception will be re-thrown.
     for (auto & future : independent_ranges_infos_futures)
-        future.wait();
+        future.get();
     independent_ranges_infos_futures.clear();
 
     if (parts_to_remove.size() != sum_of_ranges)
