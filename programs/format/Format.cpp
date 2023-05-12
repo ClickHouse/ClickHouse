@@ -53,6 +53,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("hilite", "add syntax highlight with ANSI terminal escape sequences")
             ("oneline", "format in single line")
             ("quiet,q", "just check syntax, no output on success")
+            ("no-output", "ignore output errors, implies --quiet")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
@@ -82,10 +83,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool hilite = options.count("hilite");
         bool oneline = options.count("oneline");
         bool quiet = options.count("quiet");
+        bool no_output = options.count("no-output");
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+
+        if (no_output)
+        {
+            quiet = true;
+        }
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -162,12 +169,15 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 ASTPtr res = parseQueryAndMovePosition(
                     parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
-                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
-                /// should throw exception early and make exception message more readable.
-                if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                if (!no_output)
                 {
-                    throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
-                        "Can't format ASTInsertQuery with data, since data will be lost");
+                    /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
+                    /// should throw exception early and make exception message more readable.
+                    if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                    {
+                        throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
+                                        "Can't format ASTInsertQuery with data, since data will be lost");
+                    }
                 }
                 if (!quiet)
                 {
