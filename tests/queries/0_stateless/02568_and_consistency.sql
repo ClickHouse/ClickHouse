@@ -27,7 +27,7 @@ GROUP BY
     t1.c0 * t1.c0,
     sign(-exp(-t1.c0))
 HAVING (-(-(MIN(t1.c0) + MIN(t1.c0))) AND (pow('{b' > '-657301241', log(-1004522121)) IS NOT NULL)) IS NULL
-SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0, query_plan_optimize_projection = 0;
 
 select '=';
 
@@ -35,7 +35,7 @@ SELECT MIN(t1.c0)
 FROM t1
 GROUP BY t1.c0
 HAVING and(MIN(t1.c0) + MIN(t1.c0), 1)
-SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0, query_plan_optimize_projection = 0;
 
 select '=';
 
