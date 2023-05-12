@@ -471,10 +471,15 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
 
     return hash_join_is_empty;
 }
-
-// There is a finished counter in JoiningTransform/DelayedJoinedBlocksWorkerTransform,
-// only the last processor could call this function to ensure all used flags have been inserted.
-// To support delayed stream mode, need to keep the hash join before next getDelayedBlocks call.
+/// Each bucket are handled by the following steps
+/// 1. build hash_join by the right side blocks.
+/// 2. join left side with the hash_join,
+/// 3. read right non-joined blocks from hash_join.
+/// buckets are handled one by one, each hash_join will not be release before the right non-joined blocks are emitted.
+///
+/// There is a finished counter in JoiningTransform/DelayedJoinedBlocksWorkerTransform,
+/// only one processor could take the non-joined blocks from right stream, and ensure all rows from
+/// left stream have been emitted before this.
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {

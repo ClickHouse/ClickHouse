@@ -504,7 +504,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     if (delayed_blocks)
     {
         // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
-        // could read non-joined blocks from the join.
+        // could read right non-joined blocks from the join.
         auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
         for (auto & output : outputs)
         {
