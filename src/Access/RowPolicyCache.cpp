@@ -270,7 +270,7 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
                     if (table_it == table_mixers.end())
                     {   /// no exact match - create new mixer
                         MixedFiltersKey database_key = key;
-                        database_key.table_name = RowPolicy::ANY_TABLE_MARK;
+                        database_key.table_name = RowPolicyName::ANY_TABLE_MARK;
 
                         auto database_it = database_mixers.find(database_key);
 
