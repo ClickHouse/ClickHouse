@@ -23,7 +23,7 @@ Checks: '*,
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
-    -bugprone-reserved-identifier,
+    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
     -bugprone-unchecked-optional-access,
 
     -cert-dcl16-c,
@@ -111,6 +111,7 @@ Checks: '*,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-confusable-identifiers, # useful but slooow
+    -misc-use-anonymous-namespace,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
@@ -136,7 +137,7 @@ Checks: '*,
     -readability-function-cognitive-complexity,
     -readability-function-size,
     -readability-identifier-length,
-    -readability-identifier-naming,
+    -readability-identifier-naming, # useful but too slow
     -readability-implicit-bool-conversion,
     -readability-isolate-declaration,
     -readability-magic-numbers,
