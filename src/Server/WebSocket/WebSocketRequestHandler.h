@@ -29,15 +29,17 @@ public:
     {
     }
 
-    void handleRequest(Poco::JSON::Object & request, WebSocket & webSocket);
+    void handleRequest(Poco::JSON::Object::Ptr & request, WebSocket & webSocket);
 private:
 //    IServer& server;
     std::shared_ptr<Session>& session;
 
     void processQuery(
-        Poco::JSON::Object & request,
+        Poco::JSON::Object::Ptr & request,
         WriteBufferFromWebSocket & output,
         std::optional<CurrentThread::QueryScope> & query_scope
         );
+
+    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value);
 };
 }

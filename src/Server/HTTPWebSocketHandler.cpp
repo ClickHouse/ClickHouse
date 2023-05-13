@@ -405,71 +405,12 @@ createHTTPWebSocketMainHandlerFactory(IServer & server, const std::string & name
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
 
-    auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryWebSocketHandler>>(server,"query");
+    auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<HTTPWebSocketHandler>>(server);
     main_handler->attachNonStrictPath("/");
     main_handler->allowGetAndHeadRequest();
     factory->addHandler(main_handler);
 
     return factory;
 }
-
-DynamicQueryWebSocketHandler::DynamicQueryWebSocketHandler(IServer & server_, const std::string & param_name_)
-    : HTTPWebSocketHandler(server_),
-    param_name(param_name_)
-{
-}
-
-
-bool DynamicQueryWebSocketHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
-{
-    if (key == param_name)
-        return true;    /// do nothing
-
-    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
-    {
-        /// Save name and values of substitution in dictionary.
-        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
-
-        if (!context->getQueryParameters().contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
-        return true;
-    }
-
-    return false;
-}
-
-    std::string DynamicQueryWebSocketHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
-{
-    if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
-    {
-        /// Part of the query can be passed in the 'query' parameter and the rest in the request body
-        /// (http method need not necessarily be POST). In this case the entire query consists of the
-        /// contents of the 'query' parameter, a line break and the request body.
-        std::string query_param = params.get(param_name, "");
-        return query_param.empty() ? query_param : query_param + "\n";
-    }
-
-    /// Support for "external data for query processing".
-    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
-    ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
-
-    std::string full_query;
-    /// Params are of both form params POST and uri (GET params)
-    for (const auto & it : params)
-    {
-        if (it.first == param_name)
-        {
-            full_query += it.second;
-        }
-        else
-        {
-            customizeQueryParam(context, it.first, it.second);
-        }
-    }
-
-    return full_query;
-}
-
 
 }

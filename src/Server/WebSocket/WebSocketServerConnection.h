@@ -68,6 +68,7 @@ class WebSocketServerConnection : public Poco::Runnable
             control_frames_handler(),
             regular_handler(server, session_)
         {
+            session_->makeSessionContext();
         }
 
         void run() override;

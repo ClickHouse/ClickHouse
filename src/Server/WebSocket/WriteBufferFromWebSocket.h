@@ -21,6 +21,8 @@ public:
 
     void closeWithException(int exception_bitcode, std::string exception_text);
 
+    void setQueryId(std::string query_id_) {query_id = query_id_;}
+
 private:
 
 

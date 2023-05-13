@@ -45,24 +45,6 @@ private:
 public:
     HTTPWebSocketHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
-
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
-
-    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
-
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 };
 
-
-class DynamicQueryWebSocketHandler : public HTTPWebSocketHandler
-{
-private:
-    std::string param_name;
-public:
-    explicit DynamicQueryWebSocketHandler(IServer & server_, const std::string & param_name_);
-
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
-
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
-};
 }

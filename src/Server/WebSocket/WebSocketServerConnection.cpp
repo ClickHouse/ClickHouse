@@ -62,9 +62,11 @@ void WebSocketServerConnection::run()
 
         if (!handling_control_message && flag == WebSocket::FRAME_FLAG_FIN) {
             try {
-                auto request = validateRequest(std::string(message_buffer.begin(), message_buffer.end()));
-                regular_handler.handleRequest(*request, webSocket);
+                auto str = std::string(message_buffer.begin(), message_buffer.end());
+                Object::Ptr request = validateRequest(std::string(message_buffer.begin(), message_buffer.end()));
+                regular_handler.handleRequest(request, webSocket);
                 message_buffer.clear();
+
             } catch (const Exception& e) {
                 int err_code = e.code();
                 logger_.information(Poco::format("err code: %d", err_code));
