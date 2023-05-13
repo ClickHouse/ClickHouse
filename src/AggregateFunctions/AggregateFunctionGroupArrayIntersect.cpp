@@ -38,7 +38,7 @@ public:
 };
 
 IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, const Array & parameters)
-{   
+{
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupArrayIntersectDate(argument_type, parameters);
     else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
