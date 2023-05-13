@@ -133,7 +133,7 @@ public:
         MutableColumnPtr result_data = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
 
         size_t max_array_size = 0;
-        auto& offsets = column_first_array->getOffsets();
+        const auto & offsets = column_first_array->getOffsets();
 
         //get columns of Nth array elements
         IColumn::Selector selector(data_row_count);
