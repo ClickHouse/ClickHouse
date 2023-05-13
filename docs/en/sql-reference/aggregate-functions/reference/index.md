@@ -26,6 +26,8 @@ ClickHouse-specific aggregate functions:
 
 - [anyHeavy](../../../sql-reference/aggregate-functions/reference/anyheavy.md)
 - [anyLast](../../../sql-reference/aggregate-functions/reference/anylast.md)
+- [first_value](../../../sql-reference/aggregate-functions/reference/first_value.md)
+- [last_value](../../../sql-reference/aggregate-functions/reference/last_value.md)
 - [argMin](../../../sql-reference/aggregate-functions/reference/argmin.md)
 - [argMax](../../../sql-reference/aggregate-functions/reference/argmax.md)
 - [avgWeighted](../../../sql-reference/aggregate-functions/reference/avgweighted.md)
