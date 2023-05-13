@@ -115,6 +115,10 @@ Poco::SharedPtr<Poco::JSON::Object> WebSocketServerConnection::validateRequest(s
         throw Exception(ErrorCodes::INVALID_JSON_FORMAT, "invalid json format");
     }
 
+    if (ret->has("type")) {
+        throw Exception(ErrorCodes::UNKNOWN_MESSAGE_TYPE, "unknown message type");
+    }
+
     std::string raw_msg_type = ret->getValue<std::string>("type");
     if (Message::getMessageType(raw_msg_type) == Message::Types::Unknown) {
         throw Exception(ErrorCodes::UNKNOWN_MESSAGE_TYPE, "unknown message type");
