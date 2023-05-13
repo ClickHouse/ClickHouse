@@ -149,7 +149,7 @@ Checks: '*,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
 
-    -zirkon-*,
+    -zircon-*,
 '
 
 WarningsAsErrors: '*'
@@ -169,11 +169,10 @@ CheckOptions:
   readability-identifier-naming.ParameterPackCase: lower_case
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
-  readability-identifier-naming.TemplateUsingCase: lower_case
+  readability-identifier-naming.TemplateParameterCase: lower_case
   readability-identifier-naming.TypeTemplateParameterCase: CamelCase
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.UnionCase: CamelCase
-  readability-identifier-naming.UsingCase: CamelCase
   modernize-loop-convert.UseCxx20ReverseRanges: false
   performance-move-const-arg.CheckTriviallyCopyableMove: false
   # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
