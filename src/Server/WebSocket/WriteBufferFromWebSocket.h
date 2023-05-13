@@ -10,10 +10,10 @@
 
 namespace DB {
 
-    class WriteBufferFromWebSocket : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromWebSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    WriteBufferFromWebSocket(WebSocket & ws_, bool send_progress_ = false);
+    WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_, bool send_progress_ = false);
 
     ~WriteBufferFromWebSocket() override;
 
@@ -42,6 +42,7 @@ private:
 
     int max_payload_size = 100000;
     std::string query_id = "";
+    std::string msg_type;
     Progress accumulated_progress;
     std::mutex mutex;
 

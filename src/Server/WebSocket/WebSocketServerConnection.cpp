@@ -64,7 +64,9 @@ void WebSocketServerConnection::run()
             try {
                 Object::Ptr request = validateRequest(std::string(message_buffer.begin(), message_buffer.end()));
                 regular_handler.handleRequest(request, webSocket);
-                message_buffer.clear();
+
+                /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETTS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
+                message_buffer.setCapacity(0);
 
             } catch (const Exception& e) {
                 int err_code = e.code();
@@ -83,7 +85,8 @@ void WebSocketServerConnection::run()
             }
         }
 
-        frame_buffer.clear();
+        /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETTS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
+        frame_buffer.setCapacity(0);
     }
 }
 
@@ -115,7 +118,7 @@ Poco::SharedPtr<Poco::JSON::Object> WebSocketServerConnection::validateRequest(s
         throw Exception(ErrorCodes::INVALID_JSON_FORMAT, "invalid json format");
     }
 
-    if (ret->has("type")) {
+    if (!ret->has("type")) {
         throw Exception(ErrorCodes::UNKNOWN_MESSAGE_TYPE, "unknown message type");
     }
 
@@ -139,7 +142,11 @@ void WebSocketServerConnection::sendErrorMessage(std::string msg)
 
     std::string stringified_json = oss.str();
     logger_.information(Poco::format("stringified json %s", stringified_json));
-    webSocket.sendFrame(stringified_json.c_str(), static_cast<int>(stringified_json.size()), WebSocket::FRAME_TEXT);
+    WriteBufferFromWebSocket error_report(webSocket,"error");
+    error_report.write(stringified_json.c_str(), static_cast<int>(stringified_json.size()));
+    error_report.next();
+    error_report.finalize();
+    //webSocket.sendFrame(stringified_json.c_str(), static_cast<int>(stringified_json.size()), WebSocket::FRAME_TEXT);
 }
 
 }

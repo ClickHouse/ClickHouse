@@ -8,7 +8,9 @@
 namespace DB
 {
 
-WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_, bool send_progress_) : ws(ws_){
+WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_, bool send_progress_) : ws(ws_){
+
+    msg_type = msg_type_;
 
     out = std::make_unique<WriteBufferFromOStream>(data_stream);
 
@@ -100,7 +102,7 @@ void WriteBufferFromWebSocket::ConstructProgressMessage(WriteBuffer & msg){
 
 void WriteBufferFromWebSocket::ConstructDataMessage(WriteBuffer & msg, bool is_last_message){
     writeCString("{\"type\":", msg);
-    writeText("\"Data\"", msg);
+    writeText("\"" + msg_type + "\"", msg);
     if (!query_id.empty()){
         writeCString(",\"query_id\":\"", msg);
         writeText(query_id, msg);
