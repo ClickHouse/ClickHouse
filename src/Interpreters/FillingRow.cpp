@@ -101,8 +101,7 @@ bool FillingRow::next(const FillingRow & to_row)
     if (equals(row[pos], to_row.row[pos]))
     {
         bool is_less = false;
-        size_t i = pos + 1;
-        for (; i < row_size; ++i)
+        for (size_t i = pos + 1; i < row_size; ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
             if (!fill_from.isNull())
