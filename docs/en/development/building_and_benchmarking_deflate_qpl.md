@@ -8,11 +8,7 @@ description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 - Make sure your target machine meet the QPL required [Prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
 - Pass the following flag to CMake when building ClickHouse, depending on the capabilities of your target machine:
 ``` bash
-cmake -DENABLE_AVX2=1 -DENABLE_QPL=1 ..
-```
-or
-``` bash
-cmake -DENABLE_AVX512=1 -DENABLE_QPL=1 ..
+cmake -DENABLE_SSE42=1 -DENABLE_QPL=1 ..
 ```
 - For generic requirements, please refer to Clickhouse generic [build instructions](/docs/en/development/build.md)
 
