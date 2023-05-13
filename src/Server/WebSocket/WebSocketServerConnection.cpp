@@ -62,7 +62,6 @@ void WebSocketServerConnection::run()
 
         if (!handling_control_message && flag == WebSocket::FRAME_FLAG_FIN) {
             try {
-                auto str = std::string(message_buffer.begin(), message_buffer.end());
                 Object::Ptr request = validateRequest(std::string(message_buffer.begin(), message_buffer.end()));
                 regular_handler.handleRequest(request, webSocket);
                 message_buffer.clear();
