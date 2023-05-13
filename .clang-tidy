@@ -149,7 +149,7 @@ Checks: '*,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
 
-    -zirkon-*,
+    -zircon-*,
 '
 
 WarningsAsErrors: '*'
