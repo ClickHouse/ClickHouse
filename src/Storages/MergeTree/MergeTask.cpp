@@ -209,6 +209,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -326,6 +330,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (!ctx->need_remove_expired_values)
     {
         size_t expired_columns = 0;
+        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
 
         for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
         {
@@ -335,6 +340,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
                 LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
                 std::erase(global_ctx->gathering_column_names, column_name);
                 std::erase(global_ctx->merging_column_names, column_name);
+                std::erase(global_ctx->all_column_names, column_name);
+                part_serialization_infos.erase(column_name);
                 ++expired_columns;
             }
         }
@@ -343,6 +350,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             global_ctx->gathering_columns = global_ctx->gathering_columns.filter(global_ctx->gathering_column_names);
             global_ctx->merging_columns = global_ctx->merging_columns.filter(global_ctx->merging_column_names);
+            global_ctx->storage_columns = global_ctx->storage_columns.filter(global_ctx->all_column_names);
+
+            global_ctx->new_data_part->setColumns(
+                global_ctx->storage_columns,
+                part_serialization_infos,
+                global_ctx->metadata_snapshot->getMetadataVersion());
         }
     }
 
