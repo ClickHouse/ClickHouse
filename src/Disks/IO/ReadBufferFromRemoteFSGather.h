@@ -25,7 +25,8 @@ public:
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
-        const ReadSettings & settings_);
+        const ReadSettings & settings_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -93,7 +94,7 @@ private:
 
     size_t total_bytes_read_from_current_file = 0;
 
-    bool enable_cache_log = false;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

@@ -3608,6 +3608,9 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
+        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name)
+            continue;
+
         auto storage_column = columns.getPhysical(part_column.name);
         if (!storage_column.type->hasDynamicSubcolumns())
             continue;
@@ -4985,8 +4988,8 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
-                String from_database = query_context->resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
                 if (!from_storage_merge_tree)
@@ -6242,7 +6245,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
                     return true;
         }
 
-        if (query_settings.allow_experimental_projection_optimization)
+        if (query_settings.optimize_use_projections)
         {
             for (const auto & projection : metadata_snapshot->getProjections())
                 if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(ast))
@@ -6613,7 +6616,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (!query_info.syntax_analyzer_result)
         return std::nullopt;
 
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
+    if (!settings.optimize_use_projections || query_info.ignore_projections || query_info.is_projection_query
         || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
 
@@ -8282,6 +8285,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
     new_data_part_storage->beginTransaction();
