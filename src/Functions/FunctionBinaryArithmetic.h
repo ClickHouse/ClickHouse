@@ -116,15 +116,11 @@ template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, Da
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
-template <typename DataType>
-constexpr bool IsFixedString = false;
-template <>
-inline constexpr bool IsFixedString<DataTypeFixedString> = true;
+template <typename DataType> constexpr bool IsFixedString = false;
+template <> inline constexpr bool IsFixedString<DataTypeFixedString> = true;
 
-template <typename DataType>
-constexpr bool IsString = false;
-template <>
-inline constexpr bool IsString<DataTypeString> = true;
+template <typename DataType> constexpr bool IsString = false;
+template <> inline constexpr bool IsString<DataTypeString> = true;
 
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct BinaryOperationTraits
@@ -1686,7 +1682,7 @@ public:
                 std::string_view str_view = col_left->getDataAt(0).toView();
                 OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
             }
-            else 
+            else
             {
                 std::string_view str_view = col_right->getDataAt(0).toView();
                 OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
