@@ -159,8 +159,9 @@ public:
         std::vector<MutableColumns> data_arrays;
         data_arrays.resize(array_count);
 
-        for (size_t i = 0; i < array_count; ++i)
-            data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
+        if (max_array_size > 0)
+            for (size_t i = 0; i < array_count; ++i)
+                data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
 
         size_t prev_size = rows_count;
         IColumn::Permutation inverse_permutation(rows_count);
