@@ -14,7 +14,7 @@ namespace DB
 
 void WebSocketRequestHandler::processQuery(
     Poco::JSON::Object & request,
-    WriteBuffer & output,
+    WriteBufferFromWebSocket & output,
     std::optional<CurrentThread::QueryScope> & query_scope
 )
 {
@@ -36,6 +36,36 @@ void WebSocketRequestHandler::processQuery(
 
     query_scope.emplace(context);
 
+    //const auto & settings = context->getSettingsRef();
+
+    auto append_callback = [context = context] (ProgressCallback callback)
+    {
+        auto prev = context->getProgressCallback();
+
+        context->setProgressCallback([prev, callback] (const Progress & progress)
+                                     {
+                                         if (prev)
+                                             prev(progress);
+
+                                         callback(progress);
+                                     });
+    };
+
+    /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
+    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    append_callback([&output](const Progress & progress) { output.onProgress(progress); });
+
+//    if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
+//    {
+//        append_callback([&context, &request](const Progress &)
+//                        {
+//                            /// Assume that at the point this method is called no one is reading data from the socket any more:
+//                            /// should be true for read-only queries.
+//                            /// TODO: Make some check
+////                            if (false)
+////                                context->killCurrentQuery();
+//                        });
+//    }
 
     ReadBufferFromOwnString input(request.get("data").toString());
 

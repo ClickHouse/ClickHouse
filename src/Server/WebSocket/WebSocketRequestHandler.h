@@ -36,8 +36,8 @@ private:
 
     void processQuery(
         Poco::JSON::Object & request,
-        WriteBuffer & output,
+        WriteBufferFromWebSocket & output,
         std::optional<CurrentThread::QueryScope> & query_scope
-    );
+        );
 };
 }
