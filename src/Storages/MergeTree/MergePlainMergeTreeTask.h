@@ -5,7 +5,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-
+#include <IO/CryptographicHashingReadBuffer.h>
 
 namespace DB
 {

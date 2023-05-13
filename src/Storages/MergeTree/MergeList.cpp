@@ -67,6 +67,10 @@ MergeListElement::MergeListElement(
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
+        auto checksum = source_part->MerkleTreeChecksum != std::pair<uint64_t, uint64_t>{0, 0} ? source_part->MerkleTreeChecksum : source_part->checksums.getTotalChecksumUInt128();
+
+        source_part_checksums.emplace_back(UInt128(checksum.second) << 64 + checksum.first);
+
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
@@ -139,6 +143,8 @@ MergeInfo MergeListElement::getInfo() const
     for (const auto & source_part_path : source_part_paths)
         res.source_part_paths.emplace_back(source_part_path);
 
+    for (const auto & source_part_checksum : source_part_checksums)
+        res.source_part_checksums.emplace_back(source_part_checksum);
     return res;
 }
 

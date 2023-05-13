@@ -2033,7 +2033,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     auto settings = getSettings();
     auto cryptographic_mode = settings->cryptographic_mode;
     auto hash_function = settings->hash_function;
-    bool fill_merkle_tree = merkle_tree.empty();
+
+    std::vector<uint128> checksums;
 
     for (auto & part : data_parts)
     {
@@ -2045,9 +2046,6 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 auto calculated_checksums = checkDataPart(part, false, cryptographic_mode, hash_function);
                 calculated_checksums.checkEqual(part->checksums, true);
-
-                auto checksum_hex = calculated_checksums.getTotalChecksumHex();
-                merkle_tree.insert(checksum_hex);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
@@ -2067,12 +2065,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 auto calculated_checksums = checkDataPart(part, true, cryptographic_mode, hash_function);
 
-                if (fill_merkle_tree) {
-                    auto checksum_hex = calculated_checksums.getTotalChecksumHex();
-                    merkle_tree.insert(checksum_hex+checksum_hex);
-                }
-
                 part->checkMetadata();
+
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)
@@ -2080,10 +2074,14 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 results.emplace_back(part->name, false, ex.message());
             }
         }
+
+        auto checksum = part->MerkleTreeChecksum != uint128{0,0} ? part->MerkleTreeChecksum : part->checksums.getTotalChecksumUInt128();
+        checksums.emplace_back(checksum);
     }
 
-    if (cryptographic_mode && !merkle_tree.empty()) {
-        results.emplace_back("root hash", true, merkle_tree.root().to_string());
+    if (cryptographic_mode) {
+        auto hash_of_all = chooseHashFunction(hash_function)(reinterpret_cast<char*>(checksums.data()), checksums.size() * sizeof(uint128));
+        results.emplace_back("root hash", true, getHexUIntLowercase(hash_of_all.second) + getHexUIntLowercase(hash_of_all.first));
     }
 
     return results;

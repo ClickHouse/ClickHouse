@@ -19,7 +19,7 @@
 #include <Common/SimpleIncrement.h>
 
 #include <merklecpp.h>
-
+#include <IO/CryptographicHashingWriteBuffer.h>
 
 namespace DB
 {

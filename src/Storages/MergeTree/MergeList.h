@@ -33,6 +33,7 @@ struct MergeInfo
     std::string result_part_path;
     Array source_part_names;
     Array source_part_paths;
+    Array source_part_checksums;
     std::string partition_id;
     bool is_mutation;
     Float64 elapsed;
@@ -94,6 +95,7 @@ struct MergeListElement : boost::noncopyable
     UInt64 num_parts{};
     Names source_part_names;
     Names source_part_paths;
+    Array source_part_checksums;
     Int64 source_data_version{};
 
     Stopwatch watch;

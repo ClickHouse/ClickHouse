@@ -123,6 +123,17 @@ void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
 
+    if (storage.getSettings()->cryptographic_mode) {
+        std::vector<uint128> checksums;
+        for (const auto& part : future_part->parts) {
+            auto checksum = part->MerkleTreeChecksum != uint128{0,0} ? part->MerkleTreeChecksum : part->checksums.getTotalChecksumUInt128();
+            checksums.emplace_back(checksum);
+        }
+
+        new_part->MerkleTreeChecksum =
+            chooseHashFunction(storage.getSettings()->hash_function)(reinterpret_cast<char*>(checksums.data()), checksums.size() * sizeof(uint128));
+    }
+
     MergeTreeData::Transaction transaction(storage, txn.get());
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();

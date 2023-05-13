@@ -304,6 +304,7 @@ public:
     MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
+    uint128 MerkleTreeChecksum{0,0};
 
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
