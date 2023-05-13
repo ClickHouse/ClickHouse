@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <vector>
 #include <cmath>
-#include <cstring>
 #include <cstdlib>
 #include <boost/math/distributions/chi_squared.hpp>
 #include <Functions/FunctionFactory.h>
@@ -25,7 +24,7 @@ struct RemoveGarbageParametersFromURLImpl
         /// Deciding how much intervals to split symbols into and whether the string is long enough to be handled
         int64_t length = c_end - c_start;
         int l = static_cast<int>(3.32 * log10(length)) + 1;
-        if (l < 3)
+        if (l < 2)
         {
             return false;
         }
@@ -116,7 +115,7 @@ struct RemoveGarbageParametersFromURLImpl
         double q;
         try
         {
-            boost::math::chi_squared_distribution dist(static_cast<double>(l - 1));
+            boost::math::chi_squared_distribution dist(static_cast<double>(l));
             q = quantile(dist, 0.95);
         }
         catch (std::domain_error &)
