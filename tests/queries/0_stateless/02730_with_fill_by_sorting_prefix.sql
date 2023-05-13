@@ -1,4 +1,6 @@
 -- { echoOn }
+set use_with_fill_by_sorting_prefix=1;
+
 -- corner case with constant sort prefix
 SELECT number
 FROM numbers(1)
@@ -30,3 +32,4 @@ insert into ts VALUES (5, 1, 1), (5, 3, 1);
 select * from ts order by sensor_id, timestamp with fill step 1 settings max_block_size=2;
 
 select * from ts order by sensor_id, timestamp with fill from 6 to 10 step 1 interpolate (value as 9999);
+select * from ts order by sensor_id, timestamp with fill from 6 to 10 step 1 interpolate (value as 9999) settings use_with_fill_by_sorting_prefix=0;
