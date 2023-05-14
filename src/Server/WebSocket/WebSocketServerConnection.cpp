@@ -20,9 +20,9 @@ void WebSocketServerConnection::run()
             //TODO: add a reasonable exception wrapper here
             throw Exception(e);
         }
+
         auto opcode = flags_and_opcode & WebSocket::FRAME_OP_BITMASK;
         auto flag = flags_and_opcode & WebSocket::FRAME_FLAG_BITMASK;
-
 
         auto str1 = std::string(message_buffer.begin(), message_buffer.end());
         logger_.information(
@@ -46,10 +46,14 @@ void WebSocketServerConnection::run()
                 FMT_FALLTHROUGH;
             case WebSocket::FRAME_OP_PING:
                 handling_control_message = true;
+                if (connection_closed) {
+                    logger_.debug("close connection");
+                }
                 message_buffer.assign(frame_buffer.begin(), frame_buffer.size());
                 try {
                     std::string request(message_buffer.begin(), message_buffer.size());
                     control_frames_handler.handleRequest(opcode, request, webSocket);
+                    message_buffer.setCapacity(0);
                 } catch (const Exception& e) {
                     //TODO: add a reasonable exception wrapper here
                     throw Exception(e);
@@ -65,7 +69,7 @@ void WebSocketServerConnection::run()
                 Object::Ptr request = validateRequest(std::string(message_buffer.begin(), message_buffer.end()));
                 regular_handler.handleRequest(request, webSocket);
 
-                /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETTS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
+                /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
                 message_buffer.setCapacity(0);
 
             } catch (const Exception& e) {
@@ -85,7 +89,7 @@ void WebSocketServerConnection::run()
             }
         }
 
-        /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETTS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
+        /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
         frame_buffer.setCapacity(0);
     }
 }
@@ -95,9 +99,10 @@ void WebSocketServerConnection::start()
     try {
         run();
     } catch (Exception& e) {
-        webSocket.shutdown();
+        webSocket.close();
         throw Exception(e);
     }
+    webSocket.close();
 }
 
 
@@ -132,7 +137,7 @@ Poco::SharedPtr<Poco::JSON::Object> WebSocketServerConnection::validateRequest(s
 
 void WebSocketServerConnection::sendErrorMessage(std::string msg)
 {
-    WriteBufferFromWebSocket error_report(webSocket,"error");
+    WriteBufferFromWebSocket error_report(webSocket, "error");
     error_report.write(msg.c_str(), static_cast<int>(msg.size()));
     error_report.next();
     error_report.finalize();

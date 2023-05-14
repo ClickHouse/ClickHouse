@@ -85,8 +85,9 @@ namespace DB
         {
             FRAME_TEXT = FRAME_FLAG_FIN | FRAME_OP_TEXT,
             /// Use this for sending a single text (UTF-8) payload frame.
-            FRAME_BINARY = FRAME_FLAG_FIN | FRAME_OP_BINARY
+            FRAME_BINARY = FRAME_FLAG_FIN | FRAME_OP_BINARY,
             /// Use this for sending a single binary payload frame.
+            FRAME_PONG = FRAME_FLAG_FIN | FRAME_OP_PONG
         };
 
         enum StatusCodes

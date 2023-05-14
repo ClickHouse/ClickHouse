@@ -27,7 +27,6 @@ WriteBufferFromWebSocket::~WriteBufferFromWebSocket() {
 
 void WriteBufferFromWebSocket::closeWithException(int exception_bitcode, std::string exception_text)
 {
-    // TODO: remove (shutdown works from client-side only)
     ws.shutdown(exception_bitcode, exception_text);
 }
 
