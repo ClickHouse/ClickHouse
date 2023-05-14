@@ -20,4 +20,15 @@
     <query><![CDATA[select b, a from (select toUInt64(number % 65536 + 10000000000) as a, toUInt64(number % 3) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 order by b, a format Null]]></query>
     <query><![CDATA[select b, a from (select toUInt128(number % 65536 + 10000000000) as a, toUInt64(number % 3) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 order by b, a format Null]]></query>
     <query><![CDATA[select b, a from (select toUInt256(number % 65536 + 10000000000) as a, toUInt64(number % 3) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 order by b, a format Null]]></query>
+
+    <query><![CDATA[select a, b from (select toUInt16(number % 256 + 256) as a, toUInt16(number % 256 + 256 + 256) as b from numbers(10000000)) where a >= 256 and a <= 511 and b >= 512 and b <= 767 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt32(number % 256 + 65536) as a, toUInt32(number % 256 + 65536 + 256) as b from numbers(10000000)) where a >= 65536 and a <= 65791 and b >= 65792 and b <= 66047 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt64(number % 256 + 10000000000) as a, toUInt64(number % 256 + 10000000000 + 256) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000000255 and b >= 10000000256 and b <= 10000000511 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt128(number % 256 + 10000000000) as a, toUInt128(number % 256 + 10000000000 + 256) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000000255 and b >= 10000000256 and b <= 10000000511 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt256(number % 256 + 10000000000) as a, toUInt256(number % 256 + 10000000000 + 256) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000000255 and b >= 10000000256 and b <= 10000000511 order by a, b format Null]]></query>
+
+    <query><![CDATA[select a, b from (select toUInt32(number % 65536 + 65536) as a, toUInt32(number % 65536 + 65536 + 65536) as b from numbers(10000000)) where a >= 65536 and a <= 131071 and b >= 131072 and b <= 196607 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt64(number % 65536 + 10000000000) as a, toUInt64(number % 65536 + 10000000000 + 65536) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt128(number % 65536 + 10000000000) as a, toUInt128(number % 65536 + 10000000000 + 65536) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 order by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select toUInt256(number % 65536 + 10000000000) as a, toUInt256(number % 65536 + 10000000000 + 65536) as b from numbers(10000000)) where a >= 10000000000 and a <= 10000065535 and b >= 10000065536 and b <= 10000131071 order by a, b format Null]]></query>
 </test>
