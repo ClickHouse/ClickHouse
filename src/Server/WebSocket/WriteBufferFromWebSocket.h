@@ -13,7 +13,7 @@ namespace DB {
 class WriteBufferFromWebSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_, bool send_progress_ = false);
+    WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_);
 
     ~WriteBufferFromWebSocket() override;
 
@@ -22,6 +22,13 @@ public:
     void closeWithException(int exception_bitcode, std::string exception_text);
 
     void setQueryId(std::string query_id_) {query_id = query_id_;}
+
+    void setSendProgress(bool send_progress_) { send_progress = send_progress_; }
+
+    void setSendProgressInterval(size_t send_progress_interval_ms_)
+    {
+        send_progress_interval_ms = send_progress_interval_ms_;
+    }
 
 private:
 

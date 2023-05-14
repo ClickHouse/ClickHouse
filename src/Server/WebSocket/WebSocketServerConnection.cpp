@@ -132,18 +132,8 @@ Poco::SharedPtr<Poco::JSON::Object> WebSocketServerConnection::validateRequest(s
 
 void WebSocketServerConnection::sendErrorMessage(std::string msg)
 {
-    using Poco::JSON::Object;
-
-    auto err_json = Object();
-    err_json.set("type", "error");
-    err_json.set("data", msg);
-    std::ostringstream oss;
-    err_json.stringify(oss);
-
-    std::string stringified_json = oss.str();
-    logger_.information(Poco::format("stringified json %s", stringified_json));
     WriteBufferFromWebSocket error_report(webSocket,"error");
-    error_report.write(stringified_json.c_str(), static_cast<int>(stringified_json.size()));
+    error_report.write(msg.c_str(), static_cast<int>(msg.size()));
     error_report.next();
     error_report.finalize();
     //webSocket.sendFrame(stringified_json.c_str(), static_cast<int>(stringified_json.size()), WebSocket::FRAME_TEXT);

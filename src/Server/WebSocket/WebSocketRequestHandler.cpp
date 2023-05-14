@@ -39,6 +39,9 @@ void WebSocketRequestHandler::processQuery(
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
+    const auto & settings = context->getSettingsRef();
+    output.setSendProgress(settings.send_progress_in_http_headers);
+    output.setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
     auto param_could_be_skipped = [&] (const String & name)
     {
@@ -135,7 +138,7 @@ void WebSocketRequestHandler::handleRequest(Poco::JSON::Object::Ptr & request, D
     //auto data = request->get("data").extract<std::string>();
 
 
-    WriteBufferFromWebSocket output(webSocket, "", true);
+    WriteBufferFromWebSocket output(webSocket, "");
 //    std::string str;
 //    WriteBufferFromOwnString output;
 

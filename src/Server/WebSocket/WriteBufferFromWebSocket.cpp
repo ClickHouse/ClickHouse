@@ -8,7 +8,7 @@
 namespace DB
 {
 
-WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_, bool send_progress_) : ws(ws_){
+WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_,std::string msg_type_) : ws(ws_){
 
     msg_type = msg_type_;
 
@@ -19,8 +19,6 @@ WriteBufferFromWebSocket::WriteBufferFromWebSocket(WebSocket & ws_,std::string m
 
     /// payload size must be specified before this class creation
     max_payload_size = ws.getMaxPayloadSize() - 8;
-
-    send_progress = send_progress_;
 }
 
 WriteBufferFromWebSocket::~WriteBufferFromWebSocket() {
@@ -95,7 +93,7 @@ void WriteBufferFromWebSocket::ConstructProgressMessage(WriteBuffer & msg){
         writeCString(",\"query_id\":\"", msg);
         writeText(query_id, msg);
     }
-    writeCString(",\"data\":", msg);
+    writeCString("\",\"data\":", msg);
     accumulated_progress.writeJSON(msg);
     writeCString("}", msg);
 }
