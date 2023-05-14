@@ -534,12 +534,19 @@
 
     function postImpl(posted_request_num, query)
     {
+        console.info("CALLED POST IMPL")
         const user = document.getElementById('user').value;
         const password = document.getElementById('password').value;
 
         const server_address = document.getElementById('url').value;
 
-        var url = server_address +
+        let webSocketRequest = server_address.startsWith("ws://") || server_address.startsWith("wss://")
+        if (webSocketRequest) {
+            console.error("websocket requests are unsupported")
+            return
+        }
+
+        let url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
@@ -764,6 +771,7 @@
     {
         clear();
 
+        // TODO: adapt websocket ans to response
         let stats = document.getElementById('stats');
         const seconds = response.statistics.elapsed.toFixed(3);
         const rows = response.statistics.rows_read;
