@@ -237,7 +237,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
 
-    if (!async_load_databases) {
+    if (!async_load_databases)
+    {
         // First, load all tables
         scheduleAndWaitLoad(load_tasks);
 
@@ -245,7 +246,9 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         // Note that with async loader it would be a total barrier, which is unacceptable for the purpose of waiting.
         scheduleAndWaitLoad(startup_tasks);
         return {};
-    } else {
+    }
+    else
+    {
         // Schedule all the jobs.
         // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
         // All startup jobs have lower priorities than load jobs.
