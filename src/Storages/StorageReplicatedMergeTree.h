@@ -113,7 +113,6 @@ public:
     void startup() override;
     void shutdown() override;
     void partialShutdown();
-    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
@@ -230,6 +229,8 @@ public:
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
@@ -317,6 +318,8 @@ public:
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
+
+    size_t getNumberOfUnfinishedMutations() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);

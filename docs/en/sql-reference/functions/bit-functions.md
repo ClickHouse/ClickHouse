@@ -314,7 +314,7 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Returned values**
 
-Returns result of logical disjuction.
+Returns result of logical disjunction.
 
 Type: `UInt8`.
 

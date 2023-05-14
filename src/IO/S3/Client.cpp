@@ -112,6 +112,22 @@ std::unique_ptr<Client> Client::create(const Client & other)
     return std::unique_ptr<Client>(new Client(other));
 }
 
+namespace
+{
+
+ProviderType deduceProviderType(const std::string & url)
+{
+    if (url.find(".amazonaws.com") != std::string::npos)
+        return ProviderType::AWS;
+
+    if (url.find("storage.googleapis.com") != std::string::npos)
+        return ProviderType::GCS;
+
+    return ProviderType::UNKNOWN;
+}
+
+}
+
 Client::Client(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
@@ -128,8 +144,27 @@ Client::Client(
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
     endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
 
-    provider_type = getProviderTypeFromURL(initial_endpoint);
+    provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
+
+    if (provider_type == ProviderType::GCS)
+    {
+        /// GCS can operate in 2 modes for header and query params names:
+        /// - with both x-amz and x-goog prefixes allowed (but cannot mix different prefixes in same request)
+        /// - only with x-goog prefix
+        /// first mode is allowed only with HMAC (or unsigned requests) so when we
+        /// find credential keys we can simply behave as the underlying storage is S3
+        /// otherwise, we need to be aware we are making requests to GCS
+        /// and replace all headers with a valid prefix when needed
+        if (credentials_provider)
+        {
+            auto credentials = credentials_provider->GetAWSCredentials();
+            if (credentials.IsEmpty())
+                api_mode = ApiMode::GCS;
+        }
+    }
+
+    LOG_TRACE(log, "API mode: {}", toString(api_mode));
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -208,7 +243,7 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 {
     const auto & bucket = request.GetBucket();
 
-    request.setProviderType(provider_type);
+    request.setApiMode(api_mode);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -348,7 +383,7 @@ std::invoke_result_t<RequestFn, RequestType>
 Client::doRequest(const RequestType & request, RequestFn request_fn) const
 {
     const auto & bucket = request.GetBucket();
-    request.setProviderType(provider_type);
+    request.setApiMode(api_mode);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -421,9 +456,23 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
     throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
 }
 
-ProviderType Client::getProviderType() const
+bool Client::supportsMultiPartCopy() const
 {
-    return provider_type;
+    return provider_type != ProviderType::GCS;
+}
+
+void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
+                      const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const
+{
+    Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
+
+    if (api_mode == ApiMode::GCS)
+    {
+        /// some GCS requests don't like S3 specific headers that the client sets
+        httpRequest->DeleteHeader("x-amz-api-version");
+        httpRequest->DeleteHeader("amz-sdk-invocation-id");
+        httpRequest->DeleteHeader("amz-sdk-request");
+    }
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const

@@ -122,11 +122,12 @@ def test_metrics_storage_buffer_size(start_cluster):
         )
         == "1\n"
     )
+    # By the way, this metric does not count the LowCardinality's dictionary size.
     assert (
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "24\n"
+        == "1\n"
     )
 
     node1.query("INSERT INTO test.buffer_table VALUES('hello');")
@@ -140,7 +141,7 @@ def test_metrics_storage_buffer_size(start_cluster):
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "25\n"
+        == "2\n"
     )
 
     # flush
