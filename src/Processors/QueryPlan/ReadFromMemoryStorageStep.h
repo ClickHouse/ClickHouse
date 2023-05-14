@@ -46,7 +46,7 @@ private:
 
     Pipe makePipe();
 
-    std::shared_ptr<const Blocks> getBlocksWithNecessaryColumns(std::shared_ptr<const Blocks> /*blocks_ptr*/);
+    std::shared_ptr<const Blocks> filteredByFixedColumns(std::shared_ptr<const Blocks> /*blocks_ptr*/);
 };
 
 }
