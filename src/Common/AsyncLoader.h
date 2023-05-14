@@ -186,7 +186,6 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
 
 template <class... Args>
 inline void scheduleLoadAll(Args && ... args)
-inline void scheduleLoad(Args && ... args)
 {
     (scheduleLoad(std::forward<Args>(args)), ...);
 }
@@ -210,7 +209,6 @@ inline void waitLoad(const LoadTaskPtrs & tasks)
 
 template <class... Args>
 inline void waitLoadAll(Args && ... args)
-inline void waitLoad(Args && ... args)
 {
     (waitLoad(std::forward<Args>(args)), ...);
 }
