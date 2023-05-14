@@ -614,7 +614,7 @@ void FillingTransform::transformRange(
         }
 
         bool filling_row_changed = false;
-        while(true)
+        while (true)
         {
             const auto [apply, changed] = filling_row.next(next_row);
             filling_row_changed = changed;
