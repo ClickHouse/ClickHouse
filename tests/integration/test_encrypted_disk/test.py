@@ -257,7 +257,7 @@ EOF""".format(
     """,
     )
 
-    expected_error = "Wrong key"
+    expected_error = "Not found an encryption key required to decipher"
     assert expected_error in node.query_and_get_error(select_query)
 
     # Detach the part encrypted with the wrong key and check that another part containing "(2,'data'),(3,'data')" still can be read.
