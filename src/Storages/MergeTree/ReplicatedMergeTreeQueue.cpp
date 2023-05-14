@@ -1727,18 +1727,30 @@ size_t ReplicatedMergeTreeQueue::countMutations() const
     return mutations_by_znode.size();
 }
 
-
 size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
 {
     std::lock_guard lock(state_mutex);
 
     size_t count = 0;
-    for (const auto & pair : mutations_by_znode)
+    for (const auto & [_, status] : mutations_by_znode)
     {
-        const auto & mutation = pair.second;
-        if (!mutation.is_done)
+        if (!status.is_done)
             break;
+        ++count;
+    }
 
+    return count;
+}
+
+size_t ReplicatedMergeTreeQueue::countUnfinishedMutations() const
+{
+    std::lock_guard lock(state_mutex);
+
+    size_t count = 0;
+    for (const auto & [_, status] : mutations_by_znode | std::views::reverse)
+    {
+        if (status.is_done)
+            break;
         ++count;
     }
 

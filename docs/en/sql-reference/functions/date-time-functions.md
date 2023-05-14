@@ -26,19 +26,27 @@ SELECT
 
 ## makeDate
 
-Creates a [Date](../../sql-reference/data-types/date.md) from a year, month and day argument.
+Creates a [Date](../../sql-reference/data-types/date.md)
+- from a year, month and day argument, or
+- from a year and day of year argument.
 
 **Syntax**
 
 ``` sql
-makeDate(year, month, day)
+makeDate(year, month, day);
+makeDate(year, day_of_year);
 ```
+
+Alias:
+- `MAKEDATE(year, month, day);`
+- `MAKEDATE(year, day_of_year);`
 
 **Arguments**
 
 - `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `month` — Month. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `day_of_year` — Day of the year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
@@ -47,6 +55,8 @@ makeDate(year, month, day)
 Type: [Date](../../sql-reference/data-types/date.md).
 
 **Example**
+
+Create a Date from a year, month and day:
 
 ``` sql
 SELECT makeDate(2023, 2, 28) AS Date;
@@ -60,6 +70,19 @@ Result:
 └────────────┘
 ```
 
+Create a Date from a year and day of year argument:
+
+``` sql
+SELECT makeDate(2023, 42) AS Date;
+```
+
+Result:
+
+``` text
+┌───────date─┐
+│ 2023-02-11 │
+└────────────┘
+```
 ## makeDate32
 
 Like [makeDate](#makeDate) but produces a [Date32](../../sql-reference/data-types/date32.md).
@@ -107,6 +130,12 @@ Result:
 ## makeDateTime64
 
 Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Syntax**
+
+``` sql
+makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+```
 
 ## timeZone
 
@@ -289,7 +318,7 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 Converts a date or date with time to the number of the day in the week as UInt8 value.
 
-The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|

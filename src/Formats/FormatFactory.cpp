@@ -809,6 +809,14 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
     return target.prefers_large_blocks;
 }
 
+bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
+{
+    if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+        return false;
+
+    return true;
+}
+
 void FormatFactory::checkFormatName(const String & name) const
 {
     auto it = dict.find(name);
