@@ -120,6 +120,13 @@ void UDTServer::run()
 
         LOG_TRACE(logger, "Data size UDT: {} {}", out.res().size(), response_str.size());
 
+        auto packet_size = std::to_string(response_str.size() + 1);
+
+        if (UDT::ERROR == UDT::sendmsg(recver, packet_size.c_str(), static_cast<int>(packet_size.size() + 1)))
+        {
+            continue;
+        }
+
         if (UDT::ERROR == UDT::sendmsg(recver, reinterpret_cast<char *>(response_str.data()), static_cast<int>(response_str.size() + 1)))
         {
             continue;

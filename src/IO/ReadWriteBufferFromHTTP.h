@@ -123,7 +123,7 @@ namespace detail
 
 
         #if USE_UDT
-        std::string protocol = "udt";
+        std::string protocol = "tcp";
         #else
         std::string protocol = "tcp";
         #endif
@@ -244,11 +244,24 @@ namespace detail
                         return istr;
                     }
 
+                    char data_packet_size[100] = "";
+
+                    if (UDT::ERROR == UDT::recvmsg(client, data_packet_size, sizeof(data_packet_size)))
+                    {
+                        return istr;
+                    }
+
+                    LOG_INFO(log, "Received UDT packet size: {}", data_packet_size);
+
+                    auto data_size = std::stoi(data_packet_size);
+
                     UDPReplicationPack resp;
 
-                    char raw_data[8644300];
+                    char raw_data[data_size];
 
-                    auto data_size = UDT::recvmsg(client, raw_data, 8644300);
+                    UDT::recvmsg(client, raw_data, data_size);
+
+                    LOG_WARNING(log, "Received data from replica");
 
                     auto data = resp.deserialize(reinterpret_cast<char*>(raw_data), data_size);
 

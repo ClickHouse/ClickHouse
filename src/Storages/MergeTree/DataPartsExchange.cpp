@@ -534,9 +534,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
-    uri.setHost("127.0.0.1");
+    //uri.setHost("127.0.0.1");
+    uri.setHost(host);
     uri.setPort(port);
-    //uri.setPort(9019);
     uri.setQueryParameters(
     {
         {"endpoint",                getEndpointId(replica_path)},
