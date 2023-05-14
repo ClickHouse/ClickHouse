@@ -218,6 +218,22 @@ public:
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
+    /// This type and the field remove_tmp_policy is used as a hint
+    /// to help avoid communication with keeper when temporary part is deleting.
+    /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
+    /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
+    /// However in some special cases Clickhouse can make a decision without asking keeper.
+    enum class BlobsRemovalPolicyForTemporaryParts
+    {
+        /// decision about removing blobs is determined by keeper, the common case
+        ASK_KEEPER,
+        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
+        REMOVE_BLOBS,
+        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
+        PRESERVE_BLOBS,
+    };
+    BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
+
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
