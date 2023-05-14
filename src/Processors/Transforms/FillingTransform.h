@@ -70,6 +70,12 @@ private:
         MutableColumnRawPtrs res_other_columns);
     bool generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns);
 
+    void insertFromFillingRow(
+        const MutableColumnRawPtrs & filling_columns,
+        const MutableColumnRawPtrs & interpolate_columns,
+        const MutableColumnRawPtrs & other_columns,
+        const Block & interpolate_block);
+
     const SortDescription sort_description;
     const SortDescription fill_description; /// Contains only columns with WITH FILL.
     SortDescription sort_prefix;
@@ -77,6 +83,7 @@ private:
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.
     FillingRow next_row; /// Row to which we need to generate filling rows.
+    bool filling_row_inserted = false;
 
     using Positions = std::vector<size_t>;
     Positions fill_column_positions;

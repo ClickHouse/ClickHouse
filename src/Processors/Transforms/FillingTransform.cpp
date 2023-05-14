@@ -337,8 +337,11 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
 
 using MutableColumnRawPtrs = std::vector<IColumn*>;
 
-static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, const MutableColumnRawPtrs & interpolate_columns, const MutableColumnRawPtrs & other_columns,
-    const FillingRow & filling_row, const Block & interpolate_block)
+void FillingTransform::insertFromFillingRow(
+    const MutableColumnRawPtrs & filling_columns,
+    const MutableColumnRawPtrs & interpolate_columns,
+    const MutableColumnRawPtrs & other_columns,
+    const Block & interpolate_block)
 {
     logDebug("insertFromFillingRow", filling_row);
 
@@ -364,6 +367,8 @@ static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, c
 
     for (auto * other_column : other_columns)
         other_column->insertDefault();
+
+    filling_row_inserted = true;
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -452,8 +457,8 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("generateSuffixIfNeeded() filling_row", filling_row);
     logDebug("generateSuffixIfNeeded() next_row", next_row);
 
-    /// Determines should we insert filling row before start generating next rows.
-    bool should_insert_first = next_row < filling_row || next_row.isNull();
+    /// Determines if we should insert filling row before start generating next rows
+    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || next_row.isNull();
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -471,7 +476,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     if (should_insert_first && filling_row < next_row)
     {
         interpolate(result_columns, interpolate_block);
-        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
         /// fulfill sort prefix columns with last row values or defaults
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
@@ -480,10 +485,16 @@ bool FillingTransform::generateSuffixIfNeeded(
                 sort_prefix_column->insertDefault();
     }
 
-    while (filling_row.next(next_row))
+    bool filling_row_changed = false;
+    while (true)
     {
+        const auto [apply, changed] = filling_row.next(next_row);
+        filling_row_changed = changed;
+        if (!apply)
+            break;
+
         interpolate(result_columns, interpolate_block);
-        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
         /// fulfill sort prefix columns with last row values or defaults
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
@@ -491,6 +502,9 @@ bool FillingTransform::generateSuffixIfNeeded(
             for (auto * sort_prefix_column : res_sort_prefix_columns)
                 sort_prefix_column->insertDefault();
     }
+    /// new valid filling row was generated but not inserted
+    if (filling_row_changed)
+        filling_row_inserted = false;
 
     return true;
 }
@@ -546,18 +560,20 @@ void FillingTransform::transformRange(
     Block interpolate_block;
     if (new_sorting_prefix)
     {
+        logDebug("--- new range ---", range_end);
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*input_fill_columns[i])[range_begin];
+            const auto current_value = (*input_fill_columns[i])[range_begin];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
                 filling_row.initFromDefaults(i);
+                filling_row_inserted = false;
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
-                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
                     copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, range_begin);
                 }
                 break;
@@ -577,7 +593,7 @@ void FillingTransform::transformRange(
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*input_fill_columns[i])[row_ind];
+            const auto current_value = (*input_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
 
             if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
@@ -587,21 +603,33 @@ void FillingTransform::transformRange(
         }
         logDebug("next_row updated", next_row);
 
-        /// A case, when at previous step row was initialized from defaults 'fill_from' values
-        ///  and probably we need to insert it to block.
+        /// The condition is true when filling row is initialized by value(s) in FILL FROM,
+        /// and there are row(s) in current range with value(s) < then in the filling row.
+        /// It can happen only once for a range.
         if (should_insert_first && filling_row < next_row)
         {
             interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
 
-        while (filling_row.next(next_row))
+        bool filling_row_changed = false;
+        while(true)
         {
+            const auto [apply, changed] = filling_row.next(next_row);
+            filling_row_changed = changed;
+            if (!apply)
+                break;
+
             interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
+        /// new valid filling row was generated but not inserted, will use it during suffix generation
+        if (filling_row_changed)
+            filling_row_inserted = false;
+
+        logDebug("filling_row after", filling_row);
 
         copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
@@ -651,7 +679,10 @@ void FillingTransform::transform(Chunk & chunk)
 
         /// if no data was processed, then need to initialize filling_row
         if (last_row.empty())
+        {
             filling_row.initFromDefaults();
+            filling_row_inserted = false;
+        }
 
         if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
