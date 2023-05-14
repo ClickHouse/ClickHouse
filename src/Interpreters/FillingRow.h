@@ -19,7 +19,10 @@ public:
     explicit FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
-    bool next(const FillingRow & to_row);
+    /// Return pair of boolean
+    /// apply - true if filling values should be inserted into result set
+    /// value_changed - true if filling row value was changed
+    std::pair<bool, bool> next(const FillingRow & to_row);
 
     void initFromDefaults(size_t from_pos = 0);
 
