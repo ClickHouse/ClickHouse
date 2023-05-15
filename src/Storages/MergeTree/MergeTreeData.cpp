@@ -2373,7 +2373,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         }
     };
 
-    if (settings->max_part_removal_threads <= 1 || parts_to_remove.size() <= settings->concurrent_part_removal_threshold)
+    if (parts_to_remove.size() <= settings->concurrent_part_removal_threshold)
     {
         remove_single_thread();
         return;
