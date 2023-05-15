@@ -28,9 +28,9 @@ ThreadPoolCallbackRunner<void> WriteBufferFromS3::TaskTracker::syncRunner()
     };
 }
 
-void WriteBufferFromS3::TaskTracker::getReady()
+void WriteBufferFromS3::TaskTracker::waitReady()
 {
-    LOG_TEST(log, "getReady, in queue {}", futures.size());
+    LOG_TEST(log, "waitReady, in queue {}", futures.size());
 
     /// Exceptions are propagated
     auto it = futures.begin();
@@ -55,12 +55,12 @@ void WriteBufferFromS3::TaskTracker::getReady()
         it = futures.erase(it);
     }
 
-    LOG_TEST(log, "getReady ended, in queue {}", futures.size());
+    LOG_TEST(log, "waitReady ended, in queue {}", futures.size());
 }
 
-void WriteBufferFromS3::TaskTracker::getAll()
+void WriteBufferFromS3::TaskTracker::waitAll()
 {
-    LOG_TEST(log, "getAll, in queue {}", futures.size());
+    LOG_TEST(log, "waitAll, in queue {}", futures.size());
 
     /// Exceptions are propagated
     for (auto & future : futures)

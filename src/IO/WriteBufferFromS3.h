@@ -8,7 +8,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <IO/WriteBufferFromS3BufferAllocationPolicy.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
@@ -40,6 +39,19 @@ public:
     ~WriteBufferFromS3() override;
     void nextImpl() override;
     void preFinalize() override;
+
+public:
+    class IBufferAllocationPolicy
+    {
+    public:
+        virtual size_t getBufferNumber() const = 0;
+        virtual size_t getBufferSize() const = 0;
+        virtual void nextBuffer() = 0;
+        virtual ~IBufferAllocationPolicy() = 0;
+    };
+    using IBufferAllocationPolicyPtr = std::unique_ptr<IBufferAllocationPolicy>;
+
+    static IBufferAllocationPolicyPtr ChooseBufferPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_);
 
 private:
     /// Receives response from the server after sending all data.

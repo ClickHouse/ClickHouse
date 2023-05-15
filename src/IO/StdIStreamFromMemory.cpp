@@ -1,27 +1,24 @@
-#include "config.h"
-
-#if USE_AWS_S3
-
-#include <IO/WriteBufferFromS3MemoryStream.h>
+#include <IO/StdIStreamFromMemory.h>
 
 namespace DB
 {
 
-MemoryStream::MemoryBuf::MemoryBuf(char * begin_, size_t size_)
+StdIStreamFromMemory::MemoryBuf::MemoryBuf(char * begin_, size_t size_)
     : begin(begin_)
     , size(size_)
 {
     this->setg(begin, begin, begin + size);
 }
 
-MemoryStream::MemoryBuf::int_type MemoryStream::MemoryBuf::underflow()
+StdIStreamFromMemory::MemoryBuf::int_type StdIStreamFromMemory::MemoryBuf::underflow()
 {
     if (gptr() < egptr())
             return traits_type::to_int_type(*gptr());
     return traits_type::eof();
 }
 
-MemoryStream::MemoryBuf::pos_type MemoryStream::MemoryBuf::seekoff(off_type off, std::ios_base::seekdir way,
+StdIStreamFromMemory::MemoryBuf::pos_type
+StdIStreamFromMemory::MemoryBuf::seekoff(off_type off, std::ios_base::seekdir way,
                  std::ios_base::openmode mode)
 {
     bool out_mode = (std::ios_base::out & mode) != 0;
@@ -49,13 +46,13 @@ MemoryStream::MemoryBuf::pos_type MemoryStream::MemoryBuf::seekoff(off_type off,
     return pos_type(ret);
 }
 
-MemoryStream::MemoryBuf::pos_type MemoryStream::MemoryBuf::seekpos(pos_type sp,
+StdIStreamFromMemory::MemoryBuf::pos_type StdIStreamFromMemory::MemoryBuf::seekpos(pos_type sp,
                  std::ios_base::openmode mode)
 {
     return seekoff(off_type(sp), std::ios_base::beg, mode);
 }
 
-MemoryStream::MemoryStream(char * begin_, size_t size_)
+StdIStreamFromMemory::StdIStreamFromMemory(char * begin_, size_t size_)
     : std::iostream(nullptr)
     , mem_buf(begin_, size_)
 {
@@ -63,6 +60,3 @@ MemoryStream::MemoryStream(char * begin_, size_t size_)
 }
 
 }
-
-#endif
-
