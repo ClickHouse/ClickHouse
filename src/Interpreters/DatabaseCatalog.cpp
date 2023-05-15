@@ -339,6 +339,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         DatabaseAndTable db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
+            std::string exception_message;
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
@@ -348,7 +349,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     std::vector<String> names = hints.getHints(table_id.getDatabaseName());
                     /// I also leave possibility to print several suggestions
                     std::string suggested_name = names[0];
-                    std::string exception_message = "Database " + table_id.getDatabaseName() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
+                    exception_message = "Database " + table_id.getDatabaseName() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                 }
                 else
                 {
@@ -356,12 +357,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     std::vector<String> names = hints.getHints(table_id.getTableName());
                     std::string suggested_name = names[0];
                     /// There is two options: first is to print just the name of the table
-                    std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
+                    exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
 //                    Names names_with_db_name;
 //                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
-//                    std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
+//                    exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
                 }
                 exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
             }
@@ -403,22 +404,23 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() == it)
         {
+            std::string exception_message;
             if (exception)
             {
                 TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 std::string suggested_name = names[0];
                 /// There is two options: first is to print just the name of the table
-                std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
+                exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                 /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                 /// I also leave possibility to print several suggestions
 //                Names names_with_db_name;
 //                std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
-//                std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
+//                exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
                 exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
             }
 
-                return {};
+            return {};
         }
         database = it->second;
     }
