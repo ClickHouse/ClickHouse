@@ -2677,5 +2677,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Note**: the maximum nesting depth of complex types (Array, Tuple, Map, Nested) is limited to 16.
+
 This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
 
