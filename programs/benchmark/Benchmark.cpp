@@ -695,7 +695,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-//        settings.addProgramOptions(desc);
+        settings.addProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
