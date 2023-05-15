@@ -239,21 +239,22 @@ FillingTransform::FillingTransform(
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
 
-    /// build sorting prefix for first fill column
-    for (const auto & desc : sort_description)
+    if (use_with_fill_by_sorting_prefix)
     {
-        if (desc.column_name == fill_description[0].column_name)
-            break;
+        /// build sorting prefix for first fill column
+        for (const auto & desc : sort_description)
+        {
+            if (desc.column_name == fill_description[0].column_name)
+                break;
 
-        size_t pos = header_.getPositionByName(desc.column_name);
-        sort_prefix_positions.push_back(pos);
+            size_t pos = header_.getPositionByName(desc.column_name);
+            sort_prefix_positions.push_back(pos);
 
-        sort_prefix.push_back(desc);
+            sort_prefix.push_back(desc);
+        }
+        logDebug("sort prefix", dumpSortDescription(sort_prefix));
+        last_range_sort_prefix.reserve(sort_prefix.size());
     }
-    logDebug("sort prefix", dumpSortDescription(sort_prefix));
-    last_range_sort_prefix.reserve(sort_prefix.size());
-
-    /// TODO: check conflict in positions between interpolate and sorting prefix columns
 
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
@@ -273,6 +274,20 @@ FillingTransform::FillingTransform(
     if (interpolate_description)
         for (const auto & name : interpolate_description->result_columns_order)
             interpolate_column_positions.push_back(header_.getPositionByName(name));
+
+    /// check conflict in positions between interpolate and sorting prefix columns
+    if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())
+    {
+        std::unordered_set<size_t> interpolate_positions(interpolate_column_positions.begin(), interpolate_column_positions.end());
+        for (auto sort_prefix_pos : sort_prefix_positions)
+        {
+            if (interpolate_positions.contains(sort_prefix_pos))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "The same column in ORDER BY before WITH FILL (sorting prefix) and INTERPOLATE is not allowed. Column: {}",
+                    (header_.begin() + sort_prefix_pos)->name);
+        }
+    }
 }
 
 /// prepare() is overrididen to call transform() after all chunks are processed
