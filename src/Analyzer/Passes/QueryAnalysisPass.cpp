@@ -1205,8 +1205,34 @@ private:
 
     static std::string rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context);
 
-    static std::optional<JoinTableSide> getColumnSideFromJoinTree(QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
+    static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
     {
+        if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return {};
+
+        if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
+        {
+            const auto & resolved_function = resolved_identifier->as<FunctionNode &>();
+
+            const auto & argument_nodes = resolved_function.getArguments().getNodes();
+
+            std::optional<JoinTableSide> result;
+            for (const auto & argument_node : argument_nodes)
+            {
+                auto table_side = getColumnSideFromJoinTree(argument_node, join_node);
+                if (table_side && result && *table_side != *result)
+                {
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Ambiguous identifier {}. In scope {}",
+                        resolved_identifier->formatASTForErrorMessage(),
+                        join_node.formatASTForErrorMessage());
+                }
+                if (table_side)
+                    result = *table_side;
+            }
+            return result;
+        }
+
         const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
 
         if (join_node.getLeftTableExpression().get() == column_src)
