@@ -9,7 +9,7 @@
 /// NOTE: makePairNoInit() is omitted for PackedPairNoInit since it is not
 /// required for PackedHashMap (see mergeBlockWithPipe() for details)
 template <typename First, typename Second>
-struct PackedPairNoInit
+struct __attribute__((packed)) PackedPairNoInit
 {
     First first;
     Second second;
@@ -28,7 +28,7 @@ struct PackedPairNoInit
         , second(std::forward<SecondValue>(second_))
     {
     }
-} __attribute__((packed));
+};
 
 /// The difference with ZeroTraits is that PackedZeroTraits accepts PackedPairNoInit instead of Key.
 namespace PackedZeroTraits
