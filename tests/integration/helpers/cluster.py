@@ -1974,7 +1974,6 @@ class ClickHouseCluster:
                     "-c",
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
-                user="root",
             )
 
     def wait_for_url(
