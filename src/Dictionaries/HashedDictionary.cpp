@@ -32,6 +32,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
+using namespace HashedDictionaryImpl;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;

@@ -134,7 +134,7 @@ public:
 
 private:
     template <typename Value>
-    using CollectionsHolder = std::vector<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
+    using CollectionsHolder = std::vector<typename HashedDictionaryImpl::HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
     using NullableSets = std::vector<NullableSet>;
@@ -232,7 +232,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     std::vector<std::unique_ptr<Arena>> string_arenas;
-    std::vector<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
+    std::vector<typename HashedDictionaryImpl::HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

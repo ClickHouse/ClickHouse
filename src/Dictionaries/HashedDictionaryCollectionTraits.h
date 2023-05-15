@@ -10,6 +10,9 @@
 namespace DB
 {
 
+namespace HashedDictionaryImpl
+{
+
 /// sparse_hash_map/sparse_hash_set
 template <typename C>
 concept IsGoogleSparseHashTable = std::is_same_v<C, google::sparse_hash_map<
@@ -98,5 +101,7 @@ template <typename C> auto resizeContainer(C & c, size_t size) requires (IsBuilt
 template <typename C> void clearContainer(C & c) requires (IsBuiltinHashTable<C>) { return c.clearAndShrink(); }
 
 // NOLINTEND(*)
+
+}
 
 }
