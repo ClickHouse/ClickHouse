@@ -69,15 +69,20 @@ std::vector<size_t> getNecessaryPositions(const Block & block, const ReadFromMem
             {
                 for (size_t i=0; i<column_in_block->column->size(); i++)
                 {
-                    fmt::print("field in block: {}, compare with fixed_column, field={}\n",
-                               toString(column_in_block->column->operator[](i)),
-                               toString(fixed_column->column->operator[](0)));
-                    if (column_in_block->column->operator[](i) == fixed_column->column->operator[](0))
+                    fmt::print("#{} field in block: type={}, value={}, fixed_field={}\n",
+                               i,
+                               (*column_in_block->column)[i].getType(),
+                               toString((*column_in_block->column)[i]),
+                               toString((*fixed_column->column)[0]));
+                    if (toString((*column_in_block->column)[i]) == toString((*fixed_column->column)[0]))
                     {
                         fmt::print("necessary field with pos={}\n", i);
                         result_fields_positions.push_back(i);
+                    } else {
+                        fmt::print("unnecessary field with pos={}\n", i);
                     }
                 }
+                fmt::print("\n\n");
             }
             fmt::print("for column_in_block: name={} need only this fields: ", column_in_block->name);
             for (const auto& n : result_fields_positions)
@@ -285,7 +290,7 @@ ReadFromMemoryStorageStep::FixedColumns ReadFromMemoryStorageStep::makeFixedColu
                             // @TODO why children size == 2 and value eq?
                             for (size_t i=0; i<node->children.size(); i++)
                             {
-                                fmt::print("filed={}", toString((*child->column)[i]));
+                                fmt::print("child: filed={}\n", toString((*child->column)[i]));
                             }
                             ++num_constant_columns;
 
@@ -314,8 +319,8 @@ ReadFromMemoryStorageStep::FixedColumns ReadFromMemoryStorageStep::makeFixedColu
     {
         fmt::print("total: name={}\n", c->result_name);
         fmt::print("total: type={}\n", c->result_type);
-        fmt::print("total: size columns={}\n", c->column->size());
         fmt::print("total: column name={}\n", c->column->getName());
+        fmt::print("total: size columns={}\n", c->column->size());
         for (size_t i=0; i<c->column->size(); i++)
         {
             fmt::print("field={}\n", toString((*c->column)[i]));
@@ -374,6 +379,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
 
     auto blocks_with_fixed_columns = filteredByFixedColumns(snapshot_data.blocks);
+//    auto blocks_with_fixed_columns = snapshot_data.blocks;
 
     if (delay_read_for_global_sub_queries)
     {
