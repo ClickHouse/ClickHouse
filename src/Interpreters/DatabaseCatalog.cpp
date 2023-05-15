@@ -35,7 +35,6 @@
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
 
-
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
@@ -112,8 +111,6 @@ private:
     String database_name;
 };
 
-
-
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
@@ -142,7 +139,6 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
-
 
 TemporaryTableHolder::TemporaryTableHolder(
     ContextPtr context_,
@@ -312,7 +308,6 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
         || database_name == INFORMATION_SCHEMA_UPPERCASE;
 }
 
-
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
@@ -323,7 +318,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
         return {};
     return it->second;
 }
-
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
@@ -392,7 +386,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #endif
         return db_and_table;
     }
-
 
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
@@ -540,7 +533,6 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
             addUUIDMapping(db_uuid, database, nullptr);
     });
 }
-
 
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
