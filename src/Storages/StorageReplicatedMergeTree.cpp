@@ -5265,12 +5265,12 @@ void StorageReplicatedMergeTree::alter(
             fs::path(zookeeper_path) / "log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));
 
         PartitionBlockNumbersHolder partition_block_numbers_holder;
+        ReplicatedMergeTreeMutationEntry mutation_entry;
         if (have_mutation)
         {
             delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
             const String mutations_path(fs::path(zookeeper_path) / "mutations");
 
-            ReplicatedMergeTreeMutationEntry mutation_entry;
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
@@ -5322,12 +5322,16 @@ void StorageReplicatedMergeTree::alter(
                 /// ReplicatedMergeTreeMutationEntry record in /mutations
                 String mutation_path = dynamic_cast<const Coordination::CreateResponse &>(*results[mutation_path_idx]).path_created;
                 mutation_znode = mutation_path.substr(mutation_path.find_last_of('/') + 1);
+                LOG_DEBUG(log, "Created log entry {} to update table metadata to version {}, created a mutation {} (data versions: {})",
+                          alter_entry->znode_name, alter_entry->alter_version, *mutation_znode, mutation_entry.getBlockNumbersForLogs());
             }
             else
             {
                 /// ALTER_METADATA record in replication /log
                 String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[alter_path_idx]).path_created;
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
+                LOG_DEBUG(log, "Created log entry {} to update table metadata to version {}",
+                          alter_entry->znode_name, alter_entry->alter_version);
             }
             break;
         }
@@ -6493,7 +6497,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             const String & path_created =
                 dynamic_cast<const Coordination::CreateResponse *>(responses[1].get())->path_created;
             mutation_entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-            LOG_TRACE(log, "Created mutation with ID {}", mutation_entry.znode_name);
+            LOG_TRACE(log, "Created mutation with ID {} (data versions: {})",
+                      mutation_entry.znode_name, mutation_entry.getBlockNumbersForLogs());
             break;
         }
         else if (rc == Coordination::Error::ZBADVERSION)
