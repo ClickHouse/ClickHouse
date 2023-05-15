@@ -660,6 +660,11 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
                     container.max_load_factor(configuration.max_load_factor);
                 attributes.emplace_back(std::move(attribute));
             }
+
+            if constexpr (IsBuiltinHashTable<typename CollectionsHolder<ValueType>::value_type>)
+                LOG_TRACE(log, "Using builtin hash table for {} attribute", dictionary_attribute.name);
+            else
+                LOG_TRACE(log, "Using sparsehash for {} attribute", dictionary_attribute.name);
         };
 
         callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
