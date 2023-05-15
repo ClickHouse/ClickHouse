@@ -425,7 +425,7 @@ WITH
             'Map(String,String)'
         ) AS x
 SELECT
-    x; -- {serverError TOO_LARGE_MAP_SIZE}
+    x; -- {serverError LIMIT_EXCEEDED}
 
 -- { echoOn }
 
