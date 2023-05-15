@@ -51,8 +51,6 @@
 #    include <Processors/ISource.h>
 #    include <Processors/Sinks/SinkToStorage.h>
 
-namespace fs = std::filesystem;
-
 
 namespace CurrentMetrics
 {
@@ -103,7 +101,7 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
 Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
     const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file)
 {
-    for (KeyWithInfo val : keys_buf)
+    for (const KeyWithInfo & val : keys_buf)
     {
         auto full_path = bucket + '/' + val.key;
         if (exclude_keys.find(full_path) != exclude_keys.end())
@@ -138,7 +136,7 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
     }
 
     Strings keys;
-    for (auto v : processing_keys)
+    for (const auto & v : processing_keys)
     {
         keys.push_back(bucket + '/' + v.key);
     }
