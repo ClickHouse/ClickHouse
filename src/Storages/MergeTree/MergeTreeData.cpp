@@ -1947,6 +1947,10 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
 
     /// We need to load parts as fast as possible
     getOutdatedPartsLoadingThreadPool().enableTurboMode();
+    SCOPE_EXIT({
+        /// Let's lower the number of threads e.g. for later ATTACH queries to behave as usual
+        getOutdatedPartsLoadingThreadPool().disableTurboMode();
+    });
 
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
 
@@ -1956,9 +1960,6 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     {
         return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
     });
-
-    /// Let's lower the number of threads e.g. for later ATTACH queries to behave as usual
-    getOutdatedPartsLoadingThreadPool().disableTurboMode();
 
     if (outdated_data_parts_loading_canceled)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of outdated data parts was canceled");
