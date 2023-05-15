@@ -270,6 +270,7 @@ struct HashTableGrower
 /** Determines the size of the hash table, and when and how much it should be resized.
   * This structure is aligned to cache line boundary and also occupies it all.
   * Precalculates some values to speed up lookups and insertion into the HashTable (and thus has bigger memory footprint than HashTableGrower).
+  * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
 class alignas(64) HashTableGrowerWithPrecalculation
