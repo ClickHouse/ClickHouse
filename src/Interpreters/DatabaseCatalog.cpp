@@ -364,7 +364,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 //                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
 //                    exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
                 }
-                exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
+                exception->emplace( ErrorCodes::UNKNOWN_TABLE, exception_message);
             }
             return {};
         }
@@ -417,7 +417,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 //                Names names_with_db_name;
 //                std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
 //                exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
-                exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
+                exception->emplace( ErrorCodes::UNKNOWN_TABLE, exception_message);
             }
 
             return {};
@@ -438,7 +438,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 //        Names names_with_db_name;
 //        std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
 //        std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
-        exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
+        exception->emplace( ErrorCodes::UNKNOWN_TABLE, exception_message);
     }
     if (!table)
         database = nullptr;
