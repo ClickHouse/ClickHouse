@@ -13,7 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_MAP_SIZE;
+    extern const int LIMIT_EXCEEDED;
 }
 
 /*
@@ -118,7 +118,7 @@ private:
 
         if (row_offset > max_number_of_pairs)
         {
-            throw Exception(ErrorCodes::TOO_LARGE_MAP_SIZE, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
         }
 
         key.commit();
