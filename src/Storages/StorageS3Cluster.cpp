@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageS3Cluster::StorageS3Cluster(
     const String & cluster_name_,
     const StorageS3::Configuration & configuration_,

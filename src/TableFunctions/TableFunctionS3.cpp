@@ -28,6 +28,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -369,9 +371,9 @@ void registerTableFunctionGCS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionGCS>(
         {.documentation
-         = {.description=R"(The table function can be used to read the data stored on Google Cloud Storage.)",
-            .examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)", ""}},
-            .categories{"DataLake"}},
+         = {R"(The table function can be used to read the data stored on Google Cloud Storage.)",
+            Documentation::Examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)"}},
+            Documentation::Categories{"DataLake"}},
          .allow_readonly = false});
 }
 
@@ -379,9 +381,9 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionS3>(
         {.documentation
-         = {.description=R"(The table function can be used to read the data stored on AWS S3.)",
-            .examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)", ""}},
-            .categories{"DataLake"}},
+         = {R"(The table function can be used to read the data stored on AWS S3.)",
+            Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
          .allow_readonly = false});
 }
 
