@@ -131,9 +131,9 @@ struct FiberLocal
 public:
     FiberLocal()
     {
-        /// Initialize main instance for this thread.
-        /// Contexts for fibers will inherit this instance
-        /// (it could be changed before creating fibers).
+        /// Initialize main instance for this thread. Instances for fibers will inherit it,
+        /// (it's needed because main instance could be changed before creating fibers
+        /// and changes should be visible in fibers).
         data[nullptr] = T();
     }
 
@@ -150,14 +150,14 @@ public:
 private:
     T & get()
     {
-        /// Get instance for current fiber.
         return getInstanceForFiber(AsyncTaskExecutor::getCurrentFiberInfo());
     }
 
     T & getInstanceForFiber(FiberInfo info)
     {
         auto it = data.find(info.fiber);
-        /// If it's the first request, we need to initialize instance for the fiber using instance from parent fiber.
+        /// If it's the first request, we need to initialize instance for the fiber
+        /// using instance from parent fiber or main thread that created fiber.
         if (it == data.end())
             it = data.insert({info.fiber, getInstanceForFiber(*info.parent_fiber_info)}).first;
         return it->second;
