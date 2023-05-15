@@ -29,6 +29,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageHDFSCluster::StorageHDFSCluster(
     ContextPtr context_,
     const String & cluster_name_,

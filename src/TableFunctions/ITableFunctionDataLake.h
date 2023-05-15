@@ -13,10 +13,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
 
 template <typename Name, typename Storage, typename TableFunction>
 class ITableFunctionDataLake : public TableFunction

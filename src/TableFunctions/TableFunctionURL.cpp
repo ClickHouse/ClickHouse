@@ -12,17 +12,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
