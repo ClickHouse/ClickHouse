@@ -2,8 +2,8 @@
 
 #if USE_AWS_S3
 
+#include "StdIStreamFromMemory.h"
 #include "WriteBufferFromS3.h"
-#include "WriteBufferFromS3MemoryStream.h"
 #include "WriteBufferFromS3TaskTracker.h"
 
 #include <Common/logger_useful.h>
@@ -63,7 +63,7 @@ struct WriteBufferFromS3::PartData
 
     std::shared_ptr<std::iostream> createAwsBuffer()
     {
-        auto buffer = std::make_shared<MemoryStream>(memory.data(), data_size);
+        auto buffer = std::make_shared<StdIStreamFromMemory>(memory.data(), data_size);
         buffer->exceptions(std::ios::badbit);
         return buffer;
     }
@@ -108,7 +108,7 @@ void WriteBufferFromS3::nextImpl()
                 "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
     /// Make sense to call to before adding new async task to check if there is an exception
-    task_tracker->getReady();
+    task_tracker->waitReady();
 
     hidePartialData();
 
@@ -132,7 +132,7 @@ void WriteBufferFromS3::preFinalize()
 
     LOG_TRACE(log, "preFinalize WriteBufferFromS3. {}", getLogDetails());
 
-    task_tracker->getReady();
+    task_tracker->waitReady();
 
     hidePartialData();
 
@@ -178,7 +178,7 @@ void WriteBufferFromS3::finalizeImpl()
     chassert(offset() == 0);
     chassert(hidden_size == 0);
 
-    task_tracker->getAll();
+    task_tracker->waitAll();
 
     if (!multipart_upload_id.empty())
     {
@@ -266,10 +266,10 @@ void WriteBufferFromS3::reallocateFirstBuffer()
 {
     chassert(offset() == 0);
 
-    if (buffer_allocation_policy->getNumber() > 1 || available() > 0)
+    if (buffer_allocation_policy->getBufferNumber() > 1 || available() > 0)
         return;
 
-    const size_t max_first_buffer = buffer_allocation_policy->getSize();
+    const size_t max_first_buffer = buffer_allocation_policy->getBufferSize();
     if (memory.size() == max_first_buffer)
         return;
 
@@ -299,7 +299,7 @@ void WriteBufferFromS3::detachBuffer()
 
 void WriteBufferFromS3::allocateFirstBuffer()
 {
-    const auto max_first_buffer = buffer_allocation_policy->getSize();
+    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
     const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
@@ -309,16 +309,16 @@ void WriteBufferFromS3::allocateFirstBuffer()
 
 void WriteBufferFromS3::allocateBuffer()
 {
-    buffer_allocation_policy->next();
+    buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    if (buffer_allocation_policy->getNumber() == 1)
+    if (buffer_allocation_policy->getBufferNumber() == 1)
         return allocateFirstBuffer();
 
-    memory = Memory(buffer_allocation_policy->getSize());
+    memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 
-    LOG_TRACE(log, "Allocated buffer with size {}. {}", buffer_allocation_policy->getSize(), getLogDetails());
+    LOG_TRACE(log, "Allocated buffer with size {}. {}", buffer_allocation_policy->getBufferSize(), getLogDetails());
 }
 
 void WriteBufferFromS3::setFakeBufferWhenPreFinalized()

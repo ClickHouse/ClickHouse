@@ -1,15 +1,15 @@
 #pragma once
 
-#include "config.h"
-
-#if USE_AWS_S3
-
 #include <iostream>
 
 namespace DB
 {
 
-struct MemoryStream: std::iostream
+/// StdIStreamFromMemory is used in WriteBufferFromS3 as a stream which is passed to the S3::Client
+/// It provides istream interface (only reading) over the memory.
+/// However S3::Client requires iostream interface it only reads from the stream
+
+class StdIStreamFromMemory : public std::iostream
 {
     struct MemoryBuf: std::streambuf
     {
@@ -27,11 +27,10 @@ struct MemoryStream: std::iostream
             size_t size = 0;
     };
 
-    MemoryStream(char * begin_, size_t size_);
-
     MemoryBuf mem_buf;
+
+public:
+    StdIStreamFromMemory(char * begin_, size_t size_);
 };
 
 }
-
-#endif
