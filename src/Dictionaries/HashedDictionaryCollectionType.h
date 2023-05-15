@@ -79,14 +79,6 @@ constexpr bool useSparseHashForHashedDictionary()
 
 /// Grower with custom fill limit/load factor (instead of default 50%).
 ///
-/// It turns out that HashMap can outperform google::sparse_hash_map in case of
-/// the structure size of not big, in terms of speed *and* memory. Even 99% of
-/// max load factor was faster then google::sparse_hash_map in my simple tests
-/// (1e9 UInt64 keys with UInt16 values, randomly distributed).
-///
-/// And not to mention very high allocator memory fragmentation in
-/// google::sparse_hash_map.
-///
 /// Based on HashTableGrowerWithPrecalculation
 template <size_t initial_size_degree = 8>
 class alignas(64) HashTableGrowerWithPrecalculationAndMaxLoadFactor
