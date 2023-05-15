@@ -79,8 +79,8 @@ public:
         ERROR = 4,
     };
 #endif
-    static FiberInfo getCurrentFiberInfo();
 
+    static FiberInfo getCurrentFiberInfo();
 protected:
     /// Method that is called in resume() before actual fiber resuming.
     /// If it returns false, resume() will return immediately without actual fiber resuming.
@@ -122,6 +122,48 @@ private:
     std::atomic_bool is_cancelled = false;
 
     std::unique_ptr<AsyncTask> task;
+};
+
+/// Simple implementation for fiber local variable.
+template <typename T>
+struct FiberLocal
+{
+public:
+    FiberLocal()
+    {
+        /// Initialize main instance for this thread.
+        /// Contexts for fibers will inherit this instance
+        /// (it could be changed before creating fibers).
+        data[nullptr] = T();
+    }
+
+    T & operator*()
+    {
+        return get();
+    }
+
+    T * operator->()
+    {
+        return &get();
+    }
+
+private:
+    T & get()
+    {
+        /// Get instance for current fiber.
+        return getInstanceForFiber(AsyncTaskExecutor::getCurrentFiberInfo());
+    }
+
+    T & getInstanceForFiber(FiberInfo info)
+    {
+        auto it = data.find(info.fiber);
+        /// If it's the first request, we need to initialize instance for the fiber using instance from parent fiber.
+        if (it == data.end())
+            it = data.insert({info.fiber, getInstanceForFiber(*info.parent_fiber_info)}).first;
+        return it->second;
+    }
+
+    std::unordered_map<const Fiber *, T> data;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);
