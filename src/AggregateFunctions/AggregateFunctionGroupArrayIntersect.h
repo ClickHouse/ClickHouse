@@ -86,10 +86,9 @@ public:
         {
             for (size_t i = 0; i < arr_size; ++i)
             {
-
                 typename State::Map::LookupResult value = map.find(static_cast<T>((*data_column)[offset + i].get<const T>()));
-                if (value != nullptr)
-                    value->getMapped() = version;
+                if (value != nullptr && value->getMapped() == version - 1)
+                    ++(value->getMapped());
             }
         }
     }
@@ -249,7 +248,7 @@ public:
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
         const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
-        const auto arr_size = offset - offsets[row_num];
+        const auto arr_size = offsets[row_num] - offset;
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
@@ -283,10 +282,11 @@ public:
                     assert(serialized.data != nullptr);
                     it = map.find(serialized);
                 }
-                if (it != nullptr)
+                if (it != nullptr && it->getMapped() == version - 1)
                     ++(it->getMapped());
             }
         }
+
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
