@@ -5,6 +5,8 @@
 #include <memory>
 #include <stack>
 
+#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -67,18 +69,24 @@ std::vector<size_t> getNecessaryPositions(const Block & block, const ReadFromMem
 
             if (column_in_block->column)
             {
+                const auto constant = (*fixed_column->column)[0];
+                const auto & field = *column_in_block->column;
+
                 for (size_t i=0; i<column_in_block->column->size(); i++)
                 {
                     fmt::print("#{} field in block: type={}, value={}, fixed_field={}\n",
                                i,
-                               (*column_in_block->column)[i].getType(),
-                               toString((*column_in_block->column)[i]),
-                               toString((*fixed_column->column)[0]));
-                    if (toString((*column_in_block->column)[i]) == toString((*fixed_column->column)[0]))
+                               field[i].getType(),
+                               toString(field[i]),
+                               toString(constant));
+
+                    if (applyVisitor(FieldVisitorAccurateEquals(), constant, field[i]))
                     {
                         fmt::print("necessary field with pos={}\n", i);
                         result_fields_positions.push_back(i);
-                    } else {
+                    }
+                    else
+                    {
                         fmt::print("unnecessary field with pos={}\n", i);
                     }
                 }
