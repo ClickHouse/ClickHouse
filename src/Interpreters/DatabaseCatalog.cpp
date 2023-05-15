@@ -65,8 +65,10 @@ public:
         : database_catalog(database_catalog_)
     {
     }
+
 private:
-    Names getAllRegisteredNames() const {
+    Names getAllRegisteredNames() const
+    {
         Names result;
         auto databases_list = database_catalog.getDatabases();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
@@ -77,6 +79,7 @@ private:
         }
         return result;
     }
+
     const DatabaseCatalog & database_catalog;
 };
 
