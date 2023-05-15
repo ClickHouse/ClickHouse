@@ -1674,15 +1674,13 @@ try
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
-<<<<<<< HEAD
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
-=======
         if (global_context->hasMetadataStoreFoundationDB())
             loadMetadataFromFDB(global_context, default_database);
         else
+        {
             loadMetadata(global_context, default_database);
->>>>>>> 83bf1069858... New database engine: DatabaseOnFDB (47f9ab2a5dd)
+            convertDatabasesEnginesIfNeed(global_context);
+        }
         startupSystemTables();
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists

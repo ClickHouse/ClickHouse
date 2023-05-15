@@ -35,7 +35,7 @@ public:
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;
-    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
+    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
@@ -68,18 +68,18 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
-    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata, bool is_startup) override;
 
     void loadTableFromMetadata(
         ContextMutablePtr local_context,
         const String & file_path,
         const QualifiedTableName & name,
         const ASTPtr & ast,
-        bool force_restore) override;
+        LoadingStrictnessLevel mode) override;
 
     void assertCanBeDetached(bool cleanup) override;
 
@@ -93,6 +93,8 @@ public:
     static ASTPtr getAttachQueryFromDBMeta(ContextPtr context, const DatabaseMeta & meta);
     static std::shared_ptr<MetadataTable> getTableMetaFromQuery(const ASTCreateQuery & create);
     static ASTPtr getQueryFromTableMeta(ContextPtr context, const MetadataTable & tb_meta, bool throw_on_error = true);
+
+    Strings getNamesOfPermanentlyDetachedTables() const override { return permanently_detached_tables; }
 
 protected:
     void removeDetachedPermanentlyFlag(const String & table_name, const String & db_name) const;
@@ -110,5 +112,6 @@ protected:
     const UUID db_uuid;
 
     FDB meta_store;
+    Strings permanently_detached_tables;
 };
 }

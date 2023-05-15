@@ -7,10 +7,12 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOnFDB.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Databases/TablesLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLTask.h>
@@ -30,18 +32,24 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/UUID.h>
 #include <Poco/Logger.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FoundationDB/ProtobufTypeHelpers.h>
+#include <Common/FoundationDB/protos/MetadataDatabase.pb.h>
+#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/renameat2.h>
-#include <Common/FoundationDB/protos/MetadataDatabase.pb.h>
-#include "base/logger_useful.h"
-#include <base/UUID.h>
+#include <Common/logger_useful.h>
 
 namespace Proto = DB::FoundationDB::Proto;
 
+namespace CurrentMetrics
+{
+extern const Metric DatabaseOnFDBThreads;
+extern const Metric DatabaseOnFDBThreadsActive;
+}
 namespace DB
 {
 namespace ErrorCodes
@@ -110,7 +118,7 @@ DatabaseOnFDB::DatabaseOnFDB(String name_, UUID uuid, ContextPtr context_)
 ASTPtr DatabaseOnFDB::getCreateDatabaseQuery() const
 {
     auto create = std::make_unique<ASTCreateQuery>();
-    create->setDatabase(database_name);
+    create->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     create->uuid = db_uuid;
 
     auto storage = std::make_shared<ASTStorage>();
@@ -120,8 +128,8 @@ ASTPtr DatabaseOnFDB::getCreateDatabaseQuery() const
     engine->no_empty_args = true;
     storage->set(storage->engine, engine);
 
-    if (!comment.empty())
-        create->set(create->comment, std::make_shared<ASTLiteral>(comment));
+    if (!TSA_SUPPRESS_WARNING_FOR_READ(comment).empty())
+        create->set(create->comment, std::make_shared<ASTLiteral>(TSA_SUPPRESS_WARNING_FOR_READ(comment)));
 
     create->attach = false;
 
@@ -144,13 +152,13 @@ ASTPtr DatabaseOnFDB::getCreateTableQueryImpl(const String & table_name, Context
         {
             auto & ast_create_query = ast->as<ASTCreateQuery &>();
             ast_create_query.attach = false;
-            ast_create_query.setDatabase(database_name);
+            ast_create_query.setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
         }
     }
     catch (const Exception & e)
     {
         if (!has_table && e.code() == ErrorCodes::FDB_META_EXCEPTION && throw_on_error)
-            throw Exception{"Table " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+            throw Exception{ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table " + backQuote(table_name) + " doesn't exist"};
         else if (is_system_storage)
             ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
         else if (throw_on_error)
@@ -180,8 +188,8 @@ ASTPtr DatabaseOnFDB::getCreateQueryFromStorage(const String & table_name, const
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
-    auto create_table_query
-        = DB::getCreateQueryFromStorage(storage, ast_storage, false, getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage, ast_storage, false, static_cast<unsigned int>(getContext()->getSettingsRef().max_parser_depth), throw_on_error);
 
     create_table_query->set(
         create_table_query->as<ASTCreateQuery>()->comment, std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
@@ -191,11 +199,11 @@ ASTPtr DatabaseOnFDB::getCreateQueryFromStorage(const String & table_name, const
 
 void DatabaseOnFDB::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
-    std::unique_lock lock(mutex);
-    checkMetadataFilenameAvailabilityUnlocked(to_table_name, lock);
+    std::lock_guard lock(mutex);
+    checkMetadataFilenameAvailabilityUnlocked(to_table_name);
 }
 
-void DatabaseOnFDB::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const
+void DatabaseOnFDB::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
     if (meta_store->isExistsTable(TableKey{db_uuid, to_table_name}))
     {
@@ -203,13 +211,13 @@ void DatabaseOnFDB::checkMetadataFilenameAvailabilityUnlocked(const String & to_
             throw Exception(
                 ErrorCodes::TABLE_ALREADY_EXISTS,
                 "Table {}.{} already exists (detached permanently)",
-                backQuote(database_name),
+                backQuote(TSA_SUPPRESS_WARNING_FOR_READ(database_name)),
                 backQuote(to_table_name));
         else
             throw Exception(
                 ErrorCodes::TABLE_ALREADY_EXISTS,
                 "Table {}.{} already exists (detached)",
-                backQuote(database_name),
+                backQuote(TSA_SUPPRESS_WARNING_FOR_READ(database_name)),
                 backQuote(to_table_name));
     }
 }
@@ -270,7 +278,7 @@ void DatabaseOnFDB::createTable(ContextPtr local_context, const String & table_n
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        removeDetachedPermanentlyFlag(table_name, database_name);
+        removeDetachedPermanentlyFlag(table_name, TSA_SUPPRESS_WARNING_FOR_READ(database_name));
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
     }
@@ -290,43 +298,39 @@ void DatabaseOnFDB::createTable(ContextPtr local_context, const String & table_n
                     ErrorCodes::TABLE_ALREADY_EXISTS,
                     "Table {}.{} already exist (detached permanently). To attach it back "
                     "you need to use short ATTACH syntax or a full statement with the same UUID",
-                    backQuote(database_name),
+                    backQuote(TSA_SUPPRESS_WARNING_FOR_READ(database_name)),
                     backQuote(table_name));
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FDB_META_EXCEPTION)
-                throw Exception{"Table " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+                throw Exception{ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table " + backQuote(table_name) + " doesn't exist"};
         }
     }
 
     auto tb_meta = getTableMetaFromQuery(create);
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(create);
-    bool locked_uuid = false;
     try
     {
-        std::unique_lock lock{mutex};
-        if (create.getDatabase() != database_name)
+        std::lock_guard lock(mutex);
+        if (create.getDatabase() != TSA_SUPPRESS_WARNING_FOR_READ(database_name))
             throw Exception(
                 ErrorCodes::UNKNOWN_DATABASE,
                 "Database was renamed to `{}`, cannot create table in `{}`",
-                database_name,
+                TSA_SUPPRESS_WARNING_FOR_READ(database_name),
                 create.getDatabase());
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(create.uuid);
+        chassert(DatabaseCatalog::instance().hasUUIDMapping(create.uuid));
         /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
-        DatabaseCatalog::instance().addUUIDMapping(create.uuid);
-        locked_uuid = true;
 
-        attachTableUnlocked(table_name, table, lock);
+        attachTableUnlocked(table_name, table);
         meta_store->addTableMeta(*tb_meta, TableKey{db_uuid, table_name});
     }
     catch (...)
     {
         meta_store->removeTableMeta(TableKey{db_uuid, table_name});
-        if (locked_uuid)
-            DatabaseCatalog::instance().removeUUIDMappingFinally(create.uuid);
         throw;
     }
 }
@@ -341,10 +345,10 @@ void DatabaseOnFDB::dropTable(ContextPtr local_context, const String & table_nam
     StoragePtr table;
     std::string dropped_meta_path;
     {
-        std::unique_lock lock(mutex);
-        table = getTableUnlocked(table_name, lock);
+        std::lock_guard lock(mutex);
+        table = getTableUnlocked(table_name);
         dropped_meta_path = meta_store->renameTableToDropped(TableKey{db_uuid, table_name}, storage->getStorageID().uuid);
-        detachTableUnlocked(table_name, lock); /// Should never throw
+        detachTableUnlocked(table_name); /// Should never throw
     }
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, dropped_meta_path, no_delay);
 }
@@ -353,11 +357,13 @@ void DatabaseOnFDB::renameDatabase(ContextPtr query_context, const String & new_
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    if (query_context->getSettingsRef().check_table_dependencies)
+    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
 
     meta_store->renameDatabase(getDatabaseName(), new_name);
@@ -369,7 +375,7 @@ void DatabaseOnFDB::renameDatabase(ContextPtr query_context, const String & new_
             table_names.reserve(tables.size());
             for (auto & table : tables)
                 table_names.push_back(table.first);
-            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+            DatabaseCatalog::instance().updateDatabaseName(TSA_SUPPRESS_WARNING_FOR_READ(database_name), new_name, table_names);
         }
         database_name = new_name;
 
@@ -389,13 +395,10 @@ void DatabaseOnFDB::renameTable(
     IDatabase & to_database,
     const String & to_table_name,
     bool exchange,
-    bool dictionary)
+    bool dictionary) TSA_NO_THREAD_SAFETY_ANALYSIS /// TSA does not support conditional locking
 {
     if (!typeid_cast<DatabaseOnFDB *>(&to_database))
-        throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
-    if (exchange && !supportsRenameat2())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
-
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     auto & other_db = dynamic_cast<DatabaseOnFDB &>(to_database);
     bool inside_database = this == &other_db;
 
@@ -419,34 +422,39 @@ void DatabaseOnFDB::renameTable(
     }
 
     if (!exchange)
-        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
+        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name);
 
-    StoragePtr table = getTableUnlocked(table_name, db_lock);
+    StoragePtr table = getTableUnlocked(table_name);
 
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
     /// anonymous func
-    auto detach = [](DatabaseOnFDB & db, const String & table_name_) { db.tables.erase(table_name_); };
+    auto detach = [](DatabaseOnFDB & db, const String & table_name_) TSA_REQUIRES(db.mutex) { db.tables.erase(table_name_); };
 
-    auto attach = [](DatabaseOnFDB & db, const String & table_name_, const StoragePtr & table_) { db.tables.emplace(table_name_, table_); };
+    auto attach = [](DatabaseOnFDB & db, const String & table_name_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
+    { db.tables.emplace(table_name_, table_); };
 
     auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_) {
         if (inside_database)
             return;
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
-                throw Exception("Cannot move MaterializedView with inner table to other database", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
     };
-    table->checkTableCanBeRenamed();
+    StorageID old_table_id = table->getStorageID();
+    StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
+    table->checkTableCanBeRenamed({new_table_id});
     assert_can_move_mat_view(table);
     StoragePtr other_table;
+    StorageID other_table_new_id = StorageID::createEmpty();
     /// before check
     if (exchange)
     {
-        other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        other_table = other_db.getTableUnlocked(to_table_name);
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-        other_table->checkTableCanBeRenamed();
+        other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
+        other_table->checkTableCanBeRenamed({other_table_new_id});
         assert_can_move_mat_view(other_table);
     }
 
@@ -460,10 +468,10 @@ void DatabaseOnFDB::renameTable(
             auto ast = getQueryFromTableMeta(local_context, *table_meta);
             auto other_ast = getQueryFromTableMeta(local_context, *other_table_meta);
             auto & ast_create_query = ast->as<ASTCreateQuery &>();
-            ast_create_query.setDatabase(other_db.database_name);
+            ast_create_query.setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(other_db.database_name));
             ast_create_query.setTable(to_table_name);
             auto & other_ast_create_query = other_ast->as<ASTCreateQuery &>();
-            other_ast_create_query.setDatabase(database_name);
+            other_ast_create_query.setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
             other_ast_create_query.setTable(table_name);
             auto new_table_meta = getTableMetaFromQuery(ast_create_query);
             auto new_other_table_meta = getTableMetaFromQuery(other_ast_create_query);
@@ -473,7 +481,7 @@ void DatabaseOnFDB::renameTable(
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FDB_META_EXCEPTION)
-                throw Exception{"Table " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+                throw Exception{ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table " + backQuote(table_name) + " doesn't exist"};
         }
     }
     else
@@ -483,7 +491,7 @@ void DatabaseOnFDB::renameTable(
             auto table_meta = meta_store->getTableMeta(TableKey{db_uuid, table_name});
             auto ast = getQueryFromTableMeta(local_context, *table_meta);
             auto & ast_create_query = ast->as<ASTCreateQuery &>();
-            ast_create_query.setDatabase(other_db.database_name);
+            ast_create_query.setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(other_db.database_name));
             ast_create_query.setTable(to_table_name);
             auto new_table_meta = getTableMetaFromQuery(ast_create_query);
             meta_store->renameTable(TableKey{db_uuid, table_name}, TableKey{other_db.db_uuid, to_table_name}, *new_table_meta);
@@ -491,7 +499,7 @@ void DatabaseOnFDB::renameTable(
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FDB_META_EXCEPTION)
-                throw Exception{"Table " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+                throw Exception{ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table " + backQuote(table_name) + " doesn't exist"};
         }
     }
 
@@ -501,8 +509,6 @@ void DatabaseOnFDB::renameTable(
     detach(*this, table_name);
     if (exchange)
         detach(other_db, to_table_name);
-    auto old_table_id = table->getStorageID();
-
     table->renameInMemory({other_db.database_name, to_table_name, old_table_id.uuid});
     if (exchange)
         other_table->renameInMemory({database_name, table_name, other_table->getStorageID().uuid});
@@ -528,14 +534,16 @@ void DatabaseOnFDB::alterTable(ContextPtr local_context, const StorageID & table
         applyMetadataChangesToCreateQuery(ast, metadata);
         auto new_table_meta = getTableMetaFromQuery(ast->as<ASTCreateQuery &>());
         meta_store->updateTableMeta(*new_table_meta, TableKey{db_uuid, table_name});
-        TableNamesSet new_dependencies
-            = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-        DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+        /// The create query of the table has been just changed, we need to update dependencies too.
+        auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+        auto loading_dependencies
+            = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+        DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
     }
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::FDB_META_EXCEPTION)
-            throw Exception{"Table " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+            throw Exception{ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table " + backQuote(table_name) + " doesn't exist"};
     }
 }
 
@@ -548,18 +556,18 @@ void DatabaseOnFDB::attachTable(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Migrate metadate from local to FoundationDB error");
     }
     DetachedTables not_in_use;
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
-    attachTableUnlocked(name, table, lock);
+    attachTableUnlocked(name, table);
 }
 
 StoragePtr DatabaseOnFDB::detachTable(ContextPtr /* context */, const String & name)
 {
     DetachedTables not_in_use;
-    std::unique_lock lock(mutex);
-    auto table = detachTableUnlocked(name, lock);
+    std::lock_guard lock(mutex);
+    auto table = detachTableUnlocked(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
     not_in_use = cleanupDetachedTables(); //-V1001
     return table;
@@ -583,18 +591,22 @@ DatabaseOnFDB::DetachedTables DatabaseOnFDB::cleanupDetachedTables()
     return not_in_use;
 }
 
-void DatabaseOnFDB::startupTables(ThreadPool & thread_pool, bool /*force_restore*/, bool /*force_attach*/)
+void DatabaseOnFDB::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel /*mode*/)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    const size_t total_tables = tables.size();
+    const size_t total_tables = TSA_SUPPRESS_WARNING_FOR_READ(tables).size();
     if (!total_tables)
         return;
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
 
-    auto startup_one_table = [&](const StoragePtr & table) {
+    auto startup_one_table = [&](const StoragePtr & table)
+    {
+        /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
+        /// until startup finished.
+        auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
@@ -602,7 +614,7 @@ void DatabaseOnFDB::startupTables(ThreadPool & thread_pool, bool /*force_restore
 
     try
     {
-        for (const auto & table : tables)
+        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
             thread_pool.scheduleOrThrowOnError([&]() { startup_one_table(table.second); });
     }
     catch (...)
@@ -614,7 +626,7 @@ void DatabaseOnFDB::startupTables(ThreadPool & thread_pool, bool /*force_restore
     thread_pool.wait();
 }
 
-void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -622,7 +634,8 @@ void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool forc
       */
 
     ParsedTablesMetadata metadata;
-    loadTablesMetadata(local_context, metadata);
+    bool force_attach = LoadingStrictnessLevel::FORCE_ATTACH <= mode;
+    loadTablesMetadata(local_context, metadata, force_attach);
 
     size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
 
@@ -630,7 +643,7 @@ void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool forc
     std::atomic<size_t> dictionaries_processed{0};
     std::atomic<size_t> tables_processed{0};
 
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseOnFDBThreads, CurrentMetrics::DatabaseOnFDBThreadsActive);
 
     /// We must attach dictionaries before attaching tables
     /// because while we're attaching tables we may need to have some dictionaries attached
@@ -649,12 +662,14 @@ void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool forc
 
         if (create_query.is_dictionary)
         {
-            pool.scheduleOrThrowOnError([&]() {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+            pool.scheduleOrThrowOnError(
+                [&]()
+                {
+                    loadTableFromMetadata(local_context, path, name, ast, mode);
 
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
-            });
+                    /// Messages, so that it's not boring to wait for the server to load for a long time.
+                    logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
+                });
         }
     }
 
@@ -670,12 +685,14 @@ void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool forc
 
         if (!create_query.is_dictionary)
         {
-            pool.scheduleOrThrowOnError([&]() {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+            pool.scheduleOrThrowOnError(
+                [&]()
+                {
+                    loadTableFromMetadata(local_context, path, name, ast, mode);
 
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++tables_processed, total_tables, watch);
-            });
+                    /// Messages, so that it's not boring to wait for the server to load for a long time.
+                    logAboutProgress(log, ++tables_processed, total_tables, watch);
+                });
         }
     }
 
@@ -684,25 +701,30 @@ void DatabaseOnFDB::loadStoredObjects(ContextMutablePtr local_context, bool forc
     if (!skip_startup_tables)
     {
         /// After all tables was basically initialized, startup them.
-        startupTables(pool, force_restore, force_attach);
+        startupTables(pool, mode);
     }
 }
 
 void DatabaseOnFDB::loadTableFromMetadata(
-    ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
 {
-    assert(name.database == database_name);
+    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & create_query = ast->as<const ASTCreateQuery &>();
 
-    tryAttachTable(local_context, create_query, *this, name.database, file_path, force_restore);
+    tryAttachTable(local_context, create_query, *this, name.database, file_path, LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 }
 
-void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
+void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, this](const String & file_name) {
+    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
         fs::path full_path = path / file_path;
@@ -714,21 +736,33 @@ void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMet
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->setDatabase(database_name);
+                /// NOTE No concurrent writes are possible during database loading
+                create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
                 /// Add table meta to FDB.
                 auto table_meta = getTableMetaFromQuery(*create_query);
                 meta_store->addTableMeta(*table_meta, TableKey{db_uuid, unescapeForFileName(file_name.substr(0, file_name.size() - 4))});
+                if (create_query->uuid != UUIDHelpers::Nil)
+                {
+                    /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
+                    if (is_startup)
+                    {
+                        /// Server is starting up. Lock UUID used by permanently detached table.
+                        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                    }
+                    else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                    {
+                        /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
+                    }
+                }
                 if (fs::exists(full_path.string() + ".detached"))
                 {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     try
                     {
                         meta_store->updateDetachTableStatus(TableKey{db_uuid, table_name}, true);
+                        permanently_detached_tables.push_back(table_name);
                     }
                     catch (Exception & e)
                     {
@@ -742,22 +776,10 @@ void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMet
                     return;
                 }
 
-                QualifiedTableName qualified_name{database_name, create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
+                QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                if (loading_dependencies.empty())
-                {
-                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
-                }
-                else
-                {
-                    for (const auto & dependency : loading_dependencies)
-                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
-                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
-                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
-                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }
@@ -768,29 +790,38 @@ void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMet
         }
     };
 
-    auto process_metadata_from_fdb = [&metadata, this](const MetadataTable & table_meta) {
+    auto process_metadata_from_fdb = [&metadata, is_startup, this](const MetadataTable & table_meta)
+    {
         try
         {
             auto ast = getQueryFromTableMeta(getContext(), table_meta);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                QualifiedTableName qualified_name{database_name, create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
-
                 std::lock_guard lock{metadata.mutex};
+                QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
+                if (create_query->uuid != UUIDHelpers::Nil)
+                {
+                    /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
+                    if (is_startup)
+                    {
+                        /// Server is starting up. Lock UUID used by permanently detached table.
+                        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                    }
+                    else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                    {
+                        /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
+                    }
+                }
+                auto table_name = create_query->getTable();
+                if (meta_store->isDetached(TableKey{db_uuid, table_name}))
+                {
+                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                    permanently_detached_tables.push_back(table_name);
+                    return;
+                }
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{toString(create_query->uuid), ast};
-                if (loading_dependencies.empty())
-                {
-                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
-                }
-                else
-                {
-                    for (const auto & dependency : loading_dependencies)
-                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
-                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
-                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
-                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }
@@ -812,14 +843,14 @@ void DatabaseOnFDB::loadTablesMetadata(ContextPtr local_context, ParsedTablesMet
     LOG_INFO(
         log,
         "Metadata processed, database {} has {} tables and {} dictionaries in total.",
-        database_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),
         tables_in_database,
         dictionaries_in_database);
 }
 
 void DatabaseOnFDB::drop(ContextPtr /*context*/)
 {
-    assert(tables.empty());
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
         meta_store->removeDatabaseMeta(getDatabaseName());
@@ -899,7 +930,7 @@ void DatabaseOnFDB::iterateMetadataFiles(ContextPtr local_context, const Iterati
     }
 
     /// Read and parse metadata in parallel
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseOnFDBThreads, CurrentMetrics::DatabaseOnFDBThreadsActive);
     for (const auto & file : metadata_files)
     {
         pool.scheduleOrThrowOnError([&]() {
@@ -914,7 +945,7 @@ void DatabaseOnFDB::iterateMetadataFiles(ContextPtr local_context, const Iterati
 
 void DatabaseOnFDB::iterateMetadataFromFDB(const IteratingFDBFunction & process_metadata_from_fdb) const
 {
-    auto table_metas = meta_store->listAllTableMeta(db_uuid);
+    auto table_metas = meta_store->listAllTableMeta(db_uuid, true);
     for (const auto & table_meta : table_metas)
     {
         process_metadata_from_fdb(*table_meta);
@@ -952,10 +983,10 @@ void DatabaseOnFDB::assertCanBeDetached(bool cleanup)
     std::lock_guard lock(mutex);
     if (!detached_tables.empty())
         throw Exception(
+            ErrorCodes::DATABASE_NOT_EMPTY,
             "Database " + backQuoteIfNeed(database_name)
                 + " cannot be detached, "
-                  "because some tables are still in use. Retry later.",
-            ErrorCodes::DATABASE_NOT_EMPTY);
+                  "because some tables are still in use. Retry later.");
 }
 UUID DatabaseOnFDB::tryGetTableUUID(const String & table_name) const
 {
@@ -974,7 +1005,7 @@ void DatabaseOnFDB::waitDetachedTableNotInUse(const UUID & uuid)
         {
             std::lock_guard lock{mutex};
             not_in_use = cleanupDetachedTables();
-            if (detached_tables.count(uuid) == 0)
+            if (detached_tables.contains(uuid) == 0)
                 return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -989,7 +1020,7 @@ void DatabaseOnFDB::checkDetachedTableNotInUse(const UUID & uuid)
 }
 void DatabaseOnFDB::setDetachedTableNotInUseForce(const UUID & uuid)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock(mutex);
     detached_tables.erase(uuid);
 }
 void DatabaseOnFDB::assertDetachedTableNotInUse(const UUID & uuid)
@@ -1000,7 +1031,7 @@ void DatabaseOnFDB::assertDetachedTableNotInUse(const UUID & uuid)
     /// 3. ATTACH TABLE table; (new instance of Storage with the same UUID is created, instances share data on disk)
     /// 4. INSERT INTO table ...; (both Storage instances writes data without any synchronization)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
-    if (detached_tables.count(uuid))
+    if (detached_tables.contains(uuid))
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS,
             "Cannot attach table with UUID {}, "
@@ -1052,7 +1083,7 @@ ASTPtr DatabaseOnFDB::getQueryFromTableMeta(ContextPtr local_context, const Meta
         settings.max_parser_depth);
 
     if (!ast && throw_on_error)
-        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, error_message);
     else if (!ast)
         return nullptr;
     return ast;
@@ -1088,10 +1119,10 @@ ASTPtr DatabaseOnFDB::getAttachQueryFromDBMeta(ContextPtr local_context, const F
         local_context->getSettingsRef().max_parser_depth);
 
     if (!ast)
-        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, error_message);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    create.setDatabase(meta.name());
+    create.setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(meta).name());
     if (!create.attach)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SQL in database meta on fdb is not an ATTACH query");
 

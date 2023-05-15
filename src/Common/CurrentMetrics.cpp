@@ -18,20 +18,30 @@
     M(BackgroundCommonPoolSize, "Limit on number of tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundMovePoolSize, "Limit on number of tasks in BackgroundProcessingPool for moves") \
-    M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
-    M(BackgroundSchedulePoolSize, "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
-    M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
+    M(BackgroundSchedulePoolTask, \
+      "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old " \
+      "data parts, altering data parts, replica re-initialization, etc.") \
+    M(BackgroundSchedulePoolSize, \
+      "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old " \
+      "data parts, altering data parts, replica re-initialization, etc.") \
+    M(BackgroundBufferFlushSchedulePoolTask, \
+      "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
     M(BackgroundBufferFlushSchedulePoolSize, "Limit on number of tasks in BackgroundBufferFlushSchedulePool") \
-    M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
+    M(BackgroundDistributedSchedulePoolTask, \
+      "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
     M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
     M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundProcessingPool for message streaming") \
     M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundProcessingPool for message streaming") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
-    M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
-    M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
+    M(DiskSpaceReservedForMerge, \
+      "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
+    M(DistributedSend, \
+      "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous " \
+      "mode.") \
     M(QueryPreempted, "Number of queries that are stopped and waiting due to 'priority' setting.") \
-    M(TCPConnection, "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
+    M(TCPConnection, \
+      "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
     M(MySQLConnection, "Number of client connections using MySQL protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \
     M(InterserverConnection, "Number of connections from other replicas to fetch parts") \
@@ -46,24 +56,35 @@
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
-    M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkReceive, \
+      "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party " \
+      "libraries.") \
+    M(NetworkSend, \
+      "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(SendScalars, "Number of connections that are sending data for scalars to remote servers.") \
-    M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
+    M(SendExternalTables, \
+      "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL " \
+      "IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
-    M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
+    M(ReadonlyReplica, \
+      "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to " \
+      "startup without ZooKeeper configured.") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
-    M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
+    M(ZooKeeperSession, \
+      "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper " \
+      "may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
-    M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
+    M(DelayedInserts, \
+      "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
     M(ContextLockWait, "Number of threads waiting for lock in Context. This is global lock.") \
     M(StorageBufferRows, "Number of rows in buffers of Buffer tables") \
     M(StorageBufferBytes, "Number of bytes in buffers of Buffer tables") \
     M(DictCacheRequests, "Number of requests in fly to data sources of dictionaries of cache type.") \
     M(Revision, "Revision of the server. It is a number incremented for every release or release candidate except patch releases.") \
-    M(VersionInteger, "Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.") \
+    M(VersionInteger, \
+      "Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.") \
     M(RWLockWaitingReaders, "Number of threads waiting for read on a table RWLock.") \
     M(RWLockWaitingWriters, "Number of threads waiting for write on a table RWLock.") \
     M(RWLockActiveReaders, "Number of threads holding read lock in a table RWLock.") \
@@ -87,7 +108,8 @@
     M(IOThreads, "Number of threads in the IO thread pool.") \
     M(IOThreadsActive, "Number of threads in the IO thread pool running a task.") \
     M(ThreadPoolRemoteFSReaderThreads, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool.") \
-    M(ThreadPoolRemoteFSReaderThreadsActive, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.") \
+    M(ThreadPoolRemoteFSReaderThreadsActive, \
+      "Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolFSReaderThreads, "Number of threads in the thread pool for local_filesystem_read_method=threadpool.") \
     M(ThreadPoolFSReaderThreadsActive, "Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
@@ -102,6 +124,8 @@
     M(DatabaseOrdinaryThreadsActive, "Number of threads in the Ordinary database thread pool running a task.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
+    M(DatabaseOnFDBThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
+    M(DatabaseOnFDBThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \
     M(DatabaseCatalogThreadsActive, "Number of threads in the DatabaseCatalog thread pool running a task.") \
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
@@ -111,7 +135,8 @@
     M(CacheDictionaryThreads, "Number of threads in the CacheDictionary thread pool.") \
     M(CacheDictionaryThreadsActive, "Number of threads in the CacheDictionary thread pool running a task.") \
     M(ParallelFormattingOutputFormatThreads, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool.") \
-    M(ParallelFormattingOutputFormatThreadsActive, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.") \
+    M(ParallelFormattingOutputFormatThreadsActive, \
+      "Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.") \
     M(ParallelParsingInputFormatThreads, "Number of threads in the ParallelParsingInputFormat thread pool.") \
     M(ParallelParsingInputFormatThreadsActive, "Number of threads in the ParallelParsingInputFormat thread pool running a task.") \
     M(MergeTreeBackgroundExecutorThreads, "Number of threads in the MergeTreeBackgroundExecutor thread pool.") \
@@ -140,8 +165,11 @@
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
     M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
     M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
-    M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
-    M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
+    M(DistributedFilesToInsert, \
+      "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
+    M(BrokenDistributedFilesToInsert, \
+      "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 " \
+      "on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
     M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
@@ -182,9 +210,15 @@
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
-    M(ReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
-    M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
+    M(ReadTaskRequestsSent, \
+      "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task " \
+      "(for s3Cluster table function and similar). Measured on the remote server side.") \
+    M(MergeTreeReadTaskRequestsSent, \
+      "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task " \
+      "(for MergeTree tables). Measured on the remote server side.") \
+    M(MergeTreeAllRangesAnnouncementsSent, \
+      "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data " \
+      "parts (for MergeTree tables). Measured on the remote server side.")
 
 namespace CurrentMetrics
 {

@@ -350,7 +350,7 @@ BlockIO InterpreterCreateQuery::createDatabaseOnFDB(ASTCreateQuery & create)
         if (create.if_not_exists)
             return {};
         else
-            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database " + database_name + " already exists.");
     }
 
     auto meta_store = getContext()->getMetadataStoreFoundationDB();
@@ -371,7 +371,6 @@ BlockIO InterpreterCreateQuery::createDatabaseOnFDB(ASTCreateQuery & create)
         {
             auto engine = makeASTFunction("OnFDB");
             engine->no_empty_args = true;
-
             auto storage = std::make_shared<ASTStorage>();
             storage->set(storage->engine, engine);
             create.set(create.storage, storage);
@@ -427,6 +426,17 @@ BlockIO InterpreterCreateQuery::createDatabaseOnFDB(ASTCreateQuery & create)
             create.getDatabase());
     else if (create.uuid == UUIDHelpers::Nil)
         create.uuid = UUIDHelpers::generateV4();
+    bool need_write_metadata = !create.attach || !meta_store->isExistsDatabase(database_name);
+    bool need_lock_uuid = internal || need_write_metadata;
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
+
+    /// Lock uuid, so we will known it's already in use.
+    /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
+    TemporaryLockForUUIDDirectory uuid_lock;
+    if (need_lock_uuid)
+        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
+    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
     if (create.storage->engine->name != "OnFDB")
         throw Exception(
@@ -451,11 +461,7 @@ BlockIO InterpreterCreateQuery::createDatabaseOnFDB(ASTCreateQuery & create)
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{
-                getContext()->getGlobalContext(),
-                {{database_name, database}},
-                has_force_restore_data_flag,
-                create.attach && force_attach}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
             loader.loadTables();
             loader.startupTables();
         }
@@ -1844,10 +1850,6 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-<<<<<<< HEAD
-    if (is_create_database)
-        return createDatabase(create);
-=======
     if (create.database && !create.table)
     {
         if (getContext()->hasMetadataStoreFoundationDB())
@@ -1855,7 +1857,6 @@ BlockIO InterpreterCreateQuery::execute()
         else
             return createDatabase(create);
     }
->>>>>>> 83bf1069858... New database engine: DatabaseOnFDB (47f9ab2a5dd)
     else
         return createTable(create);
 }

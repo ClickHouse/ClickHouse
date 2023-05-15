@@ -29,10 +29,9 @@
 #include <map>
 #include <memory>
 #include <unordered_set>
-#include <base/logger_useful.h>
+#include <Databases/DatabaseOnFDB.h>
 #include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/FoundationDB/protos/MetadataDatabase.pb.h>
-#include <Databases/DatabaseOnFDB.h>
 
 namespace fs = std::filesystem;
 
@@ -193,7 +192,7 @@ static void createDatabase(ContextMutablePtr context, const String & database_na
         ast->setDatabase(database_name);
         InterpreterCreateQuery interpreter(ast, context);
         interpreter.setInternal(true);
-        interpreter.setForceAttach(true);
+        interpreter.setForceAttach(false);
         interpreter.setLoadDatabaseWithoutTables(true);
         interpreter.execute();
     }
@@ -371,7 +370,7 @@ void loadMetadataFromFDB(ContextMutablePtr context, const String & default_datab
     }
 
     bool create_default_db_if_not_exists = !default_database_name.empty();
-    bool default_db_already_exists = databases.count(default_database_name);
+    bool default_db_already_exists = databases.contains(default_database_name);
     if (create_default_db_if_not_exists && !default_db_already_exists)
     {
         databases.emplace(default_database_name, nullptr);
@@ -387,8 +386,8 @@ void loadMetadataFromFDB(ContextMutablePtr context, const String & default_datab
 
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
-
-    TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
+    TablesLoader loader{context, std::move(loaded_databases), mode};
     loader.loadTables();
     loader.startupTables();
 }
