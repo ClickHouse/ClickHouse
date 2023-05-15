@@ -279,35 +279,5 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (argc < 3 || std::stol(argv[2]) == 7)
-    {
-        Stopwatch watch;
-
-        PackedHashMap<Key, Value> map;
-        PackedHashMap<Key, Value>::LookupResult it;
-        bool inserted;
-
-        for (size_t i = 0; i < n; ++i)
-        {
-            map.emplace(data[i], it, inserted);
-            if (inserted)
-            {
-                new (&it->getMapped()) Value;
-                std::swap(it->getMapped(), value);
-                INIT
-            }
-        }
-
-        watch.stop();
-        std::cerr << std::fixed << std::setprecision(2)
-            << "PackedHashMap. Size: " << map.size()
-            << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-            << ", collisions: " << map.getCollisions()
-#endif
-            << std::endl;
-    }
-
     return 0;
 }

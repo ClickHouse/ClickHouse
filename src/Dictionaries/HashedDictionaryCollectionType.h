@@ -4,12 +4,40 @@
 #include <Common/HashTable/PackedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Core/Types_fwd.h>
 #include <sparsehash/sparse_hash_map>
 #include <sparsehash/sparse_hash_set>
 #include <type_traits>
 
 namespace DB
 {
+
+/// Return true if the type is POD [1] for the purpose of layout (this is not
+/// the same as STL traits has).
+///
+///   [1]: https://stackoverflow.com/questions/4178175/what-are-aggregates-and-pods-and-how-why-are-they-special/4178176#4178176
+///
+/// The behaviour had been change in clang-16, see this for more details:
+/// - https://github.com/llvm/llvm-project/commit/a8b0c6fa28acced71db33e80bd0b51d00422035b
+/// - https://github.com/llvm/llvm-project/commit/277123376ce08c98b07c154bf83e4092a5d4d3c6
+/// - https://github.com/llvm/llvm-project/issues/62422
+/// - https://github.com/llvm/llvm-project/issues/62353
+/// - https://github.com/llvm/llvm-project/issues/62358
+template <typename V>
+constexpr bool isPodLayout()
+{
+    if constexpr (std::is_same_v<V, UUID>)
+        return false;
+    if constexpr (std::is_same_v<V, DateTime64>)
+        return false;
+    if constexpr (std::is_same_v<V, Decimal32> || std::is_same_v<V, Decimal64> || std::is_same_v<V, Decimal128> || std::is_same_v<V, Decimal256>)
+        return false;
+    if constexpr (std::is_same_v<V, StringRef>)
+        return false;
+    if constexpr (std::is_same_v<V, IPv6> || std::is_same_v<V, IPv4>)
+        return false;
+    return true;
+}
 
 /// HashMap with packed structure is better than google::sparse_hash_map if the
 /// <K, V> pair is small, for the sizeof(std::pair<K, V>) == 16, RSS for hash
@@ -37,7 +65,13 @@ namespace DB
 template <typename K, typename V>
 constexpr bool useSparseHashForHashedDictionary()
 {
-    return sizeof(PackedPairNoInit<K, V>) > 16;
+    if constexpr (!isPodLayout<K>())
+        return true;
+    if constexpr (!isPodLayout<V>())
+        return true;
+    /// NOTE: One should not use PackedPairNoInit<K, V> here since this will
+    /// create instantion of this type, and it could be illformed.
+    return sizeof(V) > 8;
 }
 
 /// Grower with custom fill limit/load factor (instead of default 50%).
