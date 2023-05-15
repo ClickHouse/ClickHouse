@@ -6,6 +6,7 @@
 #include <TableFunctions/TableFunctionS3.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 
@@ -18,8 +19,6 @@ namespace ErrorCodes
     extern const int BAD_GET;
     extern const int LOGICAL_ERROR;
 }
-
-class Context;
 
 /// Base class for *Cluster table functions that require cluster_name for the first argument.
 template <typename Base>
