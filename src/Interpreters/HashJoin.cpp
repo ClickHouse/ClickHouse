@@ -725,7 +725,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
 
-        // Filter out rows with NULLs in asof key
+        /// Filter out rows with NULLs in ASOF key, nulls are not joined with anything since they are not comparable
+        /// We support only INNER/LEFT ASOF join, so rows with NULLs never return from the right joined table.
+        /// So filter them out here not to handle in implementation.
         const auto & asof_key_name = table_join->getOnlyClause().key_names_right.back();
         auto & asof_column = source_block.getByName(asof_key_name);
 
