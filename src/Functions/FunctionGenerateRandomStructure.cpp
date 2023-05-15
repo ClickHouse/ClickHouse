@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
+#include <Common/Documentation.h>
 
 #include <pcg_random.hpp>
 
@@ -29,7 +30,7 @@ namespace
     const size_t MAX_DECIMAL64_PRECISION = 18;
     const size_t MAX_DECIMAL128_PRECISION = 38;
     const size_t MAX_DECIMAL256_PRECISION = 76;
-    const size_t MAX_DEPTH = 32;
+    const size_t MAX_DEPTH = 16;
 
     constexpr std::array<TypeIndex, 29> simple_types
     {
@@ -147,15 +148,16 @@ namespace
         return rng() % MAX_NUMBER_OF_COLUMNS + 1;
     }
 
-    void writeLowCardinalityNestedType(pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, bool allow_nullable = true)
+    void writeLowCardinalityNestedType(pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types)
     {
-        bool make_nullable = allow_nullable & rng() % 2;
+        bool make_nullable = rng() % 2;
         if (make_nullable)
             writeCString("Nullable(", buf);
 
         if (allow_suspicious_lc_types)
         {
-            TypeIndex type = suspicious_lc_types[rng() % map_key_types.size()];
+            TypeIndex type = suspicious_lc_types[rng() % suspicious_lc_types.size()];
+
             if (type == TypeIndex::FixedString)
                 writeString("FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")", buf);
             else
@@ -174,7 +176,6 @@ namespace
             writeChar(')', buf);
     }
 
-
     void writeEnumValues(const String & column_name, pcg64 & rng, WriteBuffer & buf, ssize_t max_value)
     {
         /// Don't generate big enums, because it will lead to really big result
@@ -183,9 +184,9 @@ namespace
         size_t num_values = rng() % 16 + 1;
         std::vector<Int16> values(num_values);
 
-        /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1]
+        /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
-            x = rng() % (2 * (max_value + 1) - num_values) - max_value - 1;
+            x = rng() % (2 * max_value + 3 - num_values) - max_value - 1;
         /// Make all numbers unique.
         std::sort(values.begin(), values.end());
         for (size_t i = 0; i < num_values; ++i)
@@ -199,7 +200,7 @@ namespace
         }
     }
 
-    void writeMapKeyType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types)
+    void writeMapKeyType(const String & column_name, pcg64 & rng, WriteBuffer & buf)
     {
         TypeIndex type = map_key_types[rng() % map_key_types.size()];
         switch (type)
@@ -209,7 +210,11 @@ namespace
                 break;
             case TypeIndex::LowCardinality:
                 writeCString("LowCardinality(", buf);
-                writeLowCardinalityNestedType(rng, buf, allow_suspicious_lc_types, false);
+                /// Map key supports only String and FixedString inside LowCardinality.
+                if (rng() % 2)
+                    writeCString("String", buf);
+                else
+                    writeString("FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")", buf);
                 writeChar(')', buf);
                 break;
             case TypeIndex::Enum8:
@@ -295,7 +300,7 @@ namespace
             case TypeIndex::Map:
             {
                 writeCString("Map(", buf);
-                writeMapKeyType(column_name, rng, buf, allow_suspicious_lc_types);
+                writeMapKeyType(column_name, rng, buf);
                 writeCString(", ", buf);
                 writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
