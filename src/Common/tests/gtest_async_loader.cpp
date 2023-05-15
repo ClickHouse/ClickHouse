@@ -30,6 +30,11 @@ namespace DB::ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
 }
 
+struct Initializer {
+    size_t max_threads = 1;
+    ssize_t priority = 0;
+};
+
 struct AsyncLoaderTest
 {
     AsyncLoader loader;
@@ -37,9 +42,31 @@ struct AsyncLoaderTest
     std::mutex rng_mutex;
     pcg64 rng{randomSeed()};
 
-    explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false, /* log_progress = */ false)
+    explicit AsyncLoaderTest(std::vector<Initializer> initializers)
+        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false)
     {}
+
+    explicit AsyncLoaderTest(size_t max_threads = 1)
+        : AsyncLoaderTest({{.max_threads = max_threads}})
+    {}
+
+    std::vector<AsyncLoader::PoolInitializer> getPoolInitializers(std::vector<Initializer> initializers)
+    {
+        std::vector<AsyncLoader::PoolInitializer> result;
+        size_t pool_id = 0;
+        for (auto & desc : initializers)
+        {
+            result.push_back({
+                .name = fmt::format("Pool{}", pool_id),
+                .metric_threads = CurrentMetrics::TablesLoaderThreads,
+                .metric_active_threads = CurrentMetrics::TablesLoaderThreadsActive,
+                .max_threads = desc.max_threads,
+                .priority = desc.priority
+            });
+            pool_id++;
+        }
+        return result;
+    }
 
     template <typename T>
     T randomInt(T from, T to)
@@ -114,16 +141,19 @@ struct AsyncLoaderTest
 
 TEST(AsyncLoader, Smoke)
 {
-    AsyncLoaderTest t(2);
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority = 0},
+        {.max_threads = 2, .priority = -1},
+    });
 
-    static constexpr ssize_t low_priority = -1;
+    static constexpr ssize_t low_priority_pool = 1;
 
     std::atomic<size_t> jobs_done{0};
     std::atomic<size_t> low_priority_jobs_done{0};
 
     auto job_func = [&] (const LoadJobPtr & self) {
         jobs_done++;
-        if (self->priority() == low_priority)
+        if (self->pool() == low_priority_pool)
             low_priority_jobs_done++;
     };
 
@@ -135,7 +165,7 @@ TEST(AsyncLoader, Smoke)
         auto job3 = makeLoadJob({ job2 }, "job3", job_func);
         auto job4 = makeLoadJob({ job2 }, "job4", job_func);
         auto task2 = t.schedule({ job3, job4 });
-        auto job5 = makeLoadJob({ job3, job4 }, low_priority, "job5", job_func);
+        auto job5 = makeLoadJob({ job3, job4 }, low_priority_pool, "job5", job_func);
         task2->merge(t.schedule({ job5 }));
 
         std::thread waiter_thread([=] { job5->wait(); });
@@ -562,13 +592,24 @@ TEST(AsyncLoader, TestOverload)
 
 TEST(AsyncLoader, StaticPriorities)
 {
-    AsyncLoaderTest t(1);
+    AsyncLoaderTest t({
+        {.max_threads = 1, .priority = 0},
+        {.max_threads = 1, .priority = 1},
+        {.max_threads = 1, .priority = 2},
+        {.max_threads = 1, .priority = 3},
+        {.max_threads = 1, .priority = 4},
+        {.max_threads = 1, .priority = 5},
+        {.max_threads = 1, .priority = 6},
+        {.max_threads = 1, .priority = 7},
+        {.max_threads = 1, .priority = 8},
+        {.max_threads = 1, .priority = 9},
+    });
 
     std::string schedule;
 
     auto job_func = [&] (const LoadJobPtr & self)
     {
-        schedule += fmt::format("{}{}", self->name, self->priority());
+        schedule += fmt::format("{}{}", self->name, self->pool());
     };
 
     std::vector<LoadJobPtr> jobs;
@@ -590,7 +631,18 @@ TEST(AsyncLoader, StaticPriorities)
 
 TEST(AsyncLoader, DynamicPriorities)
 {
-    AsyncLoaderTest t(1);
+    AsyncLoaderTest t({
+        {.max_threads = 1, .priority = 0},
+        {.max_threads = 1, .priority = 1},
+        {.max_threads = 1, .priority = 2},
+        {.max_threads = 1, .priority = 3},
+        {.max_threads = 1, .priority = 4},
+        {.max_threads = 1, .priority = 5},
+        {.max_threads = 1, .priority = 6},
+        {.max_threads = 1, .priority = 7},
+        {.max_threads = 1, .priority = 8},
+        {.max_threads = 1, .priority = 9},
+    });
 
     for (bool prioritize : {false, true})
     {
@@ -602,7 +654,7 @@ TEST(AsyncLoader, DynamicPriorities)
         {
             if (prioritize && self->name == "C")
                 t.loader.prioritize(job_to_prioritize, 9); // dynamic prioritization
-            schedule += fmt::format("{}{}", self->name, self->priority());
+            schedule += fmt::format("{}{}", self->name, self->pool());
         };
 
         // Job DAG with initial priorities. During execution of C4, job G0 priority is increased to G9, postponing B3 job executing.
