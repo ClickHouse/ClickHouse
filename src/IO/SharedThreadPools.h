@@ -3,8 +3,10 @@
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/CurrentMetrics.h>
+
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 
 namespace DB
 {
