@@ -669,10 +669,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     /// Let's split ranges to avoid reading much data.
     auto split_ranges
-        = [rows_granularity = data_settings->index_granularity, max_block_size = max_block_size](const auto & ranges, int direction)
+        = [rows_granularity = data_settings->index_granularity, my_max_block_size = max_block_size](const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
-        const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         size_t marks_in_range = 1;
 
         if (direction == 1)
