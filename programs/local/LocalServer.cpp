@@ -751,7 +751,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
-    cout << "If you want to have more information, you can go to https://clickhouse.com/docs"
+    std::cout << "If you want to have more information, you can go to https://clickhouse.com/docs";
 }
 
 
