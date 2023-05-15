@@ -138,7 +138,7 @@ void ENetServer::run()
 
                         ENetPacket * resp = enet_packet_create (response_str.data(),
                                             response_str.size() + 1,
-                                            ENET_PACKET_FLAG_RELIABLE);
+                                            0);
 
                         enet_peer_send (event.peer, 0, resp);
 
