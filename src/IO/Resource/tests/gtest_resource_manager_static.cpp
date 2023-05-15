@@ -44,6 +44,15 @@ TEST(IOResourceStaticResourceManager, Smoke)
 
 TEST(IOResourceStaticResourceManager, Prioritization)
 {
+    std::optional<Int64> last_priority;
+    auto check = [&] (Int64 priority)
+    {
+        // Lock is not required here because this is called during request execution and we have max_requests = 1
+        if (last_priority)
+            EXPECT_TRUE(priority <= *last_priority); // Should be true if every queue arrived at the same time at busy period start
+        last_priority = priority;
+    };
+
     constexpr size_t threads_per_queue = 2;
     int requests_per_thead = 100;
     ResourceTest t(4 * threads_per_queue + 1);
@@ -70,15 +79,6 @@ TEST(IOResourceStaticResourceManager, Prioritization)
             </classifiers>
         </clickhouse>
     )CONFIG");
-
-    std::optional<Int64> last_priority;
-    auto check = [&] (Int64 priority)
-    {
-        // Lock is not required here because this is called during request execution and we have max_requests = 1
-        if (last_priority)
-            EXPECT_TRUE(priority <= *last_priority); // Should be true if every queue arrived at the same time at busy period start
-        last_priority = priority;
-    };
 
     for (String name : {"A", "B", "C", "D"})
     {
