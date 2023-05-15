@@ -753,6 +753,7 @@ protected:
 
 public:
     using key_type = Key;
+    using grower_type = Grower;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
     using cell_type = Cell;
