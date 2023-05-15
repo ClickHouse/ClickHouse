@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
 
 #!/usr/bin/env python3
-import pytest
 from helpers.cluster import ClickHouseCluster
-import random
-import string
-import os
-import time
-from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

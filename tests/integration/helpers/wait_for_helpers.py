@@ -1,4 +1,3 @@
-import time
 from helpers.test_tools import assert_eq_with_retry
 
 

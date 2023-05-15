@@ -135,7 +135,7 @@ def generate_dict_configs():
         logging.debug(f"Found dictionary {path}")
         dictionaries.append(path)
 
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
 

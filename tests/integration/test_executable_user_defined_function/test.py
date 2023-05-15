@@ -1,13 +1,10 @@
 import os
 import sys
-import time
-
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])

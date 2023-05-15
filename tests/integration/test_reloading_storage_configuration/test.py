@@ -3,13 +3,11 @@ import os
 import re
 import shutil
 import time
-import xml.etree.ElementTree as ET
-
+import pytest
 import helpers.client
 import helpers.cluster
+import xml.etree.ElementTree as ET
 from helpers.test_tools import TSV
-import pytest
-
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 
@@ -74,7 +72,7 @@ def start_over():
         )
         try:
             os.remove(separate_configuration_path)
-        except:
+        except Exception:
             """"""
 
 
@@ -90,7 +88,7 @@ def add_disk(node, name, path, separate_file=False):
             tree = ET.parse(
                 os.path.join(node.config_d_dir, "storage_configuration.xml")
             )
-    except:
+    except Exception:
         tree = ET.ElementTree(
             ET.fromstring(
                 "<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>"
@@ -120,7 +118,7 @@ def update_disk(node, name, path, keep_free_space_bytes, separate_file=False):
             tree = ET.parse(
                 os.path.join(node.config_d_dir, "storage_configuration.xml")
             )
-    except:
+    except Exception:
         tree = ET.ElementTree(
             ET.fromstring(
                 "<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>"
@@ -194,7 +192,7 @@ def test_add_disk(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -232,7 +230,7 @@ def test_update_disk(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -270,7 +268,7 @@ def test_add_disk_to_separate_config(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -300,7 +298,7 @@ def test_add_policy(started_cluster):
         add_policy(node1, "cool_policy", {"volume1": ["jbod3", "jbod4"]})
         node1.query("SYSTEM RELOAD CONFIG")
 
-        disks = set(node1.query("SELECT name FROM system.disks").splitlines())
+        set(node1.query("SELECT name FROM system.disks").splitlines())
         assert "cool_policy" in set(
             node1.query("SELECT policy_name FROM system.storage_policies").splitlines()
         )
@@ -318,7 +316,7 @@ def test_add_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -399,7 +397,7 @@ def test_new_policy_works(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -453,7 +451,7 @@ def test_add_volume_to_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -503,7 +501,7 @@ def test_add_disk_to_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -543,7 +541,7 @@ def test_remove_disk(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -588,7 +586,7 @@ def test_remove_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -658,7 +656,7 @@ def test_remove_volume_from_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""
 
 
@@ -728,5 +726,5 @@ def test_remove_disk_from_policy(started_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
-        except:
+        except Exception:
             """"""

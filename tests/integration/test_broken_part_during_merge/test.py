@@ -3,7 +3,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-import time
 
 cluster = ClickHouseCluster(__file__)
 

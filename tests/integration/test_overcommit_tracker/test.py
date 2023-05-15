@@ -37,11 +37,10 @@ def test_user_overcommit():
         else:
             responses_B.append(node.get_query_request(USER_TEST_QUERY_B, user="A"))
 
-    overcommited_killed = False
     for response in responses_A:
         _, err = response.get_answer_and_error()
         if "MEMORY_LIMIT_EXCEEDED" in err:
-            overcommited_killed = True
+            pass
     finished = False
     for response in responses_B:
         _, err = response.get_answer_and_error()

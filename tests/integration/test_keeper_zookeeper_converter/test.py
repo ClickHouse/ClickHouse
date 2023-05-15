@@ -25,7 +25,7 @@ def start_zookeeper():
 def stop_zookeeper():
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
     timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
+    while node.get_process_pid("zookeeper") is not None:
         if time.time() > timeout:
             raise Exception("Failed to stop ZooKeeper in 60 secs")
         time.sleep(0.2)

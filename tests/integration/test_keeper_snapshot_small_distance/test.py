@@ -7,7 +7,6 @@ from multiprocessing.dummy import Pool
 from kazoo.client import KazooClient, KazooRetry
 from kazoo.handlers.threading import KazooTimeoutError
 import random
-import string
 import os
 import time
 
@@ -30,7 +29,7 @@ def start_zookeeper(node):
 def stop_zookeeper(node):
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
     timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
+    while node.get_process_pid("zookeeper") is not None:
         if time.time() > timeout:
             raise Exception("Failed to stop ZooKeeper in 60 secs")
         time.sleep(0.2)

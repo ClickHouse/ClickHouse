@@ -1,12 +1,12 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-from time import sleep
+#!/usr/bin/env python3
 
+import pytest
+from time import sleep
+from helpers.cluster import ClickHouseCluster
 from kazoo.client import KazooClient
 
-# from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
-
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/keeper_config1.xml"],
@@ -53,7 +53,7 @@ def destroy_zk_client(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 

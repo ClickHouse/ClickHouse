@@ -7,13 +7,13 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        instance = cluster.add_instance(
+        cluster.add_instance(
             "dummy", clickhouse_path_dir="clickhouse_path", stay_alive=True
         )
         cluster.start()
 
         cluster_fail = ClickHouseCluster(__file__, name="fail")
-        instance_fail = cluster_fail.add_instance(
+        cluster_fail.add_instance(
             "dummy_fail", clickhouse_path_dir="clickhouse_path_fail"
         )
         with pytest.raises(Exception):

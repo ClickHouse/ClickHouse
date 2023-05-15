@@ -20,7 +20,7 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(
     DESCRIPTOR, "clickhouse_path.format_schemas.rabbitmq_pb2", globals()
 )
-if _descriptor._USE_C_DESCRIPTORS == False:
+if _descriptor._USE_C_DESCRIPTORS is False:
     DESCRIPTOR._options = None
     _KEYVALUEPROTO._serialized_start = 49
     _KEYVALUEPROTO._serialized_end = 92

@@ -1,12 +1,12 @@
+#!/usr/bin/env python3
+
 import json
 import random
 import re
-import string
 import threading
 import time
-from multiprocessing.dummy import Pool
-
 import pytest
+from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -1161,7 +1161,7 @@ def produce_alter_move(node, name):
                 name, mt=move_type, mp=move_part, md=move_disk, mv=move_volume
             )
         )
-    except QueryRuntimeException as ex:
+    except QueryRuntimeException:
         pass
 
 
@@ -1495,7 +1495,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
                             name, column_type
                         )
                     )
-                except:
+                except Exception:
                     if "Replicated" not in engine:
                         raise
 
@@ -1631,7 +1631,7 @@ def test_download_appropriate_disk(start_cluster):
                     "SYSTEM SYNC REPLICA replicated_table_for_download"
                 )
                 break
-            except:
+            except Exception:
                 time.sleep(0.5)
 
         disks2 = get_used_disks_for_table(node2, "replicated_table_for_download")
@@ -1765,7 +1765,6 @@ def test_kill_while_insert(start_cluster):
         )
 
         data = []
-        dates = []
         for i in range(10):
             data.append(get_random_string(1024 * 1024))  # 1MB value
         node1.query(
@@ -1780,7 +1779,7 @@ def test_kill_while_insert(start_cluster):
         def ignore_exceptions(f, *args):
             try:
                 f(*args)
-            except:
+            except Exception:
                 """(っಠ‿ಠ)っ"""
 
         start_time = time.time()
@@ -1802,7 +1801,7 @@ def test_kill_while_insert(start_cluster):
 
         try:
             long_select.join()
-        except:
+        except Exception:
             """"""
 
         assert node1.query(
@@ -1812,7 +1811,7 @@ def test_kill_while_insert(start_cluster):
     finally:
         try:
             node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        except:
+        except Exception:
             """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
 
@@ -2035,7 +2034,7 @@ def _check_merges_are_working(node, storage_policy, volume, shall_work):
                         name=name, volume=volume
                     )
                 )
-            except:
+            except Exception:
                 """Ignore 'nothing to move'."""
 
         expected_disks = set(

@@ -1,4 +1,3 @@
-from minio import Minio
 import glob
 import os
 import json

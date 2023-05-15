@@ -15,6 +15,8 @@ import sys
 import os
 import time
 import logging
+import clickhouse_grpc_pb2
+import clickhouse_grpc_pb2_grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.client import Client, QueryRuntimeException
 from kazoo.exceptions import NodeExistsError
@@ -56,8 +58,6 @@ run_and_check(
 )
 
 sys.path.append(str(gen_dir))
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 
 @pytest.fixture(name="cluster", scope="module")

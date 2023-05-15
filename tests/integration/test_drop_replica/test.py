@@ -1,4 +1,3 @@
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -169,7 +168,7 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 != None
+    assert exists_replica_1_1 is not None
 
     ## If you want to drop a inactive/stale replicate table that does not have a local replica, you can following syntax(ZKPATH):
     node_1_3.query(
@@ -183,7 +182,7 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 == None
+    assert exists_replica_1_1 is None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
     exists_replica_1_1 = check_exists(
@@ -192,7 +191,7 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 == None
+    assert exists_replica_1_1 is None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
     exists_replica_1_1 = check_exists(
@@ -201,7 +200,7 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 == None
+    assert exists_replica_1_1 is None
 
     node_1_3.query(
         "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test3/{shard}/replicated/test_table'".format(
@@ -214,7 +213,7 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 == None
+    assert exists_replica_1_1 is None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1'")
     exists_replica_1_1 = check_exists(
@@ -223,4 +222,4 @@ def test_drop_replica(start_cluster):
             shard=1, replica="node_1_1"
         ),
     )
-    assert exists_replica_1_1 == None
+    assert exists_replica_1_1 is None

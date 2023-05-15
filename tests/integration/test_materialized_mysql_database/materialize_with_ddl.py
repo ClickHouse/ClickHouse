@@ -5,11 +5,8 @@ import pytest
 from helpers.network import PartitionManager
 import logging
 from helpers.client import QueryRuntimeException
-from helpers.cluster import get_docker_compose_path, run_and_check
-import random
 
 import threading
-from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -1348,7 +1345,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         clickhouse_node.cluster.restart_service(service_name)
     finally:
-        with pytest.raises(QueryRuntimeException) as exception:
+        with pytest.raises(QueryRuntimeException):
             time.sleep(2)
             clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
 

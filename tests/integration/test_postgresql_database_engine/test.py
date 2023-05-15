@@ -1,10 +1,7 @@
 import pytest
-import psycopg2
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -273,8 +270,8 @@ def test_postgresql_database_with_schema(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
@@ -291,7 +288,7 @@ def test_predefined_connection_configuration(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
 
@@ -306,7 +303,7 @@ def test_predefined_connection_configuration(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number from numbers(200)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "200"
     )
 
@@ -324,7 +321,7 @@ def test_predefined_connection_configuration(started_cluster):
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres3, port=5432)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     node1.query(
@@ -334,13 +331,13 @@ def test_predefined_connection_configuration(started_cluster):
         """
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     assert node1.contains_in_log("Cached table `test_table`")
 
     node1.query("DROP DATABASE postgres_database")
-    cursor.execute(f"DROP TABLE test_table ")
+    cursor.execute("DROP TABLE test_table ")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
@@ -357,7 +354,7 @@ def test_postgres_database_old_syntax(started_cluster):
     )
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
-    cursor.execute(f"DROP TABLE test_table")
+    cursor.execute("DROP TABLE test_table")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
 
 
@@ -380,7 +377,7 @@ def test_postgresql_fetch_tables(started_cluster):
     assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
     assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
 
-    cursor.execute(f"DROP TABLE table3")
+    cursor.execute("DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 

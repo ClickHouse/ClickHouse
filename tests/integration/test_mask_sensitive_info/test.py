@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+
 import pytest
-import random, string
+import random
+import string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
+
 node = cluster.add_instance(
     "node",
     main_configs=[
@@ -134,14 +138,14 @@ def test_create_table():
         f"MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
         f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
         f"MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}')",
-        f"S3('http://minio1:9001/root/data/test1.csv')",
-        f"S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
-        f"S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
+        "S3('http://minio1:9001/root/data/test1.csv')",
+        "S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+        "S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test4.csv', 'minio', '{password}', 'CSV')",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '{password}', 'CSV', 'gzip')",
         f"MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
         f"MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '{password}', table = 'mysql_table', user = 'mysql_user')",
-        f"MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
+        "MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
         f"PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '{password}')",
         f"MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '{password}')",
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
@@ -232,28 +236,28 @@ def test_table_functions():
         f"mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
         f"postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
         f"mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}', 'x int')",
-        f"s3('http://minio1:9001/root/data/test1.csv')",
-        f"s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+        "s3('http://minio1:9001/root/data/test1.csv')",
+        "s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
         f"s3('http://minio1:9001/root/data/test3.csv', 'minio', '{password}')",
-        f"s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
-        f"s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
+        "s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
+        "s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
         f"s3('http://minio1:9001/root/data/test6.csv', 'minio', '{password}', 'CSV')",
         f"s3('http://minio1:9001/root/data/test7.csv', 'minio', '{password}', 'CSV', 'x int')",
         f"s3('http://minio1:9001/root/data/test8.csv.gz', 'minio', '{password}', 'CSV', 'x int', 'gzip')",
         f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test1.csv', 'minio', '{password}')",
-        f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
+        "s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
         f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test3.csv', 'minio', '{password}', 'CSV')",
-        f"remote('127.{{2..11}}', default.remote_table)",
-        f"remote('127.{{2..11}}', default.remote_table, rand())",
-        f"remote('127.{{2..11}}', default.remote_table, 'remote_user')",
+        "remote('127.{2..11}', default.remote_table)",
+        "remote('127.{2..11}', default.remote_table, rand())",
+        "remote('127.{2..11}', default.remote_table, 'remote_user')",
         f"remote('127.{{2..11}}', default.remote_table, 'remote_user', '{password}')",
-        f"remote('127.{{2..11}}', default.remote_table, 'remote_user', rand())",
+        "remote('127.{2..11}', default.remote_table, 'remote_user', rand())",
         f"remote('127.{{2..11}}', default.remote_table, 'remote_user', '{password}', rand())",
         f"remote('127.{{2..11}}', 'default.remote_table', 'remote_user', '{password}', rand())",
         f"remote('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}', rand())",
         f"remote('127.{{2..11}}', numbers(10), 'remote_user', '{password}', rand())",
         f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}')",
-        f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', rand())",
+        "remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
         f"mysql(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
         f"postgresql(named_collection_2, password = '{password}', host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user')",
         f"s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '{password}')",

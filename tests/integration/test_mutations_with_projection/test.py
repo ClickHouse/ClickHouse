@@ -81,8 +81,8 @@ def test_mutations_with_multi_level_merge_of_projections(started_cluster):
 
         assert (count_and_changed(), all_done) == (["500000,500000"], True)
         assert instance_test_mutations.query(
-            f"SELECT DISTINCT arraySort(projections) FROM system.parts WHERE table = 'video_log' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVRaw"
+            "SELECT DISTINCT arraySort(projections) FROM system.parts WHERE table = 'video_log' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVRaw"
         ).splitlines() == ["['p_agg','p_norm']"]
 
     finally:
-        instance_test_mutations.query(f"""DROP TABLE video_log""")
+        instance_test_mutations.query("""DROP TABLE video_log""")

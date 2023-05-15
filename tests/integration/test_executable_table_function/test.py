@@ -1,12 +1,10 @@
 import os
 import sys
-
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -301,7 +299,7 @@ def test_executable_storage_input_slow_python(started_cluster):
     node.query("DROP TABLE test_table")
 
 
-def test_executable_function_input_multiple_pipes_python(started_cluster):
+def test_executable_storage_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
 
     query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_multiple_pipes.py', 'TabSeparated', {source})"

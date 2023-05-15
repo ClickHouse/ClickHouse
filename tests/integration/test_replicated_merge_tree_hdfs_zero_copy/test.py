@@ -1,18 +1,15 @@
 import pytest
+import logging
+import time
+from pyhdfs import HdfsClient
+from string import Template
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 # FIXME This test is too flaky
 # https://github.com/ClickHouse/ClickHouse/issues/42561
 
 pytestmark = pytest.mark.skip
-
-import logging
-from string import Template
-import time
-
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-
-from pyhdfs import HdfsClient
 
 SHARDS = 2
 FILES_OVERHEAD_PER_TABLE = 1  # format_version.txt

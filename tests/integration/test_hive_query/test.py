@@ -1,16 +1,13 @@
+import os
+import time
+import logging
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 # FIXME This test is too flaky
 # https://github.com/ClickHouse/ClickHouse/issues/43541
 
 pytestmark = pytest.mark.skip
-
-import logging
-import os
-
-import time
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())

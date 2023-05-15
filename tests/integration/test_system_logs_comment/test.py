@@ -23,7 +23,7 @@ def test_system_logs_comment():
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <engine>ENGINE = MergeTree

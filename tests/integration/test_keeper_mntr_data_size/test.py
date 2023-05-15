@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import random
 import string
-from kazoo.client import KazooClient, KazooState
-
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 
@@ -77,7 +76,7 @@ def test_mntr_data_size_after_restart(started_cluster):
             get_line_from_mntr(mntr_result, "zk_ephemerals_count")
             == "zk_ephemerals_count\t0"
         )
-        assert line_size_before != None
+        assert line_size_before is not None
 
         restart_clickhouse()
 
@@ -103,5 +102,5 @@ def test_mntr_data_size_after_restart(started_cluster):
             if node_zk is not None:
                 node_zk.stop()
                 node_zk.close()
-        except:
+        except Exception:
             pass

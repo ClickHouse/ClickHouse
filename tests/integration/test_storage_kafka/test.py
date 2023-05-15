@@ -197,7 +197,6 @@ def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messa
 def kafka_produce_protobuf_messages_no_delimeters(
     kafka_cluster, topic, start_index, num_messages
 ):
-    data = ""
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2280,7 +2279,7 @@ def test_kafka_virtual_columns2(kafka_cluster):
         "kafka.*Committed offset 2.*virt2_[01]", repetitions=4, look_behind_lines=6000
     )
 
-    members = describe_consumer_group(kafka_cluster, "virt2")
+    describe_consumer_group(kafka_cluster, "virt2")
     # pprint.pprint(members)
     # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
     # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
@@ -3695,7 +3694,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         # prepend empty value when supported
         if format_opts.get("supports_empty_value", False):
             data_prefix = data_prefix + [""]
-        if format_opts.get("printable", False) == False:
+        if format_opts.get("printable", False) is False:
             raw_message = "hex(_raw_message)"
         kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         instance.query(
@@ -4011,7 +4010,7 @@ def test_kafka_predefined_configuration(kafka_cluster):
     kafka_produce(kafka_cluster, topic_name, messages)
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.kafka (key UInt64, value UInt64) ENGINE = Kafka(kafka1, kafka_format='CSV');
         """
     )

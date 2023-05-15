@@ -1,14 +1,13 @@
 import os
 import sys
 import time
-from contextlib import contextmanager
-
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from contextlib import contextmanager
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.fixture(scope="module")

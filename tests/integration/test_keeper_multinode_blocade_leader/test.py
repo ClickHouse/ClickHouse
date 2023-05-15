@@ -1,15 +1,13 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
@@ -25,8 +23,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 """
 In this test, we blockade RAFT leader and check that the whole system is
@@ -377,7 +373,7 @@ def test_blocade_leader_twice(started_cluster):
                     "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
                 )
                 assert False, "Node3 became leader?"
-            except Exception as ex:
+            except Exception:
                 time.sleep(0.5)
 
         for i in range(10):
@@ -386,7 +382,7 @@ def test_blocade_leader_twice(started_cluster):
                     "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
                 )
                 assert False, "Node2 became leader?"
-            except Exception as ex:
+            except Exception:
                 time.sleep(0.5)
 
     for n, node in enumerate([node1, node2, node3]):

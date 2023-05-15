@@ -3,7 +3,6 @@
 import os
 import time
 
-import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
 

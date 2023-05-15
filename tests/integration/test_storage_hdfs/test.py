@@ -1,4 +1,3 @@
-import os
 
 import pytest
 import time
@@ -336,7 +335,6 @@ def test_truncate_table(started_cluster):
 
 
 def test_partition_by(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     file_name = "test_{_partition_id}"
@@ -380,10 +378,9 @@ def test_partition_by(started_cluster):
 
 
 def test_seekable_formats(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
+        "hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
     )
     node1.query(
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)"
@@ -392,7 +389,7 @@ def test_seekable_formats(started_cluster):
     result = node1.query(f"SELECT count() FROM {table_function}")
     assert int(result) == 5000000
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
     node1.query(
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)"
     )
@@ -418,24 +415,24 @@ def test_read_table_with_default(started_cluster):
 
 def test_schema_inference(started_cluster):
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)"
+        "insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
+    result = node1.query("desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
     result = node1.query(
-        f"select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')"
+        "select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')"
     )
     assert int(result) == 5000000
 
     node1.query(
-        f"create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')"
+        "create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')"
     )
-    result = node1.query(f"desc schema_inference")
+    result = node1.query("desc schema_inference")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
-    result = node1.query(f"select count(*) from schema_inference")
+    result = node1.query("select count(*) from schema_inference")
     assert int(result) == 5000000
 
 
@@ -472,87 +469,85 @@ def test_hdfs_directory_not_exist(started_cluster):
 
 
 def test_overwrite(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_overwrite as {table_function}")
     node1.query(
-        f"insert into test_overwrite select number, randomString(100) from numbers(5)"
+        "insert into test_overwrite select number, randomString(100) from numbers(5)"
     )
     node1.query_and_get_error(
-        f"insert into test_overwrite select number, randomString(100) FROM numbers(10)"
+        "insert into test_overwrite select number, randomString(100) FROM numbers(10)"
     )
     node1.query(
-        f"insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1"
+        "insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_overwrite")
+    result = node1.query("select count() from test_overwrite")
     assert int(result) == 10
 
 
 def test_multiple_inserts(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_multiple_inserts as {table_function}")
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(10)"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings hdfs_create_new_file_on_insert=1"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings hdfs_create_new_file_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_multiple_inserts")
+    result = node1.query("select count() from test_multiple_inserts")
     assert int(result) == 60
 
-    result = node1.query(f"drop table test_multiple_inserts")
+    result = node1.query("drop table test_multiple_inserts")
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/data_multiple_inserts.gz', 'Parquet', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/data_multiple_inserts.gz', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_multiple_inserts as {table_function}")
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(10)"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(10)"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(20) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(20) settings hdfs_create_new_file_on_insert=1"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(30) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(30) settings hdfs_create_new_file_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_multiple_inserts")
+    result = node1.query("select count() from test_multiple_inserts")
     assert int(result) == 60
 
 
 def test_format_detection(started_cluster):
     node1.query(
-        f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
+        "create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
     )
-    node1.query(f"insert into arrow_table select 1")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    node1.query("insert into arrow_table select 1")
+    result = node1.query("select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
     assert int(result) == 1
 
 
 def test_schema_inference_with_globs(started_cluster):
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        "insert into table function hdfs('hdfs://hdfs1:9000/data1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
+        "insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
+    result = node1.query("desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
+        "select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        "insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
 
     filename = "data{1,3}.jsoncompacteachrow"
@@ -564,11 +559,11 @@ def test_schema_inference_with_globs(started_cluster):
     assert "All attempts to extract table structure from files failed" in result
 
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+        "insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
     )
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
+        "desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
     )
 
     assert (
@@ -578,13 +573,13 @@ def test_schema_inference_with_globs(started_cluster):
 
 def test_insert_select_schema_inference(started_cluster):
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
+        "insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/test.native.zst')")
+    result = node1.query("desc hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert result.strip() == "x\tUInt64"
 
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
+    result = node1.query("select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
 
 
@@ -616,10 +611,9 @@ def test_cluster_macro(started_cluster):
 
 
 def test_virtual_columns_2(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
+        "hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
     )
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
@@ -627,7 +621,7 @@ def test_virtual_columns_2(started_cluster):
     assert result.strip() == "hdfs://hdfs1:9000/parquet_2"
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
+        "hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
     )
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
@@ -702,7 +696,7 @@ def run_describe_query(node, file):
 def test_schema_inference_cache(started_cluster):
     node1.query("system drop schema cache")
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -714,7 +708,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -722,7 +716,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_invalidations(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -734,7 +728,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache1.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -766,7 +760,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -774,7 +768,7 @@ def test_schema_inference_cache(started_cluster):
     run_describe_query(node1, files)
     check_cache_hits(node1, files)
 
-    node1.query(f"system drop schema cache for hdfs")
+    node1.query("system drop schema cache for hdfs")
     check_cache(node1, [])
 
     run_describe_query(node1, files)
@@ -790,7 +784,7 @@ def test_schema_inference_cache(started_cluster):
 def test_hdfsCluster_skip_unavailable_shards(started_cluster):
     # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
     hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
+    started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/skip_unavailable_shards", data)
 
@@ -804,7 +798,7 @@ def test_hdfsCluster_skip_unavailable_shards(started_cluster):
 
 def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
+    started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/unskip_unavailable_shards", data)
 

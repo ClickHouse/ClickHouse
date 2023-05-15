@@ -1,15 +1,14 @@
+#!/usr/bin/env python3
+
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import socket
 import struct
-
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 from kazoo.client import KazooClient
 
-# from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
-
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True
 )
@@ -49,7 +48,7 @@ def destroy_zk_client(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 
@@ -168,11 +167,11 @@ def test_session_close_shutdown(started_cluster):
     eph_node = "/test_node"
     node2_zk.create(eph_node, ephemeral=True)
     node1_zk.sync(eph_node)
-    assert node1_zk.exists(eph_node) != None
+    assert node1_zk.exists(eph_node) is not None
 
     # shutdown while session is active
     node2.stop_clickhouse()
 
-    assert node1_zk.exists(eph_node) == None
+    assert node1_zk.exists(eph_node) is None
 
     node2.start_clickhouse()

@@ -1,6 +1,5 @@
 import os
 import pytest
-import socket
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
 import time
@@ -22,7 +21,7 @@ def get_nodes():
                 f"node{i+1}",
                 main_configs=[
                     f"configs/enable_keeper{i+1}.xml",
-                    f"configs/use_keeper.xml",
+                    "configs/use_keeper.xml",
                 ],
                 stay_alive=True,
             )
@@ -133,5 +132,5 @@ def test_cluster_recovery(started_cluster):
         try:
             for zk_conn in node_zks:
                 close_zk(zk_conn)
-        except:
+        except Exception:
             pass

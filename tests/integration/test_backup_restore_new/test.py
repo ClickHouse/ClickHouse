@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import glob
 import re
 import random
@@ -371,18 +370,14 @@ def test_incremental_backup_after_renaming_table():
     # Files in a base backup can be searched by checksum, so an incremental backup with a renamed table actually
     # contains only its changed metadata.
     assert (
-        os.path.isdir(os.path.join(get_path_to_backup(backup_name), "metadata")) == True
+        os.path.isdir(os.path.join(get_path_to_backup(backup_name), "metadata")) is True
     )
-    assert os.path.isdir(os.path.join(get_path_to_backup(backup_name), "data")) == True
+    assert os.path.isdir(os.path.join(get_path_to_backup(backup_name), "data")) is True
     assert (
-        os.path.isdir(
-            os.path.join(get_path_to_backup(incremental_backup_name), "metadata")
-        )
-        == True
+        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "metadata")) is True
     )
     assert (
-        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "data"))
-        == False
+        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "data")) is False
     )
 
     instance.query("DROP TABLE test.table2")
@@ -518,7 +513,7 @@ def test_backup_not_found_or_already_exists():
 
 
 def test_file_engine():
-    backup_name = f"File('/backups/file/')"
+    backup_name = "File('/backups/file/')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -549,7 +544,7 @@ def test_database():
 
 
 def test_zip_archive():
-    backup_name = f"Disk('backups', 'archive.zip')"
+    backup_name = "Disk('backups', 'archive.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -565,7 +560,7 @@ def test_zip_archive():
 
 
 def test_zip_archive_with_settings():
-    backup_name = f"Disk('backups', 'archive_with_settings.zip')"
+    backup_name = "Disk('backups', 'archive_with_settings.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -583,7 +578,7 @@ def test_zip_archive_with_settings():
 
 
 def test_zip_archive_with_bad_compression_method():
-    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.zip')"
+    backup_name = "Disk('backups', 'archive_with_bad_compression_method.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -1108,7 +1103,7 @@ def test_projection():
     create_and_fill_table(n=3)
 
     instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
-    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+    instance.query("INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
 
     assert (
         instance.query(
@@ -1301,7 +1296,7 @@ def test_operation_id():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='first'",
+        "SELECT status, error FROM system.backups WHERE id='first'",
         TSV([["BACKUP_CREATED", ""]]),
     )
 
@@ -1316,7 +1311,7 @@ def test_operation_id():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='second'",
+        "SELECT status, error FROM system.backups WHERE id='second'",
         TSV([["RESTORED", ""]]),
     )
 

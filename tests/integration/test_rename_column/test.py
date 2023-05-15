@@ -177,7 +177,7 @@ def insert(
                     )
                 )
             node.query(";\n".join(query))
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -216,7 +216,7 @@ def select(
                     ):
                         continue
                     assert r == expected_result
-            except QueryRuntimeException as ex:
+            except QueryRuntimeException:
                 if not ignore_exception:
                     raise
             break
@@ -232,7 +232,7 @@ def rename_column(
                     table_name=table_name, name=name, new_name=new_name
                 )
             )
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -247,7 +247,7 @@ def rename_column_on_cluster(
                     table_name=table_name, name=name, new_name=new_name
                 )
             )
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -262,7 +262,7 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
                     table_name=table_name, move_part=move_part, move_volume=move_volume
                 )
             )
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 

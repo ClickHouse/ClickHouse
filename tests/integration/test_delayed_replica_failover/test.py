@@ -1,13 +1,11 @@
 import os
 import sys
 import time
-
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 cluster = ClickHouseCluster(__file__)
 
@@ -103,7 +101,7 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
             try:
                 node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
                 time.sleep(0.5)
-            except:
+            except Exception:
                 break
         else:
             raise Exception("Connection with zookeeper was not lost")
@@ -145,7 +143,7 @@ SELECT count() FROM distributed SETTINGS
 """
                 )
                 time.sleep(0.5)
-            except:
+            except Exception:
                 break
         else:
             raise Exception("Didn't raise when stale replicas are not allowed")

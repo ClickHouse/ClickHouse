@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
-import time
-from kazoo.client import KazooClient, KazooState
-
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 
@@ -104,7 +101,7 @@ def test_state_after_restart(started_cluster):
             if node_zk2 is not None:
                 node_zk2.stop()
                 node_zk2.close()
-        except:
+        except Exception:
             pass
 
 
@@ -159,5 +156,5 @@ def test_ephemeral_after_restart(started_cluster):
             if node_zk2 is not None:
                 node_zk2.stop()
                 node_zk2.close()
-        except:
+        except Exception:
             pass

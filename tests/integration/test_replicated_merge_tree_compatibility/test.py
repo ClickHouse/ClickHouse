@@ -67,7 +67,7 @@ def test_replicated_merge_tree_defaults_compatibility(started_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
     exists_replica_1 = zk.exists("/clickhouse/tables/test/table/replicas/node1")
-    assert exists_replica_1 == None
+    assert exists_replica_1 is None
 
     node1.restart_with_latest_version()
     node2.restart_with_latest_version()

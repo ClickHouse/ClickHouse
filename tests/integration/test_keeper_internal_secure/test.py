@@ -2,10 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import random
-import string
-import os
-import time
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -38,8 +35,6 @@ node3 = cluster.add_instance(
         "configs/rootCA.pem",
     ],
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -79,5 +74,5 @@ def test_secure_raft_works(started_cluster):
             for zk_conn in [node1_zk, node2_zk, node3_zk]:
                 zk_conn.stop()
                 zk_conn.close()
-        except:
+        except Exception:
             pass

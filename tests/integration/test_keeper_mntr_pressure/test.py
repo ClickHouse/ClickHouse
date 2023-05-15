@@ -3,15 +3,8 @@
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
 import pytest
-import random
-import string
-import os
-import time
-from io import StringIO
-import socket
 import threading
 
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

@@ -99,8 +99,7 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i], i, i
-            )
+                i, uuids[i], )
         )
 
         result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
@@ -135,7 +134,7 @@ def test_usage(cluster, node_name):
 
 
 def test_incorrect_usage(cluster):
-    node1 = cluster.instances["node1"]
+    cluster.instances["node1"]
     node2 = cluster.instances["node3"]
     global uuids
     node2.query(
@@ -177,8 +176,7 @@ def test_cache(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
-                i, uuids[i], i, i
-            )
+                i, uuids[i], )
         )
 
         result = node2.query(

@@ -1,14 +1,10 @@
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 import pyspark
 import logging
 import os
-import json
 import pytest
-import time
-import glob
 
 from pyspark.sql.types import (
     StructType,
@@ -16,17 +12,14 @@ from pyspark.sql.types import (
     StringType,
     IntegerType,
     DateType,
-    TimestampType,
     BooleanType,
     ArrayType,
 )
-from pyspark.sql.functions import current_timestamp
 from datetime import datetime
 from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
-from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
 
-from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+from helpers.s3_tools import prepare_s3_bucket, upload_directory
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -173,7 +166,7 @@ def test_single_iceberg_file(started_cluster, format_version):
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
 
-    files = upload_directory(
+    upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 

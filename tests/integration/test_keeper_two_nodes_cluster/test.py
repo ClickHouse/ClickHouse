@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
@@ -22,8 +19,6 @@ node2 = cluster.add_instance(
     main_configs=["configs/enable_keeper2.xml", "configs/use_keeper.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +76,7 @@ def test_read_write_two_nodes(started_cluster):
             for zk_conn in [node1_zk, node2_zk]:
                 zk_conn.stop()
                 zk_conn.close()
-        except:
+        except Exception:
             pass
 
 
@@ -110,14 +105,14 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
                 node1_zk = get_fake_zk("node1")
                 node2_zk = get_fake_zk("node2")
                 break
-            except:
+            except Exception:
                 time.sleep(0.5)
 
         for i in range(100):
             try:
                 node1_zk.create("/test_after_block1", b"somedata12")
                 break
-            except:
+            except Exception:
                 time.sleep(0.1)
         else:
             raise Exception("node1 cannot recover after blockade")
@@ -128,7 +123,7 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
             try:
                 node2_zk.create("/test_after_block2", b"somedata12")
                 break
-            except:
+            except Exception:
                 time.sleep(0.1)
         else:
             raise Exception("node2 cannot recover after blockade")
@@ -153,5 +148,5 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
             for zk_conn in [node1_zk, node2_zk]:
                 zk_conn.stop()
                 zk_conn.close()
-        except:
+        except Exception:
             pass

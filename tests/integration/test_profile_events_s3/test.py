@@ -111,20 +111,20 @@ def get_minio_stat(cluster):
     ).text.split("\n")
     for line in stat:
         x = re.search(r"s3_requests_total(\{.*\})?\s(\d+)(\s.*)?", line)
-        if x != None:
+        if x is not None:
             y = re.search('.*api="(get|list|head|select).*', x.group(1))
-            if y != None:
+            if y is not None:
                 result["get_requests"] += int(x.group(2))
             else:
                 result["set_requests"] += int(x.group(2))
         x = re.search(r"s3_errors_total(\{.*\})?\s(\d+)(\s.*)?", line)
-        if x != None:
+        if x is not None:
             result["errors"] += int(x.group(2))
         x = re.search(r"s3_rx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
-        if x != None:
+        if x is not None:
             result["tx_bytes"] += float(x.group(2))
         x = re.search(r"s3_tx_bytes_total(\{.*\})?\s([\d\.e\+\-]+)(\s.*)?", line)
-        if x != None:
+        if x is not None:
             result["rx_bytes"] += float(x.group(2))
     return result
 
@@ -234,7 +234,7 @@ def test_profile_events(cluster):
         metrics3["S3WriteRequestsCount"] - metrics2["S3WriteRequestsCount"]
         == minio3["set_requests"] - minio2["set_requests"]
     )
-    stat3 = get_query_stat(instance, query3)
+    get_query_stat(instance, query3)
 
     # With async reads profile events are not updated fully because reads are done in a separate thread.
     # for metric in stat3:

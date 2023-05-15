@@ -1,5 +1,4 @@
 import random
-import string
 import threading
 import time
 from multiprocessing.dummy import Pool
@@ -254,7 +253,7 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
-        except:
+        except Exception:
             pass
 
 
@@ -303,7 +302,6 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
         )
 
         wait_expire_1 = 12
-        wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
 
         data = []  # 10MB in total
@@ -703,7 +701,7 @@ def test_replicated_download_ttl_info(started_cluster):
         for node in (node1, node2):
             try:
                 node.query("DROP TABLE IF EXISTS {} SYNC".format(name))
-            except:
+            except Exception:
                 continue
 
 
@@ -1475,7 +1473,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
                     node1.query(
                         "ALTER TABLE {} UPDATE number = number + 1 WHERE 1".format(name)
                     )
-                except:
+                except Exception:
                     pass
 
         def alter_modify_ttl(num):
@@ -1508,7 +1506,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
                         settings={"optimize_throw_if_noop": "1"},
                     )
                     break
-                except:
+                except Exception:
                     pass
 
         p = Pool(15)
@@ -1679,7 +1677,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
                         settings={"optimize_throw_if_noop": "1"},
                     )
                     break
-                except:
+                except Exception:
                     pass
 
         for p in range(3):
@@ -1827,7 +1825,7 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
-        except:
+        except Exception:
             pass
 
 
@@ -1911,5 +1909,5 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
         try:
             node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
             node2.query("DROP TABLE IF EXISTS {} SYNC".format(name))
-        except:
+        except Exception:
             pass

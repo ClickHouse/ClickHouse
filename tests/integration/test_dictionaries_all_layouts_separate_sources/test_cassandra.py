@@ -1,17 +1,13 @@
 import os
-import math
 import pytest
+from .common import *
+from helpers.cluster import ClickHouseCluster
+from helpers.external_sources import SourceCassandra
 
 # FIXME This test is too flaky
 # https://github.com/ClickHouse/ClickHouse/issues/33006
 
 pytestmark = pytest.mark.skip
-
-from .common import *
-
-from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from helpers.external_sources import SourceCassandra
 
 SOURCE = None
 cluster = None

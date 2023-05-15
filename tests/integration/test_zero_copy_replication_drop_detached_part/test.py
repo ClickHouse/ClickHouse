@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 
-import logging
-import random
-import string
-import time
 import os
 
-from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -46,7 +41,6 @@ ORDER BY (CounterID, EventDate)"""
     node1.query("ALTER TABLE test1 DETACH PART 'all_0_0_0'")
 
     def get_path_to_detached_part(query_result):
-        part_to_disk = {}
         for row in query_result.strip().split("\n"):
             print(row)
             return row

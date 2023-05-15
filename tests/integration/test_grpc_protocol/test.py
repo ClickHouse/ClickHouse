@@ -5,10 +5,12 @@ import time
 import pytz
 import uuid
 import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
-from threading import Thread
 import gzip
 import lz4.frame
+import clickhouse_grpc_pb2
+import clickhouse_grpc_pb2_grpc
+from helpers.cluster import ClickHouseCluster, run_and_check
+from threading import Thread
 
 GRPC_PORT = 9100
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -27,11 +29,7 @@ run_and_check(
     ),
     shell=True,
 )
-
 sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
-
 
 # Utilities
 
@@ -192,7 +190,7 @@ class QueryThread(Thread):
 def start_cluster():
     cluster.start()
     try:
-        with create_channel() as channel:
+        with create_channel():
             yield cluster
 
     finally:
@@ -594,7 +592,7 @@ def test_cancel_while_processing_input():
 
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
-    assert result.cancelled == True
+    assert result.cancelled is True
 
 
 def test_cancel_while_generating_output():
@@ -608,7 +606,7 @@ def test_cancel_while_generating_output():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
     assert len(results) >= 1
-    assert results[-1].cancelled == True
+    assert results[-1].cancelled is True
     output = b""
     for result in results:
         output += result.output

@@ -1,7 +1,6 @@
 import logging
 import pytest
 import os
-import time
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -87,7 +86,7 @@ def test_default_access(cluster):
         node, "named_collection_control>1", "named_collection_control>0"
     )
     assert "named_collection_control>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert 0 == int(node.query("select count() from system.named_collections"))
@@ -96,7 +95,7 @@ def test_default_access(cluster):
         node, "named_collection_control>0", "named_collection_control>1"
     )
     assert "named_collection_control>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -109,7 +108,7 @@ def test_default_access(cluster):
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )
     assert "show_named_collections_secrets>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -122,7 +121,7 @@ def test_default_access(cluster):
         node, "show_named_collections_secrets>0", "show_named_collections_secrets>1"
     )
     assert "show_named_collections_secrets>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (

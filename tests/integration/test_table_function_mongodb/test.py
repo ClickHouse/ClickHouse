@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
-        node = cluster.add_instance(
+        cluster.add_instance(
             "node",
             with_mongo=True,
             main_configs=[

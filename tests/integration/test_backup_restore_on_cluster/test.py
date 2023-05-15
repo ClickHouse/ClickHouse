@@ -1,4 +1,3 @@
-from time import sleep
 import pytest
 import re
 import os.path
@@ -107,7 +106,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -138,7 +137,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -295,7 +294,7 @@ def test_replicated_table_with_not_synced_insert():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -325,7 +324,7 @@ def test_replicated_table_with_not_synced_merge():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -454,7 +453,7 @@ def test_keeper_value_max_size():
         settings={"backup_restore_keeper_value_max_size": 50},
     )
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -568,7 +567,7 @@ def test_required_privileges():
     node1.query("GRANT BACKUP ON tbl TO u1")
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
@@ -582,7 +581,7 @@ def test_required_privileges():
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
-    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
 
     expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl"
@@ -688,10 +687,10 @@ def test_projection():
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
     )
-    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
 
     node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
-    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+    node1.query("INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
 
     assert (
         node1.query(
@@ -703,7 +702,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(

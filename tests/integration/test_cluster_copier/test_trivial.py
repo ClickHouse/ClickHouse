@@ -9,7 +9,6 @@ from helpers.test_tools import TSV
 
 import kazoo
 import pytest
-import docker
 
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +32,7 @@ def started_cluster():
     global cluster
     try:
         for name in ["first_trivial", "second_trivial"]:
-            instance = cluster.add_instance(
+            cluster.add_instance(
                 name,
                 main_configs=["configs/conf.d/clusters_trivial.xml"],
                 user_configs=["configs_two_nodes/users.xml"],

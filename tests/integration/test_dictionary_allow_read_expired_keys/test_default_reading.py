@@ -40,9 +40,7 @@ def started_cluster():
 
 # @pytest.mark.skip(reason="debugging")
 def test_default_reading(started_cluster):
-    assert None != dictionary_node.get_process_pid(
-        "clickhouse"
-    ), "ClickHouse must be alive"
+    assert None is not dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
 
     # Key 0 is not in dictionary, so default value will be returned
 
@@ -99,9 +97,7 @@ def test_default_reading(started_cluster):
     test_helper()
 
     with PartitionManager() as pm, ClickHouseKiller(dictionary_node):
-        assert None == dictionary_node.get_process_pid(
-            "clickhouse"
-        ), "ClickHouse must be alive"
+        assert None is dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
 
         # Remove connection between main_node and dictionary for sure
         pm.heal_all()

@@ -32,7 +32,7 @@ def get_postgres_conn(
     database_name="postgres_database",
     replication=False,
 ):
-    if database == True:
+    if database is True:
         conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='mysecretpassword'"
     else:
         conn_string = (

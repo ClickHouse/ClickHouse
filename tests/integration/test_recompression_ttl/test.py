@@ -1,9 +1,9 @@
 import time
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/background_pool_config.xml"], with_zookeeper=True
 )
@@ -48,7 +48,7 @@ def optimize_final_table_until_success(node, table_name, retries=40):
                 settings={"optimize_throw_if_noop": "1"},
             )
             return True
-        except:
+        except Exception:
             time.sleep(0.5)
     else:
         return False

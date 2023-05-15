@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
-from time import sleep
 import os
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -68,4 +67,4 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
         os.path.join(current_dir, "scripts", "stress_test.py"), "stress_test.py"
     )
 
-    client.exec_in_container(["python3", f"stress_test.py", client_ip, server_ip])
+    client.exec_in_container(["python3", "stress_test.py", client_ip, server_ip])

@@ -9,7 +9,7 @@ import logging
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 psycopg2.extras.register_uuid()
 

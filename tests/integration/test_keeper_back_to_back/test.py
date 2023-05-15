@@ -1,10 +1,11 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
 import random
 import string
 import os
 import time
+from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
+from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -13,7 +14,6 @@ node = cluster.add_instance(
     with_zookeeper=True,
     use_keeper=False,
 )
-from kazoo.client import KazooClient, KazooState, KeeperState
 
 
 def get_genuine_zk():
@@ -53,7 +53,7 @@ def stop_zk(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 
@@ -119,16 +119,16 @@ def test_sequential_nodes(started_cluster):
         fake_throw = False
         try:
             genuine_zk.create("/test_sequential_nodes_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             genuine_throw = True
 
         try:
             fake_zk.create("/test_sequential_nodes_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             fake_throw = True
 
-        assert genuine_throw == True
-        assert fake_throw == True
+        assert genuine_throw is True
+        assert fake_throw is True
 
         genuine_childs_1 = list(
             sorted(genuine_zk.get_children("/test_sequential_nodes_1"))
@@ -276,8 +276,8 @@ def test_watchers(started_cluster):
 
         time.sleep(3)
 
-        assert genuine_children == None
-        assert fake_children == None
+        assert genuine_children is None
+        assert fake_children is None
 
         print("Calling genuine child")
         genuine_zk.create("/test_data_watches/child_new", b"b")
@@ -705,7 +705,7 @@ def test_concurrent_watches(started_cluster):
             fake_zk.set(global_path + "/" + str(i), b"somevalue")
             try:
                 existing_path.remove(i)
-            except:
+            except Exception:
                 pass
 
         def call(total):
@@ -715,13 +715,13 @@ def test_concurrent_watches(started_cluster):
                 try:
                     rand_num = random.choice(existing_path)
                     trigger_watch(rand_num)
-                except:
+                except Exception:
                     pass
             while existing_path:
                 try:
                     rand_num = random.choice(existing_path)
                     trigger_watch(rand_num)
-                except:
+                except Exception:
                     pass
 
         p = Pool(10)

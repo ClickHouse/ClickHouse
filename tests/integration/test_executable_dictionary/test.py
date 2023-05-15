@@ -1,13 +1,11 @@
 import os
 import sys
 import time
-
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -244,26 +242,6 @@ def test_executable_implicit_input_signalled_python(started_cluster):
             "SELECT dictGet('executable_implicit_input_signalled_pool_python', 'result', toUInt64(1))"
         )
         == "Default result\n"
-    )
-
-
-def test_executable_input_slow_python(started_cluster):
-    skip_test_msan(node)
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_python', 'result', toUInt64(1))"
-    )
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_pool_python', 'result', toUInt64(1))"
-    )
-
-
-def test_executable_implicit_input_slow_python(started_cluster):
-    skip_test_msan(node)
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_python', 'result', toUInt64(1))"
-    )
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_pool_python', 'result', toUInt64(1))"
     )
 
 

@@ -7,7 +7,7 @@ from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")

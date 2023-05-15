@@ -1,12 +1,11 @@
 import os
 import os.path as p
 import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
@@ -107,9 +106,9 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             num_hosts = len(self.instances)
 
         M = TSV.toMat(tsv_content)
-        hosts = [(l[0], l[1]) for l in M]  # (host, port)
-        codes = [l[2] for l in M]
-        messages = [l[3] for l in M]
+        hosts = [(m[0], m[1]) for m in M]  # (host, port)
+        codes = [m[2] for m in M]
+        [m[3] for m in M]
 
         assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, (
             "\n" + tsv_content

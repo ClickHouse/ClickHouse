@@ -1,11 +1,9 @@
 import os
-import math
 import pytest
 
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongoURI
 
 test_name = "mongo_uri"
@@ -57,7 +55,7 @@ def main_config(secure_connection):
 def started_cluster(secure_connection, cluster, main_config, simple_tester):
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance(
+    cluster.add_instance(
         "uri_node",
         main_configs=main_config,
         dictionaries=dictionaries,

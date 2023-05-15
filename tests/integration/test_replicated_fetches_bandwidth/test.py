@@ -4,7 +4,6 @@ import pytest
 import random
 import string
 from helpers.network import NetThroughput
-import subprocess
 import time
 import statistics
 

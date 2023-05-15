@@ -1,10 +1,4 @@
 import pytest
-
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/39185
-
-pytestmark = pytest.mark.skip
-
 import json
 import os.path as p
 import random
@@ -12,18 +6,20 @@ import subprocess
 import threading
 import logging
 import time
-from random import randrange
-import math
-
 import asyncio
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_nats_is_available, nats_connect_ssl
 from helpers.test_tools import TSV
-
 from . import nats_pb2
 
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/39185
+
+pytestmark = pytest.mark.skip
+
 cluster = ClickHouseCluster(__file__)
+
 instance = cluster.add_instance(
     "instance",
     main_configs=[

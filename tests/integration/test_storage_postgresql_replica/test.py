@@ -1,4 +1,10 @@
 import pytest
+import time
+import psycopg2
+import os.path as p
+from helpers.cluster import ClickHouseCluster
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from helpers.test_tools import TSV
 
 # FIXME Tests with MaterializedPostgresSQL are temporarily disabled
 # https://github.com/ClickHouse/ClickHouse/issues/36898
@@ -7,18 +13,8 @@ import pytest
 
 pytestmark = pytest.mark.skip
 
-import time
-import psycopg2
-import os.path as p
-
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.test_tools import TSV
-
-import threading
-
 cluster = ClickHouseCluster(__file__)
+
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/log_conf.xml"],
@@ -76,7 +72,7 @@ def check_tables_are_synchronized(
 def get_postgres_conn(
     ip, port, database=False, auto_commit=True, database_name="postgres_database"
 ):
-    if database == True:
+    if database is True:
         conn_string = "host={} port={} dbname='{}' user='postgres' password='mysecretpassword'".format(
             ip, port, database_name
         )
@@ -173,13 +169,13 @@ def test_initial_load_from_snapshot(started_cluster):
     )
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.2)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -216,7 +212,7 @@ def test_no_connection_at_startup(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -249,13 +245,13 @@ def test_detach_attach_is_ok(started_cluster):
     instance.query("ATTACH TABLE test.postgresql_replica")
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.5)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -309,7 +305,7 @@ def test_replicating_insert_queries(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -332,7 +328,7 @@ def test_replicating_delete_queries(started_cluster):
     )
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.2)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
@@ -348,7 +344,7 @@ def test_replicating_delete_queries(started_cluster):
     cursor.execute("DELETE FROM postgresql_replica WHERE key > 49;")
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.5)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
@@ -383,7 +379,7 @@ def test_replicating_update_queries(started_cluster):
     cursor.execute("UPDATE postgresql_replica SET value = value - 10;")
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.5)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
@@ -431,7 +427,7 @@ def test_resume_from_written_version(started_cluster):
     instance.query("ATTACH TABLE test.postgresql_replica")
 
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
-    while postgresql_replica_check_result(result) == False:
+    while postgresql_replica_check_result(result) is False:
         time.sleep(0.5)
         result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
 
@@ -667,7 +663,7 @@ def test_virtual_columns(started_cluster):
     )
     print(result)
     cursor.execute("DROP TABLE postgresql_replica;")
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
@@ -702,7 +698,7 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
@@ -729,7 +725,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
     n = 1
     while int(instance.query(f"select count() from test.{table_name}")) != 1:
-        sleep(1)
+        time.sleep(1)
         n += 1
         if n > 10:
             break
@@ -771,7 +767,7 @@ def test_drop_table_immediately(started_cluster):
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
     check_tables_are_synchronized("postgresql_replica")
-    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
+    instance.query("DROP TABLE test.postgresql_replica SYNC")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
+
 import pytest
-from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
-import time
+from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
 )
@@ -17,8 +16,6 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -45,7 +42,7 @@ def stop_zk(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 
@@ -77,7 +74,6 @@ def test_recover_from_snapshot(started_cluster):
         for i in range(435):
             if i % 10 == 0:
                 node1_zk.delete("/test_snapshot_multinode_recover" + str(i))
-
     finally:
         for zk in [node1_zk, node2_zk, node3_zk]:
             stop_zk(zk)

@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
+
 import os
-import os.path as p
 import pytest
 import time
 import logging
-
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 from test_library_bridge.test import create_dict_simple
 
 cluster = ClickHouseCluster(__file__)
@@ -67,7 +67,7 @@ def test_bridge_dies_with_parent(ch_cluster):
         instance.exec_in_container(
             ["kill", str(clickhouse_pid)], privileged=True, user="root"
         )
-    except:
+    except Exception:
         pass
 
     for i in range(30):

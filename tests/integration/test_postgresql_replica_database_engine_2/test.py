@@ -1,40 +1,25 @@
 import pytest
 
 import time
-import psycopg2
-import os.path as p
 import random
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.test_tools import TSV
 
-from random import randrange
-import threading
 
-from helpers.postgres_utility import get_postgres_conn
 from helpers.postgres_utility import PostgresManager
 
-from helpers.postgres_utility import create_replication_slot, drop_replication_slot
-from helpers.postgres_utility import create_postgres_schema, drop_postgres_schema
-from helpers.postgres_utility import create_postgres_table, drop_postgres_table
+from helpers.postgres_utility import create_postgres_schema
+from helpers.postgres_utility import create_postgres_table
 from helpers.postgres_utility import (
     create_postgres_table_with_schema,
-    drop_postgres_table_with_schema,
 )
 from helpers.postgres_utility import check_tables_are_synchronized
 from helpers.postgres_utility import check_several_tables_are_synchronized
 from helpers.postgres_utility import assert_nested_table_is_created
-from helpers.postgres_utility import assert_number_of_columns
 from helpers.postgres_utility import (
-    postgres_table_template,
-    postgres_table_template_2,
-    postgres_table_template_3,
-    postgres_table_template_4,
     postgres_table_template_5,
 )
-from helpers.postgres_utility import queries
 
 
 cluster = ClickHouseCluster(__file__)
@@ -252,7 +237,7 @@ def test_remove_table_from_replication(started_cluster):
     )
 
     cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"drop table if exists postgresql_replica_0;")
+    cursor.execute("drop table if exists postgresql_replica_0;")
 
     # Removing from replication table which does not exist in PostgreSQL must be ok.
     instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
@@ -263,9 +248,9 @@ def test_remove_table_from_replication(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
-    cursor.execute(f"INSERT INTO test_table SELECT 1, 2")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
+    cursor.execute("INSERT INTO test_table SELECT 1, 2")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
     )
@@ -280,7 +265,6 @@ def test_database_with_single_non_default_schema(started_cluster):
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 5
     schema_name = "test_schema"
-    materialized_db = "test_database"
     clickhouse_postgres_db = "postgres_database_with_schema"
     global insert_counter
     insert_counter = 0
@@ -630,9 +614,9 @@ def test_table_override(started_cluster):
 
 def test_materialized_view(started_cluster):
     cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
-    cursor.execute(f"INSERT INTO test_table SELECT 1, 2")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
+    cursor.execute("INSERT INTO test_table SELECT 1, 2")
     instance.query("DROP DATABASE IF EXISTS test_database")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
@@ -643,7 +627,7 @@ def test_materialized_view(started_cluster):
         "CREATE MATERIALIZED VIEW mv ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT * FROM test_database.test_table"
     )
     assert "1\t2" == instance.query("SELECT * FROM mv").strip()
-    cursor.execute(f"INSERT INTO test_table SELECT 3, 4")
+    cursor.execute("INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     pg_manager.drop_materialized_db()

@@ -10,7 +10,6 @@ import logging
 import docker
 import pymysql.connections
 import pytest
-from docker.models.containers import Container
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -504,8 +503,7 @@ def test_mysql_federated(started_cluster):
             -e "CREATE TABLE mysql_federated.test(`col` int UNSIGNED) ENGINE=FEDERATED CONNECTION='clickhouse';"
             -e "SELECT * FROM mysql_federated.test ORDER BY col;"
         """.format(
-                host=started_cluster.get_instance_ip("node"), port=server_port
-            ),
+                ),
             demux=True,
         )
 
@@ -525,8 +523,7 @@ def test_mysql_federated(started_cluster):
             -e "INSERT INTO mysql_federated.test VALUES (0), (1), (5);"
             -e "SELECT * FROM mysql_federated.test ORDER BY col;"
         """.format(
-                host=started_cluster.get_instance_ip("node"), port=server_port
-            ),
+                ),
             demux=True,
         )
 

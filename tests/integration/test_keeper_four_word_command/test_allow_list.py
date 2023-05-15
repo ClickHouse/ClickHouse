@@ -1,7 +1,8 @@
 import socket
 import pytest
-from helpers.cluster import ClickHouseCluster
 import time
+from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -17,8 +18,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/keeper_config_with_allow_list_all.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +36,7 @@ def destroy_zk_client(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 

@@ -1,10 +1,8 @@
-import os
-import os.path as p
-import pytest
-import time
-import logging
+#!/usr/bin/env python3
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+import os
+import pytest
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -38,9 +36,6 @@ def ch_cluster():
     try:
         cluster.start()
         instance.query("CREATE DATABASE test")
-        container_lib_path = (
-            "/etc/clickhouse-server/config.d/dictionarites_lib/dict_lib.cpp"
-        )
 
         instance.copy_file_to_container(
             os.path.join(

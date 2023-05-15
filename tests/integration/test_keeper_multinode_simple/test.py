@@ -1,15 +1,13 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
@@ -25,8 +23,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -64,7 +60,7 @@ def test_read_write_multinode(started_cluster):
         node3_zk = get_fake_zk("node3")
 
         # Cleanup
-        if node1_zk.exists("/test_read_write_multinode_node1") != None:
+        if node1_zk.exists("/test_read_write_multinode_node1") is not None:
             node1_zk.delete("/test_read_write_multinode_node1")
 
         node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
@@ -98,7 +94,7 @@ def test_read_write_multinode(started_cluster):
             for zk_conn in [node1_zk, node2_zk, node3_zk]:
                 zk_conn.stop()
                 zk_conn.close()
-        except:
+        except Exception:
             pass
 
 
@@ -110,7 +106,7 @@ def test_watch_on_follower(started_cluster):
         node3_zk = get_fake_zk("node3")
 
         # Cleanup
-        if node1_zk.exists("/test_data_watches") != None:
+        if node1_zk.exists("/test_data_watches") is not None:
             node1_zk.delete("/test_data_watches")
 
         node1_zk.create("/test_data_watches")
@@ -159,7 +155,7 @@ def test_watch_on_follower(started_cluster):
             for zk_conn in [node1_zk, node2_zk, node3_zk]:
                 zk_conn.stop()
                 zk_conn.close()
-        except:
+        except Exception:
             pass
 
 
@@ -172,7 +168,7 @@ def test_session_expiration(started_cluster):
         print("Node3 session id", node3_zk._session_id)
 
         # Cleanup
-        if node3_zk.exists("/test_ephemeral_node") != None:
+        if node3_zk.exists("/test_ephemeral_node") is not None:
             node3_zk.delete("/test_ephemeral_node")
 
         node3_zk.create("/test_ephemeral_node", b"world", ephemeral=True)
@@ -203,9 +199,9 @@ def test_session_expiration(started_cluster):
                 try:
                     zk_conn.stop()
                     zk_conn.close()
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
 
@@ -216,7 +212,7 @@ def test_follower_restart(started_cluster):
         node3_zk = get_fake_zk("node3")
 
         # Cleanup
-        if node1_zk.exists("/test_restart_node") != None:
+        if node1_zk.exists("/test_restart_node") is not None:
             node1_zk.delete("/test_restart_node")
 
         node1_zk.create("/test_restart_node", b"hello")
@@ -234,9 +230,9 @@ def test_follower_restart(started_cluster):
                 try:
                     zk_conn.stop()
                     zk_conn.close()
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
 

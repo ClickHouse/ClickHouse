@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import time
 import csv
 import re
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -15,8 +18,6 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
-
-from kazoo.client import KazooClient
 
 
 def wait_nodes():
@@ -39,7 +40,7 @@ def destroy_zk_client(zk):
         if zk:
             zk.stop()
             zk.close()
-    except:
+    except Exception:
         pass
 
 

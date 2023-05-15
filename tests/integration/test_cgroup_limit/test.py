@@ -3,8 +3,6 @@
 import os
 import math
 import subprocess
-from tempfile import NamedTemporaryFile
-import pytest
 
 
 def run_command_in_container(cmd, *args):

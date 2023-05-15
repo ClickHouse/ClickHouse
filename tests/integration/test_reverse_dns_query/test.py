@@ -1,6 +1,5 @@
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
-from time import sleep
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 import os
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()

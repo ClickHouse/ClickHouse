@@ -54,7 +54,7 @@ def test_jbod_load_balancing_round_robin(start_cluster):
         ORDER BY disk_name
         """
         )
-        parts = [l.split("\t") for l in parts.strip().split("\n")]
+        parts = [part.split("\t") for part in parts.strip().split("\n")]
         assert parts == [
             ["2", "jbod1"],
             ["1", "jbod2"],
@@ -91,7 +91,7 @@ def test_jbod_load_balancing_least_used(start_cluster):
         ORDER BY disk_name
         """
         )
-        parts = [l.split("\t") for l in parts.strip().split("\n")]
+        parts = [part.split("\t") for part in parts.strip().split("\n")]
         assert parts == [
             ["4", "jbod3"],
         ]
@@ -127,7 +127,7 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
         ORDER BY disk_name
         """
         )
-        parts = [l.split("\t") for l in parts.strip().split("\n")]
+        parts = [part.split("\t") for part in parts.strip().split("\n")]
         assert parts == [
             ["1", "jbod2"],
             ["2", "jbod3"],

@@ -1,13 +1,10 @@
 import os
 import sys
-import time
-
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -78,7 +75,7 @@ def testModelPathIsNotAConstString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -104,7 +101,7 @@ def testWrongNumberOfFeatureArguments(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin');"
@@ -124,7 +121,7 @@ def testFloatFeatureMustBeNumeric(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 'a', 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -136,7 +133,7 @@ def testCategoricalFeatureMustBeNumericOrString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate('/etc/clickhouse-server/model/simple_model.bin', 1.0, 2.0, 3, 4, 5, 6, 7, tuple(8), 9, 10, 11);"
@@ -181,7 +178,7 @@ def testInvalidLibraryPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     # temporarily move library elsewhere
     instance.exec_in_container(
@@ -214,7 +211,7 @@ def testInvalidModelPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    result = instance.query("system reload models")
+    instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate('', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);"

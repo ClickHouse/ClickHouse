@@ -571,7 +571,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query(
         "INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -586,7 +586,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query(
         "INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     node1.query_and_get_error(
         """
@@ -624,7 +624,7 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE MySQL(mysql3, port=3306);
     """
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     assert "Connection pool cannot have zero size" in node1.query_and_get_error(
         "SELECT count() FROM mysql(mysql1, table='test_table', connection_pool_size=0)"
@@ -777,7 +777,7 @@ def test_settings(started_cluster):
 
     rw_timeout = 20123001
     connect_timeout = 20123002
-    node1.query(f"SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
+    node1.query("SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )

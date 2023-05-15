@@ -417,8 +417,6 @@ def start_cluster_diff_versions():
 def test_polymorphic_parts_diff_versions(start_cluster_diff_versions):
     # Check that replication with Wide parts works between different versions.
 
-    node_old = node7
-    node_new = node8
 
     insert_random_data("polymorphic_table", node7, 100)
     node8.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)

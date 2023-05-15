@@ -157,7 +157,7 @@ def test_alter_table_columns(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    HdfsClient(hosts=cluster.hdfs_ip)
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
+
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_keeper1.xml", "configs/keeper_conf.xml"],
@@ -59,7 +57,7 @@ def delete_with_retry(node_name, path):
             zk = get_fake_zk(node_name)
             zk.delete(path)
             return
-        except:
+        except Exception:
             time.sleep(0.5)
         finally:
             zk.stop()

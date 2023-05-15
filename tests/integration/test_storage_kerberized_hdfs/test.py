@@ -1,10 +1,8 @@
 import time
 import pytest
 
-import os
 
 from helpers.cluster import ClickHouseCluster
-import subprocess
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -77,7 +75,6 @@ def test_write_storage_not_expired(started_cluster):
 
 
 def test_two_users(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     node1.query(
         "create table HDFSStorOne (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/storage_user_one', 'TSV')"
@@ -89,11 +86,11 @@ def test_two_users(started_cluster):
     )
     node1.query("insert into HDFSStorTwo values (1, 'Ideal', 74.00)")
 
-    select_read_1 = node1.query(
+    node1.query(
         "select * from hdfs('hdfs://kerberizedhdfs1:9010/user/specuser/storage_user_two', 'TSV', 'id UInt64, text String, number Float64')"
     )
 
-    select_read_2 = node1.query(
+    node1.query(
         "select * from hdfs('hdfs://suser@kerberizedhdfs1:9010/storage_user_one', 'TSV', 'id UInt64, text String, number Float64')"
     )
 
@@ -108,7 +105,7 @@ def test_read_table_expired(started_cluster):
     time.sleep(15)
 
     try:
-        select_read = node1.query(
+        node1.query(
             "select * from hdfs('hdfs://reloginuser&kerberizedhdfs1:9010/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')"
         )
         assert False, "Exception have to be thrown"

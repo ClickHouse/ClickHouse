@@ -1,12 +1,8 @@
-import time
 import contextlib
 import pymysql.cursors
 import pytest
-import os
-import subprocess
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)

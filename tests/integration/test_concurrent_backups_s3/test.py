@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 import pytest
-import re
-import os.path
 from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-import time
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

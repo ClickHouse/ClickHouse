@@ -1,11 +1,9 @@
 import logging
-import os.path as p
 import pytest
 import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from string import Template
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -155,8 +153,7 @@ def test_jdbc_delete(started_cluster):
     expected = records - 1
     actual = instance.query(
         "SELECT Str FROM jdbc('{}', 'SELECT * FROM test.test_delete')".format(
-            datasource, records
-        )
+            datasource, )
     )
     assert int(actual) == expected, "expecting {} but got {}".format(expected, actual)
 

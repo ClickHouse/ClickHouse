@@ -1,6 +1,5 @@
 import pytest
 import os
-import time
 
 from . import http_headers_echo_server
 
@@ -30,7 +29,7 @@ def run_echo_server():
 
     for _ in range(0, 10):
         ping_response = server.exec_in_container(
-            ["curl", "-s", f"http://localhost:8000/"],
+            ["curl", "-s", "http://localhost:8000/"],
             nothrow=True,
         )
 

@@ -1,11 +1,9 @@
 import os
-import math
 import pytest
 
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongo
 
 SOURCE = None
@@ -82,7 +80,7 @@ def started_cluster(
     ranged_tester,
     complex_tester,
 ):
-    SOURCE = SourceMongo(
+    SourceMongo(
         "MongoDB",
         "localhost",
         cluster.mongo_port,
@@ -94,7 +92,7 @@ def started_cluster(
     )
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node",
         main_configs=main_config,
         dictionaries=dictionaries,

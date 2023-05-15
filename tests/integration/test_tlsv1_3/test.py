@@ -1,9 +1,10 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
 import ssl
 import os.path
+import urllib.request
+import urllib.parse
+from helpers.cluster import ClickHouseCluster
+from helpers.ssl_context import WrapSSLContextWithSNI
 
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.

@@ -4,7 +4,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import time
 import os
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")

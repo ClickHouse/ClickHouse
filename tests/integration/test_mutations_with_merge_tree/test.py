@@ -224,7 +224,7 @@ def test_mutations_will_not_hang_for_non_existing_parts_sync(started_cluster):
         assert count() == [f"{numbers}"]
         assert instance_test_mutations.query(
             f"SELECT count(), sum(is_done) FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT CSV"
-        ).splitlines() == [f"34,34"]
+        ).splitlines() == ["34,34"]
 
     finally:
         instance_test_mutations.query(f"""DROP TABLE {name}""")
@@ -258,14 +258,12 @@ def test_mutations_will_not_hang_for_non_existing_parts_async(started_cluster):
                 f"SELECT count(), sum(is_done) FROM system.mutations WHERE table = '{name}' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT CSV"
             ).splitlines()
 
-        all_done = False
         for wait_times_for_mutation in range(
             100
         ):  # wait for replication 80 seconds max
             time.sleep(0.8)
 
             if count_and_sum_is_done() == ["34,34"]:
-                all_done = True
                 break
 
         print(

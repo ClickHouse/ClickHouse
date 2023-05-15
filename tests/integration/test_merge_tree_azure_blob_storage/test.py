@@ -5,8 +5,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.utility import generate_values, replace_config, SafeThread
-from azure.storage.blob import BlobServiceClient
+from helpers.utility import generate_values, replace_config
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

@@ -1,13 +1,11 @@
 import os
 import sys
 import time
-
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 cluster = ClickHouseCluster(__file__)
 NODES = {"node_" + str(i): None for i in (1, 2, 3)}

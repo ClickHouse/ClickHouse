@@ -1,9 +1,7 @@
-from email.errors import HeaderParseError
 import logging
 import os
 import csv
 import shutil
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster

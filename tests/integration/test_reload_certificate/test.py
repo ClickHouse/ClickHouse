@@ -104,7 +104,7 @@ def check_certificate_switch(
             ]
         )
         assert False
-    except:
+    except Exception:
         assert True
 
     # Change to other key
@@ -139,7 +139,7 @@ def check_certificate_switch(
             ]
         )
         assert False
-    except:
+    except Exception:
         assert True
 
 

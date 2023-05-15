@@ -62,7 +62,8 @@ uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 
 def assert_create_query(nodes, table_name, expected):
-    replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
+    def replace_uuid(x):
+        return re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
     for node in nodes:
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
@@ -169,7 +170,7 @@ def test_simple_alter_table(started_cluster, engine):
 
     full_engine = (
         engine
-        if not "Replicated" in engine
+        if "Replicated" not in engine
         else engine + "(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')"
     )
     expected = (
@@ -196,7 +197,7 @@ def test_simple_alter_table(started_cluster, engine):
 
     full_engine = (
         engine
-        if not "Replicated" in engine
+        if "Replicated" not in engine
         else engine + "(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')"
     )
     expected = (
@@ -239,7 +240,7 @@ def test_delete_from_table(started_cluster, engine):
     expected = "1\taaaa\n1\tbbbb"
 
     table_for_select = name
-    if not "Replicated" in engine:
+    if "Replicated" not in engine:
         table_for_select = "cluster('delete_from_table', {})".format(name)
     for node in [main_node, dummy_node]:
         assert_eq_with_retry(
@@ -260,13 +261,13 @@ def get_table_uuid(database, name):
 
 @pytest.fixture(scope="module", name="attachable_part")
 def fixture_attachable_part(started_cluster):
-    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query("CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
     main_node.query(
-        f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
+        "CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query("INSERT INTO testdb_attach_atomic.test VALUES (123)")
     main_node.query(
-        f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
+        "ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
     )
     table_uuid = get_table_uuid("testdb_attach_atomic", "test")
     return os.path.join(

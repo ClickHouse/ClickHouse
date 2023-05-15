@@ -7,7 +7,6 @@ from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 

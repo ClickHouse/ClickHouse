@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster

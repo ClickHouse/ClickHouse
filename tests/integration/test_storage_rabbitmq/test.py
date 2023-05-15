@@ -1,24 +1,21 @@
 import pytest
-
 import json
 import os.path as p
 import random
 import subprocess
 import threading
 import logging
+import pika
 import time
 from random import randrange
-import math
-
-import pika
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV
-
 from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
+
 instance = cluster.add_instance(
     "instance",
     main_configs=[
@@ -379,7 +376,6 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
 
     instance.wait_for_log_line("Started streaming to 2 attached views")
 
-    messages = []
     for i in range(50):
         message = json.dumps({"key": i, "value": i})
         channel.basic_publish(exchange="mv", routing_key="", body=message)
@@ -623,8 +619,6 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 
 
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
-    NUM_CONSUMERS = 10
-    NUM_QUEUES = 10
     logging.getLogger("pika").propagate = False
 
     instance.query(
@@ -701,13 +695,12 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 10
 
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
-    NUM_CONSUMERS = 4
     logging.getLogger("pika").propagate = False
 
     instance.query(
@@ -852,7 +845,6 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -915,7 +907,6 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -1377,7 +1368,6 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
             )
 
     key = "random.logs"
-    current = 0
     for msg_id in range(messages_num):
         channel.basic_publish(
             exchange="topic_exchange_testing",
@@ -1515,7 +1505,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 4 * num_tables
 
 
@@ -1963,7 +1953,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     # 4 tables, 2 consumers for each table => 8 consumer tags
     assert int(result2) == 8
 
@@ -2003,7 +1993,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
     connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
+    connection.channel()
 
     messages_num = 100000
     values = []
@@ -2422,9 +2412,9 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
 
     try:
         exists = channel.queue_declare(
-            callback, queue="rabbit_queue_drop", passive=True
+            queue="rabbit_queue_drop", passive=True
         )
-    except Exception as e:
+    except Exception:
         exists = False
 
     assert not exists
@@ -2497,7 +2487,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        messages = []
         for _ in range(messages_num):
             message = json.dumps({"key": i[0], "value": i[0]})
             channel.basic_publish(exchange="", routing_key="rabbit_queue", body=message)
@@ -2704,7 +2693,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    messages = []
     for i in range(20):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2765,8 +2753,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
 
 def test_rabbitmq_random_detach(rabbitmq_cluster):
-    NUM_CONSUMERS = 2
-    NUM_QUEUES = 2
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -2800,7 +2786,8 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
 
         messages = []
         for j in range(messages_num):
-            messages.append(json.dumps({"key": i[0], "value": i[0]}))
+            message = json.dumps({"key": i[0], "value": i[0]})
+            messages.append(message)
             i[0] += 1
             mes_id = str(i)
             channel.basic_publish(
@@ -3363,7 +3350,7 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
                     routing_key="",
                     body=json.dumps({"key": 0, "value": 0}),
                 )
-            except e:
+            except Exception as e:
                 print(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)
@@ -3441,7 +3428,7 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
                 )
                 print("Produced a message")
                 time.sleep(0.8)
-            except e:
+            except Exception as e:
                 print(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)

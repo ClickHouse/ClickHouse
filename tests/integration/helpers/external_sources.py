@@ -243,7 +243,7 @@ class SourceMongo(ExternalSource):
                 row_dict[cell_name] = self.converters[cell_name](cell_value)
             to_insert.append(row_dict)
 
-        result = tbl.insert_many(to_insert)
+        tbl.insert_many(to_insert)
 
 
 class SourceMongoURI(SourceMongo):

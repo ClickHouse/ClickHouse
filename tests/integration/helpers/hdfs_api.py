@@ -6,7 +6,6 @@ import time
 from tempfile import NamedTemporaryFile
 import requests
 import requests_kerberos as reqkerb
-import socket
 import tempfile
 import logging
 import os
@@ -92,7 +91,6 @@ class HDFSApi(object):
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
             cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(
-                instantiated_krb_conf=instantiated_krb_conf,
                 keytab=self.keytab,
                 principal=self.principal,
             )
@@ -110,10 +108,10 @@ class HDFSApi(object):
                         logging.debug(
                             "Stdout:\n{}\n".format(res.stdout.decode("utf-8"))
                         )
-                        logging.debug("Env:\n{}\n".format(env))
+                        logging.debug("Env:\n{}\n".format(os.environ))
                         raise Exception(
                             "Command {} return non-zero code {}: {}".format(
-                                args, res.returncode, res.stderr.decode("utf-8")
+                                cmd, res.returncode, res.stderr.decode("utf-8")
                             )
                         )
 
@@ -216,8 +214,7 @@ class HDFSApi(object):
                 ip=self.hdfs_ip,
                 port=self.proxy_port,
                 path=path,
-                user=self.user,
-            ),
+                ),
             allow_redirects=False,
             headers={"host": str(self.hdfs_ip)},
             params={"overwrite": "true"},
@@ -240,7 +237,6 @@ class HDFSApi(object):
 
         with open(fpath, mode="rb") as fh:
             file_data = fh.read()
-            protocol = "http"  # self.protocol
             response = self.req_wrapper(
                 requests.put,
                 201,

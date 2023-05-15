@@ -1,16 +1,13 @@
 import os
-import random
 import sys
 import time
 import kazoo
 import pytest
-import string
 import random
-from contextlib import contextmanager
+import string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-import docker
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
@@ -29,8 +26,8 @@ def generateRandomString(count):
 
 def check_all_hosts_sucesfully_executed(tsv_content, num_hosts):
     M = TSV.toMat(tsv_content)
-    hosts = [(l[0], l[1]) for l in M]  # (host, port)
-    codes = [l[2] for l in M]
+    hosts = [(m[0], m[1]) for m in M]  # (host, port)
+    codes = [m[2] for m in M]
 
     assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, "\n" + tsv_content
     assert len(set(codes)) == 1, "\n" + tsv_content

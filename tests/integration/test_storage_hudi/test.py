@@ -1,12 +1,10 @@
 import logging
 import pytest
 import os
-import json
 
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+from helpers.s3_tools import prepare_s3_bucket, upload_directory
 
 import pyspark
 from pyspark.sql.types import (
@@ -15,11 +13,9 @@ from pyspark.sql.types import (
     StringType,
     IntegerType,
     DateType,
-    TimestampType,
     BooleanType,
     ArrayType,
 )
-from pyspark.sql.functions import current_timestamp
 from datetime import datetime
 from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
@@ -79,7 +75,7 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
-    if mode is "overwrite":
+    if mode == "overwrite":
         hudi_write_mode = "insert_overwrite"
     else:
         hudi_write_mode = "upsert"

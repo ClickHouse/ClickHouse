@@ -44,7 +44,7 @@ from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from helpers.test_tools import exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
 from helpers.client import QueryRuntimeException
 
@@ -742,7 +742,7 @@ class ClickHouseCluster:
                 if unstopped_containers:
                     logging.debug(f"Left unstopped containers: {unstopped_containers}")
                 else:
-                    logging.debug(f"Unstopped containers killed.")
+                    logging.debug("Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except Exception as ex:
@@ -761,7 +761,7 @@ class ClickHouseCluster:
                 logging.debug(f"Trying to remove networks: {list_networks}")
                 run_and_check(f"docker network rm {' '.join(list_networks)}")
                 logging.debug(f"Networks removed: {list_networks}")
-        except:
+        except Exception:
             pass
 
         # Remove unused images
@@ -770,7 +770,7 @@ class ClickHouseCluster:
 
             run_and_check(["docker", "image", "prune", "-f"])
             logging.debug("Images pruned")
-        except:
+        except Exception:
             pass
 
         # Remove unused volumes
@@ -781,7 +781,7 @@ class ClickHouseCluster:
             if int(result > 0):
                 run_and_check(["docker", "volume", "prune", "-f"])
             logging.debug(f"Volumes pruned: {result}")
-        except:
+        except Exception:
             pass
 
     def get_docker_handle(self, docker_id):
@@ -2326,7 +2326,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_kafka_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
         raise Exception("Kafka is not available")
 
@@ -2448,7 +2448,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_minio_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
@@ -2502,7 +2502,7 @@ class ClickHouseCluster:
                 logging.info(
                     f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}"
                 )
-                check = self.exec_in_container(
+                self.exec_in_container(
                     self.cassandra_id,
                     [
                         "bash",
@@ -2538,7 +2538,7 @@ class ClickHouseCluster:
 
         try:
             self.cleanup()
-        except Exception as e:
+        except Exception:
             logging.warning("Cleanup failed:{e}")
 
         try:
@@ -2905,7 +2905,7 @@ class ClickHouseCluster:
                     subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         self.base_cmd + ["logs"], stdout=f
                     )
-                except Exception as e:
+                except Exception:
                     logging.debug("Unable to get logs from docker.")
                 f.seek(0)
                 for line in f:
@@ -3354,7 +3354,7 @@ class ClickHouseInstance:
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
-            except Exception as ex:
+            except Exception:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
@@ -3421,7 +3421,7 @@ class ClickHouseInstance:
 
         if result is not None:
             return result
-        raise Exception("Query {sql} did not fail".format(sql))
+        raise Exception("Query {} did not fail".format(sql))
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
@@ -3646,7 +3646,7 @@ class ClickHouseInstance:
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return
-                except Exception as e:
+                except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
                     )
@@ -3679,7 +3679,7 @@ class ClickHouseInstance:
             if time.time() > start_time + start_wait_sec:
                 break
         logging.error(
-            f"No time left to start. But process is still running. Will dump threads."
+            "No time left to start. But process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -3734,7 +3734,7 @@ class ClickHouseInstance:
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None
     ):
-        logging.debug(f"grep in log called %s", substring)
+        logging.debug("grep in log called %s", substring)
         if after is not None:
             after_opt = "-A{}".format(after)
         else:
@@ -3850,7 +3850,7 @@ class ClickHouseInstance:
             try:
                 pid = int(output.split("\n")[0].strip())
                 return pid
-            except:
+            except Exception:
                 return None
         return None
 
@@ -3906,7 +3906,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -3987,7 +3987,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 

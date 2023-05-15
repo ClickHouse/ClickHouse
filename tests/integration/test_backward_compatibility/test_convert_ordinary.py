@@ -180,24 +180,24 @@ def check_convert_all_dbs_to_atomic():
 
     # 6 tables, MVs contain 2 rows (inner tables does not match regexp)
     assert "8\t{}\n".format(8 * len("atomic")) == node.query(
-        "SELECT count(), sum(n) FROM atomic.merge".format(db)
+        "SELECT count(), sum(n) FROM atomic.merge".format()
     )
 
     node.query("DETACH TABLE ordinary.detached PERMANENTLY")
 
     node.exec_in_container(
-        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.stop_clickhouse()
     cannot_start = False
     try:
         node.start_clickhouse()
-    except:
+    except Exception:
         cannot_start = True
     assert cannot_start
 
     node.exec_in_container(
-        ["bash", "-c", f"rm /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "rm /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.start_clickhouse()
 
@@ -207,7 +207,7 @@ def check_convert_all_dbs_to_atomic():
     node.query("ATTACH TABLE ordinary.detached")
 
     node.exec_in_container(
-        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.restart_clickhouse()
 

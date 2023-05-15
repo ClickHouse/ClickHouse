@@ -47,7 +47,7 @@ def test_random_inserts(started_cluster):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY i"""
     )
 
-    with PartitionManager() as pm_random_drops:
+    with PartitionManager():
         for sacrifice in nodes:
             pass  # This test doesn't work with partition problems still
             # pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})

@@ -44,7 +44,7 @@ def test_postgres_select_insert(started_cluster):
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
     cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
 
-    result = node1.query(
+    node1.query(
         f"""
         INSERT INTO TABLE FUNCTION {table}
         SELECT number, concat('name_', toString(number)), 3 from numbers(10000)"""
@@ -67,8 +67,8 @@ def test_postgres_select_insert(started_cluster):
 
 def test_postgres_conversions(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_types")
-    cursor.execute(f"DROP TABLE IF EXISTS test_array_dimensions")
+    cursor.execute("DROP TABLE IF EXISTS test_types")
+    cursor.execute("DROP TABLE IF EXISTS test_array_dimensions")
 
     cursor.execute(
         """CREATE TABLE test_types (
@@ -169,8 +169,8 @@ def test_postgres_conversions(started_cluster):
     )
     assert result == expected
 
-    cursor.execute(f"DROP TABLE test_types")
-    cursor.execute(f"DROP TABLE test_array_dimensions")
+    cursor.execute("DROP TABLE test_types")
+    cursor.execute("DROP TABLE test_array_dimensions")
 
 
 def test_non_default_scema(started_cluster):
@@ -264,22 +264,22 @@ def test_concurrent_queries(started_cluster):
 
     def node_select(_):
         for i in range(20):
-            result = node1.query("SELECT * FROM test.test_table", user="default")
+            node1.query("SELECT * FROM test.test_table", user="default")
 
     def node_insert(_):
         for i in range(20):
-            result = node1.query(
+            node1.query(
                 "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
 
     def node_insert_select(_):
         for i in range(20):
-            result = node1.query(
+            node1.query(
                 "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
-            result = node1.query(
+            node1.query(
                 "SELECT * FROM test.test_table LIMIT 100", user="default"
             )
 
@@ -510,8 +510,8 @@ def test_postgres_on_conflict(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
 
     node1.query(
         """
@@ -521,9 +521,9 @@ def test_predefined_connection_configuration(started_cluster):
     """
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -533,12 +533,12 @@ def test_predefined_connection_configuration(started_cluster):
     """
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query("DROP TABLE test.test_table;")
     node1.query_and_get_error(
@@ -566,7 +566,7 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE PostgreSQL(postgres1, port=5432, database='postgres', table='test_table');
     """
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -575,13 +575,13 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE PostgreSQL(postgres3, port=5432);
     """
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
-    assert node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
+    assert node1.query("SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
     node1.query(
         "INSERT INTO TABLE FUNCTION postgresql(postgres1, on_conflict='ON CONFLICT DO NOTHING') SELECT number, number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
+    assert node1.query("SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
 
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
     cursor.execute("CREATE SCHEMA test_schema")
@@ -591,13 +591,13 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert (
         node1.query(
-            f"SELECT count() FROM postgresql(postgres1, schema='test_schema')"
+            "SELECT count() FROM postgresql(postgres1, schema='test_schema')"
         ).rstrip()
         == "200"
     )
 
     cursor.execute("DROP SCHEMA test_schema CASCADE")
-    cursor.execute(f"DROP TABLE test_table ")
+    cursor.execute("DROP TABLE test_table ")
 
 
 def test_where_false(started_cluster):
@@ -669,12 +669,12 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    result = node2.query(
+    node2.query(
         "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
         user="default",
     )
 
-    result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
+    node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
 
     node2.query(
         f"""

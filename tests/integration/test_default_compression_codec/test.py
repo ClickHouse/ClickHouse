@@ -2,7 +2,6 @@ import random
 import string
 import logging
 import pytest
-import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

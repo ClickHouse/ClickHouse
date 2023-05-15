@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-import time
 
 import pytest
+from helpers.cluster import ClickHouseCluster
 
 # FIXME This test is too flaky
 # https://github.com/ClickHouse/ClickHouse/issues/45887
 
 pytestmark = pytest.mark.skip
-
-from helpers.cluster import ClickHouseCluster
 
 
 single_node_cluster = ClickHouseCluster(__file__)

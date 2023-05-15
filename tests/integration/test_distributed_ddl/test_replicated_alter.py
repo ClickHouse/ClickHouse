@@ -1,13 +1,11 @@
 import os
 import sys
 import time
-
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from helpers.test_tools import TSV
 from .cluster import ClickHouseClusterWithDDLHelpers
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])

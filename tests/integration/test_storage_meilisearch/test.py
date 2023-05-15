@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
-        node = cluster.add_instance(
+        cluster.add_instance(
             "meili", main_configs=["configs/named_collection.xml"], with_meili=True
         )
         cluster.start()

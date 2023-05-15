@@ -11,7 +11,7 @@ import datetime
 def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
-        node = cluster.add_instance(
+        cluster.add_instance(
             "node",
             main_configs=[
                 "configs_secure/config.d/ssl_conf.xml",

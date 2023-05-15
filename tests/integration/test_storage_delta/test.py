@@ -1,4 +1,3 @@
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -6,11 +5,8 @@ import pytest
 import logging
 import os
 import json
-import time
-import glob
 
 import pyspark
-import delta
 from delta import *
 from pyspark.sql.types import (
     StructType,
@@ -18,11 +14,9 @@ from pyspark.sql.types import (
     StringType,
     IntegerType,
     DateType,
-    TimestampType,
     BooleanType,
     ArrayType,
 )
-from pyspark.sql.functions import current_timestamp
 from datetime import datetime
 from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
@@ -335,7 +329,7 @@ def test_types(started_cluster):
     spark = started_cluster.spark_session
     result_file = f"{TABLE_NAME}_result_2"
 
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)
         .location(f"/{result_file}")

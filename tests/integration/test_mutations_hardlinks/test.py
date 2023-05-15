@@ -1,8 +1,9 @@
+#!/usr/bin/env python3
+
 import os
 import time
-from multiprocessing.dummy import Pool
-
 import pytest
+from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -166,7 +167,7 @@ def test_delete_and_drop_mutation(started_cluster):
         try:
             if int(result.strip()) == 2:
                 break
-        except:
+        except Exception:
             print("Result", result)
             pass
 

@@ -1,12 +1,9 @@
 import pytest
 import time
 import logging
-import psycopg2
-from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -511,7 +508,7 @@ def test_bad_configuration(started_cluster):
         port=started_cluster.postgres_port,
         database=True,
     )
-    cursor = conn.cursor()
+    conn.cursor()
 
     node1.query(
         """

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # pylint: disable=redefined-outer-name
 # pylint: disable=unused-argument
 # pylint: disable=line-too-long
@@ -6,10 +8,8 @@
 import os
 import time
 import pytest
-
 import helpers.cluster
 import helpers.test_tools
-
 from . import fake_sentry_server
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -31,7 +31,7 @@ def started_node():
         # It will print Fatal message after pkill -SEGV, suppress it
         try:
             cluster.shutdown()
-        except:
+        except Exception:
             pass
 
 

@@ -2,6 +2,8 @@ import os
 import pytest
 import sys
 import grpc
+import clickhouse_grpc_pb2
+import clickhouse_grpc_pb2_grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
@@ -10,7 +12,6 @@ SSL_HOST = "integration-tests.clickhouse.com"
 GRPC_PORT = 9100
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
-
 
 # Use grpcio-tools to generate *pb2.py files from *.proto.
 
@@ -24,11 +25,7 @@ run_and_check(
     ),
     shell=True,
 )
-
 sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
-
 
 # Utilities
 

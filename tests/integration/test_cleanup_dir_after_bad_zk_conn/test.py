@@ -95,7 +95,7 @@ def test_attach_without_zk(start_cluster):
         )
         try:
             node1.query("ATTACH TABLE test4_r1")
-        except:
+        except Exception:
             pass
     node1.query("ATTACH TABLE IF NOT EXISTS test4_r1")
     node1.query("SELECT * FROM test4_r1")

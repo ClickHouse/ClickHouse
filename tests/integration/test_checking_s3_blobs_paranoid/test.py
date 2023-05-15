@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import os
-import time
 
 
 from helpers.cluster import ClickHouseCluster

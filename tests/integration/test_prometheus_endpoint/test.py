@@ -1,11 +1,11 @@
 import re
 import time
-
 import pytest
 import requests
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
 node = cluster.add_instance("node", main_configs=["configs/prom_conf.xml"])
 
 
@@ -46,7 +46,7 @@ def get_and_check_metrics(retries):
                 response.raise_for_status()
 
             break
-        except:
+        except Exception:
             if retries >= 0:
                 retries -= 1
                 time.sleep(0.5)

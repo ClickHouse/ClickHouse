@@ -259,7 +259,7 @@ class _NetworkManager:
                             "docker pull clickhouse/integration-helper", shell=True
                         )
                         break
-                    except:
+                    except Exception:
                         time.sleep(i)
                 else:
                     raise Exception("Cannot pull clickhouse/integration-helper image")
@@ -331,7 +331,7 @@ class NetThroughput(object):
                         ]
                     ).strip()
                     break
-                except Exception as ex:
+                except Exception:
                     print(f"No interface eth{i}")
             else:
                 raise Exception(
@@ -346,7 +346,7 @@ class NetThroughput(object):
                 raise Exception(
                     f"No such interface {self.interface} found in /proc/net/dev"
                 )
-        except:
+        except Exception:
             logging.error(
                 "All available interfaces %s",
                 self.node.exec_in_container(["bash", "-c", "cat /proc/net/dev"]),
@@ -368,14 +368,14 @@ class NetThroughput(object):
                     f'awk "/^ *{self.interface}:/"\' {{ if ($1 ~ /.*:[0-9][0-9]*/) {{ sub(/^.*:/, "") ; print $1 }} else {{ print $2 }} }}\' /proc/net/dev',
                 ]
             )
-        except:
+        except Exception:
             raise Exception(
                 f"Cannot receive in bytes from /proc/net/dev for interface {self.interface}"
             )
 
         try:
             return int(result)
-        except:
+        except Exception:
             raise Exception(
                 f"Got non-numeric in bytes '{result}' from /proc/net/dev for interface {self.interface}"
             )
@@ -389,14 +389,14 @@ class NetThroughput(object):
                     f"awk \"/^ *{self.interface}:/\"' {{ if ($1 ~ /.*:[0-9][0-9]*/) {{ print $9 }} else {{ print $10 }} }}' /proc/net/dev",
                 ]
             )
-        except:
+        except Exception:
             raise Exception(
                 f"Cannot receive out bytes from /proc/net/dev for interface {self.interface}"
             )
 
         try:
             return int(result)
-        except:
+        except Exception:
             raise Exception(
                 f"Got non-numeric out bytes '{result}' from /proc/net/dev for interface {self.interface}"
             )

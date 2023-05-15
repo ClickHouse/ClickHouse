@@ -1,17 +1,25 @@
 import time
-
-import helpers.client as client
 import pytest
+import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, exec_query_with_retry
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
 
-node3 = cluster.add_instance("node3", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    with_zookeeper=True
+)
+node2 = cluster.add_instance(
+    "node2",
+    with_zookeeper=True
+)
+node3 = cluster.add_instance(
+    "node3",
+    with_zookeeper=True
+)
 node4 = cluster.add_instance(
     "node4",
     with_zookeeper=True,
@@ -20,7 +28,6 @@ node4 = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
-
 node5 = cluster.add_instance(
     "node5",
     with_zookeeper=True,
@@ -312,7 +319,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
         assert False
     except client.QueryRuntimeException:
         pass
-    except:
+    except Exception:
         assert False
 
 
@@ -326,7 +333,7 @@ def optimize_with_retry(node, table_name, retry=20):
                 settings={"optimize_throw_if_noop": "1"},
             )
             break
-        except e:
+        except Exception:
             time.sleep(0.5)
 
 

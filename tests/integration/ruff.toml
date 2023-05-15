@@ -1,0 +1,8 @@
+# Never enforce `E501` (line too long).
+# Never enforce `F403` ('from module import *' used; unable to detect undefined names).
+# Never enforce `F405` (name may be undefined, or defined from star imports).
+ignore = ["E501", "F403", "F405"]
+
+# Never enforce `F821` on protobuf generated files (undefined name).
+[per-file-ignores]
+"*_pb2.py" = ["F821"]

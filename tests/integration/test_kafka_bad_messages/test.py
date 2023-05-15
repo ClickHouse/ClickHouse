@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
+from kafka import KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 
 cluster = ClickHouseCluster(__file__)
@@ -241,7 +241,7 @@ struct Message
 
     instance.create_format_schema("schema_test_errors.capnp", capn_proto_schema)
     instance.query(
-        f"""
+        """
             DROP TABLE IF EXISTS view;
             DROP TABLE IF EXISTS kafka;
     

@@ -1,11 +1,12 @@
+#!/usr/bin/env python3
+
 import logging
 import time
 import os
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-from helpers.utility import generate_values, replace_config, SafeThread
+from helpers.utility import generate_values, replace_config
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 from helpers.wait_for_helpers import wait_for_merges
@@ -132,7 +133,7 @@ def clear_minio(cluster):
         # CH do some writes to the S3 at start. For example, file data/clickhouse_access_check_{server_uuid}.
         # Set the timeout there as 10 sec in order to resolve the race with that file exists.
         wait_for_delete_s3_objects(cluster, 0, timeout=10)
-    except:
+    except Exception:
         # Remove extra objects to prevent tests cascade failing
         remove_all_s3_objects(cluster)
 
@@ -169,7 +170,6 @@ def test_simple_insert_select(
 ):
     node = cluster.instances[node_name]
     create_table(node, "s3_test", min_rows_for_wide_part=min_rows_for_wide_part)
-    minio = cluster.minio_client
 
     values1 = generate_values("2020-01-03", 4096)
     node.query("INSERT INTO s3_test VALUES {}".format(values1))
@@ -721,7 +721,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
-    out = node.exec_in_container(
+    node.exec_in_container(
         [
             "/usr/bin/clickhouse",
             "benchmark",

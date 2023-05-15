@@ -20,7 +20,7 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(
     DESCRIPTOR, "clickhouse_path.format_schemas.kafka_pb2", globals()
 )
-if _descriptor._USE_C_DESCRIPTORS == False:
+if _descriptor._USE_C_DESCRIPTORS is False:
     DESCRIPTOR._options = None
     _KEYVALUEPAIR._serialized_start = 46
     _KEYVALUEPAIR._serialized_end = 88

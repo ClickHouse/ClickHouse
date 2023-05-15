@@ -1,17 +1,14 @@
 import time
 import logging
 import pytest
-
 from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
 from test_odbc_interaction.test import (
-    create_mysql_db,
-    create_mysql_table,
-    get_mysql_conn,
     skip_test_msan,
 )
 
 
 cluster = ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     with_odbc_drivers=True,
@@ -81,7 +78,7 @@ def test_bridge_dies_with_parent(started_cluster):
         node1.exec_in_container(
             ["kill", str(clickhouse_pid)], privileged=True, user="root"
         )
-    except:
+    except Exception:
         pass
 
     for _ in range(30):
