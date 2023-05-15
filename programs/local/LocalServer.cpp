@@ -751,7 +751,13 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
-    std::cout << "If you want to have more information, you can go to https://clickhouse.com/docs";
+    options_description.main_description->add_options()
+        ("table,N", po::value<std::string>(), "name of the initial table")
+
+        /// If structure argument is omitted then initial query is not generated
+        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
+        ("*if you want to have more info, you can go to https://clickhouse.com/docs/*", po::value<std::string>(), "")
+        ;
 }
 
 
