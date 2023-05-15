@@ -85,7 +85,7 @@ constexpr bool useSparseHashForHashedDictionary()
 /// google::sparse_hash_map.
 ///
 /// Based on HashTableGrowerWithPrecalculation
-class alignas(64) HashTableGrowerWithMaxLoadFactor
+class alignas(64) HashTableGrowerWithPrecalculationAndMaxLoadFactor
 {
     static constexpr size_t initial_size_degree = 8;
     UInt8 size_degree = initial_size_degree;
@@ -103,8 +103,8 @@ public:
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
     static constexpr auto performs_linear_probing_with_single_step = true;
 
-    HashTableGrowerWithMaxLoadFactor() = default;
-    explicit HashTableGrowerWithMaxLoadFactor(float max_load_factor_)
+    HashTableGrowerWithPrecalculationAndMaxLoadFactor() = default;
+    explicit HashTableGrowerWithPrecalculationAndMaxLoadFactor(float max_load_factor_)
         : max_load_factor(max_load_factor_)
     {
         increaseSizeDegree(0);
@@ -158,7 +158,7 @@ public:
         increaseSizeDegree(0);
     }
 };
-static_assert(sizeof(HashTableGrowerWithMaxLoadFactor) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor) == 64);
 
 /// Above goes various specialisations for the hash table that will be used for
 /// HASHED/SPARSE_HASHED dictionary, it could use one of the following depends
@@ -185,8 +185,8 @@ struct HashedDictionaryMapType<dictionary_key_type, /* sparse= */ false, Key, Va
 {
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithMaxLoadFactor>,
-        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithMaxLoadFactor>>;
+        HashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>,
+        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>>;
 };
 
 /// Implementations for SPARSE_HASHED layout.
@@ -220,8 +220,8 @@ struct HashedDictionarySparseMapType<dictionary_key_type, Key, Value, /* use_spa
 {
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        PackedHashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithMaxLoadFactor>,
-        PackedHashMap<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithMaxLoadFactor>>;
+        PackedHashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>,
+        PackedHashMap<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>>;
 };
 template <DictionaryKeyType dictionary_key_type, typename Key, typename Value>
 struct HashedDictionaryMapType<dictionary_key_type, /* sparse= */ true, Key, Value>
@@ -244,8 +244,8 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ false, Key>
 {
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithMaxLoadFactor>,
-        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>, HashTableGrowerWithMaxLoadFactor>>;
+        HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>,
+        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>>;
 };
 
 /// Implementation for SPARSE_HASHED.
@@ -258,8 +258,8 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ true, Key>
 {
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithMaxLoadFactor>,
-        HashSet<StringRef, DefaultHash<StringRef>, HashTableGrowerWithMaxLoadFactor>>;
+        HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>,
+        HashSet<StringRef, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor>>;
 };
 
 }

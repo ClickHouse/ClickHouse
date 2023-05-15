@@ -630,7 +630,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
 
-    HashTableGrowerWithMaxLoadFactor grower(configuration.max_load_factor);
+    HashTableGrowerWithPrecalculationAndMaxLoadFactor grower(configuration.max_load_factor);
 
     for (const auto & dictionary_attribute : dict_struct.attributes)
     {
