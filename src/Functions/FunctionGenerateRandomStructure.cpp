@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
-#include <Common/Documentation.h>
+#include <Common/FunctionDocumentation.h>
 
 #include <pcg_random.hpp>
 
@@ -431,12 +431,12 @@ the number of columns in the result structure (random by default) and random see
 The maximum number of columns is 128.
 The function returns a value of type String.
 )",
-            Documentation::Examples{
+            FunctionDocumentation::Examples{
                 {"random", "SELECT generateRandomStructure()"},
                 {"with specified number of columns", "SELECT generateRandomStructure(10)"},
                 {"with specified seed", "SELECT generateRandomStructure(10, 42)"},
             },
-            Documentation::Categories{"Random"}
+            FunctionDocumentation::Categories{"Random"}
         },
         FunctionFactory::CaseSensitive);
 }
