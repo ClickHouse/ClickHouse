@@ -58,7 +58,7 @@ void StaticThreadPool::reloadConfiguration(size_t max_threads, size_t max_free_t
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
 
-    instance->setMaxThreads(max_threads);
+    instance->setMaxThreads(turbo_mode_enabled > 0 ? max_threads_turbo : max_threads);
     instance->setMaxFreeThreads(max_free_threads);
     instance->setQueueSize(queue_size);
 }
