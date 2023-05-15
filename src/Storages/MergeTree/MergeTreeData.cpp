@@ -2500,10 +2500,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     {
         std::vector<MergeTreePartInfo> infos;
         std::vector<DataPartsVector> parts;
-        std::vector<UInt64> split_level;
+        std::vector<UInt64> split_times;
     };
 
-    auto split_into_independent_ranges = [this](const DataPartsVector & parts_to_remove_, size_t split_level = 0) -> RemovalRanges
+    auto split_into_independent_ranges = [this](const DataPartsVector & parts_to_remove_, size_t split_times) -> RemovalRanges
     {
         ActiveDataPartSet independent_ranges_set(format_version);
         for (const auto & part : parts_to_remove_)
@@ -2518,7 +2518,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         independent_ranges.infos = independent_ranges_set.getPartInfos();
         size_t num_ranges = independent_ranges.infos.size();
         independent_ranges.parts.resize(num_ranges);
-        independent_ranges.split_level.resize(num_ranges, split_level);
+        independent_ranges.split_times.resize(num_ranges, split_times);
         size_t avg_range_size = parts_to_remove_.size() / num_ranges;
 
         size_t sum_of_ranges = 0;
@@ -2543,55 +2543,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         return independent_ranges;
     };
 
-    RemovalRanges independent_ranges = split_into_independent_ranges(parts_to_remove);
-    size_t num_ranges = independent_ranges.infos.size();
-    size_t sum_of_ranges = 0;
-    size_t total_excluded = 0;
-    for (size_t i = 0; i < num_ranges; ++i)
+    auto schedule_parts_removal = [this, &pool, &part_names_mutex, part_names_succeed](
+        const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
-        MergeTreePartInfo & range = independent_ranges.infos[i];
-        DataPartsVector & parts_in_range = independent_ranges.parts[i];
-        UInt64 split_level = independent_ranges.split_level[i];
-
-        /// It may happen that we have a huge part covering thousands small parts.
-        /// In this case, we will get a huge range that will be process by only one thread causing really long tail latency.
-        /// Let's try to exclude such parts in order to get smaller tasks for thread pool and more uniform distribution.
-        if (settings->concurrent_part_removal_threshold < parts_in_range.size() &&
-            split_level < settings->zero_copy_concurrent_part_removal_max_split_level)
-        {
-            auto top_level_parts_pred = [&range](const DataPartPtr & part)
-            {
-                return part->info.min_block == range.min_block && part->info.max_block == range.max_block;
-            };
-
-            size_t top_level_count = std::count_if(parts_in_range.begin(), parts_in_range.end(), top_level_parts_pred);
-            if (settings->zero_copy_concurrent_part_removal_max_postpone_ratio < static_cast<Float32>(top_level_count) / parts_in_range.size())
-            {
-                /// Most likely we have a long mutations chain here
-                LOG_DEBUG(log, "Block range {} contains {} parts including {} top-level parts, will not try to split it",
-                          range.getPartNameForLogs(), parts_in_range.size(), top_level_count);
-            }
-            else
-            {
-                auto new_end_it = std::remove_if(parts_in_range.begin(), parts_in_range.end(), top_level_parts_pred);
-                parts_in_range.erase(new_end_it, parts_in_range.end());
-
-                RemovalRanges subranges = split_into_independent_ranges(parts_in_range, split_level + 1);
-
-                LOG_DEBUG(log, "Block range {} contained {} parts, it was split into {} independent subranges after excluding {} top-level parts",
-                          range.getPartNameForLogs(), parts_in_range.size() + top_level_count, subranges.infos.size(), top_level_count);
-
-                std::move(subranges.infos.begin(), subranges.infos.end(), std::back_inserter(independent_ranges.infos));
-                std::move(subranges.parts.begin(), subranges.parts.end(), std::back_inserter(independent_ranges.parts));
-                std::move(subranges.split_level.begin(), subranges.split_level.end(), std::back_inserter(independent_ranges.split_level));
-                num_ranges += subranges.infos.size();
-                total_excluded += top_level_count;
-                continue;
-            }
-        }
-
-        sum_of_ranges += parts_in_range.size();
-
+        /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
         pool.scheduleOrThrowOnError(
             [this, range, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup(), batch = std::move(parts_in_range)]
         {
@@ -2614,14 +2569,83 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 }
             }
         });
+    };
+
+    RemovalRanges independent_ranges = split_into_independent_ranges(parts_to_remove, /* split_times */ 0);
+    DataPartsVector excluded_parts;
+    size_t num_ranges = independent_ranges.infos.size();
+    size_t sum_of_ranges = 0;
+    for (size_t i = 0; i < num_ranges; ++i)
+    {
+        MergeTreePartInfo & range = independent_ranges.infos[i];
+        DataPartsVector & parts_in_range = independent_ranges.parts[i];
+        UInt64 split_times = independent_ranges.split_times[i];
+
+        /// It may happen that we have a huge part covering thousands small parts.
+        /// In this case, we will get a huge range that will be process by only one thread causing really long tail latency.
+        /// Let's try to exclude such parts in order to get smaller tasks for thread pool and more uniform distribution.
+        if (settings->concurrent_part_removal_threshold < parts_in_range.size() &&
+            split_times < settings->zero_copy_concurrent_part_removal_max_split_times)
+        {
+            auto smaller_parts_pred = [&range](const DataPartPtr & part)
+            {
+                return !(part->info.min_block == range.min_block && part->info.max_block == range.max_block);
+            };
+
+            size_t covered_parts_count = std::count_if(parts_in_range.begin(), parts_in_range.end(), smaller_parts_pred);
+            size_t top_level_count = parts_in_range.size() - covered_parts_count;
+            chassert(top_level_count);
+            Float32 parts_to_exclude_ratio = static_cast<Float32>(top_level_count) / parts_in_range.size();
+            if (settings->zero_copy_concurrent_part_removal_max_postpone_ratio < parts_to_exclude_ratio)
+            {
+                /// Most likely we have a long mutations chain here
+                LOG_DEBUG(log, "Block range {} contains {} parts including {} top-level parts, will not try to split it",
+                          range.getPartNameForLogs(), parts_in_range.size(), top_level_count);
+            }
+            else
+            {
+                auto new_end_it = std::partition(parts_in_range.begin(), parts_in_range.end(), smaller_parts_pred);
+                std::move(new_end_it, parts_in_range.end(), std::back_inserter(excluded_parts));
+                parts_in_range.erase(new_end_it, parts_in_range.end());
+
+                RemovalRanges subranges = split_into_independent_ranges(parts_in_range, split_times + 1);
+
+                LOG_DEBUG(log, "Block range {} contained {} parts, it was split into {} independent subranges after excluding {} top-level parts",
+                          range.getPartNameForLogs(), parts_in_range.size() + top_level_count, subranges.infos.size(), top_level_count);
+
+                std::move(subranges.infos.begin(), subranges.infos.end(), std::back_inserter(independent_ranges.infos));
+                std::move(subranges.parts.begin(), subranges.parts.end(), std::back_inserter(independent_ranges.parts));
+                std::move(subranges.split_times.begin(), subranges.split_times.end(), std::back_inserter(independent_ranges.split_times));
+                num_ranges += subranges.infos.size();
+                continue;
+            }
+        }
+
+        sum_of_ranges += parts_in_range.size();
+
+        schedule_parts_removal(range, std::move(parts_in_range));
+    }
+
+    /// Remove excluded parts as well. They were reordered, so sort them again
+    std::sort(excluded_parts.begin(), excluded_parts.end(), [](const auto & x, const auto & y) { return x->info < y->info; });
+    LOG_TRACE(log, "Will remove {} big parts separately: {}", excluded_parts.size(), fmt::join(excluded_parts, ", "));
+
+    independent_ranges = split_into_independent_ranges(excluded_parts, /* split_times */ 0);
+    pool.wait();
+
+    for (size_t i = 0; i < independent_ranges.infos.size(); ++i)
+    {
+        MergeTreePartInfo & range = independent_ranges.infos[i];
+        DataPartsVector & parts_in_range = independent_ranges.parts[i];
+        schedule_parts_removal(range, std::move(parts_in_range));
     }
 
     pool.wait();
 
-    if (parts_to_remove.size() != sum_of_ranges + total_excluded)
+    if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
-                        "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, total_excluded);
+                        "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
 size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
