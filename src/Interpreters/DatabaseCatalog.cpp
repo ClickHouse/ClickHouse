@@ -349,7 +349,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     std::vector<String> names = hints.getHints(table_id.getDatabaseName());
                     /// I also leave possibility to print several suggestions
                     std::string suggested_name = names[0];
-                    exception_message = "Database {} doesn't exist. Maybe you wanted to type {} ?", table_id.getDatabaseName(), suggested_name;
+                    exception_message = "Database " + table_id.getDatabaseName() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                 }
                 else
                 {
@@ -357,7 +357,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     std::vector<String> names = hints.getHints(table_id.getTableName());
                     std::string suggested_name = names[0];
                     /// There is two options: first is to print just the name of the table
-                    exception_message = "Table {} doesn't exist. Maybe you wanted to type {} ?", table_id.getNameForLogs(), suggested_name;
+                    exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
 //                    Names names_with_db_name;
@@ -411,7 +411,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 std::string suggested_name = names[0];
                 /// There is two options: first is to print just the name of the table
-                exception_message = "Table {} doesn't exist. Maybe you wanted to type {} ?", table_id.getNameForLogs(), suggested_name;
+                exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
                 /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                 /// I also leave possibility to print several suggestions
 //                Names names_with_db_name;
@@ -428,12 +428,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
     {
-        std::string exception_message
+        std::string exception_message;
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
         std::vector<String> names = hints.getHints(table_id.getTableName());
         std::string suggested_name = names[0];
         /// There is two options: first is to print just the name of the table
-        exception_message = "Table {} doesn't exist. Maybe you wanted to type {} ?", table_id.getNameForLogs(), suggested_name;
+        exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
         /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below.
         /// I also leave possibility to print several suggestions
 //        Names names_with_db_name;
