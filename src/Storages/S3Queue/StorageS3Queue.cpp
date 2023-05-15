@@ -121,14 +121,14 @@ StorageS3Queue::StorageS3Queue(
 
     String setting_zookeeper_path = s3queue_settings->keeper_path;
     LOG_INFO(log, "Settings zookeeper_path={}", setting_zookeeper_path);
-    if (setting_zookeeper_path == "")
+    if (setting_zookeeper_path.empty())
     {
         auto table_id = getStorageID();
         auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         bool is_in_replicated_database = database->getEngineName() == "Replicated";
 
         auto default_path = getContext()->getSettingsRef().s3queue_default_zookeeper_path.value;
-        if (default_path != "")
+        if (!default_path.empty())
         {
             zookeeper_path
                 = zkutil::extractZooKeeperPath(fs::path(default_path) / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
