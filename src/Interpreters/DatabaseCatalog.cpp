@@ -66,7 +66,7 @@ public:
     }
 
 private:
-    Names getAllRegisteredNames() const
+    Names getAllRegisteredNames() const override
     {
         Names result;
         auto databases_list = database_catalog.getDatabases();
@@ -92,7 +92,7 @@ public:
     {
     }
 private:
-    Names getAllRegisteredNames() const
+    Names getAllRegisteredNames() const override
     {
         Names result;
         DatabasePtr database = database_catalog.tryGetDatabase(database_name);

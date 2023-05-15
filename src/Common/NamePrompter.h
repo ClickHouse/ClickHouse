@@ -99,7 +99,7 @@ template <size_t MaxNumHints, typename Self>
 class IHints
 {
 public:
-    virtual std::vector<String> getAllRegisteredNames() const = 0;
+    virtual std::vector<String> getAllRegisteredNames() const;
 
     std::vector<String> getHints(const String & name) const
     {
