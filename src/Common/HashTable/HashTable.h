@@ -256,11 +256,12 @@ struct HashTableGrower
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree = num_elems <= 1
-             ? initial_size_degree
-             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-                 ? initial_size_degree
-                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        if (num_elems <= 1)
+            size_degree = initial_size_degree;
+        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+            size_degree = initial_size_degree;
+        else
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
     }
 
     void setBufSize(size_t buf_size_)
@@ -317,11 +318,12 @@ public:
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree = num_elems <= 1
-             ? initial_size_degree
-             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-                 ? initial_size_degree
-                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        if (num_elems <= 1)
+            size_degree = initial_size_degree;
+        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+            size_degree = initial_size_degree;
+        else
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
         increaseSizeDegree(0);
     }
 
