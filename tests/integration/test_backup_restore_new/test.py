@@ -374,10 +374,14 @@ def test_incremental_backup_after_renaming_table():
     )
     assert os.path.isdir(os.path.join(get_path_to_backup(backup_name), "data")) is True
     assert (
-        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "metadata")) is True
+        os.path.isdir(
+            os.path.join(get_path_to_backup(incremental_backup_name), "metadata")
+        )
+        is True
     )
     assert (
-        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "data")) is False
+        os.path.isdir(os.path.join(get_path_to_backup(incremental_backup_name), "data"))
+        is False
     )
 
     instance.query("DROP TABLE test.table2")

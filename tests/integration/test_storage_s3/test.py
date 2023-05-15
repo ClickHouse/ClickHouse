@@ -229,17 +229,20 @@ def test_get_file_with_special(started_cluster, special):
 
     get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}two.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [
-        list(map(int, line.split())) for line in run_query(instance, get_query).splitlines()
+        list(map(int, line.split()))
+        for line in run_query(instance, get_query).splitlines()
     ] == values
 
     get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [
-        list(map(int, line.split())) for line in run_query(instance, get_query).splitlines()
+        list(map(int, line.split()))
+        for line in run_query(instance, get_query).splitlines()
     ] == values
 
     get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [
-        list(map(int, line.split())) for line in run_query(instance, get_query).splitlines()
+        list(map(int, line.split()))
+        for line in run_query(instance, get_query).splitlines()
     ] == values
 
 

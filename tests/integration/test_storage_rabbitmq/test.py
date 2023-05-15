@@ -2411,9 +2411,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     time.sleep(30)
 
     try:
-        exists = channel.queue_declare(
-            queue="rabbit_queue_drop", passive=True
-        )
+        exists = channel.queue_declare(queue="rabbit_queue_drop", passive=True)
     except Exception:
         exists = False
 

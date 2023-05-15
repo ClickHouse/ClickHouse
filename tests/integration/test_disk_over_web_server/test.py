@@ -99,7 +99,9 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i], )
+                i,
+                uuids[i],
+            )
         )
 
         result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
@@ -176,7 +178,9 @@ def test_cache(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
-                i, uuids[i], )
+                i,
+                uuids[i],
+            )
         )
 
         result = node2.query(

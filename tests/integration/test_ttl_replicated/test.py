@@ -8,18 +8,9 @@ from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1",
-    with_zookeeper=True
-)
-node2 = cluster.add_instance(
-    "node2",
-    with_zookeeper=True
-)
-node3 = cluster.add_instance(
-    "node3",
-    with_zookeeper=True
-)
+node1 = cluster.add_instance("node1", with_zookeeper=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True)
+node3 = cluster.add_instance("node3", with_zookeeper=True)
 node4 = cluster.add_instance(
     "node4",
     with_zookeeper=True,

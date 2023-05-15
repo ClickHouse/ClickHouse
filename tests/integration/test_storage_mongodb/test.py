@@ -168,45 +168,45 @@ def test_arrays(started_cluster):
         )
 
     assert (
-        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
         == "['2002-10-27','2024-01-08']\n"
     )
 
     assert (
-        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
         == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
     )
 
     assert (
-        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
         == "['43','44','45']\n"
     )
 
     assert (
-        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
         == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
 
     assert (
-        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
         == "[[true,false,true],[true],[],[],[false],[false]]\n"
     )
 
     assert (
-        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
 
     assert (
-        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
 
     assert (
-        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
 
     assert (
-        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
 

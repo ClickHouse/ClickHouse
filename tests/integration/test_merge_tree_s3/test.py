@@ -10,7 +10,6 @@ from helpers.utility import generate_values, replace_config
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 from helpers.wait_for_helpers import wait_for_merges
-from helpers.test_tools import assert_eq_with_retry
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -144,7 +143,7 @@ def clear_minio(cluster):
 def reset_mock_broken_s3(cluster):
     response = cluster.exec_in_container(
         cluster.get_container_id("resolver"),
-        ["curl", "-s", f"http://localhost:8083/mock_settings/reset"],
+        ["curl", "-s", "http://localhost:8083/mock_settings/reset"],
         nothrow=True,
     )
     assert response == "OK"
@@ -891,7 +890,7 @@ def test_merge_canceled_by_s3_errors(cluster, node_name):
         [
             "curl",
             "-s",
-            f"http://localhost:8083/mock_settings/error_at_put?when_length_bigger=50000",
+            "http://localhost:8083/mock_settings/error_at_put?when_length_bigger=50000",
         ],
         nothrow=True,
     )
@@ -943,7 +942,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
         [
             "curl",
             "-s",
-            f"http://localhost:8083/mock_settings/error_at_put?when_length_bigger=10000",
+            "http://localhost:8083/mock_settings/error_at_put?when_length_bigger=10000",
         ],
         nothrow=True,
     )

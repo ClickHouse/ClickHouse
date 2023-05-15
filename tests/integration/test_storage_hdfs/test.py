@@ -1,4 +1,3 @@
-
 import pytest
 import time
 from helpers.cluster import ClickHouseCluster
@@ -335,7 +334,6 @@ def test_truncate_table(started_cluster):
 
 
 def test_partition_by(started_cluster):
-
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     file_name = "test_{_partition_id}"
     partition_by = "column3"
@@ -378,10 +376,7 @@ def test_partition_by(started_cluster):
 
 
 def test_seekable_formats(started_cluster):
-
-    table_function = (
-        "hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
-    )
+    table_function = "hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
     node1.query(
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)"
     )
@@ -469,7 +464,6 @@ def test_hdfs_directory_not_exist(started_cluster):
 
 
 def test_overwrite(started_cluster):
-
     table_function = "hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_overwrite as {table_function}")
     node1.query(
@@ -487,7 +481,6 @@ def test_overwrite(started_cluster):
 
 
 def test_multiple_inserts(started_cluster):
-
     table_function = "hdfs('hdfs://hdfs1:9000/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_multiple_inserts as {table_function}")
     node1.query(
@@ -611,7 +604,6 @@ def test_cluster_macro(started_cluster):
 
 
 def test_virtual_columns_2(started_cluster):
-
     table_function = (
         "hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
     )

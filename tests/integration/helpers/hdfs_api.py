@@ -214,7 +214,7 @@ class HDFSApi(object):
                 ip=self.hdfs_ip,
                 port=self.proxy_port,
                 path=path,
-                ),
+            ),
             allow_redirects=False,
             headers={"host": str(self.hdfs_ip)},
             params={"overwrite": "true"},

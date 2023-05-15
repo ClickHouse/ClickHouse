@@ -54,7 +54,9 @@ def started_cluster():
 
 # @pytest.mark.skip(reason="debugging")
 def test_return_real_values(started_cluster):
-    assert None is not dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
+    assert None is not dictionary_node.get_process_pid(
+        "clickhouse"
+    ), "ClickHouse must be alive"
 
     first_batch = """
     SELECT count(*)

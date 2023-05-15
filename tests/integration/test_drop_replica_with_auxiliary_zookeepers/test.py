@@ -1,10 +1,7 @@
 import time
 
-import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

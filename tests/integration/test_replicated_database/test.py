@@ -64,6 +64,7 @@ uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 def assert_create_query(nodes, table_name, expected):
     def replace_uuid(x):
         return re.sub(uuid_regex, "uuid", x)
+
     query = "show create table {}".format(table_name)
     for node in nodes:
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)

@@ -26,8 +26,14 @@ def start_cluster():
 
 def test_cache_evicted_by_temporary_data(start_cluster):
     q = node.query
+
     def get_free_space():
-        return int(q("SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'").strip())
+        return int(
+            q(
+                "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
+            ).strip()
+        )
+
     def get_cache_size():
         return int(q("SELECT sum(size) FROM system.filesystem_cache").strip())
 

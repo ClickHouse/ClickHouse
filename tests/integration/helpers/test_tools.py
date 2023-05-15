@@ -14,7 +14,9 @@ class TSV:
             raw_lines = contents.splitlines(True)
         elif isinstance(contents, list):
             raw_lines = [
-                "\t".join(map(str, content)) if isinstance(content, list) else str(content)
+                "\t".join(map(str, content))
+                if isinstance(content, list)
+                else str(content)
                 for content in contents
             ]
         elif isinstance(contents, TSV):

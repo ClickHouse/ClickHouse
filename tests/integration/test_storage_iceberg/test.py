@@ -166,9 +166,7 @@ def test_single_iceberg_file(started_cluster, format_version):
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
 
-    upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
-    )
+    upload_directory(minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", "")
 
     create_iceberg_table(instance, TABLE_NAME)
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(

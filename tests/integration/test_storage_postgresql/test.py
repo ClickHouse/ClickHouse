@@ -279,9 +279,7 @@ def test_concurrent_queries(started_cluster):
                 "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
-            node1.query(
-                "SELECT * FROM test.test_table LIMIT 100", user="default"
-            )
+            node1.query("SELECT * FROM test.test_table LIMIT 100", user="default")
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_select, range(30))

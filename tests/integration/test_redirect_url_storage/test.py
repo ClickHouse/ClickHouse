@@ -132,7 +132,6 @@ result = ""
 
 
 def test_url_reconnect(started_cluster):
-
     with PartitionManager() as pm:
         node1.query(
             "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)"

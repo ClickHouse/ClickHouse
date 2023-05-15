@@ -75,7 +75,6 @@ def test_write_storage_not_expired(started_cluster):
 
 
 def test_two_users(started_cluster):
-
     node1.query(
         "create table HDFSStorOne (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/storage_user_one', 'TSV')"
     )

@@ -40,7 +40,9 @@ def started_cluster():
 
 # @pytest.mark.skip(reason="debugging")
 def test_simple_dict_get(started_cluster):
-    assert None is not dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
+    assert None is not dictionary_node.get_process_pid(
+        "clickhouse"
+    ), "ClickHouse must be alive"
 
     def test_helper():
         assert (

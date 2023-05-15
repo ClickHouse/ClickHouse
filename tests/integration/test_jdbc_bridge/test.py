@@ -153,7 +153,8 @@ def test_jdbc_delete(started_cluster):
     expected = records - 1
     actual = instance.query(
         "SELECT Str FROM jdbc('{}', 'SELECT * FROM test.test_delete')".format(
-            datasource, )
+            datasource,
+        )
     )
     assert int(actual) == expected, "expecting {} but got {}".format(expected, actual)
 

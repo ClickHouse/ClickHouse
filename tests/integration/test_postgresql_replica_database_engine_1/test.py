@@ -119,7 +119,9 @@ def test_replicating_dml(started_cluster):
             )
         )
         cursor.execute(
-            "DELETE FROM postgresql_replica_{} WHERE key % 7 = 1;".format(i, )
+            "DELETE FROM postgresql_replica_{} WHERE key % 7 = 1;".format(
+                i,
+            )
         )
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
@@ -182,9 +184,7 @@ def test_different_data_types(started_cluster):
     for i in range(10):
         col = random.choice(["a", "b", "c"])
         cursor.execute("UPDATE test_data_types SET {} = {};".format(col, i))
-        cursor.execute(
-            "UPDATE test_data_types SET i = '2020-12-12';".format()
-        )
+        cursor.execute("UPDATE test_data_types SET i = '2020-12-12';".format())
 
     check_tables_are_synchronized(instance, "test_data_types", "id")
 

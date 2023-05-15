@@ -858,9 +858,7 @@ def test_concurrent_queries(started_cluster):
                 "INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
-            node1.query(
-                "SELECT * FROM test_pg_table LIMIT 100", user="default"
-            )
+            node1.query("SELECT * FROM test_pg_table LIMIT 100", user="default")
 
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
