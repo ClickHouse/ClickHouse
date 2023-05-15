@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
