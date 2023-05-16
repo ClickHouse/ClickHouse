@@ -11,14 +11,14 @@ This is intended for continuous integration checks that run on Linux servers. If
 
 The cross-build for macOS is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-14
+## Install Clang-16
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
 
 ``` bash
-sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-14 main" >> /etc/apt/sources.list
-sudo apt-get install clang-14
+sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-16 main" >> /etc/apt/sources.list
+sudo apt-get install clang-16
 ```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
@@ -55,7 +55,7 @@ curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX1
 cd ClickHouse
 mkdir build-darwin
 cd build-darwin
-CC=clang-14 CXX=clang++-14 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+CC=clang-16 CXX=clang++-16 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
 ninja
 ```
 

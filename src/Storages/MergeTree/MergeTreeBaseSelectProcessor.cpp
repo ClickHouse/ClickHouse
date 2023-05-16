@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -635,28 +636,33 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
         }
 
         if (prewhere_info->prewhere_actions)
+        {
             block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
 
-        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
-        if (!prewhere_column.type->canBeUsedInBooleanContext())
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                prewhere_column.type->getName());
-        }
+            auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+            if (!prewhere_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                    prewhere_column.type->getName());
+            }
 
-        if (prewhere_info->remove_prewhere_column)
-            block.erase(prewhere_info->prewhere_column_name);
-        else
-        {
-            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-            if (which.isNativeInt() || which.isNativeUInt())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-            else if (which.isFloat())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
-            else
-                throw Exception(
-                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                                "Illegal type {} of column for filter", prewhere_column.type->getName());
+            if (prewhere_info->remove_prewhere_column)
+            {
+                block.erase(prewhere_info->prewhere_column_name);
+            }
+            else if (prewhere_info->need_filter)
+            {
+                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+
+                if (which.isNativeInt() || which.isNativeUInt())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+                else if (which.isFloat())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                        "Illegal type {} of column for filter",
+                        prewhere_column.type->getName());
+            }
         }
     }
 

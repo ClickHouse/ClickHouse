@@ -48,16 +48,16 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
-private:
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
     using DeserializeNestedFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
 
+private:
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
-    DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
-    SkipFn createSkipFn(avro::NodePtr root_node);
+    DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type);
+    SkipFn createSkipFn(const avro::NodePtr & root_node);
 
     struct Action
     {
@@ -86,14 +86,14 @@ private:
             : type(Skip)
             , skip_fn(skip_fn_) {}
 
-        Action(std::vector<size_t> nested_column_indexes_, std::vector<DeserializeFn> nested_deserializers_)
+        Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
             : type(Nested)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
-        static Action recordAction(std::vector<Action> field_actions) { return Action(Type::Record, field_actions); }
+        static Action recordAction(const std::vector<Action> & field_actions) { return Action(Type::Record, field_actions); }
 
-        static Action unionAction(std::vector<Action> branch_actions) { return Action(Type::Union, branch_actions); }
+        static Action unionAction(const std::vector<Action> & branch_actions) { return Action(Type::Union, branch_actions); }
 
 
         void execute(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
@@ -145,6 +145,8 @@ private:
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 
     bool null_as_default = false;
+
+    const FormatSettings & settings;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat

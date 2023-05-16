@@ -187,7 +187,7 @@ sidebar_label: "Визуальные интерфейсы от сторонни�
 
 DataLens [доступен бесплатно](https://cloud.yandex.ru/docs/datalens/pricing), в том числе и для коммерческого использования.
 
--   [Знакомство с DataLens]((https://youtu.be/57ngi_6BINE).
+-   [Знакомство с DataLens](https://youtu.be/57ngi_6BINE).
 -   [Чат сообщества DataLens](https://t.me/YandexDataLens)
 -   [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
 -   [Сценарий по визуализации данных из ClickHouse](https://cloud.yandex.ru/docs/solutions/datalens/data-from-ch-visualization).

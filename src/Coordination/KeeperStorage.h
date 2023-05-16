@@ -105,6 +105,8 @@ public:
         return first.value == second.value;
     }
 
+    static String generateDigest(const String & userdata);
+
     struct RequestForSession
     {
         int64_t session_id;
@@ -262,6 +264,8 @@ public:
 
             return check_auth(auth_it->second);
         }
+
+        void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 

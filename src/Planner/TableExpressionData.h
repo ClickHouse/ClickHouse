@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Interpreters/ActionsDAG.h>
+
 namespace DB
 {
 
@@ -238,6 +240,26 @@ public:
         is_remote = is_remote_value;
     }
 
+    const ActionsDAGPtr & getPrewhereFilterActions() const
+    {
+        return prewhere_filter_actions;
+    }
+
+    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    {
+        prewhere_filter_actions = std::move(prewhere_filter_actions_value);
+    }
+
+    const ActionsDAGPtr & getFilterActions() const
+    {
+        return filter_actions;
+    }
+
+    void setFilterActions(ActionsDAGPtr filter_actions_value)
+    {
+        filter_actions = std::move(filter_actions_value);
+    }
+
 private:
     void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
@@ -261,6 +283,12 @@ private:
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
+
+    /// Valid for table, table function
+    ActionsDAGPtr filter_actions;
+
+    /// Valid for table, table function
+    ActionsDAGPtr prewhere_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

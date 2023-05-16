@@ -23,6 +23,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <base/errnoToString.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents

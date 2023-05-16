@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NO_AVAILABLE_DATA;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -74,7 +75,7 @@ template <typename T>
 bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = {}; }
+void set(T & x) { x = T{}; }
 
 }
 
@@ -1318,6 +1319,8 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
+        if (new_size > 100'000'000'000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
         free();
         Grower new_grower = grower;

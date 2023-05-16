@@ -39,7 +39,8 @@ struct Settings;
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
     M(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
-    M(UInt64, max_requests_quick_batch_size, 10, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
+    M(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
+    M(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
     M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \

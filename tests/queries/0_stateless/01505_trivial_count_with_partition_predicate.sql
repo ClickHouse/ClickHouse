@@ -7,7 +7,7 @@ insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2),
 
 set max_rows_to_read = 1;
 -- non-optimized
-select count() from test1 settings max_parallel_replicas = 3; -- { serverError 158 }
+select count() from test1 settings max_parallel_replicas = 3;
 -- optimized (toYear is monotonic and we provide the partition expr as is)
 select count() from test1 where toYear(toDate(p)) = 1999;
 -- non-optimized (toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to do trivial count())

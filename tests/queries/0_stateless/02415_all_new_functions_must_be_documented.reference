@@ -389,6 +389,7 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
+kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
@@ -416,17 +417,10 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
-mapApply
-mapContains
-mapContainsKeyLike
-mapExtractKeyLike
-mapFilter
 mapFromArrays
-mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
-mapValues
 match
 materialize
 max2
@@ -513,6 +507,7 @@ nullIf
 nullIn
 nullInIgnoreSet
 or
+parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
@@ -528,6 +523,11 @@ parseDateTimeBestEffortOrZero
 parseDateTimeBestEffortUS
 parseDateTimeBestEffortUSOrNull
 parseDateTimeBestEffortUSOrZero
+parseDateTimeInJodaSyntax
+parseDateTimeInJodaSyntaxOrNull
+parseDateTimeInJodaSyntaxOrZero
+parseDateTimeOrNull
+parseDateTimeOrZero
 parseTimeDelta
 partitionId
 path
