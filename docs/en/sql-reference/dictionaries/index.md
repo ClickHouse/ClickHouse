@@ -2199,7 +2199,7 @@ Result:
 
 ## RegExpTree Dictionary {#regexp-tree-dictionary}
 
-RegExpTree Dictionary is designed to store multiple regular expressions in a dictionary, and query if a string could match one or multiple regular expressions. In some senarioes, for example, User Agent Parser, this data structure is very useful. We can use it in both local and cloud environment.
+RegExpTree Dictionary is designed to store multiple regular expressions in a dictionary, and query if a string could match one or multiple regular expressions. In some scenarios, for example, User Agent Parser, this data structure is very useful. We can use it in both local and cloud environments.
 
 ### Use RegExpTree Dictionary in local environment
 
