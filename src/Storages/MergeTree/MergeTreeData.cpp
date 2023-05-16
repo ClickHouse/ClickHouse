@@ -2505,6 +2505,9 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     auto split_into_independent_ranges = [this](const DataPartsVector & parts_to_remove_, size_t split_times) -> RemovalRanges
     {
+        if (parts_to_remove_.empty())
+            return {};
+
         ActiveDataPartSet independent_ranges_set(format_version);
         for (const auto & part : parts_to_remove_)
         {
