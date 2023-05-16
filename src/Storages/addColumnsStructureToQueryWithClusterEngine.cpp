@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
+ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query || !select_query->tables())

@@ -37,7 +37,7 @@ def new_backup_name():
 def check_backup_and_restore(storage_policy, backup_destination, size=1000):
     node.query(
         f"""
-    DROP TABLE IF EXISTS data NO DELAY;
+    DROP TABLE IF EXISTS data SYNC;
     CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
     INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size};
     BACKUP TABLE data TO {backup_destination};
@@ -47,8 +47,8 @@ def check_backup_and_restore(storage_policy, backup_destination, size=1000):
         (SELECT count(), sum(sipHash64(*)) FROM data_restored),
         'Data does not matched after BACKUP/RESTORE'
     );
-    DROP TABLE data NO DELAY;
-    DROP TABLE data_restored NO DELAY;
+    DROP TABLE data SYNC;
+    DROP TABLE data_restored SYNC;
     """
     )
 
@@ -172,3 +172,30 @@ def test_backup_to_s3_native_copy_multipart():
     assert node.contains_in_log(
         f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
     )
+
+
+def test_incremental_backup_append_table_def():
+    backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+
+    node.query(
+        "CREATE TABLE data (x UInt32, y String) Engine=MergeTree() ORDER BY y PARTITION BY x%10 SETTINGS storage_policy='policy_s3'"
+    )
+
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(100)")
+    assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
+
+    node.query(f"BACKUP TABLE data TO {backup_name}")
+
+    node.query("ALTER TABLE data MODIFY SETTING parts_to_throw_insert=100")
+
+    incremental_backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+
+    node.query(
+        f"BACKUP TABLE data TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    node.query("DROP TABLE data")
+    node.query(f"RESTORE TABLE data FROM {incremental_backup_name}")
+
+    assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
+    assert "parts_to_throw_insert = 100" in node.query("SHOW CREATE TABLE data")

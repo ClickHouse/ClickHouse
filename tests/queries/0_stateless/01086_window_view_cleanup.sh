@@ -40,7 +40,7 @@ while true; do
 done
 
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT market, wid FROM test_01086.\`.inner.wv\` ORDER BY market, \`windowID(timestamp, toIntervalSecond('5'), 'US/Samoa')\` as wid";
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.wv NO DELAY;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.mt NO DELAY;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.dst NO DELAY;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP DATABASE test_01086 NO DELAY;"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.wv SYNC;"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.mt SYNC;"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.dst SYNC;"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP DATABASE test_01086 SYNC;"
