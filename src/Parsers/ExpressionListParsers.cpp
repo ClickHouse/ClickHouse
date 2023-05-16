@@ -2205,6 +2205,7 @@ public:
                 return false;
 
             finished = true;
+            state = 1;
             return true;
         }
 
