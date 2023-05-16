@@ -20,9 +20,9 @@
 #include <algorithm>
 
 #ifdef __SSE4_1__
-    #include <smmintrin.h>
+#include <smmintrin.h>
 #else
-    #include <fenv.h>
+#include <fenv.h>
 #endif
 
 
@@ -43,6 +43,7 @@ namespace ErrorCodes
 /** Rounding Functions:
     * round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
     * roundBankers(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
+    * roundHalfUp(x, N) - rounding to nearest (N = 0 by default). Use std::rounding for floating point numbers.
     * floor(x, N) is the largest number <= x (N = 0 by default).
     * ceil(x, N) is the smallest number >= x (N = 0 by default).
     * trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
@@ -211,7 +212,13 @@ public:
     {
         if (tie_breaking_mode == TieBreakingMode::HalfUp)
         {
-            return _mm_round_ps(_mm_add_ps(val,load1(0.5f)), int(RoundingMode::Floor));
+            ScalarType tempFloatsIn[data_count];
+            ScalarType tempFloatsOut[data_count];
+            store(tempFloatsIn, val);
+            for (size_t i = 0; i < data_count; ++i)
+                tempFloatsOut[i] = std::roundf(tempFloatsIn[i]);
+
+            return load(tempFloatsOut);
         }
         else
         {
@@ -243,7 +250,13 @@ public:
     {
         if (tie_breaking_mode == TieBreakingMode::HalfUp)
         {
-            return _mm_round_pd(_mm_add_pd(val,load1(0.5)), int(RoundingMode::Floor));
+            ScalarType tempFloatsIn[data_count];
+            ScalarType tempFloatsOut[data_count];
+            store(tempFloatsIn, val);
+            for (size_t i = 0; i < data_count; ++i)
+                tempFloatsOut[i] = std::round(tempFloatsIn[i]);
+
+            return load(tempFloatsOut);
         }
         else
         {
@@ -274,6 +287,7 @@ inline float roundWithMode(float x, RoundingMode mode, TieBreakingMode tie_break
             {
                 return nearbyintf(x);
             }
+
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -295,6 +309,7 @@ inline double roundWithMode(double x, RoundingMode mode, TieBreakingMode tie_bre
             {
                 return nearbyint(x);
             }
+
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -501,8 +516,8 @@ struct Dispatcher
 {
     template <ScaleMode scale_mode>
     using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
-        FloatRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>,
-        IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
+                                                    FloatRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>,
+                                                    IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
     static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
     {
@@ -578,13 +593,13 @@ public:
     {
         if ((arguments.empty()) || (arguments.size() > 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                            getName(), arguments.size());
 
         for (const auto & type : arguments)
             if (!isNumber(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[0]->getName(), getName());
+                                arguments[0]->getName(), getName());
 
         return arguments[0];
     }
@@ -742,8 +757,7 @@ public:
             && !executeNum<Float64>(in, out, boundaries)
             && !executeDecimal<Decimal32>(in, out, boundaries)
             && !executeDecimal<Decimal64>(in, out, boundaries)
-            && !executeDecimal<Decimal128>(in, out, boundaries)
-            && !executeDecimal<Decimal256>(in, out, boundaries))
+            && !executeDecimal<Decimal128>(in, out, boundaries))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
