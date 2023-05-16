@@ -48,6 +48,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include "Columns/ColumnNothing.h"
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -74,7 +76,6 @@ namespace ErrorCodes
 
 namespace impl
 {
-    constexpr auto EMPTY_HASH{0xe28dbde7fe22e41c};
 
     struct SipHashKey
     {
@@ -1066,7 +1067,7 @@ public:
     static constexpr auto name = Impl::name;
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    //bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1195,12 +1196,25 @@ private:
     }
 
     template <bool first>
+    void executeNothing(const KeyType & , const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        if (const auto * col_from = checkAndGetColumn<ColumnNothing>(column))
+        {
+            size_t size = col_from->size();
+            vec_to.assign(size, static_cast<ToType>(42));
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                column->getName(), getName());
+    }
+
+    template <bool first>
     void executeGeneric(const KeyType & key, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
-            const ToType h = column->isNullAt(i) ? static_cast<ToType>(impl::EMPTY_HASH) :
-                apply(key, column->getDataAt(i).data, column->getDataAt(i).size);
+            StringRef bytes = column->getDataAt(i);
+            const ToType h = apply(key, bytes.data, bytes.size);
 
             if constexpr (first)
                 vec_to[i] = h;
@@ -1322,6 +1336,26 @@ private:
     }
 
     template <bool first>
+    void executeNullable(const KeyType & key, const IDataType * from_type, const IColumn * column, typename     ColumnVector<ToType>::Container & vec_to) const
+    {
+        if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column)) [[likely]]
+        {
+            vec_to.resize_fill(vec_to.size(), static_cast<ToType>(42)); // NOTE: 42 is consistent with Apache Spark.
+            const auto & nested_col = col_from->getNestedColumn();
+            const auto * nested_type = typeid_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
+            typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
+            executeAny<first>(key, nested_type, &nested_col, vec_temp);
+            size_t j = 0;
+            for (size_t i = 0; i < vec_to.size(); ++i)
+                if (!col_from->isNullAt(i))
+                    vec_to[i] = vec_temp[j++];
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    column->getName(), getName());
+    }
+
+    template <bool first>
     void executeAny(const KeyType & key, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
@@ -1358,7 +1392,9 @@ private:
         else if (which.isFloat64()) executeIntType<Float64, first>(key, icolumn, vec_to);
         else if (which.isString()) executeString<first>(key, icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(key, icolumn, vec_to);
+        else if (which.isNothing()) executeNothing<first>(key, icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(key, from_type, icolumn, vec_to);
+        else if (which.isNullable()) executeNullable<first>(key, from_type, icolumn, vec_to);
         else executeGeneric<first>(key, icolumn, vec_to);
     }
 
@@ -1439,7 +1475,7 @@ public:
         if (arguments.size() <= first_data_argument)
         {
             /// Return a fixed random-looking magic number when input is empty
-            vec_to.assign(input_rows_count, static_cast<ToType>(impl::EMPTY_HASH));
+            vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
         }
 
         KeyType key{};
