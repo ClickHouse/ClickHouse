@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
@@ -212,13 +213,18 @@ public:
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
     /// zero-copy locks for different parts will be on the same path in zookeeper.
+    ///
+    /// If `external_transaction` is provided, the disk operations (creating directories, hardlinking,
+    /// etc) won't be applied immediately; instead, they'll be added to external_transaction, which the
+    /// caller then needs to commit.
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         bool copy_instead_of_hardlink,
-        const NameSet & files_to_copy_instead_of_hardlinks) const = 0;
+        const NameSet & files_to_copy_instead_of_hardlinks,
+        DiskTransactionPtr external_transaction = nullptr) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
