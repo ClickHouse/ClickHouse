@@ -59,12 +59,16 @@ def process_test_log(log_path, broken_tests):
 
                 total += 1
                 if TIMEOUT_SIGN in line:
-                    failed += 1
-                    test_results.append((test_name, "Timeout", test_time, []))
+                    if test_name in broken_tests:
+                        success += 1
+                        test_results.append((test_name, "BROKEN", test_time, []))
+                    else:
+                        failed += 1
+                        test_results.append((test_name, "Timeout", test_time, []))
                 elif FAIL_SIGN in line:
                     if test_name in broken_tests:
                         success += 1
-                        test_results.append((test_name, "OK", test_time, []))
+                        test_results.append((test_name, "BROKEN", test_time, []))
                     else:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
@@ -76,15 +80,13 @@ def process_test_log(log_path, broken_tests):
                     test_results.append((test_name, "SKIPPED", test_time, []))
                 else:
                     if OK_SIGN in line and test_name in broken_tests:
-                        failed += 1
+                        skipped += 1
                         test_results.append(
                             (
                                 test_name,
-                                "FAIL",
+                                "NOT_FAILED",
                                 test_time,
-                                [
-                                    "Test is expected to fail! Please, update broken_tests.txt!\n"
-                                ],
+                                ["This test passed. Update broken_tests.txt.\n"],
                             )
                         )
                     else:

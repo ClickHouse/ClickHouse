@@ -808,23 +808,20 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
-    #if !USE_BLAKE3
-    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+#if !USE_BLAKE3
+    [[noreturn]] static void apply(const char * /*begin*/, const size_t /*size*/, unsigned char * /*out_char_data*/)
     {
-        UNUSED(begin);
-        UNUSED(size);
-        UNUSED(out_char_data);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
     }
-    #else
+#else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-        #if defined(MEMORY_SANITIZER)
+#    if defined(MEMORY_SANITIZER)
             auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
             __msan_unpoison(out_char_data, length);
-        #else
+#    else
             auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
-        #endif
+#    endif
         if (err_msg != nullptr)
         {
             auto err_st = std::string(err_msg);
@@ -832,7 +829,7 @@ struct ImplBLAKE3
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
         }
     }
-    #endif
+#endif
 };
 
 template <typename Impl>
