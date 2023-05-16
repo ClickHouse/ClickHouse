@@ -10,6 +10,7 @@
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
+    M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.") \
     M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.") \
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
@@ -102,6 +103,9 @@
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.") \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
+    M(DelayedMutations, "Number of times the mutation of a MergeTree table was throttled due to high number of unfinished mutations for table.") \
+    M(RejectedMutations, "Number of times the mutation of a MergeTree table was rejected with 'Too many mutations' exception due to high number of unfinished mutations for table.") \
+    M(DelayedMutationsMilliseconds, "Total number of milliseconds spent while the mutation of a MergeTree table was throttled due to high number of unfinished mutations for table.") \
     M(DistributedDelayedInserts, "Number of times the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
     M(DistributedRejectedInserts, "Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.") \
     M(DistributedDelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
@@ -187,10 +191,8 @@
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
-    M(InsertedInMemoryParts, "Number of parts inserted in InMemory format.") \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.") \
-    M(MergedIntoInMemoryParts, "Number of parts in merged into InMemory format.") \
     \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.") \
@@ -251,8 +253,8 @@ The server successfully detected this situation and will download merged part fr
     M(DNSError, "Total count of errors in DNS resolution") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).") \
-    M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
-    M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This include time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.") \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
     M(MemoryAllocatorPurge, "Total number of times memory allocator purge was requested") \
     M(MemoryAllocatorPurgeTimeMicroseconds, "Total number of times memory allocator purge was requested") \
@@ -497,7 +499,16 @@ The server successfully detected this situation and will download merged part fr
     M(MergeTreeAllRangesAnnouncementsSent, "The number of announcement sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
+    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
+    \
+    M(LogTest, "Number of log messages with level Test") \
+    M(LogTrace, "Number of log messages with level Trace") \
+    M(LogDebug, "Number of log messages with level Debug") \
+    M(LogInfo, "Number of log messages with level Info") \
+    M(LogWarning, "Number of log messages with level Warning") \
+    M(LogError, "Number of log messages with level Error") \
+    M(LogFatal, "Number of log messages with level Fatal") \
+
 
 namespace ProfileEvents
 {
@@ -610,6 +621,21 @@ void Counters::incrementNoTrace(Event event, Count amount)
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
         current = current->parent;
     } while (current != nullptr);
+}
+
+void incrementForLogMessage(Poco::Message::Priority priority)
+{
+    switch (priority)
+    {
+        case Poco::Message::PRIO_TEST: increment(LogTest); break;
+        case Poco::Message::PRIO_TRACE: increment(LogTrace); break;
+        case Poco::Message::PRIO_DEBUG: increment(LogDebug); break;
+        case Poco::Message::PRIO_INFORMATION: increment(LogInfo); break;
+        case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
+        case Poco::Message::PRIO_ERROR: increment(LogError); break;
+        case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
+        default: break;
+    }
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

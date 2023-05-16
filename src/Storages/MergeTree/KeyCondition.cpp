@@ -1183,7 +1183,7 @@ bool KeyCondition::tryPrepareSetIndex(
         /// Note: in case of ActionsDAG, tuple may be a constant.
         /// In this case, there is no keys in tuple. So, we don't have to check it.
         auto left_arg_tuple = left_arg.toFunctionNode();
-        if (left_arg_tuple.getFunctionName() == "tuple")
+        if (left_arg_tuple.getFunctionName() == "tuple" && left_arg_tuple.getArgumentsSize() > 1)
         {
             left_args_count = left_arg_tuple.getArgumentsSize();
             for (size_t i = 0; i < left_args_count; ++i)
@@ -1999,9 +1999,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
 
         return callback(hyperrectangle);
     }

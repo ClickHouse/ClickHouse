@@ -121,15 +121,11 @@ public:
     bool canRead() const noexcept;
     bool canWrite() noexcept;
 
-    DiskObjectStoragePtr createDiskObjectStorage() override;
-
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
-
-    MetadataStoragePtr getMetadataStorage() override;
 
 protected:
     void checkAccessImpl(const String & path) override;

@@ -17,6 +17,7 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -51,6 +52,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
+    , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
 {
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
@@ -192,7 +194,10 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
+        {
+            LOG_TEST(log, "Cached table `{}`", table_name);
             cached_tables[table_name] = storage;
+        }
 
         return storage;
     }

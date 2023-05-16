@@ -5,9 +5,9 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/escapeForFileName.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -173,13 +173,13 @@ BackupCoordinationRemote::BackupCoordinationRemote(
         log,
         get_zookeeper_,
         keeper_settings,
-        [zookeeper_path = zookeeper_path, current_host = current_host, is_internal = is_internal]
+        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
             /// Recreate this ephemeral node to signal that we are alive.
-            if (is_internal)
+            if (my_is_internal)
             {
-                String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
+                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
                 if (code == Coordination::Error::ZNODEEXISTS)

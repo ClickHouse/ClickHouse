@@ -113,7 +113,6 @@ public:
     void startup() override;
     void shutdown() override;
     void partialShutdown();
-    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
@@ -230,6 +229,8 @@ public:
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
@@ -252,7 +253,14 @@ public:
         bool replace_existing_lock,
         std::optional<HardlinkedFiles> hardlinked_files) const;
 
-    void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
+    void getLockSharedDataOps(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files,
+        Coordination::Requests & requests) const;
+
+    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
@@ -267,7 +275,7 @@ public:
     static std::pair<bool, NameSet> unlockSharedDataByID(
         String part_id,
         const String & table_uuid,
-        const String & part_name,
+        const MergeTreePartInfo & part_info,
         const String & replica_name_,
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
@@ -310,6 +318,8 @@ public:
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
+
+    size_t getNumberOfUnfinishedMutations() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
@@ -379,6 +389,11 @@ private:
     /// If nullopt - ZooKeeper is not available, so we don't know if there is table metadata.
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
+
+    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
+    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    bool since_metadata_err_incr_readonly_metric = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
@@ -542,7 +557,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -860,6 +875,12 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
+    static void getZeroCopyLockNodeCreateOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
+        int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
+        const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
