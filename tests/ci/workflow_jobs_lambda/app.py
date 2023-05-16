@@ -251,14 +251,20 @@ def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
         clickhouse_client.insert_event_into(**kwargs)
 
 
-def handler(event: dict, _: Any) -> dict:
+def handler(event: dict, context: Any) -> dict:
     if event["isBase64Encoded"]:
         event_data = json.loads(b64decode(event["body"]))
     else:
         event_data = json.loads(event["body"])
 
     repo = event_data["repository"]
-    wf_job = event_data["workflow_job"]
+    try:
+        wf_job = event_data["workflow_job"]
+    except KeyError:
+        logging.error("The event does not contain valid workflow_jobs data")
+        logging.error("The event data: %s", event)
+        logging.error("The context data: %s", context)
+
     workflow_job = WorkflowJob(
         wf_job["id"],
         wf_job["run_id"],

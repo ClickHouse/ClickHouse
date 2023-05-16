@@ -342,13 +342,6 @@ if (COMPILER_CLANG)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
-        # Set new experimental pass manager, it's a performance, build time and binary size win.
-        # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
-    endif ()
-
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
@@ -394,6 +387,8 @@ option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
 if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
     set(ENABLE_GWP_ASAN OFF)
 endif ()
+
+option (ENABLE_FIU "Enable Fiu" ON)
 
 option(WERROR "Enable -Werror compiler option" ON)
 

@@ -61,7 +61,7 @@ struct CreateFileSegmentSettings
         : kind(kind_), unbounded(unbounded_) {}
 };
 
-class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
+class FileSegment : private boost::noncopyable
 {
 friend struct LockedKey;
 friend class FileCache; /// Because of reserved_size in tryReserve().

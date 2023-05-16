@@ -137,25 +137,21 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         total_rows += chunk.getNumRows();
         return;
     }
-
-    if (mono_block
-        || (format_settings.pretty.squash_milliseconds
-            && time_after_previous_chunk.elapsedMilliseconds() <= format_settings.pretty.squash_milliseconds))
+    if (mono_block)
     {
         if (port_kind == PortKind::Main)
         {
-            if (squashed_chunk)
-                squashed_chunk.append(chunk);
+            if (mono_chunk)
+                mono_chunk.append(chunk);
             else
-                squashed_chunk = std::move(chunk);
+                mono_chunk = std::move(chunk);
             return;
         }
 
         /// Should be written from writeSuffix()
-        assert(!squashed_chunk);
+        assert(!mono_chunk);
     }
 
-    writeSquashedChunkIfNeeded();
     writeChunk(chunk, port_kind);
 }
 
@@ -393,20 +389,18 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 }
 
 
-void PrettyBlockOutputFormat::writeSquashedChunkIfNeeded()
+void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
 {
-    if (squashed_chunk)
+    if (mono_chunk)
     {
-        writeChunk(squashed_chunk, PortKind::Main);
-        squashed_chunk.clear();
-        if (format_settings.pretty.squash_milliseconds)
-            time_after_previous_chunk.restart();
+        writeChunk(mono_chunk, PortKind::Main);
+        mono_chunk.clear();
     }
 }
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
-    writeSquashedChunkIfNeeded();
+    writeMonoChunkIfNeeded();
 
     if (total_rows >= format_settings.pretty.max_rows)
     {

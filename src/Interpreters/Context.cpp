@@ -669,13 +669,15 @@ SharedContextHolder Context::createShared()
 
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
+    auto lock = other->getLock();
     return std::shared_ptr<Context>(new Context(*other));
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
-    if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
+    if (!ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
 }
 
@@ -1218,7 +1220,7 @@ ResourceManagerPtr Context::getResourceManager() const
 {
     auto lock = getLock();
     if (!shared->resource_manager)
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "static"));
+        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
     return shared->resource_manager;
 }
 
