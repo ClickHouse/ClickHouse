@@ -29,23 +29,19 @@ nodes = len(cluster.instances)
 queries = nodes * 10
 
 
+# SYSTEM RELOAD CONFIG will reset some attributes of the nodes in cluster
+# - error_count
+# - last_used (round_robing)
+#
+# This is required to avoid interference results of one test to another
+@pytest.fixture(scope="function", autouse=True)
+def test_setup():
+    for n in list(cluster.instances.values()):
+        n.query("SYSTEM RELOAD CONFIG")
+
+
 def bootstrap():
     for n in list(cluster.instances.values()):
-        # At startup, server loads configuration files.
-        #
-        # However ConfigReloader does not know about already loaded files
-        # (files is empty()), hence it will always reload the configuration
-        # just after server starts (+ 2 seconds, reload timeout).
-        #
-        # And on configuration reload the clusters will be re-created, so some
-        # internal stuff will be reset:
-        # - error_count
-        # - last_used (round_robing)
-        #
-        # And if the reload will happen during round_robin test it will start
-        # querying from the beginning, so let's issue config reload just after
-        # start to avoid reload in the middle of the test execution.
-        n.query("SYSTEM RELOAD CONFIG")
         n.query("DROP TABLE IF EXISTS data")
         n.query("DROP TABLE IF EXISTS dist")
         n.query("CREATE TABLE data (key Int) Engine=Memory()")
