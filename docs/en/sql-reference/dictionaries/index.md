@@ -2241,9 +2241,9 @@ The dictionary source `YAMLRegExpTree` represents the structure of a Regexp Tree
 This config consists of a list of RegExpTree nodes. Each node has following structure:
 
 - **regexp** means the regular expression of this node.
-- **user defined attributions** is a list of dictionary attributions defined in the dictionary structure. In this case, we have two attributions: `name` and `version`. The first nodes have the both attributions. The second node only have `name` attribution, because the `version` is defined in the children nodes.
+- **user defined attributions** is a list of dictionary attributions defined in the dictionary structure. In this case, we have two attributions: `name` and `version`. The first nodes have both attributions. The second node only has `name` attribution, because the `version` is defined in the children nodes.
   - The value of an attribution could contain a **back reference** which refers to a capture group of the matched regular expression. Reference number ranges from 1 to 9 and writes as `$1` or `\1`. During the query execution, the back reference in the value will be replaced by the matched capture group.
-- **children nodes** is the secondary layer of the RegExpTree nodes, which also contains a list of RegExpTree nodes. If a string matches a regexp node in the first layer, the dictionary will check if the string matches the children nodes of it. If it matches, we assign the attributions of the matching nodes. If two or more nodes define the same attribution, chilren nodes have more priority.
+- **children nodes** is the secondary layer of the RegExpTree nodes, which also contains a list of RegExpTree nodes. If a string matches a regexp node in the first layer, the dictionary will check if the string matches the children nodes of it. If it matches, we assign the attributions of the matching nodes. If two or more nodes define the same attribution, children nodes have more priority.
   - the name of **children nodes** in yaml files can be arbitrary.
 
 Due to the specialty of Regexp Tree dictionary, we only allow functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
