@@ -235,7 +235,7 @@ def rename_column(
                 )
             )
         except QueryRuntimeException as ex:
-            if 'Coordination::Exception' in str(ex):
+            if "Coordination::Exception" in str(ex):
                 continue
 
             if not ignore_exception:
@@ -258,7 +258,7 @@ def rename_column_on_cluster(
                 )
             )
         except QueryRuntimeException as ex:
-            if 'Coordination::Exception' in str(ex):
+            if "Coordination::Exception" in str(ex):
                 continue
 
             if not ignore_exception:
@@ -266,7 +266,6 @@ def rename_column_on_cluster(
 
         if i >= iterations:
             break
-
 
 
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
@@ -282,7 +281,7 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
                 )
             )
         except QueryRuntimeException as ex:
-            if 'Coordination::Exception' in str(ex):
+            if "Coordination::Exception" in str(ex):
                 continue
 
             if not ignore_exception:
@@ -290,7 +289,6 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
 
         if i >= iterations:
             break
-
 
 
 def test_rename_parallel_same_node(started_cluster):
