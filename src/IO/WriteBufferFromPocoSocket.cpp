@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
