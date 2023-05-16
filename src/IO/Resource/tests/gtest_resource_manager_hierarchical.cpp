@@ -85,7 +85,7 @@ TEST(IOResourceDynamicResourceManager, Fairness)
         {
             ClassifierPtr c = t.manager->acquire("A");
             ResourceLink link = c->get("res1");
-            t.startBusyPeriod(link, 1, N);
+            t.startBusyPeriod(link, 1, requests_per_thread);
             for (int request = 0; request < requests_per_thread; request++)
             {
                 TestGuard g(t, link, 1);
