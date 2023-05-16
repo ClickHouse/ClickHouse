@@ -42,6 +42,10 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;
 
+    // Currently projection don't support settings which implicitly modify aggregate functions.
+    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
+        return false;
+
     return true;
 }
 

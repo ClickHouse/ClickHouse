@@ -42,7 +42,7 @@ public:
             std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 
-    bool parallelizeOutputAfterReading() const override { return false; }
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
     bool supportsParallelInsert() const override { return true; }
 

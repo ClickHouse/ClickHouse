@@ -14,7 +14,7 @@ The following types can be compared:
 - dates
 - dates with times
 
-Only values within the same group can be compared (e.g. UInt16 and UInt64) but not accross groups (e.g. UInt16 and DateTime).
+Only values within the same group can be compared (e.g. UInt16 and UInt64) but not across groups (e.g. UInt16 and DateTime).
 
 Strings are compared byte-by-byte. Note that this may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
 

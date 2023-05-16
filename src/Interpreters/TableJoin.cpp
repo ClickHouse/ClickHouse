@@ -147,6 +147,7 @@ void TableJoin::addDisjunct()
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 {
     addKey(left_table_ast->getColumnName(), right_table_ast->getAliasOrColumnName(), left_table_ast, right_table_ast);
+    right_key_aliases[right_table_ast->getColumnName()] = right_table_ast->getAliasOrColumnName();
 }
 
 /// @return how many times right key appears in ON section.
@@ -660,6 +661,14 @@ String TableJoin::renamedRightColumnName(const String & name) const
     if (const auto it = renames.find(name); it != renames.end())
         return it->second;
     return name;
+}
+
+String TableJoin::renamedRightColumnNameWithAlias(const String & name) const
+{
+    auto renamed = renamedRightColumnName(name);
+    if (const auto it = right_key_aliases.find(renamed); it != right_key_aliases.end())
+        return it->second;
+    return renamed;
 }
 
 void TableJoin::setRename(const String & from, const String & to)
