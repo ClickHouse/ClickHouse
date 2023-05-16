@@ -38,6 +38,7 @@ public:
         std::unique_ptr<ReadBuffer> insert_data_buffer;
     };
 
+    /// Force flush the whole queue.
     void flushAll();
     PushResult push(ASTPtr query, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
