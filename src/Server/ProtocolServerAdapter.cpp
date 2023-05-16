@@ -1,7 +1,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/TCPServer.h>
 
-#if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_GRPC && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
 #include <Server/GRPCServer.h>
 #endif
 
@@ -77,8 +77,7 @@ ProtocolServerAdapter::ProtocolServerAdapter(
 }
 #endif
 
-
-#if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_GRPC && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
 class ProtocolServerAdapter::GRPCServerAdapterImpl : public Impl
 {
 public:

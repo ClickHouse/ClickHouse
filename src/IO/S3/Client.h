@@ -40,6 +40,11 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+namespace MockS3
+{
+    struct Client;
+}
+
 namespace DB::S3
 {
 
@@ -187,11 +192,19 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
+    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
+
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
 
-    ProviderType getProviderType() const;
+    void BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
+                          const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
+
+    bool supportsMultiPartCopy() const;
 private:
+    friend struct ::MockS3::Client;
+
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
@@ -238,7 +251,12 @@ private:
     std::string explicit_region;
     mutable bool detect_region = true;
 
+    /// provider type can determine if some functionality is supported
+    /// but for same provider, we would need to generate different headers depending on the
+    /// mode
+    /// E.g. GCS can work in AWS mode in some cases and accept headers with x-amz prefix
     ProviderType provider_type{ProviderType::UNKNOWN};
+    ApiMode api_mode{ApiMode::AWS};
 
     mutable std::shared_ptr<ClientCache> cache;
 

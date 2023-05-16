@@ -28,7 +28,7 @@ public:
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<ENetServer> enet_server_);
 #endif
 
-#if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_GRPC && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
 #endif
 
