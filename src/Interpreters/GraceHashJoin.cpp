@@ -572,13 +572,12 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     size_t bucket_idx = current_bucket->idx;
 
     size_t prev_keys_num = 0;
-    if (hash_join)
+    // If there is only one bucket, don't take this check.
+    if (hash_join && buckets.size() > 1)
     {
         // Use previous hash_join's keys number to estimate next hash_join's size is reasonable.
         prev_keys_num = hash_join->getTotalRowCount();
     }
-
-    hash_join = makeInMemoryJoin(prev_keys_num);
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -592,6 +591,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
+        hash_join = makeInMemoryJoin(prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
