@@ -363,7 +363,7 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
             {
                 assert(my_node);
                 my_node->invalidateDigestCache();
-                operation.update_fn(*node);
+                operation.update_fn(*my_node);
                 my_last_applied_zxid = delta.zxid;
             }
             else if constexpr (std::same_as<DeltaType, SetACLDelta>)
