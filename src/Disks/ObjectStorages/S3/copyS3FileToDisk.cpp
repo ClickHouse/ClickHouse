@@ -55,7 +55,7 @@ void copyS3FileToDisk(
         /// Object storage always uses mode `Rewrite` because it simulates append using metadata and different files.
         chassert(write_mode_ == WriteMode::Rewrite);
 
-        copyS3File(s3_client, src_bucket, src_key, *src_offset, *src_size, dest_bucket, /* dest_key= */ object_.absolute_path,
+        copyS3File(s3_client, src_bucket, src_key, *src_offset, *src_size, dest_bucket, /* dest_key= */ object_.remote_path,
                    request_settings, object_attributes_, scheduler, /* for_disk_s3= */ true);
 
         return *src_size;
