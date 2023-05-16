@@ -2268,7 +2268,7 @@ In this case, we match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in t
 
 ### Use RegExpTree Dictionary on cloud
 
-We have shown how RegExpTree work in the local enviroument, but we cannot use `YAMLRegExpTree` on cloud. If we have a local yaml file, we can use this file to create RegExpTree Dictionary in the local enviroment, then dump this dictionary to a csv file by `dictionary` table function and [INTO OUTFILE](../../statements/select/into-outfile.md) clause.
+We have shown how RegExpTree work in the local environment, but we cannot use `YAMLRegExpTree` in the cloud. If we have a local yaml file, we can use this file to create RegExpTree Dictionary in the local environment, then dump this dictionary to a csv file by the `dictionary` table function and [INTO OUTFILE](../../statements/select/into-outfile.md) clause.
 
 ```sql
 select * from dictionary(regexp_dict) into outfile('regexp_dict.csv')
