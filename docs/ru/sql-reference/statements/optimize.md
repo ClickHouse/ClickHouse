@@ -10,6 +10,7 @@ sidebar_label: OPTIMIZE
 
 :::danger "Внимание"
     `OPTIMIZE` не устраняет причину появления ошибки `Too many parts`.
+:::
 
 **Синтаксис**
 
@@ -19,7 +20,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 Может применяться к таблицам семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md), [MaterializedView](../../engines/table-engines/special/materializedview.md) и [Buffer](../../engines/table-engines/special/buffer.md). Другие движки таблиц не поддерживаются.
 
-Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех репликах (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `2`) или на текущей реплике (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `1`).
+Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех репликах (если значение настройки [alter_sync](../../operations/settings/settings.md#alter-sync) равно `2`) или на текущей реплике (если значение настройки [alter_sync](../../operations/settings/settings.md#alter-sync) равно `1`).
 
 -   По умолчанию, если запросу `OPTIMIZE` не удалось выполнить слияние, то
 ClickHouse не оповещает клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
@@ -30,7 +31,7 @@ ClickHouse не оповещает клиента. Чтобы включить �
 Вы можете указать время ожидания (в секундах) выполнения запросов `OPTIMIZE` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
 
 :::info "Примечание"
-    Если значение настройки `replication_alter_partitions_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
+    Если значение настройки `alter_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
 :::
 
 ## Выражение BY {#by-expression}

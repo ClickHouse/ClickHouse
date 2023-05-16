@@ -108,7 +108,8 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    KeeperSnapshotManagerS3 & snapshot_manager_s3)
+    KeeperSnapshotManagerS3 & snapshot_manager_s3,
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -133,6 +134,7 @@ KeeperServer::KeeperServer(
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     auto state_path = fs::path(configuration_and_settings_->state_file_path).parent_path().generic_string();
@@ -290,6 +292,19 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
+    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
+    {
+        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+        {
+            LOG_FATAL(
+                log,
+                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
+                "completely.");
+            std::terminate();
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -962,6 +977,11 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+void KeeperServer::recalculateStorageStats()
+{
+    state_machine->recalculateStorageStats();
 }
 
 }

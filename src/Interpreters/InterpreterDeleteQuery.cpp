@@ -78,10 +78,10 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
+        if (!getContext()->getSettingsRef().enable_lightweight_delete)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Lightweight delete mutate is experimental. "
-                            "Set `allow_experimental_lightweight_delete` setting to enable it");
+                            "Lightweight delete mutate is disabled. "
+                            "Set `enable_lightweight_delete` setting to enable it");
 
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =

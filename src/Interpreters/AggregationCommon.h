@@ -3,8 +3,6 @@
 #include <array>
 
 #include <Common/SipHash.h>
-#include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -24,6 +22,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class Arena;
 
 using Sizes = std::vector<size_t>;
 

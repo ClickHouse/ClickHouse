@@ -260,6 +260,17 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+void writeBinary(const CustomType & x, WriteBuffer & buf)
+{
+    writeBinary(std::string_view(x.getTypeName()), buf);
+    writeBinary(x.toString(), buf);
+}
+
+void writeText(const CustomType & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
@@ -597,6 +608,7 @@ String fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::UUID: return "UUID";
         case Field::Types::Which::IPv4: return "IPv4";
         case Field::Types::Which::IPv6: return "IPv6";
+        case Field::Types::Which::CustomType: return "CustomType";
     }
 }
 

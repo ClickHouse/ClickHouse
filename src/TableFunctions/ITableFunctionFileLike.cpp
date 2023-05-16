@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 
 #include <Storages/StorageFile.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Interpreters/evaluateConstantExpression.h>

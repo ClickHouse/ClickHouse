@@ -7,7 +7,6 @@ INSERT INTO merge_table_standard_delete select number, toString(number) from num
 SELECT COUNT(), part_type FROM system.parts WHERE database = currentDatabase() AND table = 'merge_table_standard_delete' AND active GROUP BY part_type ORDER BY part_type;
 
 SET mutations_sync = 0;
-SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 SELECT COUNT(), part_type FROM system.parts WHERE database = currentDatabase() AND table = 'merge_table_standard_delete' AND active GROUP BY part_type ORDER BY part_type;
@@ -81,7 +80,7 @@ select table, partition, name, rows from system.parts where database = currentDa
 drop table t_light;
 
 SELECT '-----Test lightweight delete in multi blocks-----';
-CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
+CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0, index_granularity=8192, index_granularity_bytes='10Mi';
 INSERT INTO t_large SELECT number + 1, number + 1  FROM numbers(100000);
 
 DELETE FROM t_large WHERE a = 50000;

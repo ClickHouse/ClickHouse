@@ -104,7 +104,7 @@ bool deserializeFieldByEscapingRule(
     const FormatSettings & format_settings)
 {
     bool read = true;
-    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+    bool parse_as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
     switch (escaping_rule)
     {
         case FormatSettings::EscapingRule::Escaped:

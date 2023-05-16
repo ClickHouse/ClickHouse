@@ -6,7 +6,7 @@ sidebar_position: 70
 
 # [experimental] MaterializedMySQL 
 
-:::warning
+:::note
 This is an experimental feature that should not be used in production.
 :::
 
@@ -22,10 +22,10 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Engine Parameters**
 
--   `host:port` — MySQL server endpoint.
--   `database` — MySQL database name.
--   `user` — MySQL user.
--   `password` — User password.
+- `host:port` — MySQL server endpoint.
+- `database` — MySQL database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Engine Settings
 
@@ -245,7 +245,7 @@ extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-:::warning
+:::important
 It is easy to break replication with table overrides if not used with care. For example:
     
 * If an ALIAS column is added with a table override, and a column with the same name is later added to the source

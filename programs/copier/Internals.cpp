@@ -214,7 +214,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     {
         /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
         /// Each f_i could take one or more parameters.
-        /// We will wrap identifiers with backticks to allow non-standart identifier names.
+        /// We will wrap identifiers with backticks to allow non-standard identifier names.
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
 
         if (i < primary_key_size)

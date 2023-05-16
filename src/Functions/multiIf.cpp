@@ -7,6 +7,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -17,6 +18,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -36,7 +39,9 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
+
+    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -115,6 +120,21 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
+    struct Instruction
+    {
+        IColumn::Ptr condition = nullptr;
+        IColumn::Ptr source = nullptr;
+
+        bool condition_always_true = false;
+        bool condition_is_nullable = false;
+        bool source_is_constant = false;
+
+        bool condition_is_short = false;
+        bool source_is_short = false;
+        size_t condition_index = 0;
+        size_t source_index = 0;
+    };
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
@@ -122,26 +142,13 @@ public:
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
-        struct Instruction
-        {
-            IColumn::Ptr condition = nullptr;
-            IColumn::Ptr source = nullptr;
 
-            bool condition_always_true = false;
-            bool condition_is_nullable = false;
-            bool source_is_constant = false;
-
-            bool condition_is_short = false;
-            bool source_is_short = false;
-            size_t condition_index = 0;
-            size_t source_index = 0;
-        };
 
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
-        converted_columns_holder.reserve(instructions.size());
+        converted_columns_holder.reserve(instructions.capacity());
 
         const DataTypePtr & return_type = result_type;
 
@@ -210,19 +217,86 @@ public:
                 break;
         }
 
-        MutableColumnPtr res = return_type->createColumn();
-
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
         {
+            MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
-        size_t rows = input_rows_count;
+        bool contains_short = false;
+        for (const auto & instruction : instructions)
+        {
+            if (instruction.condition_is_short || instruction.source_is_short)
+            {
+                contains_short = true;
+                break;
+            }
+        }
 
+        const auto & settings = context->getSettingsRef();
+        const WhichDataType which(result_type);
+        bool execute_multiif_columnar
+            = settings.allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
+
+        size_t rows = input_rows_count;
+        if (!execute_multiif_columnar)
+        {
+            MutableColumnPtr res = return_type->createColumn();
+            executeInstructions(instructions, rows, res);
+            return std::move(res);
+        }
+
+#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, INDEX) \
+    if (which.is##TYPE()) \
+    { \
+        MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
+        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
+        return std::move(res); \
+    }
+
+#define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
+    M(UInt8, INDEX) \
+    M(UInt16, INDEX) \
+    M(UInt32, INDEX) \
+    M(UInt64, INDEX) \
+    M(Int8, INDEX) \
+    M(Int16, INDEX) \
+    M(Int32, INDEX) \
+    M(Int64, INDEX) \
+    M(UInt128, INDEX) \
+    M(UInt256, INDEX) \
+    M(Int128, INDEX) \
+    M(Int256, INDEX) \
+    M(Float32, INDEX) \
+    M(Float64, INDEX) \
+    throw Exception( \
+        ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
+
+        size_t num_instructions = instructions.size();
+        if (num_instructions <= std::numeric_limits<Int16>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int16)
+        }
+        else if (num_instructions <= std::numeric_limits<Int32>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int32)
+        }
+        else if (num_instructions <= std::numeric_limits<Int64>::max())
+        {
+            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int64)
+        }
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Instruction size({}) of function {} is out of range", getName(), result_type->getName());
+    }
+
+private:
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
         for (size_t i = 0; i < rows; ++i)
         {
             for (auto & instruction : instructions)
@@ -255,11 +329,65 @@ public:
                 }
             }
         }
-
-        return res;
     }
 
-private:
+    /// We should read source from which instruction on each row?
+    template <typename S>
+    static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    {
+        for (S i = static_cast<S>(instructions.size() - 1); i >= 0; --i)
+        {
+            auto & instruction = instructions[i];
+            if (instruction.condition_always_true)
+            {
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                    inserts[row_i] = i;
+            }
+            else if (!instruction.condition_is_nullable)
+            {
+                const auto & cond_data = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData();
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (cond_data[row_i])
+                    ///     inserts[row_i] = i;
+
+                    inserts[row_i] += (!!cond_data[row_i]) * (i - inserts[row_i]);
+                }
+            }
+            else
+            {
+                const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const auto & condition_nested_data = condition_nested.getData();
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
+
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (!condition_null_map[row_i] && condition_nested_data[row_i])
+                    ///     inserts[row_i] = i;
+                    inserts[row_i] += (~condition_null_map[row_i] & (!!condition_nested_data[row_i])) * (i - inserts[row_i]);
+                }
+            }
+        }
+    }
+
+    template <typename T, typename S>
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
+        PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
+        calculateInserts(instructions, rows, inserts);
+
+        PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
+        for (size_t row_i = 0; row_i < rows; ++row_i)
+        {
+            auto & instruction = instructions[inserts[row_i]];
+            auto ref = instruction.source->getDataAt(row_i);
+            res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+        }
+    }
+
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
@@ -328,6 +456,8 @@ private:
         for (; i <= last_short_circuit_argument_index; ++i)
             executeColumnIfNeeded(arguments[i], true);
     }
+
+    ContextPtr context;
 };
 
 }
