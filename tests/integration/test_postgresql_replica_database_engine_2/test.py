@@ -545,7 +545,9 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
         clickhouse_postgres_db = f"clickhouse_postgres_db{i}"
         create_postgres_schema(cursor, schema_name)
         pg_manager.create_clickhouse_postgres_db(
-            database_name=clickhouse_postgres_db, schema_name=schema_name, postgres_database="postgres_database",
+            database_name=clickhouse_postgres_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
         )
         for ti in range(NUM_TABLES):
             table_name = f"postgresql_replica_{ti}"
