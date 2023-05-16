@@ -318,6 +318,7 @@ void AsynchronousInsertQueue::flushAll()
 
     LOG_DEBUG(log, "Requested to flush asynchronous insert queue");
 
+    /// Disable background flushes to avoid adding new elements to the queue.
     flush_stopped = true;
     std::vector<Queue> queues_to_flush(pool_size);
 
@@ -343,10 +344,13 @@ void AsynchronousInsertQueue::flushAll()
         }
     }
 
+    /// Note that jobs scheduled before the call of 'flushAll' are not counted here.
     LOG_DEBUG(log,
         "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries)",
         pool.active(), total_entries, total_bytes, total_queries);
 
+    /// Wait until all jobs are finished. That includes also jobs
+    /// that were scheduled before the call of 'flushAll'.
     pool.wait();
 
     LOG_DEBUG(log, "Finished flushing of asynchronous insert queue");
