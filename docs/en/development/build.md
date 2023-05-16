@@ -47,8 +47,8 @@ GCC as a compiler is not supported
 To build with a specific Clang version:
 
 ``` bash
-export CC=clang-15
-export CXX=clang++-15
+export CC=clang-16
+export CXX=clang++-16
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}

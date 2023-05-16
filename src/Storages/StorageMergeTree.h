@@ -45,7 +45,6 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void flush() override;
     void shutdown() override;
 
     ~StorageMergeTree() override;
@@ -257,6 +256,9 @@ private:
     /// return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr,
                                                                         bool from_another_mutation = false) const;
+
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
+                                                                        std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
 
