@@ -40,6 +40,11 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+namespace MockS3
+{
+    struct Client;
+}
+
 namespace DB::S3
 {
 
@@ -198,6 +203,8 @@ public:
 
     bool supportsMultiPartCopy() const;
 private:
+    friend struct ::MockS3::Client;
+
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
