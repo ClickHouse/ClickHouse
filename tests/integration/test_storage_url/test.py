@@ -4,7 +4,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/conf.xml"], with_nginx=True
+    "node1", main_configs=["configs/conf.xml", "configs/named_collections.xml"], with_nginx=True
 )
 
 
@@ -35,7 +35,7 @@ def test_partition_by():
     assert result.strip() == "1\t2\t3"
 
 
-def test_urlCluster():
+def test_url_cluster():
     result = node1.query(
         f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
@@ -48,6 +48,18 @@ def test_urlCluster():
         f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t2\t3"
+
+
+def test_url_cluster_with_named_collection():
+    result = node1.query(
+        f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url)"
+    )
+    assert result.strip() == "3\t2\t1"
+
+    result = node1.query(
+        f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url, structure='auto')"
+    )
+    assert result.strip() == "3\t2\t1"
 
 
 def test_table_function_url_access_rights():
