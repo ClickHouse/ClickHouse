@@ -1220,7 +1220,7 @@ ResourceManagerPtr Context::getResourceManager() const
 {
     auto lock = getLock();
     if (!shared->resource_manager)
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "static"));
+        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
     return shared->resource_manager;
 }
 
