@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_GET;
     extern const int LOGICAL_ERROR;
 }
@@ -49,7 +49,7 @@ protected:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
     {
         if (args.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         /// Evaluate only first argument, everything else will be done Base class
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);

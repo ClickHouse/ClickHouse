@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
@@ -51,7 +52,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
 void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
     if (args.empty() || args.size() > 4)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
