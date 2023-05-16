@@ -20,7 +20,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def toggle_fdb(enable):
+def toggle_fdb(enable,started_cluster):
+    node = started_cluster.instances["node"]
     if enable:
         with open(os.path.dirname(__file__) + "/configs/foundationdb.xml", "r") as f:
             node.replace_config(
@@ -29,8 +30,9 @@ def toggle_fdb(enable):
         node.replace_config(
             "/etc/clickhouse-server/config.d/foundationdb.xml", "<clickhouse></clickhouse>")
 
-
-def test_migrate_from_local_when_fdb_down():
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_migrate_from_local_when_fdb_down(started_cluster):
+    node = started_cluster.instances["node"]
     # Boot without fdb
     create_function_query1 = "CREATE FUNCTION MyFunc1 AS (a, b) -> a + b"
     create_function_query2 = "CREATE FUNCTION MyFunc2 AS (a, b) -> a * b"
@@ -38,7 +40,7 @@ def test_migrate_from_local_when_fdb_down():
     node.stop_clickhouse()
 
     # First boot with fdb, but fdb is down
-    toggle_fdb(True)
+    toggle_fdb(True,started_cluster)
     cluster.stop_fdb()
     with pytest.raises(Exception, match="Cannot start ClickHouse"):
         node.start_clickhouse(30)
@@ -47,7 +49,7 @@ def test_migrate_from_local_when_fdb_down():
 
     # Disable fdb and change local data
     node.stop_clickhouse()
-    toggle_fdb(False)
+    toggle_fdb(False,started_cluster)
     node.start_clickhouse()
 
     assert node.query("SELECT MyFunc1(1,2)") == "3\n"
@@ -56,7 +58,7 @@ def test_migrate_from_local_when_fdb_down():
 
     # Second boot with fdb
     node.stop_clickhouse()
-    toggle_fdb(True)
+    toggle_fdb(True,started_cluster)
     cluster.start_fdb()
     node.start_clickhouse()
     assert node.query("SELECT MyFunc1(1,2)") == "3\n"

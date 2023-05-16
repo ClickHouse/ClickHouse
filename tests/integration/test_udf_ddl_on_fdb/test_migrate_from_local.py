@@ -20,7 +20,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def toggle_fdb(enable):
+def toggle_fdb(enable,started_cluster):
+    node = started_cluster.instances["node"]
     if enable:
         with open(os.path.dirname(__file__) + "/configs/foundationdb.xml", "r") as f:
             node.replace_config(
@@ -29,8 +30,9 @@ def toggle_fdb(enable):
         node.replace_config(
             "/etc/clickhouse-server/config.d/foundationdb.xml", "<clickhouse></clickhouse>")
 
-
-def test_migrate_from_local():
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_migrate_from_local(started_cluster):
+    node = started_cluster.instances["node"]
     # Boot without FDB
     create_function_query1 = "CREATE FUNCTION MyFunc1 AS (a, b) -> a + b"
     create_function_query2 = "CREATE FUNCTION MyFunc2 AS (a, b) -> a * b"
@@ -43,7 +45,7 @@ def test_migrate_from_local():
 
     node.stop_clickhouse()
     # First boot with FDB
-    toggle_fdb(True)
+    toggle_fdb(True,started_cluster)
     node.start_clickhouse()
 
     assert node.query("SELECT MyFunc1(1,2)") == "3\n"
@@ -51,7 +53,7 @@ def test_migrate_from_local():
 
     # Delete local UDF files
     node.stop_clickhouse()
-    toggle_fdb(False)
+    toggle_fdb(False,started_cluster)
     node.start_clickhouse()
 
     node.query("DROP FUNCTION MyFunc1")
@@ -64,7 +66,7 @@ def test_migrate_from_local():
 
     # Second boot with FDB
     node.stop_clickhouse()
-    toggle_fdb(True)
+    toggle_fdb(True,started_cluster)
     node.start_clickhouse()
 
     assert node.query("SELECT MyFunc1(1,2)") == "3\n"

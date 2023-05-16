@@ -24,8 +24,9 @@ def started_cluster():
 def assert_timeout():
     return pytest.raises(Exception, match="Operation aborted because the transaction timed out")
 
-
-def test_create():
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_create(started_cluster):
+    node = started_cluster.instances["node"]
     create_function_query = "CREATE FUNCTION MyFunction1 AS (a, b) -> a + b"
     cluster.stop_fdb()
     with assert_timeout():
@@ -38,8 +39,9 @@ def test_create():
     assert node.query("SELECT MyFunction1(1,2)") == "3\n"
 
 
-def test_drop():
-
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_drop(started_cluster):
+    node = started_cluster.instances["node"]
     create_function_query = "CREATE FUNCTION MyFunction2 AS (a, b) -> a * b"
     drop_function_query = "DROP FUNCTION MyFunction2"
 

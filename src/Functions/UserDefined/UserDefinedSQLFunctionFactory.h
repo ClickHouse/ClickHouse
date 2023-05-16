@@ -50,6 +50,7 @@ public:
 private:
     friend class UserDefinedSQLObjectsLoaderFromDisk;
     friend class UserDefinedSQLObjectsLoaderFromZooKeeper;
+    friend class UserDefinedSQLObjectsLoaderFromFDB;
 
     /// Checks that a specified function can be registered, throws an exception if not.
     static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);

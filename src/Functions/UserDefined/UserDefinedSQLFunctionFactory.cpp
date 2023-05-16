@@ -150,7 +150,7 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
         exception.addMessage(fmt::format("while storing user defined function {}", backQuote(function_name)));
         throw;
     }
-
+    
     function_name_to_create_query_map[function_name] = create_function_query;
     return true;
 }

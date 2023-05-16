@@ -45,6 +45,7 @@ private:
     String dir_path;
     Poco::Logger * log;
     std::atomic<bool> objects_loaded = false;
+    std::atomic<bool> objects_loading = false;
     std::shared_ptr<MetadataStoreFoundationDB> meta_store;
 };
 

@@ -19,8 +19,9 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-def test_create():
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_create(started_cluster):
+    node = started_cluster.instances["node"]
     create_function_query1 = "CREATE FUNCTION MySum1 AS (a, b) -> a + b"
     create_function_query2 = "CREATE FUNCTION MySum2 AS (a, b) -> MySum1(a, b) + b"
 
@@ -30,8 +31,9 @@ def test_create():
     assert node.query("SELECT MySum1(1,2)") == "3\n"
     assert node.query("SELECT MySum2(1,2)") == "5\n"
 
-
-def test_drop():
+@pytest.mark.parametrize("started_cluster",[False],indirect=["started_cluster"])
+def test_drop(started_cluster):
+    node = started_cluster.instances["node"]
     drop_function_query1 = "DROP FUNCTION MySum1"
     drop_function_query2 = "DROP FUNCTION MySum2"
 

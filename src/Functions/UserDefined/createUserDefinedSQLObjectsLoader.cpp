@@ -48,7 +48,6 @@ std::unique_ptr<IUserDefinedSQLObjectsLoader> createUserDefinedSQLObjectsLoader(
     {
         return std::make_unique<UserDefinedSQLObjectsLoaderFromDisk>(global_context, path);
     }
-    // return std::make_unique<UserDefinedSQLObjectsLoaderFromDisk>(global_context, path);
 }
 
 }

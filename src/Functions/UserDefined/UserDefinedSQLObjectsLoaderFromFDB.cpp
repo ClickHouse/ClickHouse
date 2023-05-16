@@ -199,14 +199,17 @@ void UserDefinedSQLObjectsLoaderFromFDB::loadObjectsImpl()
                 continue;
 
             ASTPtr ast = tryLoadObject(UserDefinedSQLObjectType::Function, function_name, dir_path + it.name(), /* check_file_exists= */ false);
-            if (ast)
-                function_names_and_queries.emplace_back(function_name, ast);
-        }
+            
+            auto create_context = Context::createCopy(global_context);
 
-        UserDefinedSQLFunctionFactory::instance().setAllFunctions(function_names_and_queries);
+            InterpreterCreateFunctionQuery interpreter(ast, create_context);
+            interpreter.execute();
+        }
     }
     else
     {  
+        objects_loading = true;
+
         LOG_DEBUG(log, "Loading user defined objects from fdb");
 
         auto funcs = meta_store->getAllSqlFunctions();
@@ -214,6 +217,8 @@ void UserDefinedSQLObjectsLoaderFromFDB::loadObjectsImpl()
         {
             loadUserDefinedObjectFromFDB(global_context, UserDefinedSQLObjectType::Function, func->sql());
         }
+
+        objects_loading = false;
     }
 
     objects_loaded = true;
@@ -283,6 +288,12 @@ bool UserDefinedSQLObjectsLoaderFromFDB::storeObject(
     bool replace_if_exists,
     const Settings &)
 {
+    /// If loading objects from FDB, don't need to store them on FDB again.
+    if(objects_loading)
+    {
+        return true;
+    }
+
     LOG_DEBUG(log, "Storing object {} to FDB", backQuote(object_name));
 
     bool udf_exists;
