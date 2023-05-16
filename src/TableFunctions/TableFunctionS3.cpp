@@ -43,7 +43,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     else
     {
         if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
         if (header_it != args.end())
@@ -371,9 +371,9 @@ void registerTableFunctionGCS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionGCS>(
         {.documentation
-         = {R"(The table function can be used to read the data stored on Google Cloud Storage.)",
-            Documentation::Examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)"}},
-            Documentation::Categories{"DataLake"}},
+         = {.description=R"(The table function can be used to read the data stored on Google Cloud Storage.)",
+            .examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)", ""}},
+            .categories{"DataLake"}},
          .allow_readonly = false});
 }
 
@@ -381,11 +381,12 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionS3>(
         {.documentation
-         = {R"(The table function can be used to read the data stored on AWS S3.)",
-            Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
-            Documentation::Categories{"DataLake"}},
+         = {.description=R"(The table function can be used to read the data stored on AWS S3.)",
+            .examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)", ""}},
+            .categories{"DataLake"}},
          .allow_readonly = false});
 }
+
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {

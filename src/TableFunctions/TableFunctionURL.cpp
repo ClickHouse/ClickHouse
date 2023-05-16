@@ -14,7 +14,8 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Formats/FormatFactory.h>
 
-
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromVector.h>
 namespace DB
 {
 
