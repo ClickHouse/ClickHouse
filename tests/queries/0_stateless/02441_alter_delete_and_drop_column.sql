@@ -5,11 +5,17 @@ insert into mut values (1, 2, 3), (10, 20, 30);
 
 system stop merges mut;
 alter table mut delete where n = 10;
+
+-- a funny way to wait for a MUTATE_PART to be assigned
+select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
+            'select 1 where ''MUTATE_PART'' not in (select type from system.replication_queue where database=''' || currentDatabase() || ''' and table=''mut'')'
+    ), 'LineAsString', 's String') settings max_threads=1 format Null;
+
 alter table mut drop column k settings alter_sync=0;
 system sync replica mut pull;
 
 -- a funny way to wait for ALTER_METADATA to disappear from the replication queue
-select sleepEachRow(1) from url('http://localhost:8123/?param_tries={1..30}&query=' || encodeURLComponent(
+select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
     'select * from system.replication_queue where database=''' || currentDatabase() || ''' and table=''mut'' and type=''ALTER_METADATA'''
     ), 'LineAsString', 's String') settings max_threads=1 format Null;
 

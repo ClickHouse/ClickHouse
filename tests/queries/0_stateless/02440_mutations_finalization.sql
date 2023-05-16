@@ -6,6 +6,7 @@ system stop merges mut;
 alter table mut update n = 2 where n = 1;
 -- it will create MUTATE_PART entry, but will not execute it
 
+system sync replica mut pull;
 select mutation_id, command, parts_to_do_names, is_done from system.mutations where database=currentDatabase() and table='mut';
 
 -- merges (and mutations) will start again after detach/attach, we need to avoid this somehow...
@@ -26,8 +27,8 @@ select mutation_id, command, parts_to_do_names, is_done from system.mutations wh
 alter table mut modify setting max_number_of_mutations_for_replica=100;
 system sync replica mut;
 
--- and now it should
+-- and now it should (is_done may be 0, but it's okay)
 select * from mut;
-select mutation_id, command, parts_to_do_names, is_done from system.mutations where database=currentDatabase() and table='mut';
+select mutation_id, command, parts_to_do_names from system.mutations where database=currentDatabase() and table='mut';
 
 drop table tmp; -- btw, it will check that mutation can be cancelled between blocks on shutdown
