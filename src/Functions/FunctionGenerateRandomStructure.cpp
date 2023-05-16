@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromVector.h>
 
 #include <pcg_random.hpp>
 
