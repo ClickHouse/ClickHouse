@@ -71,6 +71,8 @@ public:
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     bool setUsedOnce(const T & f);
+
+    void clear() { flags.clear(); }
 };
 
 }
@@ -276,6 +278,20 @@ public:
             }
         }
 
+        void clear(Type which)
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+
+            #define M(NAME) \
+                case Type::NAME: NAME->clear(); break;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+        }
+
         void reserve(Type which, size_t num)
         {
             switch (which)
@@ -367,6 +383,8 @@ public:
 
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
+
+        void clear(JoinKind kind, JoinStrictness strictness);
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -382,6 +400,8 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure = false);
+    // Get joined blocks without releasing them
+    const BlocksList & getJoinedBlocks() const;
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
@@ -393,6 +413,9 @@ public:
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
 
     void debugKeys() const;
+
+    // make a clear for reuse.
+    void clear();
 
 private:
     template<bool> friend class NotJoinedHash;
