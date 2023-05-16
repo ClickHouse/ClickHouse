@@ -426,19 +426,19 @@ REGISTER_FUNCTION(GenerateRandomStructure)
 {
     factory.registerFunction<FunctionGenerateRandomStructure>(
         {
-            R"(
+            .description=R"(
 Generates a random table structure.
 This function takes 2 optional constant arguments:
 the number of columns in the result structure (random by default) and random seed (random by default)
 The maximum number of columns is 128.
 The function returns a value of type String.
 )",
-            FunctionDocumentation::Examples{
-                {"random", "SELECT generateRandomStructure()"},
-                {"with specified number of columns", "SELECT generateRandomStructure(10)"},
-                {"with specified seed", "SELECT generateRandomStructure(10, 42)"},
+            .examples{
+                {"random", "SELECT generateRandomStructure()", "c1 UInt32, c2 FixedString(25)"},
+                {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
+                {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            FunctionDocumentation::Categories{"Random"}
+            .categories{"Random"}
         },
         FunctionFactory::CaseSensitive);
 }
