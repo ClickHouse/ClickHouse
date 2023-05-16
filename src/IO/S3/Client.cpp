@@ -349,7 +349,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
     auto outcome = doRequest(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return Aws::S3::S3Client::CompleteMultipartUpload(req); });
 
-    if (provider_type != ProviderType::GCS)
+    if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
         return outcome;
 
     const auto & key = request.GetKey();
