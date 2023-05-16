@@ -109,19 +109,14 @@ def get_node(query_node, table="dist", *args, **kwargs):
 
     rows = query_node.query(
         """
-    SELECT c.host_name
-    FROM (
-        SELECT _shard_num
-        FROM cluster(shards_cluster, system.query_log)
-        WHERE
-            initial_query_id = '{query_id}' AND
-            is_initial_query = 0 AND
-            type = 'QueryFinish'
-        ORDER BY event_date DESC, event_time DESC
-        LIMIT 1
-    ) a
-    JOIN system.clusters c
-    ON a._shard_num = c.shard_num WHERE cluster = 'shards_cluster'
+    SELECT hostName()
+    FROM cluster(shards_cluster, system.query_log)
+    WHERE
+        initial_query_id = '{query_id}' AND
+        is_initial_query = 0 AND
+        type = 'QueryFinish'
+    ORDER BY event_date DESC, event_time DESC
+    LIMIT 1
     """.format(
             query_id=query_id
         )
