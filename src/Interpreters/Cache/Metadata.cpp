@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <filesystem>
 
@@ -257,8 +258,6 @@ void CacheMetadata::doCleanup()
         }
 
         locked_metadata->markAsRemoved();
-        erase(it);
-        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
         try
         {
@@ -272,9 +271,17 @@ void CacheMetadata::doCleanup()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(false));
             chassert(false);
         }
+
+        /// Remove key from metadata AFTER deleting key directory, because otherwise key lock is
+        /// released before we delete directory from fs and there might be a race:
+        /// a key, which we just removed, can be added back to cache before we start removing key directory,
+        /// which makes key directory either non-empty (and we get exception in try catch above)
+        /// or we removed directory while another thread thinks it exists.
+        erase(it);
+        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
     }
 }
 
