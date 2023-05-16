@@ -88,7 +88,7 @@ inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & holder)
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
 {
-    // Normally, our hash table shouldn't ask us to persist a zero key,
+    // Normally, our hash table shouldn't ask to persist a zero key,
     // but it can happened in the case of clearable hash table (ClearableHashSet, for example).
     // The clearable hash table doesn't use zero storage and
     // distinguishes empty keys by using cell version, not the value itself.
