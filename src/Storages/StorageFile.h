@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 
-#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -14,8 +13,6 @@ namespace DB
 
 class StorageFile final : public IStorage
 {
-friend class partitionedstoragefilesink;
-
 public:
     struct CommonArguments : public WithContext
     {
@@ -75,6 +72,10 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     bool supportsPartitionBy() const override { return true; }
 

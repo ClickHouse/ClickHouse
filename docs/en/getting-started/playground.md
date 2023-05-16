@@ -26,8 +26,8 @@ You can make queries to Playground using any HTTP client, for example [curl](htt
 
 The queries are executed as a read-only user. It implies some limitations:
 
--   DDL queries are not allowed
--   INSERT queries are not allowed
+- DDL queries are not allowed
+- INSERT queries are not allowed
 
 The service also have quotas on its usage.
 

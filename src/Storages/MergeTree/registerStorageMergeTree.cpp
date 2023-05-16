@@ -70,8 +70,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
+    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2]
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -535,7 +535,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!args.storage_def->order_by)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
 
         /// Get sorting key from engine arguments.
         ///

@@ -762,11 +762,10 @@ NameSet ActionsDAG::foldActionsByProjection(
 }
 
 
-ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs, const NodeRawConstPtrs & required_outputs)
+ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
     auto dag = std::make_unique<ActionsDAG>();
-    std::unordered_map<const Node *, size_t> new_input_to_pos;
-
+    std::unordered_map<const Node *, const Node *> inputs_mapping;
     std::unordered_map<const Node *, const Node *> mapping;
     struct Frame
     {
@@ -796,11 +795,21 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
 
                     if (!node)
                     {
-                        bool should_rename = !rename.empty() && new_input->result_name != rename;
-                        const auto & input_name = should_rename ? rename : new_input->result_name;
-                        node = &dag->addInput(input_name, new_input->result_type);
-                        if (should_rename)
-                            node = &dag->addAlias(*node, new_input->result_name);
+                        /// It is possible to have a few aliases on the same column.
+                        /// We may want to replace all the aliases,
+                        /// in this case they should have a single input as a child.
+                        auto & mapped_input = inputs_mapping[rename];
+
+                        if (!mapped_input)
+                        {
+                            bool should_rename = new_input->result_name != rename->result_name;
+                            const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
+                            mapped_input = &dag->addInput(input_name, new_input->result_type);
+                            if (should_rename)
+                                mapped_input = &dag->addAlias(*mapped_input, new_input->result_name);
+                        }
+
+                        node = mapped_input;
                     }
 
                     stack.pop_back();
@@ -836,7 +845,14 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     }
 
     for (const auto * output : required_outputs)
-        dag->outputs.push_back(mapping[output]);
+    {
+        /// Keep the names for outputs.
+        /// Add an alias if the mapped node has a different result name.
+        const auto * mapped_output = mapping[output];
+        if (output->result_name != mapped_output->result_name)
+            mapped_output = &dag->addAlias(*mapped_output, output->result_name);
+        dag->outputs.push_back(mapped_output);
+    }
 
     return dag;
 }
@@ -2124,8 +2140,12 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
+    if (conjunction.rejected.size() == 1 && !conjunction.rejected.front()->result_type->equals(*predicate->result_type)
+        && conjunction.allowed.front()->type == ActionType::COLUMN)
+    {
+        // No further optimization can be done
         return nullptr;
+    }
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
@@ -2175,55 +2195,26 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     else
     {
         /// Predicate is conjunction, where both allowed and rejected sets are not empty.
-        /// Replace this node to conjunction of rejected predicates.
 
         NodeRawConstPtrs new_children = std::move(conjunction.rejected);
 
-        if (new_children.size() == 1)
+        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
         {
-            /// Rejected set has only one predicate.
-            if (new_children.front()->result_type->equals(*predicate->result_type))
-            {
-                /// If it's type is same, just add alias.
-                Node node;
-                node.type = ActionType::ALIAS;
-                node.result_name = predicate->result_name;
-                node.result_type = predicate->result_type;
-                node.children.swap(new_children);
-                *predicate = std::move(node);
-            }
-            else if (!WhichDataType{removeNullable(new_children.front()->result_type)}.isFloat())
-            {
-                /// If type is different, cast column.
-                /// This case is possible, cause AND can use any numeric type as argument.
-                /// But casting floats to UInt8 or Bool produces different results.
-                /// so we can't apply this optimization to them.
-                Node node;
-                node.type = ActionType::COLUMN;
-                node.result_name = predicate->result_type->getName();
-                node.column = DataTypeString().createColumnConst(0, node.result_name);
-                node.result_type = std::make_shared<DataTypeString>();
-
-                const auto * right_arg = &nodes.emplace_back(std::move(node));
-                const auto * left_arg = new_children.front();
-
-                predicate->children = {left_arg, right_arg};
-                auto arguments = prepareFunctionArguments(predicate->children);
-
-                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
-
-                predicate->function_base = func_builder_cast->build(arguments);
-                predicate->function = predicate->function_base->prepare(arguments);
-            }
+            /// Rejected set has only one predicate. And the type is the same as the result_type.
+            /// Just add alias.
+            Node node;
+            node.type = ActionType::ALIAS;
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
+            node.children.swap(new_children);
+            *predicate = std::move(node);
         }
         else
         {
-            /// Predicate is function AND, which still have more then one argument.
-            /// Or there is only one argument that is a float and we can't just
-            /// remove the AND.
+            /// Predicate is function AND, which still have more then one argument
+            /// or it has one argument of the wrong type.
             /// Just update children and rebuild it.
-            predicate->children.swap(new_children);
-            if (WhichDataType{removeNullable(predicate->children.front()->result_type)}.isFloat())
+            if (new_children.size() == 1)
             {
                 Node node;
                 node.type = ActionType::COLUMN;
@@ -2231,8 +2222,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 node.column = DataTypeUInt8().createColumnConst(0, 1u);
                 node.result_type = std::make_shared<DataTypeUInt8>();
                 const auto * const_col = &nodes.emplace_back(std::move(node));
-                predicate->children.emplace_back(const_col);
+                new_children.emplace_back(const_col);
             }
+            predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
@@ -2500,8 +2492,21 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
     :actions(actions_)
 {
-    for (const auto * node : actions->getOutputs())
-        index.emplace(node->result_name, node);
+    const auto & actions_outputs = actions->getOutputs();
+    for (const auto * output_node : actions_outputs)
+    {
+        /// find input node which refers to the output node
+        /// consider only aliases on the path
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            index.emplace(output_node->result_name, node);
+    }
 }
 
 const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
@@ -2510,17 +2515,36 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
     if (it == index.end())
         return nullptr;
 
-    /// find original(non alias) node it refers to
-    const ActionsDAG::Node * node = it->second;
-    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+    return it->second;
+}
+
+FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
+    :actions(actions_)
+{
+    const auto & actions_outputs = actions->getOutputs();
+    for (const auto * output_node : actions_outputs)
     {
-        chassert(!node->children.empty());
-        node = node->children.front();
+        /// find input node which corresponds to alias
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            /// node can have several aliases but we consider only the first one
+            index.emplace(node->result_name, output_node);
     }
-    if (node && node->type != ActionsDAG::ActionType::INPUT)
+}
+
+const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
+{
+    const auto it = index.find(name);
+    if (it == index.end())
         return nullptr;
 
-    return node;
+    return it->second;
 }
 
 }

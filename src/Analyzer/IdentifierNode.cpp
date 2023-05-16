@@ -1,5 +1,6 @@
 #include <Analyzer/IdentifierNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>

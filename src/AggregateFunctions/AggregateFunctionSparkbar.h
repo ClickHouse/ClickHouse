@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>

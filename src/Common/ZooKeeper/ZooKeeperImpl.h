@@ -179,7 +179,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() override;
+    DB::KeeperApiVersion getApiVersion() const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -255,8 +255,30 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    ThreadFromGlobalPool send_thread;
-    ThreadFromGlobalPool receive_thread;
+    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
+    class ThreadReference
+    {
+    public:
+        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        {
+            std::lock_guard<std::mutex> l(lock);
+            thread = std::move(thread_);
+            return *this;
+        }
+
+        void join()
+        {
+            std::lock_guard<std::mutex> l(lock);
+            if (thread.joinable())
+                thread.join();
+        }
+    private:
+        std::mutex lock;
+        ThreadFromGlobalPool thread;
+    };
+
+    ThreadReference send_thread;
+    ThreadReference receive_thread;
 
     Poco::Logger * log;
 

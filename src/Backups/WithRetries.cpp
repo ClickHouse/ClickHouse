@@ -20,7 +20,7 @@ WithRetries::WithRetries(Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper
 
 WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * parent, const String & name)
     : info(parent->global_zookeeper_retries_info)
-    , retries_ctl(name, info)
+    , retries_ctl(name, info, nullptr)
     , faulty_zookeeper(parent->getFaultyZooKeeper())
 {}
 

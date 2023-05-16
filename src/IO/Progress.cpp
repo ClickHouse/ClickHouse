@@ -28,13 +28,13 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 
 void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
 {
-    writeVarUIntOverflow(read_rows, out);
-    writeVarUIntOverflow(read_bytes, out);
-    writeVarUIntOverflow(total_rows_to_read, out);
+    writeVarUInt(read_rows, out);
+    writeVarUInt(read_bytes, out);
+    writeVarUInt(total_rows_to_read, out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
-        writeVarUIntOverflow(written_rows, out);
-        writeVarUIntOverflow(written_bytes, out);
+        writeVarUInt(written_rows, out);
+        writeVarUInt(written_bytes, out);
     }
     if (client_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS)
     {

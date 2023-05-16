@@ -437,7 +437,7 @@ Chunk DDLQueryStatusSource::generate()
 
         {
             auto retries_info = getRetriesInfo();
-            auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+            auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info, context->getProcessListElement());
             retries_ctl.retryLoop([&]()
             {
                 auto zookeeper = context->getZooKeeper();
@@ -477,7 +477,7 @@ Chunk DDLQueryStatusSource::generate()
                 bool finished_exists = false;
 
                 auto retries_info = getRetriesInfo();
-                auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+                auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info, context->getProcessListElement());
                 retries_ctl.retryLoop([&]()
                 {
                     finished_exists = context->getZooKeeper()->tryGet(fs::path(node_path) / "finished" / host_id, status_data);

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {

@@ -39,6 +39,7 @@ public:
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
+    bool isReadonly() const override;
     void syncRevision(UInt64 revision) const override;
     UInt64 getRevision() const override;
     std::string getDiskPath() const override;
