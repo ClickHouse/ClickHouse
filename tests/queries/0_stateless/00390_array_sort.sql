@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 SELECT [2, 1, 3] AS arr, arraySort(arr), arrayReverseSort(arr), arraySort(x -> -x, arr);
 SELECT materialize([2, 1, 3]) AS arr, arraySort(arr), arrayReverseSort(arr), arraySort(x -> -x, arr);
 
@@ -53,4 +51,4 @@ SELECT arrayPartialSort(2, [1,2,3], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT arrayPartialSort(2, [1,2,3], 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayPartialSort(arraySort([1,2,3]), [1,2,3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayMap(x -> range(x), [4, 1, 2, 3]) AS arr, 100 AS lim, arrayResize(arrayPartialSort(arrayPartialSort(lim, arr), arr), lim), arrayResize(arrayPartialReverseSort(lim, arr), lim), arrayResize(arrayPartialSort(x -> (-length(x)), lim, arr), lim); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT arrayPartialReverseSort(arraySort((x, y) -> y, [NULL, NULL], [NULL, NULL]), arr), arrayMap(x -> toString(x), [257, -9223372036854775807, 2, -2147483648, 2147483648, NULL, 65536, -2147483648, 2, 65535]) AS arr, NULL, 100 AS lim, 65536, arrayResize(arrayPartialSort(x -> reverse(x), lim, arr), lim) GROUP BY [NULL, 1023, -2, NULL, 255, '0', NULL, 9223372036854775806] WITH ROLLUP; -- { serverError NO_COMMON_TYPE }
+SELECT arrayPartialReverseSort(arraySort((x, y) -> y, [NULL, NULL], [NULL, NULL]), arr), arrayMap(x -> toString(x), [257, -9223372036854775807, 2, -2147483648, 2147483648, NULL, 65536, -2147483648, 2, 65535]) AS arr, NULL, 100 AS lim, 65536, arrayResize(arrayPartialSort(x -> reverse(x), lim, arr), lim) GROUP BY [NULL, 1023, -2, NULL, 255, '0', NULL, 9223372036854775806] WITH ROLLUP; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, NO_COMMON_TYPE }

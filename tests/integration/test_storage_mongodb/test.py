@@ -4,6 +4,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 
 from helpers.cluster import ClickHouseCluster
+import datetime
 
 
 @pytest.fixture(scope="module")
@@ -68,6 +69,149 @@ def test_simple_select(started_cluster):
     )
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_arrays(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    arrays_mongo_table = db["arrays_table"]
+    data = []
+    for i in range(0, 100):
+        data.append(
+            {
+                "key": i,
+                "arr_int64": [-(i + 1), -(i + 2), -(i + 3)],
+                "arr_int32": [-(i + 1), -(i + 2), -(i + 3)],
+                "arr_int16": [-(i + 1), -(i + 2), -(i + 3)],
+                "arr_int8": [-(i + 1), -(i + 2), -(i + 3)],
+                "arr_uint64": [i + 1, i + 2, i + 3],
+                "arr_uint32": [i + 1, i + 2, i + 3],
+                "arr_uint16": [i + 1, i + 2, i + 3],
+                "arr_uint8": [i + 1, i + 2, i + 3],
+                "arr_float32": [i + 1.125, i + 2.5, i + 3.750],
+                "arr_float64": [i + 1.125, i + 2.5, i + 3.750],
+                "arr_date": [
+                    datetime.datetime(2002, 10, 27),
+                    datetime.datetime(2024, 1, 8),
+                ],
+                "arr_datetime": [
+                    datetime.datetime(2023, 3, 31, 6, 3, 12),
+                    datetime.datetime(1999, 2, 28, 12, 46, 34),
+                ],
+                "arr_string": [str(i + 1), str(i + 2), str(i + 3)],
+                "arr_uuid": [
+                    "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
+                    "93376a07-c044-4281-a76e-ad27cf6973c5",
+                ],
+                "arr_arr_bool": [
+                    [True, False, True],
+                    [True],
+                    [],
+                    None,
+                    [False],
+                    [None],
+                ],
+                "arr_empty": [],
+                "arr_null": None,
+                "arr_nullable": None,
+            }
+        )
+
+    arrays_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "CREATE TABLE arrays_mongo_table("
+        "key UInt64,"
+        "arr_int64 Array(Int64),"
+        "arr_int32 Array(Int32),"
+        "arr_int16 Array(Int16),"
+        "arr_int8 Array(Int8),"
+        "arr_uint64 Array(UInt64),"
+        "arr_uint32 Array(UInt32),"
+        "arr_uint16 Array(UInt16),"
+        "arr_uint8 Array(UInt8),"
+        "arr_float32 Array(Float32),"
+        "arr_float64 Array(Float64),"
+        "arr_date Array(Date),"
+        "arr_datetime Array(DateTime),"
+        "arr_string Array(String),"
+        "arr_uuid Array(UUID),"
+        "arr_arr_bool Array(Array(Bool)),"
+        "arr_empty Array(UInt64),"
+        "arr_null Array(UInt64),"
+        "arr_arr_null Array(Array(UInt64)),"
+        "arr_nullable Array(Nullable(UInt64))"
+        ") ENGINE = MongoDB('mongo1:27017', 'test', 'arrays_table', 'root', 'clickhouse')"
+    )
+
+    assert node.query("SELECT COUNT() FROM arrays_mongo_table") == "100\n"
+
+    for column_name in ["arr_int64", "arr_int32", "arr_int16", "arr_int8"]:
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[-43,-44,-45]\n"
+        )
+
+    for column_name in ["arr_uint64", "arr_uint32", "arr_uint16", "arr_uint8"]:
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43,44,45]\n"
+        )
+
+    for column_name in ["arr_float32", "arr_float64"]:
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43.125,44.5,45.75]\n"
+        )
+
+    assert (
+        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        == "['2002-10-27','2024-01-08']\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        == "['43','44','45']\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        == "[[true,false,true],[true],[],[],[false],[false]]\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
+    )
+
+    assert (
+        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
+    )
+
+    node.query("DROP TABLE arrays_mongo_table")
+    arrays_mongo_table.drop()
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])

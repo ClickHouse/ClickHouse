@@ -72,7 +72,7 @@ void JSONColumnsReaderBase::skipColumn()
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
-    : IInputFormat(header_, in_)
+    : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
     , serializations(header_.getSerializations())
@@ -128,7 +128,7 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
         {
             /// Check if this name appears in header. If no, skip this column or throw
             /// an exception according to setting input_format_skip_unknown_fields
-            if (!name_to_index.has(*column_name))
+            if (name_to_index.find(*column_name) == name_to_index.end())
             {
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);

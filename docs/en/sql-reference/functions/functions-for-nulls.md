@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/functions-for-nulls
-sidebar_position: 63
+sidebar_position: 135
 sidebar_label: Nullable
 ---
 
@@ -18,12 +18,12 @@ Alias: `ISNULL`.
 
 **Arguments**
 
--   `x` — A value with a non-compound data type.
+- `x` — A value with a non-compound data type.
 
 **Returned value**
 
--   `1` if `x` is `NULL`.
--   `0` if `x` is not `NULL`.
+- `1` if `x` is `NULL`.
+- `0` if `x` is not `NULL`.
 
 **Example**
 
@@ -58,12 +58,12 @@ isNotNull(x)
 
 **Arguments:**
 
--   `x` — A value with a non-compound data type.
+- `x` — A value with a non-compound data type.
 
 **Returned value**
 
--   `0` if `x` is `NULL`.
--   `1` if `x` is not `NULL`.
+- `0` if `x` is `NULL`.
+- `1` if `x` is not `NULL`.
 
 **Example**
 
@@ -98,12 +98,12 @@ coalesce(x,...)
 
 **Arguments:**
 
--   Any number of parameters of a non-compound type. All parameters must be compatible by data type.
+- Any number of parameters of a non-compound type. All parameters must be compatible by data type.
 
 **Returned values**
 
--   The first non-`NULL` argument.
--   `NULL`, if all arguments are `NULL`.
+- The first non-`NULL` argument.
+- `NULL`, if all arguments are `NULL`.
 
 **Example**
 
@@ -141,13 +141,13 @@ ifNull(x,alt)
 
 **Arguments:**
 
--   `x` — The value to check for `NULL`.
--   `alt` — The value that the function returns if `x` is `NULL`.
+- `x` — The value to check for `NULL`.
+- `alt` — The value that the function returns if `x` is `NULL`.
 
 **Returned values**
 
--   The value `x`, if `x` is not `NULL`.
--   The value `alt`, if `x` is `NULL`.
+- The value `x`, if `x` is not `NULL`.
+- The value `alt`, if `x` is `NULL`.
 
 **Example**
 
@@ -185,8 +185,8 @@ nullIf(x, y)
 
 **Returned values**
 
--   `NULL`, if the arguments are equal.
--   The `x` value, if the arguments are not equal.
+- `NULL`, if the arguments are equal.
+- The `x` value, if the arguments are not equal.
 
 **Example**
 
@@ -220,12 +220,12 @@ assumeNotNull(x)
 
 **Arguments:**
 
--   `x` — The original value.
+- `x` — The original value.
 
 **Returned values**
 
--   The original value from the non-`Nullable` type, if it is not `NULL`.
--   Implementation specific result if the original value was `NULL`.
+- The original value from the non-`Nullable` type, if it is not `NULL`.
+- Implementation specific result if the original value was `NULL`.
 
 **Example**
 
@@ -282,11 +282,11 @@ toNullable(x)
 
 **Arguments:**
 
--   `x` — The value of any non-compound type.
+- `x` — The value of any non-compound type.
 
 **Returned value**
 
--   The input value with a `Nullable` type.
+- The input value with a `Nullable` type.
 
 **Example**
 

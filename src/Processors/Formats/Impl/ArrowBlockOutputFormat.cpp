@@ -98,6 +98,7 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
     arrow::ipc::IpcWriteOptions options = arrow::ipc::IpcWriteOptions::Defaults();
     options.codec = *arrow::util::Codec::Create(getArrowCompression(format_settings.arrow.output_compression_method));
+    options.emit_dictionary_deltas = true;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
@@ -133,6 +134,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
+    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
 }
 
 }

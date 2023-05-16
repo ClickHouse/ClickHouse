@@ -74,10 +74,10 @@ Sorting (Stream): a ASC
 Sorting (Stream): a ASC
 -- aliases DONT break sorting order
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)
-Sorting (Global): x ASC, y ASC
+Sorting (Global): a ASC, b ASC
 Sorting (Sorting for ORDER BY)
 Sorting (Global): x ASC, y ASC
-Sorting (Stream): a ASC, b ASC
+Sorting (Stream): x ASC, y ASC
 Sorting (Stream): a ASC, b ASC
 -- actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1

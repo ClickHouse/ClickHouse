@@ -27,9 +27,7 @@
 #define _PATH_TTY "/dev/tty"
 #endif
 
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <termios.h>
 #include <signal.h>

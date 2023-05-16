@@ -1,15 +1,18 @@
 #include <Backups/BackupIO_File.h>
+#include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
-BackupReaderFile::BackupReaderFile(const String & path_) : path(path_)
+BackupReaderFile::BackupReaderFile(const String & path_) : path(path_), log(&Poco::Logger::get("BackupReaderFile"))
 {
 }
 
@@ -30,7 +33,25 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
     return createReadBufferFromFileBase(path / file_name, {});
 }
 
-BackupWriterFile::BackupWriterFile(const String & path_) : path(path_)
+void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
+{
+    if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
+    {
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying {}/{} to disk {} locally", path, file_name, destination_disk->getName());
+        fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
+        return;
+    }
+
+    LOG_TRACE(log, "Copying {}/{} to disk {} through buffers", path, file_name, destination_disk->getName());
+    IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
+}
+
+
+BackupWriterFile::BackupWriterFile(const String & path_, const ContextPtr & context_)
+    : IBackupWriter(context_)
+    , path(path_)
 {
 }
 
@@ -133,9 +154,9 @@ void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_
     else
         abs_source_path = fs::absolute(src_file_name);
 
-    if ((src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
+    if (has_throttling || (src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
     {
-        auto create_read_buffer = [abs_source_path] { return createReadBufferFromFileBase(abs_source_path, {}); };
+        auto create_read_buffer = [this, abs_source_path] { return createReadBufferFromFileBase(abs_source_path, read_settings); };
         copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
         return;
     }

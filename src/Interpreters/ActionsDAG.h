@@ -221,6 +221,30 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
+    /// Get an ActionsDAG in a following way:
+    /// * Traverse a tree starting from required_outputs
+    /// * If there is a node from new_inputs keys, replace it to INPUT
+    /// * INPUT name should be taken from new_inputs mapped node name
+    /// * Mapped nodes may be the same nodes, and in this case there would be a single INPUT
+    /// Here want to substitute some expressions to columns from projection.
+    /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
+    /// If not, exception will happen.
+    /// This function also expects that new_inputs and required_outputs are valid nodes from the same DAG.
+    /// Example:
+    /// DAG:                   new_inputs:                   Result DAG
+    /// a      b               c * d -> "(a + b) * d"
+    /// \     /                e     -> ""
+    ///  a + b
+    ///     \                  required_outputs:         =>  "(a + b) * d"    e
+    ///   c (alias)   d        c * d - e                              \      /
+    ///       \      /                                               c * d - e
+    ///        c * d       e
+    ///            \      /
+    ///            c * d - e
+    static ActionsDAGPtr foldActionsByProjection(
+        const std::unordered_map<const Node *, const Node *> & new_inputs,
+        const NodeRawConstPtrs & required_outputs);
+
     /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
 
@@ -290,6 +314,9 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
+    /// Merge current nodes with specified dag nodes
+    void mergeNodes(ActionsDAG && second);
+
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
@@ -344,15 +371,18 @@ public:
       * Additionally during dag construction if node has name that exists in node_name_to_input_column map argument
       * in final dag this node is represented as INPUT node with specified column.
       *
-      * Result dag has only single output node:
+      * If single_output_condition_node = true, result dag has single output node:
       * 1. If there is single filter node, result dag output will contain this node.
       * 2. If there are multiple filter nodes, result dag output will contain single `and` function node
       * and children of this node will be filter nodes.
+      *
+      * If single_output_condition_node = false, result dag has multiple output nodes.
       */
     static ActionsDAGPtr buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool single_output_condition_node = true);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
@@ -372,6 +402,32 @@ private:
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+};
+
+class FindOriginalNodeForOutputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
 };
 
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.

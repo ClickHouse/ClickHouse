@@ -153,6 +153,10 @@ bool isPartitionKeySuitsGroupByKey(
 
     if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() || group_by_actions->hasNonDeterministic())
         return false;
+
+    /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
+    group_by_actions->removeUnusedActions(aggregating.getParams().keys);
+
     const auto & gb_key_required_columns = group_by_actions->getRequiredColumnsNames();
 
     const auto & partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG();
@@ -202,7 +206,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
         return 0;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeySuitsGroupByKey(*reading, expression_step->getExpression(), *aggregating_step))
+        && isPartitionKeySuitsGroupByKey(*reading, expression_step->getExpression()->clone(), *aggregating_step))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePort())
             aggregating_step->skipMerging();

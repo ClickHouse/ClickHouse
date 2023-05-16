@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q 'create table dedup_test(A Int64) Engine = MergeTree order
 function insert_data
 {
     IMPLICIT=$(( RANDOM % 2 ))
-    SESSION_ID="${SESSION}_$RANDOM.$RANDOM.$RANDOM"
+    SESSION_ID="${SESSION}_$RANDOM.$RANDOM.$NUM"
     TXN_SETTINGS="session_id=$SESSION_ID&throw_on_unsupported_query_inside_transaction=0&implicit_transaction=$IMPLICIT"
     BEGIN=""
     COMMIT=""
@@ -47,22 +47,25 @@ function insert_data
     fi
 
     if [[ "$IMPLICIT" -eq 0 ]]; then
-        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1"
+        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" 2>&1| grep -Fav "Transaction is not in RUNNING state"
     fi
 }
 
 export -f insert_data
 
 ID="02435_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
-insert_data
+insert_data 0
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
 {
     # supress "Killed" messages from bash
+    i=2
     while true; do
-        export ID="$TEST_MARK$RANDOM"
+        export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
+        export NUM="$i"
         bash -c insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
+        i=$((i + 1))
     done
 }
 
@@ -102,7 +105,7 @@ wait
 $CLICKHOUSE_CLIENT -q 'system flush logs'
 
 ID="02435_insert_last_${CLICKHOUSE_DATABASE}_$RANDOM"
-insert_data
+insert_data 1
 
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000 != 0 or count() = 0) from dedup_test' \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase();"

@@ -8,7 +8,6 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
 
@@ -101,6 +100,10 @@ protected:
 
     bool supportsSubsetOfColumns() const override;
 
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
+
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 
@@ -188,6 +191,7 @@ public:
         std::string url;
         std::string http_method;
         HTTPHeaderEntries headers;
+        std::string addresses_expr;
     };
 
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
@@ -220,13 +224,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    struct Configuration
-    {
-        String url;
-        String compression_method = "auto";
-        std::vector<std::pair<String, String>> headers;
-    };
 
 private:
     std::vector<String> uri_options;
