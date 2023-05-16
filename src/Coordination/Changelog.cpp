@@ -155,20 +155,23 @@ public:
         assert(file_buffer && current_file_description);
 
         assert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
-        const bool log_is_complete = record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog();
-
-        if (log_is_complete)
-            rotate(record.header.index);
-
-        // writing at least 1 log is requirement - we don't want empty log files
-        // we use count() that can be unreliable for more complex WriteBuffers, so we should be careful if we change the type of it in the future
-        const bool log_too_big = record.header.index != getStartIndex() && log_file_settings.max_size != 0
-            && initial_file_size + file_buffer->count() > log_file_settings.max_size;
-
-        if (log_too_big)
+        // check if log file reached the limit for amount of records it can contain
+        if (record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog())
         {
-            LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", log_file_settings.max_size);
             rotate(record.header.index);
+        }
+        else
+        {
+            // writing at least 1 log is requirement - we don't want empty log files
+            // we use count() that can be unreliable for more complex WriteBuffers, so we should be careful if we change the type of it in the future
+            const bool log_too_big = record.header.index != getStartIndex() && log_file_settings.max_size != 0
+                && initial_file_size + file_buffer->count() > log_file_settings.max_size;
+
+            if (log_too_big)
+            {
+                LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", log_file_settings.max_size);
+                rotate(record.header.index);
+            }
         }
 
         if (!prealloc_done) [[unlikely]]
@@ -206,9 +209,14 @@ public:
     void flush()
     {
         auto * file_buffer = tryGetFileBaseBuffer();
-        /// Fsync file system if needed
-        if (file_buffer && log_file_settings.force_sync)
-            file_buffer->sync();
+        if (file_buffer)
+        {
+            /// Fsync file system if needed
+            if (log_file_settings.force_sync)
+                file_buffer->sync();
+            else
+                file_buffer->next();
+        }
     }
 
     uint64_t getStartIndex() const

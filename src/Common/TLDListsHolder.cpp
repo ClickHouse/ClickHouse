@@ -109,14 +109,14 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
     }
 
     size_t tld_list_size = tld_list.size();
-    std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
+    std::lock_guard lock(tld_lists_map_mutex);
     tld_lists_map.insert(std::make_pair(name, std::move(tld_list)));
     return tld_list_size;
 }
 
 const TLDList & TLDListsHolder::getTldList(const std::string & name)
 {
-    std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
+    std::lock_guard lock(tld_lists_map_mutex);
     auto it = tld_lists_map.find(name);
     if (it == tld_lists_map.end())
         throw Exception(ErrorCodes::TLD_LIST_NOT_FOUND, "TLD list {} does not exist", name);

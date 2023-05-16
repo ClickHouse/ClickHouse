@@ -382,7 +382,7 @@ def test_postgres_distributed(started_cluster):
         """
         CREATE TABLE test_shards2
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('PostgreSQL', postgres4, description='postgres{1|2}:5432,postgres{3|4}:5432'); """
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, addresses_expr='postgres{1|2}:5432,postgres{3|4}:5432'); """
     )
 
     result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")

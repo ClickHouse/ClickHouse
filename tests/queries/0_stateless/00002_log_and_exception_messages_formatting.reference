@@ -1,14 +1,15 @@
-10	0.001
-20	0.05
-30	10
-40	40
-50	125
-60	0.3
-70	0.16
-80	0.08
-90	0.04
-100	0.005
-110	0.01
-120	3
-130	10
-140	15
+runtime messages	0.001
+runtime exceptions	0.05
+messages shorter than 10	1
+messages shorter than 16	3
+exceptions shorter than 30	3
+noisy messages	0.3
+noisy Trace messages	0.16
+noisy Debug messages	0.09
+noisy Info messages	0.05
+noisy Warning messages	0.01
+noisy Error messages	0.02
+no Fatal messages	0
+number of too noisy messages	3
+number of noisy messages	10
+incorrect patterns	15

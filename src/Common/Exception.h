@@ -4,7 +4,6 @@
 #include <vector>
 #include <memory>
 
-#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <base/defines.h>
@@ -242,7 +241,7 @@ struct ExecutionStatus
     explicit ExecutionStatus(int return_code, const std::string & exception_message = "")
     : code(return_code), message(exception_message) {}
 
-    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
+    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "", bool with_stacktrace = false);
 
     static ExecutionStatus fromText(const std::string & data);
 

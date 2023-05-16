@@ -44,7 +44,7 @@ struct ClearableHashTableCell : public BaseCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
-    ClearableHashTableCell() {} //-V730 /// NOLINT
+    ClearableHashTableCell() {} /// NOLINT
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
@@ -68,7 +68,7 @@ struct ClearableHashTableCell<StringRef, StringRefBaseCell> : public StringRefBa
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    ClearableHashTableCell() { } //-V730 /// NOLINT
+    ClearableHashTableCell() { } /// NOLINT
     ClearableHashTableCell(const StringRef & key_, const State & state) : StringRefBaseCell(key_, state), version(state.version) { }
 };
 
@@ -80,6 +80,8 @@ template <
 class ClearableHashSet
     : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
+    using Cell = ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>;
+
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
@@ -88,6 +90,13 @@ public:
     {
         ++this->version;
         this->m_size = 0;
+
+        if constexpr (Cell::need_zero_value_storage)
+        {
+            /// clear ZeroValueStorage
+            if (this->hasZero())
+                this->clearHasZero();
+        }
     }
 };
 
@@ -103,11 +112,20 @@ class ClearableHashSetWithSavedHash : public HashTable<
                                           Grower,
                                           Allocator>
 {
+    using Cell = ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>;
+
 public:
     void clear()
     {
         ++this->version;
         this->m_size = 0;
+
+        if constexpr (Cell::need_zero_value_storage)
+        {
+            /// clear ZeroValueStorage
+            if (this->hasZero())
+                this->clearHasZero();
+        }
     }
 };
 

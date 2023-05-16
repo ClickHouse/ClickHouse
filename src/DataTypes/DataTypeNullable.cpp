@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
@@ -98,5 +99,20 @@ DataTypePtr removeNullable(const DataTypePtr & type)
         return static_cast<const DataTypeNullable &>(*type).getNestedType();
     return type;
 }
+
+DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return type;
+
+    if (type->lowCardinality())
+    {
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+        return std::make_shared<DataTypeLowCardinality>(makeNullable(dictionary_type));
+    }
+
+    return std::make_shared<DataTypeNullable>(type);
+}
+
 
 }

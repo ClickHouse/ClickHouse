@@ -4,7 +4,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include <Formats/newLineSegmentationEngine.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -180,9 +179,46 @@ void registerInputFormatRegexp(FormatFactory & factory)
     });
 }
 
+static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+{
+    char * pos = in.position();
+    bool need_more_data = true;
+    size_t number_of_rows = 0;
+
+    while (loadAtPosition(in, memory, pos) && need_more_data)
+    {
+        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
+        if (pos > in.buffer().end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+        else if (pos == in.buffer().end())
+            continue;
+
+        ++number_of_rows;
+        if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
+            need_more_data = false;
+
+        if (*pos == '\n')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\r')
+                ++pos;
+        }
+        else if (*pos == '\r')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                ++pos;
+        }
+    }
+
+    saveUpToPosition(in, memory, pos);
+
+    return {loadAtPosition(in, memory, pos), number_of_rows};
+}
+
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("Regexp", &newLineFileSegmentationEngine);
+    factory.registerFileSegmentationEngine("Regexp", &segmentationEngine);
 }
 
 void registerRegexpSchemaReader(FormatFactory & factory)

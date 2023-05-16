@@ -41,6 +41,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/Concepts.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
@@ -216,7 +217,7 @@ struct ConvertImpl
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
                 )
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
@@ -303,7 +304,10 @@ struct ConvertImpl
                         }
                         else
                         {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
+                                vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
+                            else
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
                     }
                 }
@@ -374,7 +378,7 @@ struct ToDateTransform32Or64
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
-        return (from < DATE_LUT_MAX_DAY_NUM)
+        return (from <= DATE_LUT_MAX_DAY_NUM)
             ? from
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
@@ -391,7 +395,7 @@ struct ToDateTransform32Or64Signed
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
         if (from < 0)
             return 0;
-        return (from < DATE_LUT_MAX_DAY_NUM)
+        return (from <= DATE_LUT_MAX_DAY_NUM)
             ? static_cast<ToType>(from)
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
@@ -800,7 +804,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, Con
     }
 };
 
-static ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+static inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))
@@ -3094,12 +3098,18 @@ private:
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
+        DataTypePtr from_type_holder;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
         const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
         /// Convert from Map
         if (from_type_map)
-            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
+        {
+            /// Recreate array of unnamed tuples because otherwise it may work
+            /// unexpectedly while converting to array of named tuples.
+            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
+            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
+        }
 
         if (!from_type)
         {
@@ -3291,7 +3301,7 @@ private:
         };
     }
 
-    WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3312,7 +3322,7 @@ private:
     }
 
     /// The case of: [(key1, value1), (key2, value2), ...]
-    WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3338,8 +3348,12 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
-                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from tuple requires 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_tuple->getName(),
+                    to_type->getName());
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3360,14 +3374,18 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from array requires nested tuple of 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_array->getName(),
+                    to_type->getName());
 
-            return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
+            return createArrayToMapWrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
         else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
         {
-            return createMapToMapWrrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
+            return createMapToMapWrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
         }
         else
         {

@@ -29,11 +29,6 @@
 #define DEFAULT_INSERT_BLOCK_SIZE \
     1048449 /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
-/** The same, but for merge operations. Less DEFAULT_BLOCK_SIZE for saving RAM (since all the columns are read).
-  * Significantly less, since there are 10-way mergers.
-  */
-#define DEFAULT_MERGE_BLOCK_SIZE 8192
-
 #define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
@@ -51,6 +46,8 @@
 /// Maximum number of http-connections between two endpoints
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
+
+#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 10
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
@@ -81,4 +78,3 @@
 #else
 #define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 0
 #endif
-

@@ -29,11 +29,13 @@ void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatS
             break;
     }
 
+    settings.ostr << (settings.hilite ? hilite_none : "");
+
     formatOnCluster(settings);
 
     if (where_expression)
     {
-        settings.ostr << " WHERE " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         where_expression->formatImpl(settings, state, frame);
     }
 

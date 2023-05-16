@@ -43,7 +43,6 @@ namespace
             {
                 if (!str.empty())
                     str += " ";
-                std::string_view word{pos->begin, pos->size()};
                 str += std::string_view(pos->begin, pos->size());
                 ++pos;
             }
@@ -123,13 +122,40 @@ namespace
                 if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                     return false;
 
+                String database_name, table_name, parameter;
+                bool any_database = false, any_table = false, any_parameter = false;
+
+                size_t is_global_with_parameter = 0;
+                for (const auto & elem : access_and_columns)
+                {
+                    if (elem.first.isGlobalWithParameter())
+                        ++is_global_with_parameter;
+                }
+
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
-                String database_name, table_name;
-                bool any_database = false, any_table = false;
-                if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
+                {
+                    ASTPtr parameter_ast;
+                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                    {
+                        any_parameter = true;
+                    }
+                    else if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
+                    {
+                        any_parameter = false;
+                        parameter = getIdentifierName(parameter_ast);
+                    }
+                    else
+                        return false;
+
+                    any_database = any_table = true;
+                }
+                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                {
                     return false;
+                }
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
@@ -140,7 +166,9 @@ namespace
                     element.any_database = any_database;
                     element.database = database_name;
                     element.any_table = any_table;
+                    element.any_parameter = any_parameter;
                     element.table = table_name;
+                    element.parameter = parameter;
                     res_elements.emplace_back(std::move(element));
                 }
 
@@ -155,6 +183,37 @@ namespace
         });
     }
 
+    bool parseCurrentGrants(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    {
+        if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            if (!parseElementsWithoutOptions(pos, expected, elements))
+                return false;
+
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            AccessRightsElement default_element(AccessType::ALL);
+
+            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+                return false;
+
+            String database_name, table_name;
+            bool any_database = false, any_table = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                return false;
+
+            default_element.any_database = any_database;
+            default_element.database = database_name;
+            default_element.any_table = any_table;
+            default_element.table = table_name;
+            elements.push_back(std::move(default_element));
+        }
+
+        return true;
+    }
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
@@ -173,6 +232,8 @@ namespace
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
             else if (!element.any_database)
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
+            else if (!element.any_parameter)
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
             else
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });
@@ -253,14 +314,25 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
-        return false;
+
+    bool current_grants = false;
+    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    {
+        current_grants = true;
+        if (!parseCurrentGrants(pos, expected, elements))
+            return false;
+    }
+    else
+    {
+        if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+            return false;
+    }
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
-    if (!parseToGrantees(pos, expected, is_revoke, grantees))
+    if (!parseToGrantees(pos, expected, is_revoke, grantees) && !allow_no_grantees)
         return false;
 
     if (cluster.empty())
@@ -322,6 +394,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
+    query->current_grants = current_grants;
 
     return true;
 }

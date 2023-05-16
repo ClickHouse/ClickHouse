@@ -318,12 +318,23 @@ DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(Block out
 
 IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 {
+    auto & output = outputs.front();
+    auto & input = inputs.front();
+
+    if (output.isFinished())
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
     if (inputs.size() != 1 && outputs.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have exactly one input port");
-
-    auto & output = outputs.front();
-
-    auto & input = inputs.front();
 
     if (output_chunk)
     {
@@ -397,15 +408,25 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
 
 void DelayedJoinedBlocksTransform::work()
 {
+    if (finished)
+        return;
+
     delayed_blocks = join->getDelayedBlocks();
     finished = finished || delayed_blocks == nullptr;
 }
-
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
     for (auto & output : outputs)
     {
+        if (output.isFinished())
+        {
+            /// If at least one output is finished, then we have read all data from buckets.
+            /// Some workers can still be busy with joining the last chunk of data in memory,
+            /// but after that they also will finish when they will try to get next chunk.
+            finished = true;
+            continue;
+        }
         if (!output.canPush())
             return Status::PortFull;
     }
@@ -414,6 +435,8 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     {
         for (auto & output : outputs)
         {
+            if (output.isFinished())
+                continue;
             Chunk chunk;
             chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
             output.push(std::move(chunk));

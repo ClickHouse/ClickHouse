@@ -121,7 +121,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return ColumnConst::create(scalar.column, input_rows_count);
+        auto result = ColumnConst::create(scalar.column, input_rows_count);
+
+        if (!isSuitableForConstantFolding())
+            return result->convertToFullColumnIfConst();
+
+        return result;
     }
 
 private:

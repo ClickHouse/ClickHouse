@@ -9,11 +9,10 @@
 #include <list>
 
 #include <base/types.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
+#include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
@@ -22,13 +21,7 @@
 
 namespace Aws::S3
 {
-class S3Client;
-}
-
-namespace Aws::S3::Model
-{
-    class UploadPartRequest;
-    class PutObjectRequest;
+class Client;
 }
 
 namespace DB
@@ -47,7 +40,7 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::RequestSettings & request_settings_,
@@ -65,6 +58,10 @@ public:
 private:
     void allocateBuffer();
 
+    void processWithStrictParts();
+    void processWithDynamicParts();
+
+    void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & req);
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
@@ -75,25 +72,28 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req);
+    void fillUploadRequest(S3::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
+    void fillPutRequest(S3::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
-    void waitForReadyBackGroundTasks();
-    void waitForAllBackGroundTasks();
-    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
+    void waitForReadyBackgroundTasks();
+    void waitForAllBackgroundTasks();
+    void waitForAllBackgroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
     const String bucket;
     const String key;
     const S3Settings::RequestSettings request_settings;
     const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
-    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
-    size_t upload_part_size = 0;
+    /// Strict/static Part size, no adjustments will be done on fly.
+    size_t strict_upload_part_size = 0;
+    /// Part size will be adjusted on fly (for bigger uploads)
+    size_t current_upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
     size_t part_number = 0;

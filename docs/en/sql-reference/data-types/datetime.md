@@ -62,8 +62,8 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
+- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+- When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
 
@@ -137,11 +137,11 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 
 ## See Also
 
--   [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
--   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
--   [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
--   [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
--   [The `date_time_output_format` setting](../../operations/settings/settings.md#settings-date_time_output_format)
--   [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
--   [The `Date` data type](../../sql-reference/data-types/date.md)
+- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
+- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
+- [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings.md#settings-date_time_output_format)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
+- [The `Date` data type](../../sql-reference/data-types/date.md)
