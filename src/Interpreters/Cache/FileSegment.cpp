@@ -43,7 +43,7 @@ FileSegment::FileSegment(
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
     , cache(cache_)
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
     , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #else
     , log(&Poco::Logger::get("FileSegment"))
@@ -56,6 +56,7 @@ FileSegment::FileSegment(
         /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
         case (State::EMPTY):
         {
+            chassert(key_metadata.lock());
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
@@ -65,6 +66,7 @@ FileSegment::FileSegment(
             reserved_size = downloaded_size = size_;
             chassert(fs::file_size(getPathInLocalCache()) == size_);
             chassert(queue_iterator);
+            chassert(key_metadata.lock());
             break;
         }
         case (State::DETACHED):
@@ -91,8 +93,16 @@ String FileSegment::getPathInLocalCache() const
     return getKeyMetadata()->getFileSegmentPath(*this);
 }
 
-void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock &)
+void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & lock)
 {
+    if (isCompleted(false) && state != State::DETACHED)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Updating state to {} of file segment is not allowed, because it is already completed ({})",
+            stateToString(state), getInfoForLogUnlocked(lock));
+    }
+
     LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
     download_state = state;
 }
@@ -182,12 +192,13 @@ String FileSegment::getOrSetDownloader()
     if (current_downloader.empty())
     {
         const auto caller_id = getCallerId();
-        bool allow_new_downloader = download_state == State::EMPTY || download_state == State::PARTIALLY_DOWNLOADED || !caller_id.starts_with("None");
+        bool allow_new_downloader = download_state == State::EMPTY || download_state == State::PARTIALLY_DOWNLOADED;
         if (!allow_new_downloader)
             return "notAllowed:" + stateToString(download_state);
 
         current_downloader = downloader_id = caller_id;
         setDownloadState(State::DOWNLOADING, lock);
+        chassert(key_metadata.lock());
     }
 
     return current_downloader;
@@ -742,7 +753,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
     }
     else
     {
-        if (download_state == State::DOWNLOADED)
+        if (download_state == State::DOWNLOADING)
         {
             chassert(!downloader_id.empty());
         }

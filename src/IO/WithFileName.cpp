@@ -33,7 +33,7 @@ String getExceptionEntryWithFileName(const ReadBuffer & in)
     if (filename.empty())
         return "";
 
-    return fmt::format("; While reading from: {}", filename);
+    return fmt::format(": While reading from: {}", filename);
 }
 
 }

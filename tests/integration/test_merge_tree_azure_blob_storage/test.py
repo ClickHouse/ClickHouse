@@ -461,7 +461,7 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(512)"
     )
 
-    azure_query(node, f"DROP TABLE {table_clone_name} NO DELAY")
+    azure_query(node, f"DROP TABLE {table_clone_name} SYNC")
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
@@ -470,7 +470,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE")
 
-    azure_query(node, f"DROP TABLE {TABLE_NAME} NO DELAY")
+    azure_query(node, f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 def test_freeze_unfreeze(cluster):

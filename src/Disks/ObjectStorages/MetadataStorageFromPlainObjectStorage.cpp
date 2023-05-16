@@ -108,7 +108,7 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
 {
     std::string blob_name = object_storage->generateBlobNameForPath(path);
     size_t object_size = getFileSize(blob_name);
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, path, /* exists */true);
+    auto object = StoredObject(getAbsolutePath(blob_name), object_size, path);
     return {std::move(object)};
 }
 
@@ -119,7 +119,7 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
-    auto object = StoredObject::create(*metadata_storage.object_storage, metadata_storage.getAbsolutePath(path));
+    auto object = StoredObject(metadata_storage.getAbsolutePath(path));
     metadata_storage.object_storage->removeObject(object);
 }
 
