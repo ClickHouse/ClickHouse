@@ -317,7 +317,8 @@ private:
     // 1) Concurrency: Amount of concurrently executing jobs in a pool is `max_threads`.
     // 2) Priority: As long as there is executing worker with higher priority, workers with lower priorities are not started
     //    (although, they can finish last job started before higher priority jobs appeared)
-    struct Pool {
+    struct Pool
+    {
         const String name;
         const ssize_t priority;
         std::unique_ptr<ThreadPool> thread_pool; // NOTE: we avoid using a `ThreadPool` queue to be able to move jobs between pools.
