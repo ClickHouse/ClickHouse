@@ -192,6 +192,7 @@ inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionP
 {
     return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
+        && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
         && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
 }
