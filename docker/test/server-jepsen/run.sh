@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-15_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
+CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-16_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
 CLICKHOUSE_REPO_PATH=${CLICKHOUSE_REPO_PATH:=""}
 
 
@@ -15,12 +15,12 @@ if [ -z "$CLICKHOUSE_REPO_PATH" ]; then
     ls -lath ||:
 fi
 
-clickhouse_source="--clickhouse-source \'$CLICKHOUSE_PACKAGE\'"
+clickhouse_source="--clickhouse-source $CLICKHOUSE_PACKAGE"
 if [ -n "$WITH_LOCAL_BINARY" ]; then
     clickhouse_source="--clickhouse-source /clickhouse"
 fi
 
-tests_count="--test-count \"$TESTS_TO_RUN\""
+tests_count="--test-count $TESTS_TO_RUN"
 tests_to_run="test-all"
 workload=""
 if [ -n "$WORKLOAD" ]; then

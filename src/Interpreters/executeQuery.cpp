@@ -643,9 +643,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        bool can_use_query_cache =
-            settings.allow_experimental_query_cache && settings.use_query_cache
-            && !ast->as<ASTExplainQuery>();
+        bool can_use_query_cache = settings.use_query_cache && !internal && !ast->as<ASTExplainQuery>();
 
         if (!async_insert)
         {
@@ -737,7 +735,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
-                        res.pipeline = QueryPipeline(reader.getPipe());
+                        QueryPipeline pipeline;
+                        pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        res.pipeline = std::move(pipeline);
                         read_result_from_query_cache = true;
                     }
                 }
@@ -761,15 +761,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     const size_t num_query_runs = query_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_cache_min_query_runs)
                     {
-                        auto stream_in_query_cache_transform =
-                                    std::make_shared<StreamInQueryCacheTransform>(
-                                        res.pipeline.getHeader(), query_cache, key,
-                                        std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
-                                        context->getSettings().query_cache_squash_partial_results,
-                                        context->getSettings().max_block_size,
-                                        context->getSettings().query_cache_max_size_in_bytes,
-                                        context->getSettings().query_cache_max_entries);
-                        res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
+                        auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                         key,
+                                         std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                                         settings.query_cache_squash_partial_results,
+                                         settings.max_block_size,
+                                         settings.query_cache_max_size_in_bytes,
+                                         settings.query_cache_max_entries));
+                        res.pipeline.writeResultIntoQueryCache(query_cache_writer);
                     }
                 }
 
@@ -923,7 +922,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    can_use_query_cache = can_use_query_cache,
+                                    my_can_use_query_cache = can_use_query_cache,
                                     enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
                                     query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
@@ -941,7 +940,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 if (query_cache != nullptr
                     && pulling_pipeline
-                    && can_use_query_cache && enable_writes_to_query_cache
+                    && my_can_use_query_cache && enable_writes_to_query_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryCache();
@@ -1072,7 +1071,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        log_queries,
                                        log_queries_min_type = settings.log_queries_min_type,
                                        log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                                       quota(quota),
+                                       my_quota(quota),
                                        status_info_to_query_log,
                                        implicit_txn_control,
                                        execute_implicit_tcl_query,
@@ -1083,8 +1082,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
-                if (quota)
-                    quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                if (my_quota)
+                    my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();

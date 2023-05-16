@@ -1,6 +1,13 @@
-if (NOT ARCH_AMD64)
-    return()
+option(ENABLE_ISAL_LIBRARY "Enable ISA-L library" ${ENABLE_LIBRARIES})
+if (ARCH_AARCH64)
+    # Disable ISA-L libray on aarch64.
+    set (ENABLE_ISAL_LIBRARY OFF)
 endif ()
+
+if (NOT ENABLE_ISAL_LIBRARY)
+    message(STATUS "Not using isa-l")
+    return()
+endif()
 
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
