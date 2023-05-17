@@ -1,3 +1,14 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <s3_check_objects_after_upload> 1 </s3_check_objects_after_upload>
+            <enable_s3_requests_logging> 1 </enable_s3_requests_logging>
+            <http_send_timeout>60</http_send_timeout>
+            <http_receive_timeout>60</http_receive_timeout>
+            <send_timeout>60</send_timeout>
+            <receive_timeout>60</receive_timeout>
+        </default>
+    </profiles>
+
     <enable_system_unfreeze>true</enable_system_unfreeze>
 </clickhouse>

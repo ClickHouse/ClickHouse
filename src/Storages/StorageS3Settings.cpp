@@ -37,6 +37,7 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     max_upload_part_size = config.getUInt64(key + "max_upload_part_size", max_upload_part_size);
     upload_part_size_multiply_factor = config.getUInt64(key + "upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = config.getUInt64(key + "upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    s3_max_inflight_parts_for_one_file = config.getUInt64(key + "s3_max_inflight_parts_for_one_file", s3_max_inflight_parts_for_one_file);
     max_part_number = config.getUInt64(key + "max_part_number", max_part_number);
     max_single_part_upload_size = config.getUInt64(key + "max_single_part_upload_size", max_single_part_upload_size);
     max_single_operation_copy_size = config.getUInt64(key + "max_single_operation_copy_size", max_single_operation_copy_size);
@@ -55,6 +56,7 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
     max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
     upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = collection.getOrDefault<UInt64>("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    s3_max_inflight_parts_for_one_file = collection.getOrDefault<UInt64>("s3_max_inflight_parts_for_one_file", s3_max_inflight_parts_for_one_file);
 
     /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
     storage_class_name = collection.getOrDefault<String>("s3_storage_class", storage_class_name);
@@ -79,6 +81,9 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
 
     if (!if_changed || settings.s3_upload_part_size_multiply_parts_count_threshold.changed)
         upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
+
+    if (!if_changed || settings.s3_max_inflight_parts_for_one_file.changed)
+        s3_max_inflight_parts_for_one_file = settings.s3_max_inflight_parts_for_one_file;
 
     if (!if_changed || settings.s3_max_single_part_upload_size.changed)
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;

@@ -6,6 +6,8 @@
 
 #include "WriteBufferFromS3.h"
 
+#include <list>
+
 namespace DB
 {
 
@@ -20,22 +22,33 @@ class WriteBufferFromS3::TaskTracker
 public:
     using Callback = std::function<void()>;
 
-    explicit TaskTracker(ThreadPoolCallbackRunner<void> scheduler_);
+    explicit TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_ = 0);
     ~TaskTracker();
 
     static ThreadPoolCallbackRunner<void> syncRunner();
 
     bool isAsync() const;
-    void waitReady();
+    size_t consumeReady();
+    void waitAny();
     void waitAll();
     void safeWaitAll();
     void add(Callback && func);
 
 private:
-    bool is_async;
+    void waitInFlight();
+
+    const bool is_async;
     ThreadPoolCallbackRunner<void> scheduler;
-    std::list<std::future<void>> futures;
+    const size_t max_tasks_inflight;
+
+    using FutureList = std::list<std::future<void>>;
+    FutureList futures;
     Poco::Logger * log = &Poco::Logger::get("TaskTracker");
+
+    std::mutex mutex;
+    std::condition_variable cond_var;
+    using FinishedList = std::list<FutureList::iterator>;
+    FinishedList finished_futures;
 };
 
 }
