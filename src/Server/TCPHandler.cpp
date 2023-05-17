@@ -1296,6 +1296,13 @@ void TCPHandler::receiveUnexpectedHello()
 
 void TCPHandler::sendHello()
 {
+    if (unlikely(sleep_in_send_tables_status.totalMilliseconds()))
+    {
+        out->next();
+        std::chrono::milliseconds ms(sleep_in_send_tables_status.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
+
     writeVarUInt(Protocol::Server::Hello, *out);
     writeStringBinary(DBMS_NAME, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
