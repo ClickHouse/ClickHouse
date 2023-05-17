@@ -310,6 +310,12 @@ struct FormatSettings
         bool map_column_names = true;
     } mysql_dump;
 
+    struct SQLite
+    {
+        UInt64 row_batch_size;
+        String table_name;
+    } sqlite;
+
     struct
     {
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
