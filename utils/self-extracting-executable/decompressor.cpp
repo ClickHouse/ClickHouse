@@ -168,6 +168,10 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
+bool isSudo()
+{
+    return geteuid() == 0;
+}
 
 /// Read data about files and decomrpess them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
@@ -220,6 +224,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         return 1;
     }
 
+    bool is_sudo = isSudo();
+
     FileData file_info;
     /// Decompress files with appropriate file names
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
@@ -264,7 +270,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
                 perror("mkstemp");
                 return 1;
             }
-            close(fd);
+            if (0 != close(fd))
+                perror("close");
             strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
             *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
@@ -318,6 +325,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             perror("fsync");
         if (0 != close(output_fd))
             perror("close");
+
+        if (is_sudo)
+            chown(file_name, info_in.st_uid, info_in.st_gid);
     }
 
     if (0 != munmap(input, info_in.st_size))
@@ -413,6 +423,13 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path;
 
+    struct stat input_info;
+    if (0 != stat(self, &input_info))
+    {
+        perror("stat");
+        return 1;
+    }
+
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
     uint64_t inode = getInode(self);
@@ -437,13 +454,6 @@ int main(int/* argc*/, char* argv[])
     if (lockf(lock, F_LOCK, 0))
     {
         perror("lockf");
-        return 1;
-    }
-
-    struct stat input_info;
-    if (0 != stat(self, &input_info))
-    {
-        perror("stat");
         return 1;
     }
 
@@ -530,6 +540,9 @@ int main(int/* argc*/, char* argv[])
             perror("unlink");
             return 1;
         }
+
+        if (isSudo())
+            chown(static_cast<char *>(self), input_info.st_uid, input_info.st_gid);
 
         if (has_exec)
         {

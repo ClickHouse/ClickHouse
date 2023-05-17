@@ -7,42 +7,42 @@ Contains information about all successful and failed login and logout events.
 
 Columns:
 
--   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
-    -   `LoginFailure` — Login error.
-    -   `LoginSuccess` — Successful login.
-    -   `Logout` — Logout from the system.
--   `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Authentication ID, which is a UUID that is automatically generated each time user logins.
--   `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](../../interfaces/http.md) interface.
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
--   `user` ([String](../../sql-reference/data-types/string.md)) — User name.
--   `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. Possible values:
-    -   `NO_PASSWORD`
-    -   `PLAINTEXT_PASSWORD`
-    -   `SHA256_PASSWORD`
-    -   `DOUBLE_SHA1_PASSWORD`
-    -   `LDAP`
-    -   `KERBEROS`
-    -   `SSL_CERTIFICATE`
--   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles set for all roles and/or users.
--   `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
--   `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
--   `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — The IP address that was used to log in/out.
--   `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
--   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
-    -   `TCP`
-    -   `HTTP`
-    -   `gRPC`
-    -   `MySQL`
-    -   `PostgreSQL`
--   `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
--   `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
--   `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
--   `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The major version of the `clickhouse-client` or another TCP client.
--   `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The minor version of the `clickhouse-client` or another TCP client.
--   `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the `clickhouse-client` or another TCP client version.
--   `failure_reason` ([String](../../sql-reference/data-types/string.md)) — The exception message containing the reason for the login/logout failure.
+- `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
+    - `LoginFailure` — Login error.
+    - `LoginSuccess` — Successful login.
+    - `Logout` — Logout from the system.
+- `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Authentication ID, which is a UUID that is automatically generated each time user logins.
+- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](../../interfaces/http.md) interface.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
+- `user` ([String](../../sql-reference/data-types/string.md)) — User name.
+- `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. Possible values:
+    - `NO_PASSWORD`
+    - `PLAINTEXT_PASSWORD`
+    - `SHA256_PASSWORD`
+    - `DOUBLE_SHA1_PASSWORD`
+    - `LDAP`
+    - `KERBEROS`
+    - `SSL_CERTIFICATE`
+- `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles set for all roles and/or users.
+- `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
+- `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
+- `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — The IP address that was used to log in/out.
+- `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
+- `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
+    - `TCP`
+    - `HTTP`
+    - `gRPC`
+    - `MySQL`
+    - `PostgreSQL`
+- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
+- `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
+- `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
+- `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The major version of the `clickhouse-client` or another TCP client.
+- `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The minor version of the `clickhouse-client` or another TCP client.
+- `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the `clickhouse-client` or another TCP client version.
+- `failure_reason` ([String](../../sql-reference/data-types/string.md)) — The exception message containing the reason for the login/logout failure.
 
 **Example**
 

@@ -942,15 +942,20 @@ ColumnPtr ColumnArray::compress() const
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
+        [my_data_compressed = std::move(data_compressed), my_offsets_compressed = std::move(offsets_compressed)]
         {
-            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
+            return ColumnArray::create(my_data_compressed->decompress(), my_offsets_compressed->decompress());
         });
 }
 
 double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
 {
     return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
+}
+
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnArray>();
 }
 
 void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const

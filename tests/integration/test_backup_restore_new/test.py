@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -157,8 +158,6 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -199,8 +198,6 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -213,8 +210,6 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -243,8 +238,6 @@ def test_incremental_backup():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
@@ -472,6 +465,29 @@ def test_incremental_backup_for_log_family():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_incremental_backup_append_table_def():
+    backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("ALTER TABLE test.table MODIFY SETTING parts_to_throw_insert=100")
+
+    incremental_backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {incremental_backup_name}")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    assert "parts_to_throw_insert = 100" in instance.query(
+        "SHOW CREATE TABLE test.table"
+    )
+
+
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 
@@ -500,8 +516,6 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -515,8 +529,6 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
@@ -632,7 +644,8 @@ def test_async_backups_to_same_destination(interface):
             f"BACKUP TABLE test.table TO {backup_name} ASYNC"
         )
 
-    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # One of those two backups to the same destination is expected to fail.
+    # If the second backup is going to fail it can fail either immediately or after a while.
     # If it fails immediately we won't even get its ID.
     id2 = None if err else res.split("\t")[0]
 
@@ -647,17 +660,16 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    # The first backup should succeed.
-    assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
-    ) == TSV([["BACKUP_CREATED", ""]])
+    ids_succeeded = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+    ).splitlines()
 
-    if id2:
-        # The second backup should fail.
-        assert (
-            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-            == "BACKUP_FAILED\n"
-        )
+    ids_failed = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+    ).splitlines()
+
+    assert len(ids_succeeded) == 1
+    assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
@@ -1184,6 +1196,85 @@ def test_restore_partition():
     )
 
 
+@pytest.mark.parametrize("exclude_system_log_tables", [False, True])
+def test_backup_all(exclude_system_log_tables):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
+    )
+
+    instance.query("CREATE FUNCTION two_and_half AS (x) -> x * 2.5")
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+
+    backup_name = new_backup_name()
+
+    exclude_from_backup = []
+    if exclude_system_log_tables:
+        # See the list of log tables in src/Interpreters/SystemLog.cpp
+        log_tables = [
+            "query_log",
+            "query_thread_log",
+            "part_log",
+            "trace_log",
+            "crash_log",
+            "text_log",
+            "metric_log",
+            "filesystem_cache_log",
+            "filesystem_read_prefetches_log",
+            "asynchronous_metric_log",
+            "opentelemetry_span_log",
+            "query_views_log",
+            "zookeeper_log",
+            "session_log",
+            "transactions_info_log",
+            "processors_profile_log",
+            "asynchronous_insert_log",
+        ]
+        exclude_from_backup += ["system." + table_name for table_name in log_tables]
+
+    backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+    restore_settings = []
+    if not exclude_system_log_tables:
+        restore_settings.append("allow_non_empty_tables=true")
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+    assert instance.query("SELECT two_and_half(6)") == "15\n"
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+
 def test_operation_id():
     create_and_fill_table(n=30)
 
@@ -1331,23 +1422,16 @@ def test_tables_dependency():
     instance.query("CREATE DATABASE test2")
 
     # For this test we use random names of tables to check they're created according to their dependency (not just in alphabetic order).
-    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 10)]
+    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 15)]
     random.shuffle(random_table_names)
     random_table_names = [
         random.choice(["test", "test2"]) + "." + table_name
         for table_name in random_table_names
     ]
     print(f"random_table_names={random_table_names}")
-
-    t1 = random_table_names[0]
-    t2 = random_table_names[1]
-    t3 = random_table_names[2]
-    t4 = random_table_names[3]
-    t5 = random_table_names[4]
-    t6 = random_table_names[5]
-    t7 = random_table_names[6]
-    t8 = random_table_names[7]
-    t9 = random_table_names[8]
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15 = tuple(
+        random_table_names
+    )
 
     # Create a materialized view and a dictionary with a local table as source.
     instance.query(
@@ -1373,11 +1457,34 @@ def test_tables_dependency():
     instance.query(f"CREATE VIEW {t7} AS SELECT sum(x) FROM (SELECT x FROM {t6})")
 
     instance.query(
-        f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+        f"CREATE DICTIONARY {t8} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+    )
+
+    instance.query(f"CREATE TABLE {t9}(a Int64) ENGINE=Log")
+
+    instance.query(
+        f"CREATE VIEW {t10}(x Int64, y String) AS SELECT * FROM {t1} WHERE x IN {t9}"
     )
 
     instance.query(
-        f"CREATE DICTIONARY {t9} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+        f"CREATE VIEW {t11}(x Int64, y String) AS SELECT * FROM {t2} WHERE x NOT IN (SELECT a FROM {t9})"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t12} AS {t1} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t13} AS {t1} ENGINE = Buffer((SELECT '{t2.split('.')[0]}'), (SELECT '{t2.split('.')[1]}'), 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t14} AS {t1} ENGINE = Buffer('', {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)",
+        database=t2.split(".")[0],
+    )
+
+    instance.query(
+        f"CREATE TABLE {t15} AS {t1} ENGINE = Buffer('', '', 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
     )
 
     # Make backup.
@@ -1386,17 +1493,23 @@ def test_tables_dependency():
 
     # Drop everything in reversive order.
     def drop():
-        instance.query(f"DROP DICTIONARY {t9}")
-        instance.query(f"DROP TABLE {t8} NO DELAY")
-        instance.query(f"DROP TABLE {t7} NO DELAY")
-        instance.query(f"DROP TABLE {t6} NO DELAY")
-        instance.query(f"DROP TABLE {t5} NO DELAY")
+        instance.query(f"DROP TABLE {t15} SYNC")
+        instance.query(f"DROP TABLE {t14} SYNC")
+        instance.query(f"DROP TABLE {t13} SYNC")
+        instance.query(f"DROP TABLE {t12} SYNC")
+        instance.query(f"DROP TABLE {t11} SYNC")
+        instance.query(f"DROP TABLE {t10} SYNC")
+        instance.query(f"DROP TABLE {t9} SYNC")
+        instance.query(f"DROP DICTIONARY {t8}")
+        instance.query(f"DROP TABLE {t7} SYNC")
+        instance.query(f"DROP TABLE {t6} SYNC")
+        instance.query(f"DROP TABLE {t5} SYNC")
         instance.query(f"DROP DICTIONARY {t4}")
-        instance.query(f"DROP TABLE {t3} NO DELAY")
-        instance.query(f"DROP TABLE {t2} NO DELAY")
-        instance.query(f"DROP TABLE {t1} NO DELAY")
-        instance.query("DROP DATABASE test NO DELAY")
-        instance.query("DROP DATABASE test2 NO DELAY")
+        instance.query(f"DROP TABLE {t3} SYNC")
+        instance.query(f"DROP TABLE {t2} SYNC")
+        instance.query(f"DROP TABLE {t1} SYNC")
+        instance.query("DROP DATABASE test SYNC")
+        instance.query("DROP DATABASE test2 SYNC")
 
     drop()
 
@@ -1406,7 +1519,7 @@ def test_tables_dependency():
     # Check everything is restored.
     assert instance.query(
         "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8, t9]))
+    ) == TSV(sorted(random_table_names))
 
     # Check logs.
     instance.query("SYSTEM FLUSH LOGS")
@@ -1421,8 +1534,20 @@ def test_tables_dependency():
         f"Table {t5} has 1 dependencies: {t4} (level 2)",
         f"Table {t6} has 1 dependencies: {t4} (level 2)",
         f"Table {t7} has 1 dependencies: {t6} (level 3)",
-        f"Table {t8} has 1 dependencies: {t2} (level 1)",
-        f"Table {t9} has 1 dependencies: {t1} (level 1)",
+        f"Table {t8} has 1 dependencies: {t1} (level 1)",
+        f"Table {t9} has no dependencies (level 0)",
+        (
+            f"Table {t10} has 2 dependencies: {t1}, {t9} (level 1)",
+            f"Table {t10} has 2 dependencies: {t9}, {t1} (level 1)",
+        ),
+        (
+            f"Table {t11} has 2 dependencies: {t2}, {t9} (level 1)",
+            f"Table {t11} has 2 dependencies: {t9}, {t2} (level 1)",
+        ),
+        f"Table {t12} has 1 dependencies: {t2} (level 1)",
+        f"Table {t13} has 1 dependencies: {t2} (level 1)",
+        f"Table {t14} has 1 dependencies: {t2} (level 1)",
+        f"Table {t15} has no dependencies (level 0)",
     ]
     for expect in expect_in_logs:
         assert any(

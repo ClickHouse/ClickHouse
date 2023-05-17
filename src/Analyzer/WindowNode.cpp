@@ -107,17 +107,23 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
     return window_node;
 }
 
-ASTPtr WindowNode::toASTImpl() const
+ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto window_definition = std::make_shared<ASTWindowDefinition>();
 
     window_definition->parent_window_name = parent_window_name;
 
-    window_definition->children.push_back(getPartitionByNode()->toAST());
-    window_definition->partition_by = window_definition->children.back();
+    if (hasPartitionBy())
+    {
+        window_definition->children.push_back(getPartitionByNode()->toAST(options));
+        window_definition->partition_by = window_definition->children.back();
+    }
 
-    window_definition->children.push_back(getOrderByNode()->toAST());
-    window_definition->order_by = window_definition->children.back();
+    if (hasOrderBy())
+    {
+        window_definition->children.push_back(getOrderByNode()->toAST(options));
+        window_definition->order_by = window_definition->children.back();
+    }
 
     window_definition->frame_is_default = window_frame.is_default;
     window_definition->frame_type = window_frame.type;
@@ -126,7 +132,7 @@ ASTPtr WindowNode::toASTImpl() const
 
     if (hasFrameBeginOffset())
     {
-        window_definition->children.push_back(getFrameBeginOffsetNode()->toAST());
+        window_definition->children.push_back(getFrameBeginOffsetNode()->toAST(options));
         window_definition->frame_begin_offset = window_definition->children.back();
     }
 
@@ -134,7 +140,7 @@ ASTPtr WindowNode::toASTImpl() const
     window_definition->frame_end_preceding = window_frame.end_preceding;
     if (hasFrameEndOffset())
     {
-        window_definition->children.push_back(getFrameEndOffsetNode()->toAST());
+        window_definition->children.push_back(getFrameEndOffsetNode()->toAST(options));
         window_definition->frame_end_offset = window_definition->children.back();
     }
 

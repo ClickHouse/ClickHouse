@@ -1,4 +1,4 @@
--- Tags: no-backward-compatibility-check
+-- Tags: no-upgrade-check
 
 SET join_algorithm = 'partial_merge';
 

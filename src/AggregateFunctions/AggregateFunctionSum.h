@@ -59,7 +59,7 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -107,12 +107,25 @@ struct AggregateFunctionSumData
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            addManyImplAVX512BW(ptr, start, end);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            addManyImplAVX512F(ptr, start, end);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             addManyImplAVX2(ptr, start, end);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             addManyImplSSE42(ptr, start, end);
             return;
@@ -122,7 +135,7 @@ struct AggregateFunctionSumData
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -198,12 +211,25 @@ struct AggregateFunctionSumData
     void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            addManyConditionalInternalImplAVX512BW<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            addManyConditionalInternalImplAVX512F<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             addManyConditionalInternalImplAVX2<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             addManyConditionalInternalImplSSE42<Value, add_if_zero>(ptr, condition_map, start, end);
             return;

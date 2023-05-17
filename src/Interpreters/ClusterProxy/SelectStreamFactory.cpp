@@ -1,13 +1,12 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -57,20 +56,23 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (table_function_ptr)
-        select_query.addTableFunction(table_function_ptr);
-    else
-        select_query.replaceDatabaseAndTable(remote_database, remote_table);
-
-    /// Restore long column names (cause our short names are ambiguous).
-    /// TODO: aliased table functions & CREATE TABLE AS table function cases
-    if (!table_function_ptr)
+    if (!context->getSettingsRef().allow_experimental_analyzer)
     {
-        RestoreQualifiedNamesVisitor::Data data;
-        data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
-        data.remote_table.database = remote_database;
-        data.remote_table.table = remote_table;
-        RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+        if (table_function_ptr)
+            select_query.addTableFunction(table_function_ptr);
+        else
+            select_query.replaceDatabaseAndTable(remote_database, remote_table);
+
+        /// Restore long column names (cause our short names are ambiguous).
+        /// TODO: aliased table functions & CREATE TABLE AS table function cases
+        if (!table_function_ptr)
+        {
+            RestoreQualifiedNamesVisitor::Data data;
+            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+            data.remote_table.database = remote_database;
+            data.remote_table.table = remote_table;
+            RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+        }
     }
 
     /// To make local JOIN works, default database should be added to table names.

@@ -1,4 +1,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
+
+#include <Common/assert_cast.h>
 #include <Parsers/ASTSetQuery.h>
 
 namespace DB

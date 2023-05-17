@@ -180,4 +180,14 @@ void FieldVisitorHash::operator() (const bool & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const CustomType & x) const
+{
+    UInt8 type = Field::Types::CustomType;
+    hash.update(type);
+    hash.update(x.getTypeName());
+    auto result = x.toString();
+    hash.update(result.size());
+    hash.update(result.data(), result.size());
+}
+
 }

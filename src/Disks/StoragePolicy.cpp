@@ -7,6 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Common/logger_useful.h>
 
 #include <set>
 
@@ -404,6 +405,9 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            continue;
+
         if (!result->policies.contains(name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
@@ -413,20 +417,39 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// Second pass, load.
     for (const auto & [name, policy] : policies)
     {
-        result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
+        /// Do not reload from config temporary storage policy, because it is not present in config.
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            result->policies[name] = policy;
+        else
+            result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
     }
 
     return result;
 }
 
-
-StoragePolicyPtr StoragePolicySelector::get(const String & name) const
+StoragePolicyPtr StoragePolicySelector::tryGet(const String & name) const
 {
     auto it = policies.find(name);
     if (it == policies.end())
-        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Unknown storage policy {}", backQuote(name));
+        return nullptr;
 
     return it->second;
+}
+
+StoragePolicyPtr StoragePolicySelector::get(const String & name) const
+{
+    auto policy = tryGet(name);
+    if (!policy)
+        throw Exception(ErrorCodes::UNKNOWN_POLICY, "Unknown storage policy {}", backQuote(name));
+
+    return policy;
+}
+
+void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
+{
+    auto [_, inserted] = policies.emplace(storage_policy->getName(), storage_policy);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");
 }
 
 }

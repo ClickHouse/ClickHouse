@@ -6,7 +6,6 @@
             <host>mysql57</host>
             <port>3306</port>
             <database>test_database</database>
-            <table>test_table</table>
         </mysql1>
         <mysql2>
             <user>postgres</user>
@@ -19,7 +18,6 @@
             <host>mysql57</host>
             <port>1111</port>
             <database>clickhouse</database>
-            <table>test_table</table>
         </mysql3>
     </named_collections>
 </clickhouse>

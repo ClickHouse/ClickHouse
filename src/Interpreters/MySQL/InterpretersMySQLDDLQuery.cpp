@@ -581,8 +581,8 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
     ASTRenameQuery::Elements elements;
     for (const auto & rename_element : rename_query.elements)
     {
-        const auto & to_database = resolveDatabase(rename_element.to.database, mysql_database, mapped_to_database, context);
-        const auto & from_database = resolveDatabase(rename_element.from.database, mysql_database, mapped_to_database, context);
+        const auto & to_database = resolveDatabase(rename_element.to.getDatabase(), mysql_database, mapped_to_database, context);
+        const auto & from_database = resolveDatabase(rename_element.from.getDatabase(), mysql_database, mapped_to_database, context);
 
         if ((from_database == mapped_to_database || to_database == mapped_to_database) && to_database != from_database)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
@@ -590,10 +590,10 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
         if (from_database == mapped_to_database)
         {
             elements.push_back(ASTRenameQuery::Element());
-            elements.back().from.database = mapped_to_database;
-            elements.back().from.table = rename_element.from.table;
-            elements.back().to.database = mapped_to_database;
-            elements.back().to.table = rename_element.to.table;
+            elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().from.table = rename_element.from.table->clone();
+            elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().to.table = rename_element.to.table->clone();
         }
     }
 
@@ -758,10 +758,10 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             if (rewritten_rename_query->elements.empty())
                 rewritten_rename_query->elements.push_back(ASTRenameQuery::Element());
 
-            rewritten_rename_query->elements.back().from.database = mapped_to_database;
-            rewritten_rename_query->elements.back().from.table = alter_query.table;
-            rewritten_rename_query->elements.back().to.database = mapped_to_database;
-            rewritten_rename_query->elements.back().to.table = alter_command->new_table_name;
+            rewritten_rename_query->elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rewritten_rename_query->elements.back().from.table = std::make_shared<ASTIdentifier>(alter_query.table);
+            rewritten_rename_query->elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rewritten_rename_query->elements.back().to.table = std::make_shared<ASTIdentifier>(alter_command->new_table_name);
         }
     }
 

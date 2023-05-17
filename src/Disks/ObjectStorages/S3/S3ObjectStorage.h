@@ -9,7 +9,6 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -144,8 +143,6 @@ public:
         ContextPtr context) override;
 
     std::string getObjectsNamespace() const override { return bucket; }
-
-    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return true; }
 

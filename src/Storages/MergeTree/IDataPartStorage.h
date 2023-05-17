@@ -11,7 +11,6 @@
 #include <memory>
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -66,6 +65,7 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupSettings;
 
 struct WriteSettings;
 
@@ -151,6 +151,7 @@ public:
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
+    virtual bool isReadonly() const = 0;
 
     /// TODO: remove or at least remove const.
     virtual void syncRevision(UInt64 revision) const = 0;
@@ -200,8 +201,9 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.

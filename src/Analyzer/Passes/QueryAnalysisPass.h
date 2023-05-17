@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
 
@@ -51,7 +50,10 @@ namespace DB
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
+  * Replace `countDistinct` and `countIfDistinct` aggregate functions using setting count_distinct_implementation.
+  * Add -OrNull suffix to aggregate functions if setting aggregate_functions_null_for_empty is true.
   * Function `exists` is converted into `in`.
+  * Functions `in`, `notIn`, `globalIn`, `globalNotIn` converted into `nullIn`, `notNullIn`, `globalNullIn`, `globalNotNullIn` if setting transform_null_in is true.
   *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.

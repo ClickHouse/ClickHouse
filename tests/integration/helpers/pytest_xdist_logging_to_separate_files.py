@@ -1,6 +1,7 @@
 import logging
 import os.path
 
+
 # Makes the parallel workers of pytest-xdist to log to separate files.
 # Without this function all workers will log to the same log file
 # and mix everything together making it much more difficult for troubleshooting.

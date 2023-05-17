@@ -7,7 +7,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    user_configs=[
+        "configs/users.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -20,7 +25,6 @@ def start_cluster():
 
 
 def test_create_query_const_constraints():
-
     instance.query("CREATE USER u_const SETTINGS max_threads = 1 CONST")
     instance.query("GRANT ALL ON *.* TO u_const")
 
@@ -52,7 +56,6 @@ def test_create_query_const_constraints():
 
 
 def test_create_query_minmax_constraints():
-
     instance.query("CREATE USER u_minmax SETTINGS max_threads = 4 MIN 2 MAX 6")
     instance.query("GRANT ALL ON *.* TO u_minmax")
 

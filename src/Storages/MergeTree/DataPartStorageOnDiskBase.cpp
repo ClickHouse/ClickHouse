@@ -5,10 +5,14 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
+#include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -213,6 +217,11 @@ bool DataPartStorageOnDiskBase::isBroken() const
     return volume->getDisk()->isBroken();
 }
 
+bool DataPartStorageOnDiskBase::isReadonly() const
+{
+    return volume->getDisk()->isReadOnly();
+}
+
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
 {
     volume->getDisk()->syncRevision(revision);
@@ -314,8 +323,9 @@ void DataPartStorageOnDiskBase::backup(
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
-    BackupEntries & backup_entries,
+    const BackupSettings & backup_settings,
     bool make_temporary_hard_links,
+    BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
@@ -356,6 +366,8 @@ void DataPartStorageOnDiskBase::backup(
 
     files_to_backup = getActualFileNamesOnDisk(files_to_backup);
 
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+
     for (const auto & filepath : files_to_backup)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
@@ -363,7 +375,7 @@ void DataPartStorageOnDiskBase::backup(
 
         if (files_without_checksums.contains(filepath))
         {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk));
+            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, copy_encrypted));
             continue;
         }
 
@@ -384,9 +396,12 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = {it->second.file_hash.first, it->second.file_hash.second};
         }
 
-        backup_entries.emplace_back(
-            filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, file_size, file_hash, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
+
+        if (temp_dir_owner)
+            backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+
+        backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
     }
 }
 
@@ -408,6 +423,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 
     disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
     disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+    disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
@@ -454,6 +470,7 @@ void DataPartStorageOnDiskBase::rename(
 
     if (volume->getDisk()->exists(to))
     {
+        /// FIXME it should be logical error
         if (remove_new_dir_if_exists)
         {
             Names files;
@@ -464,7 +481,8 @@ void DataPartStorageOnDiskBase::rename(
                     "Part directory {} already exists and contains {} files. Removing it.",
                     fullPath(volume->getDisk(), to), files.size());
 
-            executeWriteOperation([&](auto & disk) { disk.removeRecursive(to); });
+            /// Do not remove blobs if they exist
+            executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(to, true, {}); });
         }
         else
         {
@@ -567,6 +585,9 @@ void DataPartStorageOnDiskBase::remove(
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
                 LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
                 return;
             }
             throw;
@@ -577,6 +598,10 @@ void DataPartStorageOnDiskBase::remove(
             {
                 LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
+
                 return;
             }
             throw;
@@ -683,6 +708,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);
+        request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
