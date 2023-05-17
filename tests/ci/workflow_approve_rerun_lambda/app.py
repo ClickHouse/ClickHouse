@@ -125,7 +125,7 @@ TRUSTED_CONTRIBUTORS = {
         "thevar1able",  # ClickHouse Employee
         "aalexfvk",
         "MikhailBurdukov",
-        "tsolodov", # ClickHouse Employee
+        "tsolodov",  # ClickHouse Employee
     ]
 }
 
