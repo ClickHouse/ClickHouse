@@ -257,30 +257,42 @@ void CacheMetadata::doCleanup()
         }
 
         locked_metadata->markAsRemoved();
+        erase(it);
+        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
+
+        const fs::path key_directory = getPathInLocalCache(cleanup_key);
+        const fs::path key_prefix_directory = key_directory.parent_path();
 
         try
         {
-            const fs::path key_directory = getPathInLocalCache(cleanup_key);
             if (fs::exists(key_directory))
                 fs::remove_all(key_directory);
-
-            const fs::path key_prefix_directory = key_directory.parent_path();
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
         }
         catch (...)
         {
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(false));
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
             chassert(false);
+            continue;
         }
 
-        /// Remove key from metadata AFTER deleting key directory, because otherwise key lock is
-        /// released before we delete directory from fs and there might be a race:
-        /// a key, which we just removed, can be added back to cache before we start removing key directory,
-        /// which makes key directory either non-empty (and we get exception in try catch above)
-        /// or we removed directory while another thread thinks it exists.
-        erase(it);
-        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
+        try
+        {
+            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+                fs::remove_all(key_prefix_directory);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Key prefix directory can become non-empty just now, it is expected.
+            if (e.code() == std::errc::directory_not_empty)
+                return;
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+        }
     }
 }
 
