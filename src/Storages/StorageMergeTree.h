@@ -18,7 +18,6 @@
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
 
-#include <merklecpp.h>
 #include <IO/CryptographicHashingWriteBuffer.h>
 
 namespace DB
@@ -128,8 +127,6 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
-
-    merkle::Tree merkle_tree;
 
     /// For block numbers.
     SimpleIncrement increment;
