@@ -36,7 +36,7 @@ namespace
     {
         /// We cannot reuse base backup because our file is smaller
         /// than file stored in previous backup
-        if (new_entry_info.size < base_backup_info.first)
+        if ((new_entry_info.size < base_backup_info.first) || !base_backup_info.first)
             return CheckBackupResult::HasNothing;
 
         if (base_backup_info.first == new_entry_info.size)
@@ -48,7 +48,10 @@ namespace
 
     struct ChecksumsForNewEntry
     {
-        UInt128 full_checksum;
+        /// 0 is the valid checksum of empty data.
+        UInt128 full_checksum = 0;
+
+        /// std::nullopt here means that it's too difficult to calculate a partial checksum so it shouldn't be used.
         std::optional<UInt128> prefix_checksum;
     };
 
@@ -58,8 +61,7 @@ namespace
     {
         ChecksumsForNewEntry res;
         /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
-        if (prefix_size > 0)
-            res.prefix_checksum = entry->getPartialChecksum(prefix_size);
+        res.prefix_checksum = entry->getPartialChecksum(prefix_size);
         res.full_checksum = entry->getChecksum();
         return res;
     }
@@ -116,7 +118,7 @@ BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const Backu
 
     /// We have info about this file in base backup
     /// If file has no checksum -- calculate and fill it.
-    if (base_backup_file_info.has_value())
+    if (base_backup_file_info)
     {
         LOG_TRACE(log, "File {} found in base backup, checking for equality", adjusted_path);
         CheckBackupResult check_base = checkBaseBackupForFile(*base_backup_file_info, info);

@@ -37,6 +37,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
+    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or do appending.
     bool has_throttling = disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
     {
@@ -106,6 +107,7 @@ void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr s
                                         bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
+    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.
     bool has_throttling = src_disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling && !start_pos && !copy_encrypted)
     {
