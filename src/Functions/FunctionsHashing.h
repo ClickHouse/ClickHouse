@@ -1193,12 +1193,18 @@ private:
     }
 
     template <bool first>
-    void executeNothing(const KeyType & , const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    void executeNothing(const KeyType & key, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const auto * col_from = checkAndGetColumn<ColumnNothing>(column))
         {
-            size_t size = col_from->size();
-            vec_to.assign(size, static_cast<ToType>(42));
+            const ToType h{42};
+            for (size_t i = 0, size = column->size(); i < size; ++i)
+            {
+                if constexpr (first)
+                    vec_to[i] = h;
+                else
+                    vec_to[i] = combineHashes(key, vec_to[i], h);
+            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
