@@ -1,7 +1,6 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <filesystem>
 
