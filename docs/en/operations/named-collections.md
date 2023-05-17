@@ -13,7 +13,23 @@ Named collections can be configured with DDL or in configuration files and are a
 when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
 from users without administrative access.
 
-## Storing details for connecting to external sources in the system database
+The keys in a named collection must match the parameter names of the corresponding
+function, table engine, database, etc. In the examples below the parameter list is
+linked to for each type.
+
+Parameters set in a named collection can be overridden in SQL, this is shown in the examples
+below.
+
+## Storing named collections in the system database
+
+### DDL example
+
+```sql
+CREATE NAMED COLLECTION name AS
+key_1 = 'value',
+key_2 = 'value2',
+url = 'https://connection.url/'
+```
 
 ### Permissions to create named collections with DDL
 
@@ -37,22 +53,7 @@ To manage named collections with DDL a user must have the `named_control_collect
 In the above example the `passowrd_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plaintext and sha256 hex passwords set for a user. 
 :::
 
-## Storing details for connecting to external sources in configuration files
-
-
-Parameters can be set in XML `<format>CSV</format>` and overridden in SQL `, format = 'TSV'`.
-The parameters in SQL can be overridden using format `key` = `value`: `compression_method = 'gzip'`.
-
-Named collections are stored in the system table `system.named_collections` or in `config.xml` file of the ClickHouse server in the `<named_collections>` section and are applied when ClickHouse starts.
-
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION name AS
-key_1 = 'value',
-key_2 = 'value2',
-url = 'https://connection.url/'
-```
+## Storing named collections in configuration files
 
 ### XML example
 
@@ -98,7 +99,7 @@ url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 </clickhouse>
 ```
 
-### s3() function and S3 Table Named collection examples
+### s3() function and S3 Table named collection examples
 
 Both of the following examples use the same named collection `s3_mydata`:
 
