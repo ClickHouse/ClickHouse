@@ -67,13 +67,11 @@ def started_cluster():
             instance,
             cluster.postgres_ip,
             cluster.postgres_port,
-            default_database="test_database",
+            default_database="postgres_database",
         )
-        pg_manager.create_clickhouse_postgres_db()
         pg_manager2.init(
-            instance2, cluster.postgres_ip, cluster.postgres_port, "test_database2"
+            instance2, cluster.postgres_ip, cluster.postgres_port, "postgres_database2"
         )
-        pg_manager2.create_clickhouse_postgres_db()
         yield cluster
 
     finally:
@@ -89,6 +87,7 @@ def setup_teardown():
 
 def test_add_new_table_to_replication(started_cluster):
     NUM_TABLES = 5
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -155,7 +154,7 @@ def test_add_new_table_to_replication(started_cluster):
     )
 
     table_name = "postgresql_replica_6"
-    create_postgres_table(cursor, table_name)
+    pg_manager.create_postgres_table(table_name)
     instance.query(
         "INSERT INTO postgres_database.{} SELECT number, number from numbers(10000)".format(
             table_name
@@ -166,7 +165,7 @@ def test_add_new_table_to_replication(started_cluster):
     instance.restart_clickhouse()
 
     table_name = "postgresql_replica_7"
-    create_postgres_table(cursor, table_name)
+    pg_manager.create_postgres_table(table_name)
     instance.query(
         "INSERT INTO postgres_database.{} SELECT number, number from numbers(10000)".format(
             table_name
@@ -268,8 +267,7 @@ def test_remove_table_from_replication(started_cluster):
         == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
     )
 
-    cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"drop table if exists postgresql_replica_0;")
+    pg_manager.execute(f"drop table if exists postgresql_replica_0;")
 
     # Removing from replication table which does not exist in PostgreSQL must be ok.
     instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
@@ -279,10 +277,11 @@ def test_remove_table_from_replication(started_cluster):
 
 
 def test_predefined_connection_configuration(started_cluster):
-    cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
-    cursor.execute(f"INSERT INTO test_table SELECT 1, 2")
+    pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
+    pg_manager.execute(
+        f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
+    )
+    pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
     )
@@ -329,10 +328,9 @@ def test_database_with_single_non_default_schema(started_cluster):
 
     create_postgres_schema(cursor, schema_name)
     pg_manager.create_clickhouse_postgres_db(
-        ip=cluster.postgres_ip,
-        port=cluster.postgres_port,
-        name=clickhouse_postgres_db,
+        database_name=clickhouse_postgres_db,
         schema_name=schema_name,
+        postgres_database="postgres_database",
     )
 
     for i in range(NUM_TABLES):
@@ -364,7 +362,7 @@ def test_database_with_single_non_default_schema(started_cluster):
     check_all_tables_are_synchronized()
 
     altered_table = random.randint(0, NUM_TABLES - 1)
-    cursor.execute(
+    pg_manager.execute(
         "ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(
             altered_table
         )
@@ -431,10 +429,9 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
 
     create_postgres_schema(cursor, schema_name)
     pg_manager.create_clickhouse_postgres_db(
-        ip=cluster.postgres_ip,
-        port=cluster.postgres_port,
-        name=clickhouse_postgres_db,
+        database_name=clickhouse_postgres_db,
         schema_name=schema_name,
+        postgres_database="postgres_database",
     )
 
     for i in range(NUM_TABLES):
@@ -469,7 +466,7 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     check_all_tables_are_synchronized()
 
     altered_table = random.randint(0, NUM_TABLES - 1)
-    cursor.execute(
+    pg_manager.execute(
         "ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(
             altered_table
         )
@@ -547,10 +544,9 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
         clickhouse_postgres_db = f"clickhouse_postgres_db{i}"
         create_postgres_schema(cursor, schema_name)
         pg_manager.create_clickhouse_postgres_db(
-            ip=cluster.postgres_ip,
-            port=cluster.postgres_port,
-            name=clickhouse_postgres_db,
+            database_name=clickhouse_postgres_db,
             schema_name=schema_name,
+            postgres_database="postgres_database",
         )
         for ti in range(NUM_TABLES):
             table_name = f"postgresql_replica_{ti}"
@@ -583,7 +579,7 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     altered_schema = random.randint(0, schemas_num - 1)
     altered_table = random.randint(0, NUM_TABLES - 1)
     clickhouse_postgres_db = f"clickhouse_postgres_db{altered_schema}"
-    cursor.execute(
+    pg_manager.execute(
         f"ALTER TABLE schema{altered_schema}.postgresql_replica_{altered_table} ADD COLUMN value2 integer"
     )
 
@@ -616,10 +612,9 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
 
 
 def test_table_override(started_cluster):
-    cursor = pg_manager.get_db_cursor()
     table_name = "table_override"
     materialized_database = "test_database"
-    create_postgres_table(cursor, table_name, template=postgres_table_template_5)
+    pg_manager.create_postgres_table(table_name, template=postgres_table_template_5)
     instance.query(
         f"create table {table_name}(key Int32, value UUID) engine = PostgreSQL (postgres1, table={table_name})"
     )
@@ -646,10 +641,11 @@ def test_table_override(started_cluster):
 
 
 def test_materialized_view(started_cluster):
-    cursor = pg_manager.get_db_cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
-    cursor.execute(f"INSERT INTO test_table SELECT 1, 2")
+    pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
+    pg_manager.execute(
+        f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
+    )
+    pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
     instance.query("DROP DATABASE IF EXISTS test_database")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
@@ -660,7 +656,7 @@ def test_materialized_view(started_cluster):
         "CREATE MATERIALIZED VIEW mv ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT * FROM test_database.test_table"
     )
     assert "1\t2" == instance.query("SELECT * FROM mv").strip()
-    cursor.execute(f"INSERT INTO test_table SELECT 3, 4")
+    pg_manager.execute(f"INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     pg_manager.drop_materialized_db()

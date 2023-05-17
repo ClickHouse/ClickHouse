@@ -57,7 +57,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
-#ifdef KEEPER_STANDALONE_BUILD
+#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 
 // Weak symbols don't work correctly on Darwin
 // so we have a stub implementation to avoid linker errors
