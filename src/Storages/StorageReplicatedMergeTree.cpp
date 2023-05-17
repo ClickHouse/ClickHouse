@@ -9252,6 +9252,8 @@ void StorageReplicatedMergeTree::backupData(
     /// First we generate backup entries in the same way as an ordinary MergeTree does.
     /// But then we don't add them to the BackupEntriesCollector right away,
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
+
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -9260,7 +9262,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", local_context);
+    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
@@ -9278,10 +9280,9 @@ void StorageReplicatedMergeTree::backupData(
                 auto & hash = part_names_with_hashes_calculating[part_name];
                 if (relative_path.ends_with(".bin"))
                 {
-                    auto checksum = backup_entry->getChecksum();
                     hash.update(relative_path);
                     hash.update(backup_entry->getSize());
-                    hash.update(*checksum);
+                    hash.update(backup_entry->getChecksum());
                 }
                 continue;
             }
