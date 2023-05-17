@@ -1345,7 +1345,7 @@ Use the following parameters to configure logging:
 - `table` - Name of the system table.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
@@ -1422,7 +1422,7 @@ Use the following parameters to configure logging:
 - `table` - Name of the system table the queries will be logged in.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
@@ -1479,7 +1479,7 @@ Use the following parameters to configure logging:
 - `table` - Name of the system table the queries will be logged in.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
@@ -1508,7 +1508,7 @@ Use the following parameters to configure logging:
 - `table` - Name of the system table the queries will be logged in.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
@@ -1536,7 +1536,7 @@ Parameters:
 - `table` - Table name.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
@@ -1565,7 +1565,7 @@ Parameters:
 - `table` - Table name.
 - `partition_by` - [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` - Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` - Name of storage policy to use for the table (optional)
 
