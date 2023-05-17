@@ -2366,7 +2366,7 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     int64_t zxid{0};
 
     // On INIT we abort when a system path is modified
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
     KeeperStorage storage{500, "", keeper_context};
     const auto assert_create = [&](const std::string_view path, const auto expected_code)
     {

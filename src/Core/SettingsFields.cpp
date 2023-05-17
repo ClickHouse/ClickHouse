@@ -379,6 +379,35 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     *this = map;
 }
 
+#else
+
+SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
+String SettingFieldMap::toString() const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+
+SettingFieldMap & SettingFieldMap::operator =(const Field &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::parseFromString(const String &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::writeBinary(WriteBuffer &) const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::readBinary(ReadBuffer &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
 #endif
 
 namespace

@@ -114,18 +114,17 @@ KeeperServer::KeeperServer(
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
-    , keeper_context{std::make_shared<KeeperContext>()}
+    , keeper_context{std::make_shared<KeeperContext>(true)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
-    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
+    keeper_context->initialize(config);
 
-    if (!fs::exists(configuration_and_settings_->snapshot_storage_path))
-        fs::create_directories(configuration_and_settings_->snapshot_storage_path);
-    auto snapshots_disk = std::make_shared<DiskLocal>("Keeper-snapshots", configuration_and_settings_->snapshot_storage_path, 0);
+    //if (!fs::exists(keeper_context->snapshot_storage_path))
+    //    fs::create_directories(keeper_context->snapshot_storage_path);
+    auto snapshots_disk = std::make_shared<DiskLocal>("Keeper-snapshots", "", 0);
 
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
@@ -137,23 +136,23 @@ KeeperServer::KeeperServer(
         commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
-    auto state_path = fs::path(configuration_and_settings_->state_file_path).parent_path().generic_string();
-    auto state_file_name = fs::path(configuration_and_settings_->state_file_path).filename().generic_string();
+    //auto state_path = fs::path(keeper_context->state_file_path).parent_path().generic_string();
+    //auto state_file_name = fs::path(configuration_and_settings_->state_file_path).filename().generic_string();
 
-    if (!fs::exists(state_path))
-        fs::create_directories(state_path);
-    auto state_disk = std::make_shared<DiskLocal>("Keeper-state", state_path, 0);
+    //if (!fs::exists(state_path))
+    //    fs::create_directories(state_path);
+    auto state_disk = std::make_shared<DiskLocal>("Keeper-state", "", 0);
 
-    if (!fs::exists(configuration_and_settings_->log_storage_path))
-        fs::create_directories(configuration_and_settings_->log_storage_path);
-    auto logs_disk = std::make_shared<DiskLocal>("Keeper-logs", configuration_and_settings_->log_storage_path, 0);
+    //if (!fs::exists(configuration_and_settings_->log_storage_path))
+    //    fs::create_directories(configuration_and_settings_->log_storage_path);
+    auto logs_disk = std::make_shared<DiskLocal>("Keeper-logs", "", 0);
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
         "keeper_server",
         logs_disk,
         state_disk,
-        state_file_name,
+        "state",
         config,
         coordination_settings);
 }
@@ -431,7 +430,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     launchRaftServer(config, enable_ipv6);
 
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -446,7 +445,7 @@ void KeeperServer::shutdownRaftServer()
 
     raft_instance->shutdown();
 
-    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+    keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
         raft_instance->create_snapshot();

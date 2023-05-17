@@ -223,7 +223,7 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         throw;
     }
 
-    if (keeper_context->digest_enabled && request_for_session.digest)
+    if (keeper_context->digestEnabled() && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 
     return true;
@@ -271,7 +271,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
             }
 
-        if (keeper_context->digest_enabled && request_for_session.digest)
+        if (keeper_context->digestEnabled() && request_for_session.digest)
             assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
     }
 
@@ -429,7 +429,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     };
 
 
-    if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
+    if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         auto snapshot_path = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
