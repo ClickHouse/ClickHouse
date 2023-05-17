@@ -961,3 +961,110 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
     check_no_objects_after_drop(
         cluster, table_name="merge_canceled_by_s3_errors_when_move", node_name=node_name
     )
+
+
+def value_or(value, default):
+    assert default is not None
+    return value if value is not None else default
+
+
+class BrokenS3:
+    @staticmethod
+    def reset(cluster):
+        response = cluster.exec_in_container(
+            cluster.get_container_id("resolver"),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:8083/mock_settings/reset",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+    @staticmethod
+    def setup_fake_upload(cluster, part_length):
+        response = cluster.exec_in_container(
+            cluster.get_container_id("resolver"),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:8083/mock_settings/fake_put?when_length_bigger={part_length}",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+    @staticmethod
+    def setup_slow_answers(
+        cluster, minimal_length=0, timeout=None, probability=None, count=None
+    ):
+        url = f"http://localhost:8083/" \
+              f"mock_settings/slow_put" \
+              f"?minimal_length={minimal_length}"
+
+        if timeout is not None:
+            url += f"&timeout={timeout}"
+
+        if probability is not None:
+            url += f"&probability={probability}"
+
+        if count is not None:
+            url += f"&count={count}"
+
+        response = cluster.exec_in_container(
+            cluster.get_container_id("resolver"),
+            ["curl", "-s", url],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+
+@pytest.fixture(autouse=True, scope="function")
+def reset_broken_s3(cluster):
+    BrokenS3.reset(cluster)
+
+    yield
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize(
+    "in_flight_memory", [(10, 245918115), (5, 156786752), (1, 106426187)]
+)
+def test_heavy_write_check_mem(cluster, node_name, in_flight_memory):
+    in_flight = in_flight_memory[0]
+    memory = in_flight_memory[1]
+
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test"
+        " ("
+        "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
+        " )"
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
+    )
+
+    BrokenS3.setup_fake_upload(cluster, 1000)
+    BrokenS3.setup_slow_answers(cluster, 10 * 1024 * 1024, timeout=10, count=10)
+
+    query_id = f"INSERT_INTO_S3_QUERY_ID_{in_flight}"
+    node.query(
+        "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
+        f" SETTINGS max_memory_usage={2*memory}, s3_max_inflight_parts_for_one_file={in_flight}",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    result = node.query(
+        "SELECT memory_usage"
+        " FROM system.query_log"
+        f" WHERE query_id='{query_id}'"
+        "   AND type!='QueryStart'"
+    )
+
+    assert int(result) < 1.1 * memory
+    assert int(result) > 0.9 * memory
+
+    check_no_objects_after_drop(cluster, node_name=node_name)

@@ -29,6 +29,8 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_retry_attempts>1</s3_retry_attempts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
+                <request_timeout_ms>30000</request_timeout_ms>
+                <skip_access_check>true</skip_access_check>
             </broken_s3>
             <hdd>
                 <type>local</type>

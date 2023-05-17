@@ -92,8 +92,11 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(request_settings_.getUploadSettings()))
-    , task_tracker(std::make_unique<WriteBufferFromS3::TaskTracker>(std::move(schedule_)))
+    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , task_tracker(
+          std::make_unique<WriteBufferFromS3::TaskTracker>(
+              std::move(schedule_),
+              upload_settings.s3_max_inflight_parts_for_one_file))
 {
     LOG_TRACE(log, "Create WriteBufferFromS3, {}", getLogDetails());
 
@@ -110,7 +113,7 @@ void WriteBufferFromS3::nextImpl()
                 "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
     /// Make sense to call to before adding new async task to check if there is an exception
-    task_tracker->waitReady();
+    task_tracker->consumeReady();
 
     hidePartialData();
 
@@ -133,8 +136,6 @@ void WriteBufferFromS3::preFinalize()
         return;
 
     LOG_TRACE(log, "preFinalize WriteBufferFromS3. {}", getLogDetails());
-
-    task_tracker->waitReady();
 
     hidePartialData();
 
@@ -234,7 +235,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(log, "Close WriteBufferFromS3. {}.", getLogDetails());
 
-    // That descructor could be call with finalized=false in case of exceptions
+    // That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
     {
         LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It could be if an exception occurs. File is not written to S3. {}.", getLogDetails());

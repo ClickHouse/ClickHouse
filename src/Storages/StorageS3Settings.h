@@ -33,6 +33,7 @@ struct S3Settings
             size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
             size_t upload_part_size_multiply_factor = 2;
             size_t upload_part_size_multiply_parts_count_threshold = 500;
+            size_t s3_max_inflight_parts_for_one_file = 20;
             size_t max_part_number = 10000;
             size_t max_single_part_upload_size = 32 * 1024 * 1024;
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
