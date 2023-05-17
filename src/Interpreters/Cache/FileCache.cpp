@@ -599,8 +599,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     else
         queue_size += 1;
 
-    size_t removed_size = 0;
-
     class EvictionCandidates final : public std::vector<FileSegmentMetadataPtr>
     {
     public:
@@ -626,6 +624,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
     std::unordered_map<Key, EvictionCandidates> to_delete;
 
+    size_t removed_size = 0;
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
@@ -681,8 +680,18 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         /// max_size == 0 means unlimited cache size,
         /// max_element_size means unlimited number of cache elements.
-        return (main_priority->getSizeLimit() != 0 && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
+        const bool is_overflow = (main_priority->getSizeLimit() != 0
+                                  && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
             || (main_priority->getElementsLimit() != 0 && queue_size > main_priority->getElementsLimit());
+
+        LOG_TEST(
+            log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            is_overflow, size, removed_size,
+            main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
+            main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
+            file_segment.key(), file_segment.offset());
+
+        return is_overflow;
     };
 
     main_priority->iterate(
