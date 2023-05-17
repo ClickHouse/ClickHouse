@@ -589,8 +589,10 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
                 bucket_idx);
             continue;
         }
-
-        hash_join->clear();
+        if (!hash_join)
+            hash_join = makeInMemoryJoin();
+        else
+            hash_join->clear();
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -654,8 +656,10 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+        size_t current_hash_keys_num = hash_join->getTotalRowCount();
+        size_t current_hash_bytes = hash_join->getTotalByteCount();
 
-        if (!hasMemoryOverflow(hash_join))
+        if (!hasMemoryOverflow(current_hash_keys_num, current_hash_bytes))
             return;
 
         current_block = {};
@@ -680,7 +684,22 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join->clear();
+        // If it's a overflow caused by hash table buffer bytes, need to reallocate a new hash table.
+        if (hasMemoryOverflow(2, current_hash_bytes))
+        {
+            if (hasMemoryOverflow(prev_hash_keys_num, prev_hash_bytes))
+            {
+                hash_join = makeInMemoryJoin(prev_hash_keys_num / 2);
+            }
+            else
+            {
+                hash_join = makeInMemoryJoin(prev_hash_keys_num);
+            }
+        }
+        else
+        {
+            hash_join->clear();
+        }
 
         if (current_block.rows() > 0)
             hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
