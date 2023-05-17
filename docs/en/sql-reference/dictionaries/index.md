@@ -2197,13 +2197,13 @@ Result:
 └─────────────────────────────────┴───────┘
 ```
 
-## RegExpTree Dictionary {#regexp-tree-dictionary}
+## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-RegExpTree Dictionary is designed to store multiple regular expressions in a dictionary, and query if a string could match one or multiple regular expressions. In some scenarios, for example, User Agent Parser, this data structure is very useful. We can use it in both local and cloud environments.
+Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of (user agent)[https://en.wikipedia.org/wiki/User_agent] strings, which can be expressed elegantly with regexp tree dictionaries.
 
-### Use RegExpTree Dictionary in local environment
+### Use Regular Expression Tree Dictionary in ClickHouse Open-Source Environment
 
-In local environment, we create RegexpTree dictionary by a yaml file:
+Regular expression tree dictionaries are defined in ClickHouse open-source using the YAMLRegExpTree source which is provided the path to a YAML file containing the regular expression tree.
 
 ```sql
 create dictionary regexp_dict
@@ -2218,7 +2218,7 @@ LAYOUT(regexp_tree)
 ...
 ```
 
-The dictionary source `YAMLRegExpTree` represents the structure of a Regexp Tree. For example:
+The dictionary source `YAMLRegExpTree` represents the structure of a regexp tree. For example:
 
 ```yaml
 - regexp: 'Linux/(\d+[\.\d]*).+tlinux'
@@ -2226,7 +2226,7 @@ The dictionary source `YAMLRegExpTree` represents the structure of a Regexp Tree
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -2238,15 +2238,15 @@ The dictionary source `YAMLRegExpTree` represents the structure of a Regexp Tree
       version: '10'
 ```
 
-This config consists of a list of RegExpTree nodes. Each node has following structure:
+This config consists of a list of Regular Expression Tree nodes. Each node has following structure:
 
 - **regexp** means the regular expression of this node.
-- **user defined attributions** is a list of dictionary attributions defined in the dictionary structure. In this case, we have two attributions: `name` and `version`. The first nodes have both attributions. The second node only has `name` attribution, because the `version` is defined in the children nodes.
-  - The value of an attribution could contain a **back reference** which refers to a capture group of the matched regular expression. Reference number ranges from 1 to 9 and writes as `$1` or `\1`. During the query execution, the back reference in the value will be replaced by the matched capture group.
-- **children nodes** is the secondary layer of the RegExpTree nodes, which also contains a list of RegExpTree nodes. If a string matches a regexp node in the first layer, the dictionary will check if the string matches the children nodes of it. If it matches, we assign the attributions of the matching nodes. If two or more nodes define the same attribution, children nodes have more priority.
-  - the name of **children nodes** in yaml files can be arbitrary.
+- **user defined attributes** is a list of dictionary attributes defined in the dictionary structure. In this case, we have two attributes: `name` and `version`. The first node has both attributes. The second node only has `name` attribute, because the `version` is defined in the children nodes.
+  - The value of an attribute could contain a **back reference** which refers to a capture group of the matched regular expression. Reference number ranges from 1 to 9 and writes as `$1` or `\1`. During the query execution, the back reference in the value will be replaced by the matched capture group.
+- **children nodes** is the children of a regexp tree node, which has their own attributes and children nodes. String matching preceeds in a depth-first fasion. If a string matches any regexp node in the top layer, the dictionary checks if the string matches the children nodes of it. If it matches, we assign the attributes of the matching nodes. If two or more nodes define the same attribute, children nodes have more priority.
+  - the name of **children nodes** in YAML files can be arbitrary.
 
-Due to the specialty of Regexp Tree dictionary, we only allow functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
+Due to the specialty of regexp tree dictionary, we only allow functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
 
 Example:
 
@@ -2258,17 +2258,17 @@ Result:
 
 ```text
 ┌─dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024')─┐
-│ ('Andriod','12')                                                │
+│ ('Android','12')                                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Explain:
+In this case, we match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node, so the dictionary continues to look into the children nodes and find it matches `3[12]/tclwebkit`. As a result, the value of `name` is `Android` defined in the first layer and the value of `version` is `12` defined the child node.
 
-In this case, we match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the first layer, so the dictionary will continue to look into the children nodes in the second layer and find it matches `3[12]/tclwebkit`. As a result, the value of `name` is `Andriod` defined in the first layer and the value of `version` is `12` defined in the second layer.
+With a powerful YAML configure file, we can use RepexpTree dictionary as a UA parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
 
-### Use RegExpTree Dictionary on cloud
+### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
-We have shown how RegExpTree work in the local environment, but we cannot use `YAMLRegExpTree` in the cloud. If we have a local yaml file, we can use this file to create RegExpTree Dictionary in the local environment, then dump this dictionary to a csv file by the `dictionary` table function and [INTO OUTFILE](../statements/select/into-outfile.md) clause.
+We have shown how Regular Expression Tree work in the local environment, but we cannot use `YAMLRegExpTree` in the cloud. If we have a local YAML file, we can use this file to create Regular Expression Tree Dictionary in the local environment, then dump this dictionary to a csv file by the `dictionary` table function and [INTO OUTFILE](../statements/select/into-outfile.md) clause.
 
 ```sql
 select * from dictionary(regexp_dict) into outfile('regexp_dict.csv')
@@ -2278,7 +2278,7 @@ The content of csv file is:
 
 ```text
 1,0,"Linux/(\d+[\.\d]*).+tlinux","['version','name']","['\\1','TencentOS']"
-2,0,"(\d+)/tclwebkit(\d+[\.\d]*)","['comment','version','name']","['test $1 and $2','$1','Andriod']"
+2,0,"(\d+)/tclwebkit(\d+[\.\d]*)","['comment','version','name']","['test $1 and $2','$1','Android']"
 3,2,"33/tclwebkit","['version']","['13']"
 4,2,"3[12]/tclwebkit","['version']","['12']"
 5,2,"3[12]/tclwebkit","['version']","['11']"
@@ -2287,11 +2287,11 @@ The content of csv file is:
 
 The schema of dumped file is always
 
-- `id UInt64` represents the identify number of the RegexpTree node.
+- `id UInt64` represents the id of the RegexpTree node.
 - `parent_id UInt64` represents the id of the parent of a node.
 - `regexp String` represents the regular expression string.
-- `keys Array(String)` represents the names of user defined attributions.
-- `values Array(String)` represents the values of user defined attributions.
+- `keys Array(String)` represents the names of user defined attributes.
+- `values Array(String)` represents the values of user defined attributes.
 
 On the cloud, we can create a table `regexp_dictionary_source_table` with the above table structure.
 
@@ -2314,8 +2314,8 @@ clickhouse client \
     --secure \
     --password MY_PASSWORD \
     --query "
-    insert into regexp_dictionary_source_table 
-    select * from input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
+    INSERT INTO regexp_dictionary_source_table 
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
     FORMAT CSV" < regexp_dict.csv
 ```
 
@@ -2332,10 +2332,6 @@ SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
-
-### Use RegexpTree Dictionary as a UA Parser
-
-With a powerful yaml configure file, we can use RepexpTree dictionary as a UA parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
 
 ## Embedded Dictionaries {#embedded-dictionaries}
 
