@@ -113,7 +113,6 @@ public:
     void startup() override;
     void shutdown() override;
     void partialShutdown();
-    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
