@@ -115,6 +115,7 @@ namespace
                 writeBinary(info.checksum, out);
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
+                writeBinary(info.encrypted_by_disk, out);
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
@@ -136,6 +137,7 @@ namespace
                 readBinary(info.checksum, in);
                 readBinary(info.base_size, in);
                 readBinary(info.base_checksum, in);
+                readBinary(info.encrypted_by_disk, in);
             }
             return res;
         }
@@ -173,13 +175,13 @@ BackupCoordinationRemote::BackupCoordinationRemote(
         log,
         get_zookeeper_,
         keeper_settings,
-        [zookeeper_path = zookeeper_path, current_host = current_host, is_internal = is_internal]
+        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
             /// Recreate this ephemeral node to signal that we are alive.
-            if (is_internal)
+            if (my_is_internal)
             {
-                String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
+                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
                 if (code == Coordination::Error::ZNODEEXISTS)
