@@ -4,6 +4,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/CurrentThread.h>

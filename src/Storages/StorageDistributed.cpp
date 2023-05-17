@@ -1115,10 +1115,10 @@ void StorageDistributed::read(
             }
 
             additional_shard_filter_generator =
-                [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
+                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
             };
         }
     }
@@ -1986,9 +1986,9 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_split_batch_on_failure.changed)
             distributed_settings.monitor_split_batch_on_failure = context->getSettingsRef().distributed_directory_monitor_split_batch_on_failure;
         if (!distributed_settings.monitor_sleep_time_ms.changed)
-            distributed_settings.monitor_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_sleep_time_ms);
+            distributed_settings.monitor_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
-            distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
+            distributed_settings.monitor_max_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

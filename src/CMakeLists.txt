@@ -211,6 +211,7 @@ endif()
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
 endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -353,6 +354,10 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
+if (TARGET ch_contrib::fiu)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
@@ -459,7 +464,7 @@ endif ()
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
-dbms_target_link_libraries (PRIVATE ch_contrib::sparsehash)
+dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
     dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
@@ -544,6 +549,10 @@ if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 endif ()
 
+if (TARGET ch_contrib::accel-config)
+    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
+endif ()
+
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 dbms_target_link_libraries(PUBLIC boost::context)
 
@@ -604,6 +613,7 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gtest_all
+        ch_contrib::gmock_all
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

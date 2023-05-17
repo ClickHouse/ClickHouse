@@ -34,13 +34,13 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
         log,
         get_zookeeper_,
         keeper_settings,
-        [zookeeper_path = zookeeper_path, current_host = current_host, is_internal = is_internal]
+        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
             /// Recreate this ephemeral node to signal that we are alive.
-            if (is_internal)
+            if (my_is_internal)
             {
-                String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
+                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
                 if (code == Coordination::Error::ZNODEEXISTS)
