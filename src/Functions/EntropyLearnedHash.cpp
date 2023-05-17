@@ -135,7 +135,7 @@ public:
         std::lock_guard lock(mutex);
         auto it_user = partial_key_positions_by_id.find(user_name);
         if (it_user == partial_key_positions_by_id.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Id {} not registered for user in entropy learned hashing", id);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Username {} not registered in entropy learned hashing", user_name);
         auto it_id = it_user->second.find(id);
         if (it_id == it_user->second.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Id {} not registered for user in entropy learned hashing", id);
