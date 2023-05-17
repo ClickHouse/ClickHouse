@@ -57,7 +57,7 @@ public:
     }
 
     template <typename ResultType, typename T, typename U>
-    static ResultType apply(
+    static inline NO_SANITIZE_UNDEFINED ResultType apply(
         const T * left,
         const U * right,
         size_t size)
