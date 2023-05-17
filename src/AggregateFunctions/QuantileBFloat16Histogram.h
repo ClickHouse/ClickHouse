@@ -43,7 +43,6 @@ namespace DB
 template <typename Value>
 struct QuantileBFloat16Histogram
 {
-    using BFloat16 = UInt16;
     using Weight = UInt64;
 
     /// Make automatic memory for 16 elements to avoid allocations for small states.
@@ -60,7 +59,7 @@ struct QuantileBFloat16Histogram
     void add(const Value & x, Weight w)
     {
         if (!isNaN(x))
-            data[toBFloat16(x)] += w;
+            data[BFloat16::toBFloat16(x)] += w;
     }
 
     void merge(const QuantileBFloat16Histogram & rhs)
@@ -100,19 +99,8 @@ struct QuantileBFloat16Histogram
     }
 
 private:
-    /// Take the most significant 16 bits of the floating point number.
-    BFloat16 toBFloat16(const Value & x) const
-    {
-        return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
-    }
 
-    /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
-    Float32 toFloat32(const BFloat16 & x) const
-    {
-        return std::bit_cast<Float32>(x << 16);
-    }
-
-    using Pair = PairNoInit<Float32, Weight>;
+    using Pair = PairNoInit<BFloat16, Weight>;
 
     template <typename T>
     T getImpl(Float64 level) const
@@ -130,7 +118,7 @@ private:
         for (const auto & pair : data)
         {
             sum_weight += pair.getMapped();
-            *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
+            *arr_it = {pair.getKey(), pair.getMapped()};
             ++arr_it;
         }
 
@@ -171,7 +159,7 @@ private:
         for (const auto & pair : data)
         {
             sum_weight += pair.getMapped();
-            *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
+            *arr_it = {BFloat16::toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
 

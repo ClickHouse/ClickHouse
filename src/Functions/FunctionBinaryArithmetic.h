@@ -101,6 +101,7 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeBFloat16> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
@@ -756,7 +757,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeFixedString, DataTypeString,
             DataTypeInterval>;
 
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
             TypeListConcat<Types, Floats>,
@@ -1818,7 +1819,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             ColumnPtr left_col = nullptr;
             ColumnPtr right_col = nullptr;
 
-            /// When Decimal op Float32/64, convert both of them into Float64
+            /// When Decimal op Float32/64 / BFloat16, convert both of them into Float64
             if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();

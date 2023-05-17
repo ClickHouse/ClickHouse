@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include "FunctionArrayMapped.h"
+#include "base/types.h"
 
 
 namespace DB
@@ -161,6 +162,7 @@ struct ArrayCumSumImpl
             || executeType<Int32, Int64>(mapped, array, res) || executeType<Int64, Int64>(mapped, array, res)
             || executeType<Int128, Int128>(mapped, array, res) || executeType<Int256, Int256>(mapped, array, res)
             || executeType<Float32, Float64>(mapped, array, res) || executeType<Float64, Float64>(mapped, array, res)
+            || executeType<BFloat16, Float64>(mapped, array, res) || executeType<BFloat16, Float32>(mapped, array, res)
             || executeType<Decimal32, Decimal128>(mapped, array, res) || executeType<Decimal64, Decimal128>(mapped, array, res)
             || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res))
             return res;

@@ -3,6 +3,7 @@
 
 
 #include <Parsers/IAST.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -50,6 +51,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
 
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
+    factory.registerDataType("BFloat16", createNumericDataType<BFloat16>);
 
     factory.registerSimpleDataType("UInt128", [] { return DataTypePtr(std::make_shared<DataTypeUInt128>()); });
     factory.registerSimpleDataType("UInt256", [] { return DataTypePtr(std::make_shared<DataTypeUInt256>()); });
@@ -70,6 +72,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("REAL", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("SINGLE", "Float32", DataTypeFactory::CaseInsensitive);   /// MS Access
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BFLOAT", "BFloat16", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("MEDIUMINT", "Int32", DataTypeFactory::CaseInsensitive);    /// MySQL
 
     factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);

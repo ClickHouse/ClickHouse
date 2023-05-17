@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstring>
 #include <base/extended_types.h>
+#include "base/types.h"
 
 
 /// Allows to check the internals of IEEE-754 floating point number.
@@ -25,6 +26,15 @@ struct FloatTraits<double>
     using UInt = uint64_t;
     static constexpr size_t bits = 64;
     static constexpr size_t exponent_bits = 11;
+    static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
+};
+
+template <>
+struct FloatTraits<DB::BFloat16>
+{
+    using UInt = uint16_t;
+    static constexpr size_t bits = 16;
+    static constexpr size_t exponent_bits = 8;
     static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
 };
 
@@ -217,3 +227,4 @@ struct DecomposedFloat
 
 using DecomposedFloat64 = DecomposedFloat<double>;
 using DecomposedFloat32 = DecomposedFloat<float>;
+using DecomposedBFloat16 = DecomposedFloat<DB::BFloat16>;

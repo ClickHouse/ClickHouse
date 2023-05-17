@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -44,6 +45,7 @@ using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
+using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
 
 using DataTypeUInt128 = DataTypeNumber<UInt128>;
 using DataTypeInt128 = DataTypeNumber<Int128>;

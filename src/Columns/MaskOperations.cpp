@@ -5,6 +5,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include "base/types.h"
 #include <algorithm>
 
 namespace DB
@@ -65,6 +66,7 @@ INSTANTIATE(Int128)
 INSTANTIATE(Int256)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Decimal32)
 INSTANTIATE(Decimal64)
 INSTANTIATE(Decimal128)
@@ -226,7 +228,8 @@ MaskInfo extractMaskImpl(
           || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
+          || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());
 
     return mask_info;

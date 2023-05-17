@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <Core/Types.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -63,6 +64,7 @@ bool callOnBasicType(TypeIndex number, F && f)
         {
             case TypeIndex::Float32:      return f(TypePair<T, Float32>());
             case TypeIndex::Float64:      return f(TypePair<T, Float64>());
+            case TypeIndex::BFloat16:      return f(TypePair<T, BFloat16>());
             default:
                 break;
         }
@@ -133,6 +135,7 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
         {
             case TypeIndex::Float32: return callOnBasicType<Float32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Float64: return callOnBasicType<Float64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::BFloat16: return callOnBasicType<BFloat16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;
         }
@@ -190,6 +193,7 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::BFloat16:        return f(TypePair<DataTypeNumber<BFloat16>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::Decimal32:      return f(TypePair<DataTypeDecimal<Decimal32>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Decimal64:      return f(TypePair<DataTypeDecimal<Decimal64>, T>(), std::forward<ExtraArgs>(args)...);

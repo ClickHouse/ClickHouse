@@ -8,6 +8,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -359,6 +360,7 @@ namespace
                 || executeNumber<Int64, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeNumber<Float32, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeNumber<Float64, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<BFloat16, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeString<nullable>         (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeFixedString<nullable>    (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)))
                 executeGeneric<nullable>           (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map);

@@ -10,6 +10,7 @@
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 #include "IFunction.h"
+#include "base/types.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -701,6 +702,7 @@ public:
             && !executeNum<Int64>(in, out, boundaries)
             && !executeNum<Float32>(in, out, boundaries)
             && !executeNum<Float64>(in, out, boundaries)
+            && !executeNum<BFloat16>(in, out, boundaries)
             && !executeDecimal<Decimal32>(in, out, boundaries)
             && !executeDecimal<Decimal64>(in, out, boundaries)
             && !executeDecimal<Decimal128>(in, out, boundaries)

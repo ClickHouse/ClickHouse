@@ -152,9 +152,16 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-    else
+    else if (std::is_same_v<T, float>)
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+    }
+    else
+    {
+        if (DecomposedBFloat16(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;

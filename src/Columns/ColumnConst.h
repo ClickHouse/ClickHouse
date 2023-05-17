@@ -111,6 +111,11 @@ public:
         return data->getFloat32(0);
     }
 
+    BFloat16 getBFloat16(size_t) const override
+    {
+        return data->getBFloat16(0);
+    }
+
     bool isDefaultAt(size_t) const override
     {
         return data->isDefaultAt(0);

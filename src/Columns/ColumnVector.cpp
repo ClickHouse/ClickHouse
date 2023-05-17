@@ -14,6 +14,7 @@
 #include <Common/WeakHash.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/bit_cast.h>
@@ -458,6 +459,15 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
         return static_cast<Float32>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
+}
+
+template <typename T>
+BFloat16 ColumnVector<T>::getBFloat16(size_t n [[maybe_unused]]) const
+{
+    if constexpr (is_arithmetic_v<T>)
+        return static_cast<BFloat16>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as BFloat16", TypeName<T>);
 }
 
 template <typename T>
@@ -969,6 +979,7 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+template class ColumnVector<BFloat16>;
 template class ColumnVector<UUID>;
 template class ColumnVector<IPv4>;
 template class ColumnVector<IPv6>;

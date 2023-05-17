@@ -1249,6 +1249,7 @@ struct JSONExtractTree
             case TypeIndex::Int256: return std::make_unique<NumericNode<Int256>>();
             case TypeIndex::Float32: return std::make_unique<NumericNode<Float32>>();
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
+            case TypeIndex::BFloat16: return std::make_unique<NumericNode<BFloat16>>();
             case TypeIndex::String: return std::make_unique<StringNode>();
             case TypeIndex::FixedString: return std::make_unique<FixedStringNode>();
             case TypeIndex::UUID: return std::make_unique<UUIDNode>();

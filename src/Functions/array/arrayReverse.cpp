@@ -8,6 +8,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -87,6 +88,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
         || executeNumber<Int64>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<BFloat16>(*src_inner_col, offsets, *res_inner_col)
         || executeString(*src_inner_col, offsets, *res_inner_col)
         || executeFixedString(*src_inner_col, offsets, *res_inner_col)
         || executeGeneric(*src_inner_col, offsets, *res_inner_col);

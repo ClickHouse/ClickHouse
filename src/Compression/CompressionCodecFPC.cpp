@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include "base/types.h"
 #include <IO/WriteHelpers.h>
 
 #include <span>
@@ -472,6 +473,8 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
             return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt64>(destination, level).encode(src));
         case sizeof(Float32):
             return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt32>(destination, level).encode(src));
+        case sizeof(BFloat16):
+            return static_cast<UInt16>(HEADER_SIZE + FPCOperation<UInt16>(destination, level).encode(src));
         default:
             break;
     }
@@ -498,6 +501,9 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             break;
         case sizeof(Float32):
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
+            break;
+        case sizeof(BFloat16):
+            FPCOperation<UInt16>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect float width");

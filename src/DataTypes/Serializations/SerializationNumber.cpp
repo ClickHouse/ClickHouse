@@ -6,6 +6,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Core/Field.h>
@@ -169,5 +170,6 @@ template class SerializationNumber<Int128>;
 template class SerializationNumber<Int256>;
 template class SerializationNumber<Float32>;
 template class SerializationNumber<Float64>;
+template class SerializationNumber<BFloat16>;
 
 }

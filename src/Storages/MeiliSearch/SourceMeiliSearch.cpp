@@ -21,6 +21,7 @@
 #include <magic_enum.hpp>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include "Core/TypeId.h"
 #include "Interpreters/ProcessList.h"
 
 namespace DB
@@ -107,7 +108,7 @@ Field getField(JSON value, DataTypePtr type_ptr)
         else
             return value.get<String>();
     }
-    else if (type_id == TypeIndex::Float64 || type_id == TypeIndex::Float32)
+    else if (type_id == TypeIndex::Float64 || type_id == TypeIndex::Float32 || type_id == TypeIndex::BFloat16)
     {
         return value.get<Float64>();
     }

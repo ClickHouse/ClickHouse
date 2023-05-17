@@ -14,6 +14,7 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 #include "DictionaryHelpers.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -117,6 +118,7 @@ private:
             DateTime64,
             Float32,
             Float64,
+            BFloat16,
             UUID,
             IPv4,
             IPv6,
@@ -143,6 +145,7 @@ private:
             ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
+            ContainerType<BFloat16>,
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,

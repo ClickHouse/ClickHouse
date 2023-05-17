@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 class Collator;
 
@@ -69,6 +70,7 @@ public:
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
+    BFloat16 getBFloat16(size_t n) const override;
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;

@@ -46,6 +46,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
+#include "base/types.h"
 #include <bit>
 
 
@@ -273,8 +274,20 @@ public:
 template <typename Float>
 Float transformFloatMantissa(Float x, UInt64 seed)
 {
-    using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
-    constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
+    using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, std::conditional_t<std::is_same_v<Float, Float64>, UInt64, UInt16>>;
+    size_t mantissa_num_bits = 0;
+    if constexpr (std::is_same_v<Float, Float32>)
+    {
+        mantissa_num_bits = 23;
+    }
+    else if (std::is_same_v<Float, Float64>)
+    {
+        mantissa_num_bits = 52;
+    }
+    else
+    {
+        mantissa_num_bits = 7;
+    }
 
     UInt x_uint = std::bit_cast<UInt>(x);
     x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
@@ -1116,6 +1129,9 @@ public:
 
         if (typeid_cast<const DataTypeFloat64 *>(&data_type))
             return std::make_unique<FloatModel<Float64>>(seed);
+
+        if (typeid_cast<const DataTypeBFloat16 *>(&data_type))
+            return std::make_unique<FloatModel<BFloat16>>(seed);
 
         if (typeid_cast<const DataTypeDate *>(&data_type))
             return std::make_unique<IdentityModel>();

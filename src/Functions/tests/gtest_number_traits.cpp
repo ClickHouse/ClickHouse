@@ -191,6 +191,7 @@ static std::string getTypeString(DB::Int128) { return "Int128"; }
 static std::string getTypeString(DB::Int256) { return "Int256"; }
 static std::string getTypeString(DB::Float32) { return "Float32"; }
 static std::string getTypeString(DB::Float64) { return "Float64"; }
+static std::string getTypeString(DB::BFloat16) { return "BFloat16"; }
 static std::string getTypeString(DB::NumberTraits::Error) { return "Error"; }
 
 template <typename T0, typename T1>

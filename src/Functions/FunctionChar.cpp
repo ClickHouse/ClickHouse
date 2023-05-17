@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -85,7 +86,8 @@ public:
                   || executeNumber<Int32>(*column, out_vec, idx, input_rows_count, size_per_row)
                   || executeNumber<Int64>(*column, out_vec, idx, input_rows_count, size_per_row)
                   || executeNumber<Float32>(*column, out_vec, idx, input_rows_count, size_per_row)
-                  || executeNumber<Float64>(*column, out_vec, idx, input_rows_count, size_per_row)))
+                  || executeNumber<Float64>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<BFloat16>(*column, out_vec, idx, input_rows_count, size_per_row)))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                                 arguments[idx].column->getName(), getName());

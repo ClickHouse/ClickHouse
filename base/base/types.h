@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -38,5 +39,125 @@ using Float32 = float;
 using Float64 = double;
 
 using String = std::string;
+
+struct BFloat16 {
+public:
+    BFloat16() : data(0) {}
+
+    explicit BFloat16(float value) {
+      fromValue(value);
+    }
+
+    /// Take the most significant 16 bits of the floating point number.
+    template <typename Value>
+    static BFloat16 toBFloat16(const Value & x) {
+        return std::bit_cast<DB::UInt32>(static_cast<DB::Float32>(x)) >> 16;
+    }
+
+    template <typename Value>
+    inline void fromValue(const Value & x) {
+        data = std::bit_cast<DB::UInt32>(static_cast<DB::Float32>(x)) >> 16;
+    }
+
+    /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
+    static Float32 toFloat32(const BFloat16 & x) {
+        return std::bit_cast<DB::Float32>(x << 16);
+    }
+
+    Float32 toFloat32() const {
+        return std::bit_cast<DB::Float32>(*this << 16);
+    }
+
+    bool operator==(const BFloat16& other) const {
+        return data == other.data;
+    }
+
+    bool operator!=(const BFloat16& other) const {
+        return data != other.data;
+    }
+
+    bool operator<(const BFloat16& other) const {
+        return toFloat32() < other.toFloat32();
+    }
+
+    bool operator<=(const BFloat16& other) const {
+        return toFloat32() <= other.toFloat32();
+    }
+
+    bool operator>(const BFloat16& other) const {
+        return toFloat32() > other.toFloat32();
+    }
+
+    bool operator>=(const BFloat16& other) const {
+        return toFloat32() >= other.toFloat32();
+    }
+
+    BFloat16 operator+(const BFloat16& other) const {
+        return BFloat16(toFloat32() + other.toFloat32());
+    }
+
+    BFloat16 operator-(const BFloat16& other) const {
+        return BFloat16(toFloat32() - other.toFloat32());
+    }
+
+    BFloat16 operator*(const BFloat16& other) const {
+        return BFloat16(toFloat32() * other.toFloat32());
+    }
+
+    BFloat16 operator/(const BFloat16& other) const {
+        return BFloat16(toFloat32() / other.toFloat32());
+    }
+
+    BFloat16& operator=(const BFloat16& other) = default;
+
+    BFloat16& operator+=(const BFloat16& other) {
+        *this = *this + other;
+        return *this;
+    }
+
+        BFloat16& operator-=(const BFloat16& other) {
+        *this = *this - other;
+        return *this;
+    }
+
+    BFloat16& operator*=(const BFloat16& other) {
+        *this = *this * other;
+        return *this;
+    }
+
+    BFloat16& operator/=(const BFloat16& other) {
+        *this = *this / other;
+        return *this;
+    }
+
+    BFloat16& operator++() {
+        *this += BFloat16(1.0f);
+        return *this;
+    }
+
+    BFloat16 operator++(int) {
+        BFloat16 temp = *this;
+        ++(*this);
+        return temp;
+    }
+
+    BFloat16& operator--() {
+        *this -= BFloat16(1.0f);
+        return *this;
+    }
+
+    BFloat16 operator--(int) {
+        BFloat16 temp = *this;
+        --(*this);
+        return temp;
+    }
+
+    explicit operator float() const {
+        return toFloat32();
+    }
+
+private:
+    uint16_t data;
+};
 
 }

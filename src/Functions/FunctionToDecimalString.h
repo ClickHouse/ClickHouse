@@ -249,6 +249,7 @@ public:
             case TypeIndex::Int256:     return executeType<Int256>(arguments);
             case TypeIndex::Float32:    return executeType<Float32>(arguments);
             case TypeIndex::Float64:    return executeType<Float64>(arguments);
+            case TypeIndex::BFloat16:    return executeType<BFloat16>(arguments);
             case TypeIndex::Decimal32:  return executeType<Decimal32>(arguments);
             case TypeIndex::Decimal64:  return executeType<Decimal64>(arguments);
             case TypeIndex::Decimal128: return executeType<Decimal128>(arguments);

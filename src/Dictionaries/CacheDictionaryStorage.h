@@ -10,6 +10,7 @@
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/LRUHashMap.h>
+#include "base/types.h"
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
@@ -556,6 +557,7 @@ private:
             ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
+            ContainerType<BFloat16>,
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,

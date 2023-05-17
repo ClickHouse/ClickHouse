@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HashTable/Hash.h>
+#include "base/types.h"
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -93,6 +94,7 @@ struct BloomFilterHash
         else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isBFloat16()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
         else if (which.isIPv4()) return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
         else if (which.isIPv6()) return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
@@ -157,6 +159,7 @@ struct BloomFilterHash
         else if (which.isDateTime()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
+        else if (which.isBFloat16()) getNumberTypeHash<BFloat16, is_first>(column, vec, pos);
         else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
         else if (which.isIPv4()) getNumberTypeHash<IPv4, is_first>(column, vec, pos);
         else if (which.isIPv6()) getNumberTypeHash<IPv6, is_first>(column, vec, pos);
@@ -177,7 +180,7 @@ struct BloomFilterHash
 
         /// Because we're missing the precision of float in the Field.h
         /// to be consistent, we need to convert Float32 to Float64 processing, also see: BloomFilterHash::hashWithField
-        if constexpr (std::is_same_v<ColumnVector<Type>, ColumnFloat32>)
+        if constexpr (std::is_same_v<ColumnVector<Type>, ColumnFloat32> || std::is_same_v<ColumnVector<Type>, ColumnBFloat16>)
         {
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {

@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/BinStringDecodeHelper.h>
+#include "base/types.h"
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -296,6 +297,7 @@ public:
             tryExecuteFixedString(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
             tryExecuteFloat<Float64>(column, res_column) ||
+            tryExecuteFloat<BFloat16>(column, res_column) ||
             tryExecuteDecimal<Decimal32>(column, res_column) ||
             tryExecuteDecimal<Decimal64>(column, res_column) ||
             tryExecuteDecimal<Decimal128>(column, res_column) ||
