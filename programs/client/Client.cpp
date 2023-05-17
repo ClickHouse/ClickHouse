@@ -1181,7 +1181,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 void Client::processConfig()
 {
     /// Batch mode is enabled if one of the following is true:
-    /// - -e (--query) command line option is present.
+    /// - -q (--query) command line option is present.
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
@@ -1381,6 +1381,13 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
+            else if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-') && arg == "--multiquery")
+            {
+                /** Transforms from '--multiquery <SQL>' into '--multiquery -q <SQL>' */
+                ++arg_num;
+                arg = argv[arg_num];
+                addMultiquery(arg, common_arguments);
+            }
             else
                 common_arguments.emplace_back(arg);
         }

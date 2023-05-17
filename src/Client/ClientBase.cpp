@@ -1246,6 +1246,14 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 }
 
 
+void ClientBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
+{
+    common_arguments.emplace_back("--multiquery");
+    common_arguments.emplace_back("-q");
+    common_arguments.emplace_back(query);
+}
+
+
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
@@ -2592,15 +2600,19 @@ void ClientBase::init(int argc, char ** argv)
         ("version-clean", "print version in machine-readable format and exit")
 
         ("config-file,C", po::value<std::string>(), "config-file path")
+
+        ("query,q", po::value<std::string>(), "query")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+
+        ("multiquery,n", "Indicates that --query can execute several SQL statements. if --query was not specified then SQL statement can be set right after --multiquery. Example --multiquery \"select 1\"")
+        ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
+        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
+        ("query_id", po::value<std::string>(), "query_id")
         ("database,d", po::value<std::string>(), "database")
         ("history_file", po::value<std::string>(), "path to history file")
 
-        ("query,q", po::value<std::string>(), "query")
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
-        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
-        ("query_id", po::value<std::string>(), "query_id")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
@@ -2611,9 +2623,6 @@ void ClientBase::init(int argc, char ** argv)
 
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-
-        ("multiline,m", "multiline")
-        ("multiquery,n", "multiquery")
 
         ("suggestion_limit", po::value<int>()->default_value(10000),
             "Suggestion limit for how many databases, tables and columns to fetch.")
