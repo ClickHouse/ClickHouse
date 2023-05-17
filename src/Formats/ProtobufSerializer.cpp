@@ -346,7 +346,7 @@ namespace
 
     /// Serializes any ColumnVector<NumberType> to a field of any type except TYPE_MESSAGE, TYPE_GROUP.
     /// NumberType must be one of the following types: Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
-    /// Int128, UInt128, Int256, UInt256, Float32, Float64.
+    /// Int128, UInt128, Int256, UInt256, Float32, Float64, BFloat16.
     /// And the field's type cannot be TYPE_ENUM if NumberType is Float32 or Float64.
     template <typename NumberType>
     class ProtobufSerializerNumber : public ProtobufSerializerSingleValue
@@ -3501,6 +3501,7 @@ namespace
                 case TypeIndex::Int256: return std::make_unique<ProtobufSerializerNumber<Int256>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::BFloat16: return std::make_unique<ProtobufSerializerNumber<BFloat16>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(column_name, assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(column_name, assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);

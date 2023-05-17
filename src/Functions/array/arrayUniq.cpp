@@ -9,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/ColumnsHashing.h>
+#include "base/types.h"
 #include <Interpreters/AggregationCommon.h>
 #include <IO/WriteHelpers.h>
 
@@ -188,6 +189,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             || executeNumber<Int64>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float32>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<BFloat16>(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)))
             executeHashed(*offsets, data_columns, res_values);

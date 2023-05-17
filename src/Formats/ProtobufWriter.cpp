@@ -1,6 +1,6 @@
 #include "ProtobufWriter.h"
 
-#if USE_PROTOBUF
+// #if USE_PROTOBUF
 #   include <IO/WriteHelpers.h>
 
 

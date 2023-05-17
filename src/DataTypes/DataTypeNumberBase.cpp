@@ -1,6 +1,7 @@
 #include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -46,5 +47,6 @@ template class DataTypeNumberBase<Int128>;
 template class DataTypeNumberBase<Int256>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
+template class DataTypeNumberBase<BFloat16>;
 
 }

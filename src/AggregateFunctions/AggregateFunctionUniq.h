@@ -209,7 +209,7 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64> || std::is_same_v<T, BFloat16>)
         {
             return bit_cast<UInt64>(x);
         }

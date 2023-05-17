@@ -15,6 +15,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include "base/types.h"
 
 #include <cstring>
 #include <algorithm>
@@ -90,7 +91,8 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
         !tryConvertColumnToBool<UInt32>(column, res) &&
         !tryConvertColumnToBool<UInt64>(column, res) &&
         !tryConvertColumnToBool<Float32>(column, res) &&
-        !tryConvertColumnToBool<Float64>(column, res))
+        !tryConvertColumnToBool<Float64>(column, res) &&
+        !tryConvertColumnToBool<BFloat16>(column, res))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
 }
 
@@ -271,7 +273,7 @@ struct TernaryValueBuilderImpl<>
 };
 
 using TernaryValueBuilder =
-        TernaryValueBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+        TernaryValueBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16>;
 
 /// This class together with helper class TernaryValueBuilder can be used with columns of arbitrary data type
 /// Converts column of any data type into an intermediate UInt8Column of ternary representation for the
@@ -406,7 +408,7 @@ struct TypedExecutorInvoker;
 
 template <typename Op>
 using FastApplierImpl =
-        TypedExecutorInvoker<Op, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+        TypedExecutorInvoker<Op, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16>;
 
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
@@ -767,7 +769,8 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
         || (res = functionUnaryExecuteType<Impl, Int32>(arguments))
         || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
         || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
+        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))
+        || (res = functionUnaryExecuteType<Impl, BFloat16>(arguments))))
        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument of function {}",
             arguments[0].column->getName(),

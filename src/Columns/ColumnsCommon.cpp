@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <bit>
 #include "ColumnsCommon.h"
+#include "base/types.h"
 
 
 namespace DB
@@ -330,6 +331,7 @@ INSTANTIATE(Int128)
 INSTANTIATE(Int256)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Decimal32)
 INSTANTIATE(Decimal64)
 INSTANTIATE(Decimal128)

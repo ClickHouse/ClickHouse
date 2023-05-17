@@ -9,6 +9,7 @@
 
 #include <Common/Exception.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include "base/types.h"
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
@@ -255,6 +256,7 @@ template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type =
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
+template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
 template <> struct NearestFieldTypeImpl<std::string_view> { using Type = String; };
 template <> struct NearestFieldTypeImpl<String> { using Type = String; };

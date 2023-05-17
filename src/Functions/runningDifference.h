@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -122,6 +123,8 @@ private:
             f(Float32());
         else if (which.isFloat64())
             f(Float64());
+        else if (which.isBFloat16())
+            f(BFloat16());
         else if (which.isDate())
             f(DataTypeDate::FieldType());
         else if (which.isDate32())

@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/HashTable/HashTable.h>
+#include "base/types.h"
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -146,6 +147,7 @@ struct ArrayCompactImpl
             executeType< Int64 >(mapped, array, res) ||
             executeType<Float32>(mapped, array, res) ||
             executeType<Float64>(mapped, array, res)) ||
+            executeType<BFloat16>(mapped, array, res) ||
             executeType<Decimal32>(mapped, array, res) ||
             executeType<Decimal64>(mapped, array, res) ||
             executeType<Decimal128>(mapped, array, res) ||

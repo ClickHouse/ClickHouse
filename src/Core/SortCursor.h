@@ -26,6 +26,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
+#include "base/types.h"
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
@@ -689,6 +690,7 @@ private:
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
+        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,

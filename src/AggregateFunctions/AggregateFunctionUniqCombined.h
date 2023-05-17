@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -61,6 +62,16 @@ namespace detail
     struct AggregateFunctionUniqCombinedTraits<Float64, Ret>
     {
         static Ret hash(Float64 x)
+        {
+            UInt64 res = bit_cast<UInt64>(x);
+            return static_cast<Ret>(intHash64(res));
+        }
+    };
+
+    template <typename Ret>
+    struct AggregateFunctionUniqCombinedTraits<BFloat16, Ret>
+    {
+        static Ret hash(BFloat16 x)
         {
             UInt64 res = bit_cast<UInt64>(x);
             return static_cast<Ret>(intHash64(res));

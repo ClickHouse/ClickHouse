@@ -446,6 +446,7 @@ struct NameReinterpretAsInt128      { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsInt256      { static constexpr auto name = "reinterpretAsInt256"; };
 struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretAsFloat32"; };
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
+struct NameReinterpretAsBFloat16     { static constexpr auto name = "reinterpretAsBFloat16"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
 struct NameReinterpretAsDateTime    { static constexpr auto name = "reinterpretAsDateTime"; };
 struct NameReinterpretAsUUID        { static constexpr auto name = "reinterpretAsUUID"; };
@@ -466,6 +467,7 @@ using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameRe
 using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
 using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
 using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
+using FunctionReinterpretAsBFloat16 = FunctionReinterpretAs<DataTypeBFloat16, NameReinterpretAsBFloat16>;
 using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
 using FunctionReinterpretAsDateTime = FunctionReinterpretAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 using FunctionReinterpretAsUUID = FunctionReinterpretAs<DataTypeUUID, NameReinterpretAsUUID>;
@@ -492,6 +494,7 @@ REGISTER_FUNCTION(ReinterpretAs)
     factory.registerFunction<FunctionReinterpretAsInt256>();
     factory.registerFunction<FunctionReinterpretAsFloat32>();
     factory.registerFunction<FunctionReinterpretAsFloat64>();
+    factory.registerFunction<FunctionReinterpretAsBFloat16>();
     factory.registerFunction<FunctionReinterpretAsDate>();
     factory.registerFunction<FunctionReinterpretAsDateTime>();
     factory.registerFunction<FunctionReinterpretAsUUID>();

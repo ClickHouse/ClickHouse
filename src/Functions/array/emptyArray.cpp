@@ -67,6 +67,7 @@ REGISTER_FUNCTION(EmptyArray)
     registerFunction<FunctionEmptyArray<DataTypeInt64>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeFloat32>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeFloat64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeBFloat16>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeDate>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeDateTime>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeString>>(factory);

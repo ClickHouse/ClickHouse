@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include "base/types.h"
 #include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -155,6 +156,7 @@ private:
             AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
+            AttributeContainerType<BFloat16>,
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,

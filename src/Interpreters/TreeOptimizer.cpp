@@ -66,6 +66,7 @@ const std::unordered_set<String> possibly_injective_function_names
         "dictGetInt64",
         "dictGetFloat32",
         "dictGetFloat64",
+        "dictGetBFloat16",
         "dictGetDate",
         "dictGetDateTime"
 };

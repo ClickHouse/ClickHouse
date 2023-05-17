@@ -3,6 +3,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
+#include "base/types.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -722,7 +723,8 @@ private:
                 || (res = executeNumRightType<T0, Int128>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int256>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
+                || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped))
+                || (res = executeNumRightType<T0, BFloat16>(col_left, col_right_untyped)))
                 return res;
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -743,7 +745,8 @@ private:
                 || (res = executeNumConstRightType<T0, Int128>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int256>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
+                || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped))
+                || (res = executeNumConstRightType<T0, BFloat16>(col_left_const, col_right_untyped)))
                 return res;
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -1293,7 +1296,8 @@ public:
                 || (res = executeNumLeftType<Int128>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
+                || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))
+                || (res = executeNumLeftType<BFloat16>(col_left_untyped, col_right_untyped))))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     col_left_untyped->getName(), getName());
 
@@ -1342,7 +1346,7 @@ public:
                 if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
                         getName(), left_type->getName(), right_type->getName());
-                /// When Decimal comparing to Float32/64, we convert both of them into Float64.
+                /// When Decimal comparing to Float32/64 / BFloat16, we convert both of them into Float64.
                 /// Other systems like MySQL and Spark also do as this.
                 if (left_is_float || right_is_float)
                 {

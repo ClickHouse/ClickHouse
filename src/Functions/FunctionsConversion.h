@@ -56,6 +56,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
+#include "base/types.h"
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Core/Types.h>
 
@@ -460,7 +461,7 @@ struct ToDate32Transform8Or16Signed
 };
 
 /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
-  * Float32, Float64) to Date. If the number is negative, saturate it to unix epoch time. If the
+  * Float32, Float64, BFloat16) to Date. If the number is negative, saturate it to unix epoch time. If the
   * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
   * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
   * It's a bit illogical, as we actually have two functions in one.
@@ -484,6 +485,8 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name,
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
+template <typename Name> struct ConvertImpl<DataTypeBFloat16, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeBFloat16, DataTypeDate, ToDateTransform32Or64Signed<BFloat16, UInt16>> {};
 
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32>> {};
@@ -501,6 +504,8 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Nam
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32>> {};
+template <typename Name> struct ConvertImpl<DataTypeBFloat16, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeBFloat16, DataTypeDate32, ToDate32Transform32Or64Signed<BFloat16, Int32>> {};
 
 
 template <typename FromType, typename ToType>
@@ -541,7 +546,7 @@ struct ToDateTimeTransform64Signed
 };
 
 /** Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32,
-  * Float64) to DateTime. If the number is negative, saturate it to unix epoch time. If the number
+  * Float64, BFloat16) to DateTime. If the number is negative, saturate it to unix epoch time. If the number
   * exceeds UInt32, saturate to MAX_UINT32.
   */
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime, Name>
@@ -558,6 +563,8 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, N
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime, ToDateTimeTransform64Signed<Float32, UInt32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeBFloat16, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeBFloat16, DataTypeDateTime, ToDateTimeTransform64Signed<BFloat16, UInt32>> {};
 
 constexpr time_t LUT_MIN_TIME = -2208988800l;           //  1900-01-01 UTC
 
@@ -634,6 +641,8 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64,
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat32, Float32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat64, Float64>> {};
+template <typename Name> struct ConvertImpl<DataTypeBFloat16, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeBFloat16, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeBFloat16, BFloat16>> {};
 
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
@@ -2458,6 +2467,7 @@ struct NameToInt128 { static constexpr auto name = "toInt128"; };
 struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
 struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
 struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
@@ -2476,6 +2486,7 @@ using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberM
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
+using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumberMonotonicity<BFloat16>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
@@ -2508,6 +2519,7 @@ template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; }
 template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
+template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat16; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
@@ -2541,6 +2553,7 @@ struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
 struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
+struct NameToBFloat16OrZero { static constexpr auto name = "toBFloat16OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
 struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
@@ -2567,6 +2580,7 @@ using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToI
 using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToBFloat16OrZero = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDate32OrZero = FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2593,6 +2607,7 @@ struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
 struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
+struct NameToBFloat16OrNull { static constexpr auto name = "toBFloat16OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
 struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
@@ -2619,6 +2634,7 @@ using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToI
 using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToBFloat16OrNull = FunctionConvertFromString<DataTypeBFloat16, NameToBFloat16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDate32OrNull = FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
@@ -3893,6 +3909,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeInt256> ||
                 std::is_same_v<ToDataType, DataTypeFloat32> ||
                 std::is_same_v<ToDataType, DataTypeFloat64> ||
+                std::is_same_v<ToDataType, DataTypeBFloat16> ||
                 std::is_same_v<ToDataType, DataTypeDate> ||
                 std::is_same_v<ToDataType, DataTypeDate32> ||
                 std::is_same_v<ToDataType, DataTypeDateTime> ||
@@ -4080,6 +4097,8 @@ public:
         if (const auto * type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
         if (const auto * type = checkAndGetDataType<DataTypeFloat64>(to_type))
+            return monotonicityForType(type);
+        if (const auto * type = checkAndGetDataType<DataTypeBFloat16>(to_type))
             return monotonicityForType(type);
         if (const auto * type = checkAndGetDataType<DataTypeDate>(to_type))
             return monotonicityForType(type);

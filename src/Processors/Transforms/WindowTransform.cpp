@@ -172,6 +172,7 @@ APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
 \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
+APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<BFloat16>) \
 \
 else \
 { \

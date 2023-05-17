@@ -7,6 +7,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "base/types.h"
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -273,6 +274,7 @@ public:
     M(Int256, INDEX) \
     M(Float32, INDEX) \
     M(Float64, INDEX) \
+    M(BFloat16, INDEX) \
     throw Exception( \
         ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
 

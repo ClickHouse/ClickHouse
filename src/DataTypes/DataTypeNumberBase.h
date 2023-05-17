@@ -4,6 +4,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -70,5 +71,6 @@ extern template class DataTypeNumberBase<Int128>;
 extern template class DataTypeNumberBase<Int256>;
 extern template class DataTypeNumberBase<Float32>;
 extern template class DataTypeNumberBase<Float64>;
+extern template class DataTypeNumberBase<BFloat16>;
 
 }

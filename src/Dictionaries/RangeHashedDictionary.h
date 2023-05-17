@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
 #include <Common/ArenaUtils.h>
+#include "base/types.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -175,6 +176,7 @@ private:
             AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
+            AttributeContainerType<BFloat16>,
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
@@ -217,6 +219,7 @@ private:
         ContainerType<DateTime64>,
         ContainerType<Float32>,
         ContainerType<Float64>,
+        ContainerType<BFloat16>,
         ContainerType<UUID>,
         ContainerType<IPv4>,
         ContainerType<IPv6>>;

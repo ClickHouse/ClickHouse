@@ -5,6 +5,7 @@
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
+#include "base/types.h"
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
@@ -105,6 +106,11 @@ Float64 ColumnSparse::getFloat64(size_t n) const
 Float32 ColumnSparse::getFloat32(size_t n) const
 {
     return values->getFloat32(getValueIndex(n));
+}
+
+BFloat16 ColumnSparse::getBFloat16(size_t n) const
+{
+    return values->getBFloat16(getValueIndex(n));
 }
 
 UInt64 ColumnSparse::getUInt(size_t n) const

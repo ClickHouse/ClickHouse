@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "ColumnsNumber.h"
+#include "base/types.h"
 
 
 namespace DB
@@ -66,6 +67,7 @@ public:
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
     Float64 getFloat64(size_t n) const override { return getDictionary().getFloat64(getIndexes().getUInt(n)); }
     Float32 getFloat32(size_t n) const override { return getDictionary().getFloat32(getIndexes().getUInt(n)); }
+    BFloat16 getBFloat16(size_t n) const override { return getDictionary().getBFloat16(getIndexes().getUInt(n)); }
     bool getBool(size_t n) const override { return getDictionary().getBool(getIndexes().getUInt(n)); }
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override

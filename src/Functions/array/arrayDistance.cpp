@@ -8,6 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -233,11 +234,13 @@ public:
                 return std::make_shared<DataTypeFloat64>();
             case TypeIndex::Float32:
                 return std::make_shared<DataTypeFloat32>();
+            case TypeIndex::BFloat16:
+                return std::make_shared<DataTypeBFloat16>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16.",
                     getName(),
                     common_type->getName());
         }
@@ -252,6 +255,9 @@ public:
                 break;
             case TypeIndex::Float64:
                 return executeWithResultType<Float64>(arguments, input_rows_count);
+                break;
+            case TypeIndex::BFloat16:
+                return executeWithResultType<BFloat16>(arguments, input_rows_count);
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
@@ -269,7 +275,8 @@ public:
     action(Int32)   \
     action(Int64)   \
     action(Float32) \
-    action(Float64)
+    action(Float64) \
+    action(BFloat16)
 
 
 private:
@@ -293,7 +300,7 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16.",
                     getName(),
                     type_x->getName());
         }
@@ -319,7 +326,7 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16.",
                     getName(),
                     type_y->getName());
         }

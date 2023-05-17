@@ -357,6 +357,13 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Float64), rng, true);
             return column;
         }
+        case TypeIndex::BFloat16:
+        {
+            auto column = ColumnBFloat16::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(BFloat16), rng, true);
+            return column;
+        }
         case TypeIndex::Decimal32:
         {
             const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal32> &>(*type);

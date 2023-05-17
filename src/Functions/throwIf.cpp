@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/ErrorCodes.h>
+#include "base/types.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -110,7 +111,8 @@ public:
             || (res = execute<Int32>(in, custom_message, custom_error_code))
             || (res = execute<Int64>(in, custom_message, custom_error_code))
             || (res = execute<Float32>(in, custom_message, custom_error_code))
-            || (res = execute<Float64>(in, custom_message, custom_error_code))))
+            || (res = execute<Float64>(in, custom_message, custom_error_code))
+            || (res = execute<BFloat16>(in, custom_message, custom_error_code))))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }

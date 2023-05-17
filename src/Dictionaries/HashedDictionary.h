@@ -9,6 +9,7 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include "base/types.h"
 #include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -201,6 +202,7 @@ private:
             CollectionsHolder<DateTime64>,
             CollectionsHolder<Float32>,
             CollectionsHolder<Float64>,
+            CollectionsHolder<BFloat16>,
             CollectionsHolder<UUID>,
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,

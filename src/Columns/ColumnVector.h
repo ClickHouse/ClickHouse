@@ -11,6 +11,7 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
+#include "base/types.h"
 #include "config.h"
 
 #if USE_MULTITARGET_CODE
@@ -109,6 +110,7 @@ struct FloatCompareHelper
 
 template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
 template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
+template <class U> struct CompareHelper<BFloat16, U> : public FloatCompareHelper<BFloat16> {};
 
 
 /** A template for columns that use a simple array to store.
@@ -276,6 +278,7 @@ public:
 
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
+    BFloat16 getBFloat16(size_t n) const override;
 
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
@@ -561,6 +564,7 @@ extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
+extern template class ColumnVector<BFloat16>;
 extern template class ColumnVector<UUID>;
 extern template class ColumnVector<IPv4>;
 extern template class ColumnVector<IPv6>;

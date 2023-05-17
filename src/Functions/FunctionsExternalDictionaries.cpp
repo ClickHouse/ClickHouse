@@ -61,6 +61,7 @@ Throws an exception if cannot parse the value of the attribute or the value does
     factory.registerFunction<FunctionDictGetInt64>(Documentation{ fmt::format(dict_get_description, "Int64") });
     factory.registerFunction<FunctionDictGetFloat32>(Documentation{ fmt::format(dict_get_description, "Float32") });
     factory.registerFunction<FunctionDictGetFloat64>(Documentation{ fmt::format(dict_get_description, "Float64") });
+    factory.registerFunction<FunctionDictGetBFloat16>(Documentation{ fmt::format(dict_get_description, "BFloat16") });
     factory.registerFunction<FunctionDictGetDate>(Documentation{ fmt::format(dict_get_description, "Date") });
     factory.registerFunction<FunctionDictGetDateTime>(Documentation{ fmt::format(dict_get_description, "DateTime") });
     factory.registerFunction<FunctionDictGetUUID>(Documentation{ fmt::format(dict_get_description, "UUID") });
@@ -78,6 +79,7 @@ Throws an exception if cannot parse the value of the attribute or the value does
     factory.registerFunction<FunctionDictGetInt64OrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "Int64") });
     factory.registerFunction<FunctionDictGetFloat32OrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "Float32") });
     factory.registerFunction<FunctionDictGetFloat64OrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "Float64") });
+    factory.registerFunction<FunctionDictGetBFloat16OrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "BFloat16") });
     factory.registerFunction<FunctionDictGetDateOrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "Date") });
     factory.registerFunction<FunctionDictGetDateTimeOrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "DateTime") });
     factory.registerFunction<FunctionDictGetUUIDOrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "UUID") });

@@ -10,6 +10,7 @@
 
 // I know that inclusion of .cpp is not good at all
 #include <Functions/FunctionsLogical.cpp> // NOLINT
+#include "base/types.h"
 
 using namespace DB;
 using TernaryValues = std::vector<Ternary::ResultType>;
@@ -301,6 +302,14 @@ TEST(TernaryLogicTruthTable, NestedFloat64)
 {
     bool test_1 = testTernaryLogicTruthTable<AndImpl, Float64>();
     bool test_2 = testTernaryLogicTruthTable<OrImpl, Float64>();
+    ASSERT_EQ(test_1, true);
+    ASSERT_EQ(test_2, true);
+}
+
+TEST(TernaryLogicTruthTable, NestedBFloat16)
+{
+    bool test_1 = testTernaryLogicTruthTable<AndImpl, BFloat16>();
+    bool test_2 = testTernaryLogicTruthTable<OrImpl, BFloat16>();
     ASSERT_EQ(test_1, true);
     ASSERT_EQ(test_2, true);
 }

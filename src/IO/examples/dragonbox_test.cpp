@@ -1,7 +1,9 @@
+#include <cstdint>
 #include <string>
 #include <iostream>
 #include <cstring>
 #include <dragonbox/dragonbox_to_chars.h>
+#include "base/DecomposedFloat.h"
 
 struct DecomposedFloat64
 {
@@ -74,6 +76,43 @@ struct DecomposedFloat32
         return x_uint == 0
             || (normalizedExponent() >= 0 && normalizedExponent() <= 23
                 && ((mantissa() & ((1ULL << (23 - normalizedExponent())) - 1)) == 0));
+    }
+};
+
+struct DecomposedBFloat16
+{
+    explicit DecomposedBFloat16(float x)
+    {
+        memcpy(&x_uint, &x, sizeof(uint16_t));
+    }
+
+    uint16_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 15;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 7) & 0xFF;
+    }
+
+    int16_t normalizedExponent() const
+    {
+        return int16_t(exponent()) - 127;
+    }
+
+    uint32_t mantissa() const
+    {
+        return x_uint & 0x7f;
+    }
+
+    bool isInsideInt32() const
+    {
+        return x_uint == 0
+            || (normalizedExponent() >= 0 && normalizedExponent() <= 7
+                && ((mantissa() & ((1ULL << (7 - normalizedExponent())) - 1)) == 0));
     }
 };
 

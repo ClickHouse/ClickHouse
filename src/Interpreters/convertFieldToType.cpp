@@ -24,6 +24,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -208,6 +209,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isInt256()) return convertNumericType<Int256>(src, type);
         if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
         if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
+        if (which_type.isBFloat16()) return convertNumericType<BFloat16>(src, type);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
