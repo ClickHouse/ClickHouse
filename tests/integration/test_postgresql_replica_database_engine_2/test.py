@@ -88,11 +88,8 @@ def setup_teardown():
 
 
 def test_add_new_table_to_replication(started_cluster):
-    cursor = pg_manager.get_db_cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_table")
     NUM_TABLES = 5
-
-    pg_manager.create_and_fill_postgres_tables_from_cursor(cursor, NUM_TABLES, 10000)
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
@@ -105,7 +102,7 @@ def test_add_new_table_to_replication(started_cluster):
     )
 
     table_name = "postgresql_replica_5"
-    pg_manager.create_and_fill_postgres_table_from_cursor(cursor, table_name)
+    pg_manager.create_and_fill_postgres_table(table_name)
 
     result = instance.query("SHOW CREATE DATABASE test_database")
     assert (
