@@ -1,5 +1,4 @@
 #include <Formats/ProtobufSerializer.h>
-#include "Common/formatIPv6.h"
 
 #if USE_PROTOBUF
 #   include <Columns/ColumnAggregateFunction.h>
