@@ -41,7 +41,7 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
 void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    /// std::filesystem::copy() can copy from the filesystem only, and it can't do the throttling or appending.
+    /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or appending.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling && (write_mode == WriteMode::Rewrite))
     {
@@ -121,7 +121,7 @@ void BackupWriterFile::removeFiles(const Strings & file_names)
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                         bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    /// std::filesystem::copy() can copy from the filesystem only, and it can't do the throttling or copy a part of the file.
+    /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling)
     {
