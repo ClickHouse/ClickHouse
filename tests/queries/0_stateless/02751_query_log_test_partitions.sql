@@ -4,10 +4,10 @@ set log_queries_min_type='QUERY_FINISH';
 DROP TABLE IF EXISTS 02751_query_log_test_partitions;
 CREATE TABLE 02751_query_log_test_partitions (a Int64, b Int64) ENGINE = MergeTree PARTITION BY a ORDER BY b;
 
-SYSTEM STOP MERGES 02751_query_log_test_partitions;
-INSERT INTO 02751_query_log_test_partitions SELECT number, number FROM numbers(5);
+INSERT INTO 02751_query_log_test_partitions SELECT number, number FROM numbers(10);
 
 SELECT * FROM 02751_query_log_test_partitions WHERE a = 3;
+
 SYSTEM FLUSH LOGS;
 
 SELECT
