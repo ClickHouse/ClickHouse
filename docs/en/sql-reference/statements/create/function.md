@@ -61,4 +61,6 @@ Result:
 
 ## Related Content
 
-- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
+### [Executable UDFs](/docs/en/sql-reference/functions/udf.md).
+
+### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
