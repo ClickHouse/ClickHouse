@@ -20,8 +20,6 @@
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
 
-namespace Aws::S3 { class Client; }
-
 namespace DB
 {
 
