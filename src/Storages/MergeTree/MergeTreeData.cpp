@@ -291,6 +291,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             {
                 auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
+                buf->finalize();
                 if (getContext()->getSettingsRef().fsync_metadata)
                     buf->sync();
             }
@@ -5158,7 +5159,11 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context)
+BackupEntries MergeTreeData::backupParts(
+    const DataPartsVector & data_parts,
+    const String & data_path_in_backup,
+    const BackupSettings & backup_settings,
+    const ContextPtr & local_context)
 {
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
@@ -5193,24 +5198,24 @@ BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, con
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
-            read_settings,
             part->checksums,
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
-            backup_entries_from_part,
+            backup_settings,
             make_temporary_hard_links,
+            backup_entries_from_part,
             &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
             projection_part->getDataPartStorage().backup(
-                read_settings,
                 projection_part->checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
-                backup_entries_from_part,
+                backup_settings,
                 make_temporary_hard_links,
+                backup_entries_from_part,
                 &temp_dirs);
         }
 
