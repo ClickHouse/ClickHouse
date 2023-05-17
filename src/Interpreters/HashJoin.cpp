@@ -27,7 +27,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "joinDispatch.h"
 
 namespace DB
 {
@@ -2124,34 +2123,10 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
     return restored_blocks;
 }
 
-const BlocksList & HashJoin::getJoinedBlocks() const
-{
-    return data->blocks;
-}
-
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {
     /// It should be nullable when right side is nullable
     return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
-}
-
-void HashJoin::clear()
-{
-    used_flags.clear();
-    data->clear(kind, strictness);
-}
-
-void HashJoin::RightTableData::clear(JoinKind kind_, JoinStrictness strictness_)
-{
-    blocks.clear();
-    blocks_nullmaps.clear();
-    blocks_allocated_size = 0;
-    blocks_nullmaps_allocated_size = 0;
-    for (auto & map : maps)
-    {
-        joinDispatch(kind_, strictness_, map, [&](auto, auto, auto & map_) { map_.clear(type); });
-    }
-
 }
 
 }

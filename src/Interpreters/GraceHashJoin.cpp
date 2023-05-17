@@ -571,6 +571,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
+    size_t prev_keys_num = 0;
     // If there is only one bucket, don't take this check.
     if (hash_join && buckets.size() > 1)
     {
@@ -589,10 +590,8 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
                 bucket_idx);
             continue;
         }
-        if (!hash_join)
-            hash_join = makeInMemoryJoin();
-        else
-            hash_join->clear();
+
+        hash_join = makeInMemoryJoin(prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -656,15 +655,13 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
-        size_t current_hash_keys_num = hash_join->getTotalRowCount();
-        size_t current_hash_bytes = hash_join->getTotalByteCount();
 
-        if (!hasMemoryOverflow(current_hash_keys_num, current_hash_bytes))
+        if (!hasMemoryOverflow(hash_join))
             return;
 
         current_block = {};
 
-        const auto & right_blocks = hash_join->getJoinedBlocks();
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
 
         buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
@@ -684,22 +681,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        // If it's a overflow caused by hash table buffer bytes, need to reallocate a new hash table.
-        if (hasMemoryOverflow(2, current_hash_bytes))
-        {
-            if (hasMemoryOverflow(prev_hash_keys_num, prev_hash_bytes))
-            {
-                hash_join = makeInMemoryJoin(prev_hash_keys_num / 2);
-            }
-            else
-            {
-                hash_join = makeInMemoryJoin(prev_hash_keys_num);
-            }
-        }
-        else
-        {
-            hash_join->clear();
-        }
+        hash_join = makeInMemoryJoin(prev_keys_num);
 
         if (current_block.rows() > 0)
             hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
