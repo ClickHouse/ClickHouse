@@ -11,11 +11,17 @@ CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from
 unique_name=${CLICKHOUSE_TEST_UNIQUE_NAME}
 tmp_dir=${CLICKHOUSE_USER_FILES_PATH}/${unique_name}
 mkdir -p $tmp_dir
+rm -rf ${tmp_dir}/*
+
+chmod 777 ${tmp_dir}
+
 echo '"id","str","int","text"' > ${tmp_dir}/tmp.csv
 echo '1,"abc",123,"abacaba"' >> ${tmp_dir}/tmp.csv
 echo '2,"def",456,"bacabaa"' >> ${tmp_dir}/tmp.csv
 echo '3,"story",78912,"acabaab"' >> ${tmp_dir}/tmp.csv
 echo '4,"history",21321321,"cabaaba"' >> ${tmp_dir}/tmp.csv
+
+chmod 777 ${tmp_dir}/tmp.csv
 
 cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp1.csv
 cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp2.csv
