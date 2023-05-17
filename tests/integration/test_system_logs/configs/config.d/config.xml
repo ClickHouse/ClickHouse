@@ -1,0 +1,55 @@
+<clickhouse>
+    <query_log>
+        <order_by>event_date, event_time, initial_query_id</order_by>
+    </query_log>
+    <query_thread_log>
+        <order_by>event_date, event_time, query_id</order_by>
+    </query_thread_log>
+    <!--
+    <part_log>
+        <order_by>event_date, event_time, event_type</order_by>
+    </part_log>
+    <trace_log>
+        <order_by>event_date, event_time, trace_type</order_by>
+    </trace_log>
+    <crash_log>
+        <order_by>event_date, event_time</order_by>
+    </crash_log>
+    <text_log>
+        <order_by>event_date, event_time, query_id</order_by>
+    </text_log>
+    <metric_log>
+        <order_by>event_date, event_time, event_time_microseconds</order_by>
+    </metric_log>
+    <filesystem_cache_log>
+        <order_by>event_date, event_time</order_by>
+    </filesystem_cache_log>
+    <filesystem_read_prefetches_log>
+        <order_by>event_date, event_time</order_by>
+    </filesystem_read_prefetches_log>
+    <asynchronous_metric_log>
+        <order_by>event_date, event_time, metric</order_by>
+    </asynchronous_metric_log>
+    <opentelemetry_span_log>
+        <order_by>event_date, event_time</order_by>
+    </opentelemetry_span_log>
+    <query_views_log>
+        <order_by>event_date, event_time</order_by>
+    </query_views_log>
+    <zookeeper_log>
+        <order_by>event_date, event_time</order_by>
+    </zookeeper_log>
+    <session_log>
+        <order_by>event_date, event_time</order_by>
+    </session_log>
+    <transactions_info_log>
+        <order_by>event_date, event_time</order_by>
+    </transactions_info_log>
+    <processors_profile_log>
+        <order_by>event_date, event_time</order_by>
+    </processors_profile_log>
+    <asynchronous_insert_log>
+        <order_by>event_date, event_time</order_by>
+    </asynchronous_insert_log>
+    -->
+</clickhouse>
