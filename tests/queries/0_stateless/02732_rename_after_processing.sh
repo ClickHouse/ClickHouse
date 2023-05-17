@@ -11,7 +11,7 @@ CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from
 unique_name=${CLICKHOUSE_TEST_UNIQUE_NAME}
 tmp_dir=${CLICKHOUSE_USER_FILES_PATH}/${unique_name}
 mkdir -p $tmp_dir
-rm -rf ${tmp_dir}/*
+rm -rf ${tmp_dir:?}/*
 
 chmod 777 ${tmp_dir}
 
