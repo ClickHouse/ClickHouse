@@ -665,24 +665,24 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
-                data->creating_pipe_callback = [cur, limits, context = this->context]()
+                data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
+                        my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
                     QueryPlan plan;
                     cur->read(
                         plan,
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        storage_snapshot, query_info, context,
+                        storage_snapshot, query_info, my_context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(context),
-                        BuildQueryPipelineSettings::fromContext(context));
+                        QueryPlanOptimizationSettings::fromContext(my_context),
+                        BuildQueryPipelineSettings::fromContext(my_context));
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
@@ -710,9 +710,10 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (read_context)
         read_context->cancel();
 
-    /// Query could be cancelled during connection creation or query sending,
-    /// we should check if connections were already created and query were sent.
-    if (connections && sent_query)
+    /// Query could be cancelled during connection creation, query sending or data receiving.
+    /// We should send cancel request if connections were already created, query were sent
+    /// and remote query is not finished.
+    if (connections && sent_query && !finished)
     {
         connections->sendCancel();
         if (log)

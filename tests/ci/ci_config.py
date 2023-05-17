@@ -9,7 +9,7 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -19,7 +19,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "coverity": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
@@ -28,7 +28,7 @@ CI_CONFIG = {
             "official": False,
         },
         "package_aarch64": {
-            "compiler": "clang-15-aarch64",
+            "compiler": "clang-16-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -38,7 +38,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_asan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
@@ -46,7 +46,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_ubsan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
@@ -54,7 +54,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
@@ -62,7 +62,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_msan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
@@ -70,7 +70,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_debug": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -78,7 +78,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_release": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -86,7 +86,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_tidy": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
@@ -95,7 +95,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin": {
-            "compiler": "clang-15-darwin",
+            "compiler": "clang-16-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -104,7 +104,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64": {
-            "compiler": "clang-15-aarch64",
+            "compiler": "clang-16-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -112,7 +112,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64_v80compat": {
-            "compiler": "clang-15-aarch64-v80compat",
+            "compiler": "clang-16-aarch64-v80compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -121,7 +121,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_freebsd": {
-            "compiler": "clang-15-freebsd",
+            "compiler": "clang-16-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -130,7 +130,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-15-darwin-aarch64",
+            "compiler": "clang-16-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -139,7 +139,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_ppc64le": {
-            "compiler": "clang-15-ppc64le",
+            "compiler": "clang-16-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -148,7 +148,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_amd64_compat": {
-            "compiler": "clang-15-amd64-compat",
+            "compiler": "clang-16-amd64-compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -417,7 +417,7 @@ CHECK_DESCRIPTIONS = [
         "AST fuzzer",
         "Runs randomly generated queries to catch program errors. "
         "The build type is optionally given in parenthesis. "
-        "If it fails, ask a maintainer for help.",
+        "If it fails, ask a maintainer for help",
         lambda x: x.startswith("AST fuzzer"),
     ),
     CheckDescription(
@@ -439,13 +439,13 @@ CHECK_DESCRIPTIONS = [
         "information to fix the error, but you might have to reproduce the failure "
         "locally. The <b>cmake</b> options can be found in the build log, grepping for "
         '<b>cmake</b>. Use these options and follow the <a href="'
-        'https://clickhouse.com/docs/en/development/build">general build process</a>.',
+        'https://clickhouse.com/docs/en/development/build">general build process</a>',
         lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
     ),
     CheckDescription(
         "Compatibility check",
         "Checks that <b>clickhouse</b> binary runs on distributions with old libc "
-        "versions. If it fails, ask a maintainer for help.",
+        "versions. If it fails, ask a maintainer for help",
         lambda x: x.startswith("Compatibility check"),
     ),
     CheckDescription(
@@ -465,12 +465,18 @@ CHECK_DESCRIPTIONS = [
         "omitting some. If it fails, further checks are not started until it is fixed. "
         "Look at the report to see which tests fail, then reproduce the failure "
         'locally as described <a href="https://clickhouse.com/docs/en/development/'
-        'tests#functional-test-locally">here</a>.',
+        'tests#functional-test-locally">here</a>',
         lambda x: x == "Fast test",
     ),
     CheckDescription(
         "Flaky tests",
-        "Runs a flaky tests from master multiple times to identify if they are stable.",
+        "Checks if new added or modified tests are flaky by running them repeatedly, "
+        "in parallel, with more randomization. Functional tests are run 100 times "
+        "with address sanitizer, and additional randomization of thread scheduling. "
+        "Integrational tests are run up to 10 times. If at least once a new test has "
+        "failed, or was too long, this check will be red. We don't allow flaky tests, "
+        'read <a href="https://clickhouse.com/blog/decorating-a-christmas-tree-with-'
+        'the-help-of-flaky-tests/">the doc</a>',
         lambda x: "tests flaky check" in x,
     ),
     CheckDescription(
@@ -506,37 +512,37 @@ CHECK_DESCRIPTIONS = [
         "Sqllogic",
         "Run clickhouse on the "
         '<a href="https://www.sqlite.org/sqllogictest">sqllogic</a> '
-        "test set against sqlite and checks that all statements are passed.",
+        "test set against sqlite and checks that all statements are passed",
         lambda x: x.startswith("Sqllogic test"),
     ),
     CheckDescription(
         "SQLancer",
         "Fuzzing tests that detect logical bugs with "
-        '<a href="https://github.com/sqlancer/sqlancer">SQLancer</a> tool.',
+        '<a href="https://github.com/sqlancer/sqlancer">SQLancer</a> tool',
         lambda x: x.startswith("SQLancer"),
     ),
     CheckDescription(
         "Stateful tests",
         "Runs stateful functional tests for ClickHouse binaries built in various "
-        "configurations -- release, debug, with sanitizers, etc.",
+        "configurations -- release, debug, with sanitizers, etc",
         lambda x: x.startswith("Stateful tests ("),
     ),
     CheckDescription(
         "Stateless tests",
         "Runs stateless functional tests for ClickHouse binaries built in various "
-        "configurations -- release, debug, with sanitizers, etc.",
+        "configurations -- release, debug, with sanitizers, etc",
         lambda x: x.startswith("Stateless tests ("),
     ),
     CheckDescription(
         "Stress test",
         "Runs stateless functional tests concurrently from several clients to detect "
-        "concurrency-related errors.",
+        "concurrency-related errors",
         lambda x: x.startswith("Stress test ("),
     ),
     CheckDescription(
         "Style Check",
         "Runs a set of checks to keep the code style clean. If some of tests failed, "
-        "see the related log from the report.",
+        "see the related log from the report",
         lambda x: x == "Style Check",
     ),
     CheckDescription(
@@ -548,7 +554,7 @@ CHECK_DESCRIPTIONS = [
         "Upgrade check",
         "Runs stress tests on server version from last release and then tries to "
         "upgrade it to the version from the PR. It checks if the new server can "
-        "successfully startup without any errors, crashes or sanitizer asserts.",
+        "successfully startup without any errors, crashes or sanitizer asserts",
         lambda x: x.startswith("Upgrade check ("),
     ),
     CheckDescription(
