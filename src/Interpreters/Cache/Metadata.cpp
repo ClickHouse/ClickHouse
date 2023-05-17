@@ -284,7 +284,7 @@ void CacheMetadata::doCleanup()
         {
             /// Key prefix directory can become non-empty just now, it is expected.
             if (e.code() == std::errc::directory_not_empty)
-                return;
+                continue;
             LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
             chassert(false);
         }
