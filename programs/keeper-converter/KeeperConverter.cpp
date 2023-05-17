@@ -40,8 +40,8 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        auto keeper_context = std::make_shared<KeeperContext>();
-        keeper_context->digest_enabled = true;
+        auto keeper_context = std::make_shared<KeeperContext>(true);
+        keeper_context->setDigestEnabled(true);
 
         DB::KeeperStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
 

@@ -9,11 +9,11 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/pathUtils.h>
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
@@ -157,7 +157,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     if (snapshot.version >= SnapshotVersion::V5)
     {
         writeBinary(snapshot.zxid, out);
-        if (keeper_context->digest_enabled)
+        if (keeper_context->digestEnabled())
         {
             writeBinary(static_cast<uint8_t>(KeeperStorage::CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
@@ -268,7 +268,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
     KeeperStorage & storage = *deserialization_result.storage;
 
-    bool recalculate_digest = keeper_context->digest_enabled;
+    bool recalculate_digest = keeper_context->digestEnabled();
     if (version >= SnapshotVersion::V5)
     {
         readBinary(storage.zxid, in);
@@ -350,7 +350,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
         if (match_result == IS_CHILD)
         {
-            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
             {
                 LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                 continue;
@@ -366,7 +366,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             if (!is_node_empty(node))
             {
-                if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+                if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
                     LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                     node = KeeperStorage::Node{};
@@ -395,9 +395,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     {
         if (itr.key != "/")
         {
-            auto parent_path = parentPath(itr.key);
+            auto parent_path = parentNodePath(itr.key);
             storage.container.updateValue(
-                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path), /*update_size*/ version < SnapshotVersion::V4); });
+                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
         }
     }
 

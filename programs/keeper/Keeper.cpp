@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
+#include <Interpreters/Context.h>
+
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -39,6 +41,8 @@
 
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
+
+#include <Disks/registerDisks.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -407,6 +411,15 @@ try
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
+
+    auto shared_context = Context::createShared();
+    auto global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setPath(path);
+    global_context->setRemoteHostFilter(config());
+
+    registerDisks(/*global_skip_access_check=*/false);
 
     tiny_context = std::make_shared<TinyContext>();
     /// This object will periodically calculate some metrics.

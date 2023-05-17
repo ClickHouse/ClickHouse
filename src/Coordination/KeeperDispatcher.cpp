@@ -789,12 +789,14 @@ static uint64_t getDirSize(const fs::path & dir)
 
 uint64_t KeeperDispatcher::getLogDirSize() const
 {
-    return getDirSize(configuration_and_settings->log_storage_path);
+    //return getDirSize(configuration_and_settings->log_storage_path);
+    return 0;
 }
 
 uint64_t KeeperDispatcher::getSnapDirSize() const
 {
-    return getDirSize(configuration_and_settings->snapshot_storage_path);
+    //return getDirSize(configuration_and_settings->snapshot_storage_path);
+    return 0;
 }
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
