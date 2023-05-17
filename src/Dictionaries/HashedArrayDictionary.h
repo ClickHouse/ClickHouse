@@ -7,7 +7,6 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include "base/types.h"
 #include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>

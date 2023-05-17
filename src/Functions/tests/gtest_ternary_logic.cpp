@@ -10,7 +10,6 @@
 
 // I know that inclusion of .cpp is not good at all
 #include <Functions/FunctionsLogical.cpp> // NOLINT
-#include "base/types.h"
 
 using namespace DB;
 using TernaryValues = std::vector<Ternary::ResultType>;

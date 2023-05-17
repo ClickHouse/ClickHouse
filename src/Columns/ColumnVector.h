@@ -11,7 +11,6 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
-#include "base/types.h"
 #include "config.h"
 
 #if USE_MULTITARGET_CODE

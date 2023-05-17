@@ -14,7 +14,6 @@
 #include <Common/WeakHash.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/bit_cast.h>

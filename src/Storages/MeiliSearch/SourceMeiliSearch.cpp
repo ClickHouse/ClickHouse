@@ -22,7 +22,6 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include "Core/TypeId.h"
-#include "Interpreters/ProcessList.h"
 
 namespace DB
 {

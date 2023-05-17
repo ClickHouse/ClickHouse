@@ -1,7 +1,6 @@
 #include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
-#include "base/types.h"
 
 
 namespace DB

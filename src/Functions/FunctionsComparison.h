@@ -3,7 +3,6 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
-#include "base/types.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>

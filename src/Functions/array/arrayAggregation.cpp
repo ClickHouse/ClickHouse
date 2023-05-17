@@ -15,7 +15,6 @@
 #include <Functions/FunctionFactory.h>
 
 #include "FunctionArrayMapped.h"
-#include "base/types.h"
 
 
 namespace DB

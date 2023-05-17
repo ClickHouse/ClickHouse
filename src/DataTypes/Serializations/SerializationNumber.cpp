@@ -6,7 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Core/Field.h>

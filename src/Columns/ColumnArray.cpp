@@ -16,7 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include "base/types.h"
 #include <base/unaligned.h>
 #include <base/sort.h>
 #include <cstring> // memcpy

@@ -7,7 +7,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
-#include "base/types.h"
 
 namespace DB
 {

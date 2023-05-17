@@ -7,7 +7,6 @@
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
 
-#include "base/types.h"
 #include "config.h"
 
 #ifdef __clang__

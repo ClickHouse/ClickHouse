@@ -4,7 +4,6 @@
 #include <vector>
 #include <Columns/ColumnsNumber.h>
 #include <Common/randomSeed.h>
-#include "base/types.h"
 #include <gtest/gtest.h>
 
 using namespace DB;

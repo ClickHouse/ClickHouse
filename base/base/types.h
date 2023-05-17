@@ -48,10 +48,12 @@ public:
       fromValue(value);
     }
 
+    explicit BFloat16(uint16_t x): data(x) {}
+
     /// Take the most significant 16 bits of the floating point number.
     template <typename Value>
     static BFloat16 toBFloat16(const Value & x) {
-        return std::bit_cast<DB::UInt32>(static_cast<DB::Float32>(x)) >> 16;
+        return BFloat16(std::bit_cast<DB::UInt32>(static_cast<DB::Float32>(x)) >> 16);
     }
 
     template <typename Value>
@@ -61,11 +63,11 @@ public:
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     static Float32 toFloat32(const BFloat16 & x) {
-        return std::bit_cast<DB::Float32>(x << 16);
+        return std::bit_cast<DB::Float32>(x.data << 16);
     }
 
     Float32 toFloat32() const {
-        return std::bit_cast<DB::Float32>(*this << 16);
+        return std::bit_cast<DB::Float32>(this->data << 16);
     }
 
     bool operator==(const BFloat16& other) const {
@@ -108,14 +110,12 @@ public:
         return BFloat16(toFloat32() / other.toFloat32());
     }
 
-    BFloat16& operator=(const BFloat16& other) = default;
-
     BFloat16& operator+=(const BFloat16& other) {
         *this = *this + other;
         return *this;
     }
 
-        BFloat16& operator-=(const BFloat16& other) {
+    BFloat16& operator-=(const BFloat16& other) {
         *this = *this - other;
         return *this;
     }
@@ -152,7 +152,7 @@ public:
         return temp;
     }
 
-    explicit operator float() const {
+    operator float() const {
         return toFloat32();
     }
 

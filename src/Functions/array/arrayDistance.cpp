@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
-#include "base/types.h"
 
 namespace DB
 {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <type_traits>
 
 #include <base/arithmeticOverflow.h>
 

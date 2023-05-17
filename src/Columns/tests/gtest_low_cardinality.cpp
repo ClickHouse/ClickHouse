@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <gtest/gtest.h>
-#include "base/types.h"
 
 using namespace DB;
 

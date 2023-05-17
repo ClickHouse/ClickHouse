@@ -9,7 +9,6 @@
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
 
 
 namespace DB

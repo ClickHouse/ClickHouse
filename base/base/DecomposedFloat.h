@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstring>
 #include <base/extended_types.h>
-#include "base/types.h"
 
 
 /// Allows to check the internals of IEEE-754 floating point number.

@@ -56,7 +56,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
-#include "base/types.h"
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Core/Types.h>
 

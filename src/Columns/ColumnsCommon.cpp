@@ -4,7 +4,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <bit>
 #include "ColumnsCommon.h"
-#include "base/types.h"
 
 
 namespace DB
