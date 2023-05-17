@@ -421,10 +421,7 @@ void writeColumnImpl(
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;
 
-    /// We start with dictionary encoding, then switch to `encoding` (non-dictionary) if the
-    /// dictionary gets too big. That's how arrow does it too.
-    bool initially_used_dictionary = options.use_dictionary_encoding;
-    bool currently_using_dictionary = initially_used_dictionary;
+    bool use_dictionary = options.use_dictionary_encoding;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
     if constexpr (std::is_same<ParquetDType, parquet::FLBAType>::value)
@@ -441,12 +438,11 @@ void writeColumnImpl(
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
     /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
-    /// checking dictionary size after each batch; if it gets big, flush the dictionary and the
-    /// indices and switch to non-dictionary encoding. Feels like it could even be slightly less code.
+    /// checking dictionary size after each batch. That might be faster.
     auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
         // ignored if using dictionary
         static_cast<parquet::Encoding::type>(encoding),
-        currently_using_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
 
     struct PageData
     {
@@ -496,7 +492,7 @@ void writeColumnImpl(
         header.__isset.data_page_header = true;
         auto & d = header.data_page_header;
         d.__set_num_values(static_cast<Int32>(def_count));
-        d.__set_encoding(currently_using_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
+        d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
         /// We could also put checksum in `header.crc`, but apparently no one uses it:
@@ -513,7 +509,7 @@ void writeColumnImpl(
         total_statistics.merge(page_statistics);
         page_statistics.clear();
 
-        if (currently_using_dictionary)
+        if (use_dictionary)
         {
             dict_encoded_pages.push_back({.header = std::move(header)});
             std::swap(dict_encoded_pages.back().data, compressed);
@@ -593,13 +589,22 @@ void writeColumnImpl(
             next_def_offset += def_count;
             next_data_offset += data_count;
 
-            if (currently_using_dictionary && is_dict_too_big())
+            if (use_dictionary && is_dict_too_big())
             {
                 /// Fallback to non-dictionary encoding.
-                flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
-                flush_dict();
+                ///
+                /// Discard encoded data and start over.
+                /// This is different from what arrow does: arrow writes out the dictionary-encoded
+                /// data, then uses non-dictionary encoding for later pages.
+                /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
+                /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
+                /// trade because encoding speed is much less important than decoding (as evidenced
+                /// by arrow not supporting parallel encoding, even though it's easy to support).
 
-                currently_using_dictionary = false;
+                def_offset = 0;
+                data_offset = 0;
+                dict_encoded_pages.clear();
+                use_dictionary = false;
                 encoder = parquet::MakeTypedEncoder<ParquetDType>(
                     static_cast<parquet::Encoding::type>(encoding));
                 break;
@@ -614,7 +619,7 @@ void writeColumnImpl(
         }
     }
 
-    if (currently_using_dictionary)
+    if (use_dictionary)
         flush_dict();
 
     chassert(data_offset == s.primitive_column->size());
@@ -630,12 +635,14 @@ void writeColumnImpl(
     /// Report which encodings we've used.
     if (s.max_rep > 0 || s.max_def > 0)
         addToEncodingsUsed(s, parq::Encoding::RLE); // levels
-    if (!currently_using_dictionary)
-        addToEncodingsUsed(s, encoding); // non-dictionary encoding
-    if (initially_used_dictionary)
+    if (use_dictionary)
     {
         addToEncodingsUsed(s, parq::Encoding::PLAIN); // dictionary itself
         addToEncodingsUsed(s, parq::Encoding::RLE_DICTIONARY); // ids
+    }
+    else
+    {
+        addToEncodingsUsed(s, encoding);
     }
 }
 
