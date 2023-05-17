@@ -9,9 +9,21 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-n1 = cluster.add_instance("n1", main_configs=["configs/remote_servers.xml"])
-n2 = cluster.add_instance("n2", main_configs=["configs/remote_servers.xml"])
-n3 = cluster.add_instance("n3", main_configs=["configs/remote_servers.xml"])
+n1 = cluster.add_instance(
+    "n1",
+    main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/users.xml"],
+)
+n2 = cluster.add_instance(
+    "n2",
+    main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/users.xml"],
+)
+n3 = cluster.add_instance(
+    "n3",
+    main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/users.xml"],
+)
 
 nodes = len(cluster.instances)
 queries = nodes * 10
