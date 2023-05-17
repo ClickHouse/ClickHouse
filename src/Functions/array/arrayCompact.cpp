@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/HashTable/HashTable.h>
-#include "base/types.h"
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>

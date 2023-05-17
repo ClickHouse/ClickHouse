@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/HashTable/Hash.h>
-#include "base/types.h"
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>

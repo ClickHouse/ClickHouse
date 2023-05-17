@@ -6,7 +6,6 @@
 #include <vector>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "base/types.h"
 
 #include <base/EnumReflection.h>
 

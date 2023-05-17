@@ -10,7 +10,6 @@
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 #include "IFunction.h"
-#include "base/types.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>

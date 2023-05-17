@@ -16,7 +16,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitors.h>
-#include "base/types.h"
 
 #include <base/range.h>
 #include <base/unaligned.h>

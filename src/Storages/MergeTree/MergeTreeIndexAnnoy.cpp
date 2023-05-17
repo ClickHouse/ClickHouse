@@ -1,4 +1,4 @@
-// #ifdef ENABLE_ANNOY
+#ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 

@@ -8,7 +8,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include "base/types.h"
 
 namespace DB
 {

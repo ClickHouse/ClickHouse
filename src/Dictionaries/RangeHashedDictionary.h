@@ -10,7 +10,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
 #include <Common/ArenaUtils.h>
-#include "base/types.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>

@@ -14,7 +14,6 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 #include "DictionaryHelpers.h"
-#include "base/types.h"
 
 namespace DB
 {

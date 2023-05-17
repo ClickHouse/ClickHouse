@@ -7,7 +7,6 @@
 #include <base/StringRef.h>
 #include <Core/TypeId.h>
 
-#include "base/types.h"
 #include "config.h"
 
 

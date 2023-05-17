@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/BinStringDecodeHelper.h>
-#include "base/types.h"
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>

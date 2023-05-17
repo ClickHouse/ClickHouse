@@ -16,7 +16,6 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include "base/types.h"
 
 namespace DB
 {

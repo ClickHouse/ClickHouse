@@ -4,7 +4,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
-#include "base/types.h"
 #include <IO/WriteHelpers.h>
 
 #include <span>
