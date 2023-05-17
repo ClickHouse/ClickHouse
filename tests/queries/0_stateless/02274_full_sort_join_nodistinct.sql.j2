@@ -26,7 +26,7 @@ SET join_algorithm = '{{ join_algorithm }}';
 
 SELECT '--- {{ join_algorithm }} ---';
 
-{% for block_size in range(1, 11) -%}
+{% for block_size in range(1, 11, 4) -%}
 SET max_block_size = {{ block_size }};
 
 {% for t1, t2 in [('t1', 't2'), ('t1', 'tn2'), ('tn1', 't2'), ('tn1', 'tn2')]  -%}
