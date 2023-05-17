@@ -608,6 +608,17 @@ See also:
 
 - [JOIN strictness](../../sql-reference/statements/select/join.md/#join-settings)
 
+## max_rows_in_set_to_optimize_join
+
+Maximal size of the set to filter joined tables by each other's row sets before joining.
+
+Possible values:
+
+- 0 — Disable.
+- Any positive integer.
+
+Default value: 100000.
+
 ## temporary_files_codec {#temporary_files_codec}
 
 Sets compression codec for temporary files used in sorting and joining operations on disk.

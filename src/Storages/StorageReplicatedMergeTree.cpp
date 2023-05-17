@@ -9252,6 +9252,8 @@ void StorageReplicatedMergeTree::backupData(
     /// First we generate backup entries in the same way as an ordinary MergeTree does.
     /// But then we don't add them to the BackupEntriesCollector right away,
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
+
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -9260,7 +9262,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", local_context);
+    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
@@ -9278,10 +9280,9 @@ void StorageReplicatedMergeTree::backupData(
                 auto & hash = part_names_with_hashes_calculating[part_name];
                 if (relative_path.ends_with(".bin"))
                 {
-                    auto checksum = backup_entry->getChecksum();
                     hash.update(relative_path);
                     hash.update(backup_entry->getSize());
-                    hash.update(*checksum);
+                    hash.update(backup_entry->getChecksum());
                 }
                 continue;
             }
@@ -9325,9 +9326,9 @@ void StorageReplicatedMergeTree::backupData(
     /// This task will be executed after all replicas have collected their parts and the coordination is ready to
     /// give us the final list of parts to add to the BackupEntriesCollector.
     auto post_collecting_task = [shared_id,
-                                 replica_name = getReplicaName(),
+                                 my_replica_name = getReplicaName(),
                                  coordination,
-                                 backup_entries = std::move(backup_entries),
+                                 my_backup_entries = std::move(backup_entries),
                                  &backup_entries_collector]()
     {
         Strings data_paths = coordination->getReplicatedDataPaths(shared_id);
@@ -9336,10 +9337,10 @@ void StorageReplicatedMergeTree::backupData(
         for (const auto & data_path : data_paths)
             data_paths_fs.push_back(data_path);
 
-        Strings part_names = coordination->getReplicatedPartNames(shared_id, replica_name);
+        Strings part_names = coordination->getReplicatedPartNames(shared_id, my_replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
 
-        for (const auto & [relative_path, backup_entry] : backup_entries)
+        for (const auto & [relative_path, backup_entry] : my_backup_entries)
         {
             size_t slash_pos = relative_path.find('/');
             String part_name = relative_path.substr(0, slash_pos);
@@ -9349,7 +9350,7 @@ void StorageReplicatedMergeTree::backupData(
                 backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
         }
 
-        auto mutation_infos = coordination->getReplicatedMutations(shared_id, replica_name);
+        auto mutation_infos = coordination->getReplicatedMutations(shared_id, my_replica_name);
         for (const auto & mutation_info : mutation_infos)
         {
             auto backup_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_info.entry, mutation_info.id).backup();
