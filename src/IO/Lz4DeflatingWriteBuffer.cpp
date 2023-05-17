@@ -37,8 +37,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
         throw Exception(
             ErrorCodes::LZ4_ENCODER_FAILED,
             "creation of LZ4 compression context failed. LZ4F version: {}",
-            LZ4F_VERSION,
-            ErrorCodes::LZ4_ENCODER_FAILED);
+            LZ4F_VERSION);
 }
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()

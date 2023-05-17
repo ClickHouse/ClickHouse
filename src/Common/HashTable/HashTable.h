@@ -41,6 +41,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_AVAILABLE_DATA;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -73,7 +75,7 @@ template <typename T>
 bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = {}; }
+void set(T & x) { x = T{}; }
 
 }
 
@@ -368,7 +370,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell> //-V730
+struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
@@ -402,7 +404,7 @@ template <typename Cell>
 struct ZeroValueStorage<false, Cell>
 {
     bool hasZero() const { return false; }
-    void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
+    void setHasZero() { throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashTable: logical error"); }
     void clearHasZero() {}
     void clearHasZeroFlag() {}
 
@@ -507,9 +509,21 @@ protected:
         return place_value;
     }
 
+    static size_t allocCheckOverflow(size_t buffer_size)
+    {
+        size_t size = 0;
+        if (common::mulOverflow(buffer_size, sizeof(Cell), size))
+            throw DB::Exception(
+                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                "Integer overflow trying to allocate memory for HashTable. Trying to allocate {} cells of {} bytes each",
+                buffer_size, sizeof(Cell));
+
+        return size;
+    }
+
     void alloc(const Grower & new_grower)
     {
-        buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
+        buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
         grower = new_grower;
     }
 
@@ -566,11 +580,11 @@ protected:
 
         if constexpr (Cell::need_to_notify_cell_during_move)
         {
-            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
             memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
         }
         else
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
+            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
 
         grower = new_grower;
 
@@ -828,7 +842,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
 
             return cell.getValue();
         }
@@ -1305,6 +1319,8 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
+        if (new_size > 100'000'000'000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
         free();
         Grower new_grower = grower;

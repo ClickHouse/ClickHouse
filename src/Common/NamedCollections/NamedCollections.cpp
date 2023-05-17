@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Configuration = NamedCollectionConfiguration;
@@ -200,6 +201,11 @@ public:
         return std::unique_ptr<Impl>(new Impl(collection_config, keys));
     }
 
+    bool has(const Key & key) const
+    {
+        return Configuration::hasConfigValue(*config, key);
+    }
+
     template <typename T> T get(const Key & key) const
     {
         return Configuration::getConfigValue<T>(*config, key);
@@ -341,6 +347,21 @@ MutableNamedCollectionPtr NamedCollection::create(
         new NamedCollection(std::move(impl), collection_name, source_id, is_mutable));
 }
 
+bool NamedCollection::has(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    return pimpl->has(key);
+}
+
+bool NamedCollection::hasAny(const std::initializer_list<Key> & keys) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & key : keys)
+        if (pimpl->has(key))
+            return true;
+    return false;
+}
+
 template <typename T> T NamedCollection::get(const Key & key) const
 {
     std::lock_guard lock(mutex);
@@ -351,6 +372,28 @@ template <typename T> T NamedCollection::getOrDefault(const Key & key, const T &
 {
     std::lock_guard lock(mutex);
     return pimpl->getOrDefault<T>(key, default_value);
+}
+
+template <typename T> T NamedCollection::getAny(const std::initializer_list<Key> & keys) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & key : keys)
+    {
+        if (pimpl->has(key))
+            return pimpl->get<T>(key);
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such keys: {}", fmt::join(keys, ", "));
+}
+
+template <typename T> T NamedCollection::getAnyOrDefault(const std::initializer_list<Key> & keys, const T & default_value) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & key : keys)
+    {
+        if (pimpl->has(key))
+            return pimpl->get<T>(key);
+    }
+    return default_value;
 }
 
 template <typename T, bool Locked> void NamedCollection::set(const Key & key, const T & value)
@@ -436,11 +479,25 @@ template String NamedCollection::get<String>(const NamedCollection::Key & key) c
 template UInt64 NamedCollection::get<UInt64>(const NamedCollection::Key & key) const;
 template Int64 NamedCollection::get<Int64>(const NamedCollection::Key & key) const;
 template Float64 NamedCollection::get<Float64>(const NamedCollection::Key & key) const;
+template bool NamedCollection::get<bool>(const NamedCollection::Key & key) const;
 
 template String NamedCollection::getOrDefault<String>(const NamedCollection::Key & key, const String & default_value) const;
 template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key & key, const UInt64 & default_value) const;
 template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;
+template bool NamedCollection::getOrDefault<bool>(const NamedCollection::Key & key, const bool & default_value) const;
+
+template String NamedCollection::getAny<String>(const std::initializer_list<NamedCollection::Key> & key) const;
+template UInt64 NamedCollection::getAny<UInt64>(const std::initializer_list<NamedCollection::Key> & key) const;
+template Int64 NamedCollection::getAny<Int64>(const std::initializer_list<NamedCollection::Key> & key) const;
+template Float64 NamedCollection::getAny<Float64>(const std::initializer_list<NamedCollection::Key> & key) const;
+template bool NamedCollection::getAny<bool>(const std::initializer_list<NamedCollection::Key> & key) const;
+
+template String NamedCollection::getAnyOrDefault<String>(const std::initializer_list<NamedCollection::Key> & key, const String & default_value) const;
+template UInt64 NamedCollection::getAnyOrDefault<UInt64>(const std::initializer_list<NamedCollection::Key> & key, const UInt64 & default_value) const;
+template Int64 NamedCollection::getAnyOrDefault<Int64>(const std::initializer_list<NamedCollection::Key> & key, const Int64 & default_value) const;
+template Float64 NamedCollection::getAnyOrDefault<Float64>(const std::initializer_list<NamedCollection::Key> & key, const Float64 & default_value) const;
+template bool NamedCollection::getAnyOrDefault<bool>(const std::initializer_list<NamedCollection::Key> & key, const bool & default_value) const;
 
 template void NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value);
 template void NamedCollection::set<String, false>(const NamedCollection::Key & key, const String & value);
@@ -450,6 +507,7 @@ template void NamedCollection::set<Int64, true>(const NamedCollection::Key & key
 template void NamedCollection::set<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
 template void NamedCollection::set<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::set<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::set<bool, false>(const NamedCollection::Key & key, const bool & value);
 
 template void NamedCollection::setOrUpdate<String, true>(const NamedCollection::Key & key, const String & value);
 template void NamedCollection::setOrUpdate<String, false>(const NamedCollection::Key & key, const String & value);
@@ -459,6 +517,7 @@ template void NamedCollection::setOrUpdate<Int64, true>(const NamedCollection::K
 template void NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
 template void NamedCollection::setOrUpdate<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::setOrUpdate<bool, false>(const NamedCollection::Key & key, const bool & value);
 
 template void NamedCollection::remove<true>(const Key & key);
 template void NamedCollection::remove<false>(const Key & key);

@@ -52,7 +52,7 @@ String MeiliSearchConnection::execPostQuery(const String & url, std::string_view
         return response_buffer;
     }
     else
-        throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
+        throw Exception::createRuntime(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
 
 String MeiliSearchConnection::execGetQuery(const String & url, const std::unordered_map<String, String> & query_params) const
@@ -86,7 +86,7 @@ String MeiliSearchConnection::execGetQuery(const String & url, const std::unorde
         return response_buffer;
     }
     else
-        throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
+        throw Exception::createRuntime(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
 
 

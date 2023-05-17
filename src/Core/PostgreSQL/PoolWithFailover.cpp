@@ -6,6 +6,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -74,7 +75,7 @@ ConnectionHolderPtr PoolWithFailover::get()
     if (replicas_with_priority.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No address specified");
 
-    DB::WriteBufferFromOwnString error_message;
+    PreformattedMessage error_message;
     for (size_t try_idx = 0; try_idx < max_tries; ++try_idx)
     {
         for (auto & priority : replicas_with_priority)
@@ -107,7 +108,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
-                    error_message << fmt::format(
+                    error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",
                         try_idx + 1, DB::backQuote(replica.connection_info.host_port), pqxx_error.what());
 
@@ -131,7 +132,7 @@ ConnectionHolderPtr PoolWithFailover::get()
         }
     }
 
-    throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, error_message.str());
+    throw DB::Exception(error_message, DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE);
 }
 }
 

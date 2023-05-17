@@ -114,7 +114,7 @@ if (BUILD_STANDALONE_KEEPER)
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
-    target_compile_definitions (clickhouse-keeper PRIVATE -DKEEPER_STANDALONE_BUILD)
+    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_PROGRAM_STANDALONE_BUILD)
     target_compile_definitions (clickhouse-keeper PUBLIC -DWITHOUT_TEXT_LOG)
 
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../src") # uses includes from src directory
@@ -128,6 +128,7 @@ if (BUILD_STANDALONE_KEEPER)
             ch_contrib::lz4
             ch_contrib::zstd
             ch_contrib::cityhash
+            ch_contrib::jemalloc
             common ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
             pcg_random

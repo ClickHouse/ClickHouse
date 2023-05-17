@@ -23,6 +23,12 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
+
+bool MutationCommand::isBarrierCommand() const
+{
+    return type == RENAME_COLUMN;
+}
+
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -46,8 +52,9 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
             if (!insertion.second)
-                throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
-                    ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
+                throw Exception(ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN,
+                                "Multiple assignments in the single statement to column {}",
+                                backQuote(assignment.column_name));
         }
         return res;
     }
@@ -188,7 +195,7 @@ void MutationCommands::readText(ReadBuffer & in)
         auto * command_ast = child->as<ASTAlterCommand>();
         auto command = MutationCommand::parse(command_ast, true);
         if (!command)
-            throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
         push_back(std::move(*command));
     }
 }
@@ -206,6 +213,16 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
     for (const auto & command : *this)
     {
         if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
+            return true;
+    }
+    return false;
+}
+
+bool MutationCommands::containBarrierCommand() const
+{
+    for (const auto & command : *this)
+    {
+        if (command.isBarrierCommand())
             return true;
     }
     return false;

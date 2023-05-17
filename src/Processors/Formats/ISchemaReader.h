@@ -12,10 +12,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int INCORRECT_DATA;
 }
 
 /// Base class for schema inference for the data in some specific format.
-/// It reads some data from read buffer and try to determine the schema
+/// It reads some data from read buffer and tries to determine the schema
 /// from read data.
 class ISchemaReader
 {
@@ -64,6 +65,7 @@ protected:
     String hints_str;
     FormatSettings format_settings;
     std::unordered_map<String, DataTypePtr> hints;
+    String hints_parsing_error;
 };
 
 /// Base class for schema inference for formats that read data row by row.
@@ -144,7 +146,8 @@ void chooseResultColumnType(
     DataTypePtr & new_type,
     const DataTypePtr & default_type,
     const String & column_name,
-    size_t row)
+    size_t row,
+    const String & hints_parsing_error = "")
 {
     if (!type)
     {
@@ -165,18 +168,54 @@ void chooseResultColumnType(
         type = default_type;
     else
     {
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-            "You can specify the type for this column using setting schema_inference_hints",
-            type->getName(),
-            column_name,
-            row,
-            new_type->getName());
+        if (hints_parsing_error.empty())
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+                "You can specify the type for this column using setting schema_inference_hints",
+                new_type->getName(),
+                column_name,
+                row,
+                type->getName());
+        else
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                new_type->getName(),
+                column_name,
+                row,
+                type->getName(),
+                hints_parsing_error);
     }
 }
 
-void checkFinalInferredType(DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read);
+template <class SchemaReader>
+void chooseResultColumnTypes(
+    SchemaReader & schema_reader,
+    DataTypes & types,
+    DataTypes & new_types,
+    const DataTypePtr & default_type,
+    const std::vector<String> & column_names,
+    size_t row)
+{
+    if (types.size() != new_types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
+
+    if (types.size() != column_names.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The number of column names {} differs from the number of types {}", column_names.size(), types.size());
+
+    for (size_t i = 0; i != types.size(); ++i)
+        chooseResultColumnType(schema_reader, types[i], new_types[i], default_type, column_names[i], row);
+}
+
+void checkFinalInferredType(
+    DataTypePtr & type,
+    const String & name,
+    const FormatSettings & settings,
+    const DataTypePtr & default_type,
+    size_t rows_read,
+    const String & hints_parsing_error);
 
 Strings splitColumnNames(const String & column_names_str);
 

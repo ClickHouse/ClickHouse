@@ -60,6 +60,16 @@ struct AsciiImpl
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", AsciiName::name);
     }
 
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", AsciiName::name);
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", AsciiName::name);
+    }
+
 private:
     static Int32 doAscii(const ColumnString::Chars & buf, size_t offset, size_t size)
     {
@@ -72,14 +82,14 @@ using FunctionAscii = FunctionStringOrArrayToT<AsciiImpl, AsciiName, AsciiImpl::
 REGISTER_FUNCTION(Ascii)
 {
     factory.registerFunction<FunctionAscii>(
-        {
-        R"(
+        FunctionDocumentation{
+        .description=R"(
 Returns the ASCII code point of the first character of str.  The result type is Int32.
 
 If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined)
         )",
-        Documentation::Examples{{"ascii", "SELECT ascii('234')"}},
-        Documentation::Categories{"String"}
+        .examples{{"ascii", "SELECT ascii('234')", ""}},
+        .categories{"String"}
         }, FunctionFactory::CaseInsensitive);
 }
 

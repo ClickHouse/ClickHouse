@@ -15,8 +15,20 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-15_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-16_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
+
+function git_clone_with_retry
+{
+    for _ in 1 2 3 4; do
+        if git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$1" 2>&1 | ts '%Y-%m-%d %H:%M:%S';then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
 
 function clone
 {
@@ -24,7 +36,7 @@ function clone
     rm -rf "$repo_dir" ||:
     mkdir "$repo_dir" ||:
 
-    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
+    git_clone_with_retry "$repo_dir"
     (
         cd "$repo_dir"
         if [ "$PR_TO_TEST" != "0" ]; then

@@ -48,7 +48,7 @@ namespace
             if (current_query)
             {
                 const auto & prev_element = current_query->access_rights_elements.back();
-                bool continue_with_current_query = element.sameDatabaseAndTable(prev_element) && element.sameOptions(prev_element);
+                bool continue_with_current_query = element.sameDatabaseAndTableAndParameter(prev_element) && element.sameOptions(prev_element);
                 if (!continue_with_current_query)
                     current_query = nullptr;
             }
@@ -94,7 +94,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
 }

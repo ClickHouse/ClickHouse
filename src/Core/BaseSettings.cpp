@@ -41,7 +41,7 @@ BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
 
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
-    throw Exception("Unknown setting " + String{name}, ErrorCodes::UNKNOWN_SETTING);
+    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", String{name});
 }
 
 

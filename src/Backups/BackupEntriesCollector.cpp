@@ -15,6 +15,7 @@
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -84,6 +85,12 @@ BackupEntriesCollector::BackupEntriesCollector(
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
+    , global_zookeeper_retries_info(
+        "BackupEntriesCollector",
+        log,
+        context->getSettingsRef().backup_restore_keeper_max_retries,
+        context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+        context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
 {
 }
 
@@ -123,32 +130,31 @@ BackupEntries BackupEntriesCollector::run()
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }
 
 Strings BackupEntriesCollector::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
-    backup_coordination->setStage(backup_settings.host_id, new_stage, message);
+    backup_coordination->setStage(new_stage, message);
 
     if (new_stage == Stage::formatGatheringMetadata(1))
     {
-        return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
     }
     else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
         return backup_coordination->waitForStage(
-            all_hosts, new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
+            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
     else
     {
-        return backup_coordination->waitForStage(all_hosts, new_stage);
+        return backup_coordination->waitForStage(new_stage);
     }
 }
 
@@ -215,7 +221,7 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
             if (std::chrono::steady_clock::now() > consistent_metadata_snapshot_end_time)
                 inconsistency_error->rethrow();
             else
-                LOG_WARNING(log, "{}", inconsistency_error->displayText());
+                LOG_WARNING(log, getExceptionMessageAndPattern(*inconsistency_error, /* with_stacktrace */ false));
         }
 
         auto sleep_time = getSleepTimeAfterInconsistencyError(pass);
@@ -371,7 +377,9 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         const auto & create = create_database_query->as<const ASTCreateQuery &>();
 
         if (create.getDatabase() != database_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for database {}", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                            "Got a create query with unexpected name {} for database {}",
+                            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
 
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
         database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
@@ -462,17 +470,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     const auto & database_info = database_infos.at(database_name);
     const auto & database = database_info.database;
 
-    auto filter_by_table_name = [database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
         /// We skip inner tables of materialized views.
         if (table_name.starts_with(".inner_id."))
             return false;
 
-        if (database_info->tables.contains(table_name))
+        if (my_database_info->tables.contains(table_name))
             return true;
 
-        if (database_info->all_tables)
-            return !database_info->except_table_names.contains(table_name);
+        if (my_database_info->all_tables)
+            return !my_database_info->except_table_names.contains(table_name);
 
         return false;
     };
@@ -481,7 +489,10 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     try
     {
-        db_tables = database->getTablesForBackup(filter_by_table_name, context);
+        /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
+        auto zookeeper_retries_info = global_zookeeper_retries_info;
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, nullptr);
+        retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
     {
@@ -499,12 +510,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
             if (!create.temporary)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a non-temporary create query for {}", tableNameWithTypeToString(database_name, create.getTable(), false));
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                                "Got a non-temporary create query for {}",
+                                tableNameWithTypeToString(database_name, create.getTable(), false));
         }
         else
         {
             if (create.getDatabase() != database_name)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected database name {} for {}", backQuoteIfNeed(create.getDatabase()), tableNameWithTypeToString(database_name, create.getTable(), false));
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                                "Got a create query with unexpected database name {} for {}",
+                                backQuoteIfNeed(create.getDatabase()),
+                                tableNameWithTypeToString(database_name, create.getTable(), false));
         }
     }
 
@@ -529,7 +545,8 @@ void BackupEntriesCollector::lockTablesForReading()
             if (table_info.table_lock == nullptr)
             {
                 // Table was dropped while acquiring the lock
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} was dropped during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true));
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} was dropped during scanning",
+                                tableNameWithTypeToString(table_name.database, table_name.table, true));
             }
         }
     }
@@ -738,6 +755,7 @@ void BackupEntriesCollector::addPostTask(std::function<void()> task)
 /// Runs all the tasks added with addPostCollectingTask().
 void BackupEntriesCollector::runPostTasks()
 {
+    LOG_TRACE(log, "Will run {} post tasks", post_tasks.size());
     /// Post collecting tasks can add other post collecting tasks, our code is fine with that.
     while (!post_tasks.empty())
     {
@@ -745,6 +763,7 @@ void BackupEntriesCollector::runPostTasks()
         post_tasks.pop();
         std::move(task)();
     }
+    LOG_TRACE(log, "All post tasks successfully executed");
 }
 
 size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)

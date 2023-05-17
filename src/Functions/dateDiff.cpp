@@ -225,8 +225,8 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
                 if ((x_day_of_week > y_day_of_week)
                     || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
@@ -406,9 +406,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), arguments.size());
 
         if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -448,20 +448,25 @@ private:
 REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>({R"(
+    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
 Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
 It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 
 Example:
 [example:typical]
 )",
-    Documentation::Examples{
-        {"typical", "SELECT timeDiff(UTCTimestamp(), now());"}},
-    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    .examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Age)

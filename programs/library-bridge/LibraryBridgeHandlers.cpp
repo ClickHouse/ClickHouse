@@ -158,6 +158,8 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
             if (cloned)
             {
                 writeStringBinary("1", out);
+                out.finalize();
+                return;
             }
             else
             {

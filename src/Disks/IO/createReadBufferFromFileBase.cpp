@@ -3,10 +3,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
+#include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
-
+#include "config.h"
 
 namespace ProfileEvents
 {
@@ -23,8 +26,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
-
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
@@ -74,31 +77,74 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (settings.local_fs_method == LocalFSReadMethod::read)
         {
-            res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, buffer_alignment, file_size);
+            res = std::make_unique<ReadBufferFromFile>(
+                filename,
+                buffer_size,
+                actual_flags,
+                existing_memory,
+                buffer_alignment,
+                file_size,
+                settings.local_throttler);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
-            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, buffer_alignment, file_size);
+            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
+                filename,
+                buffer_size,
+                actual_flags,
+                existing_memory,
+                buffer_alignment,
+                file_size,
+                settings.local_throttler);
+        }
+        else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
+        {
+#if USE_LIBURING
+            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
+            if (!reader->isSupported())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
+            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+                *reader,
+                settings.priority,
+                filename,
+                buffer_size,
+                actual_flags,
+                existing_memory,
+                buffer_alignment,
+                file_size,
+                settings.local_throttler);
+#else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
+#endif
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, buffer_alignment, file_size);
+                reader,
+                settings.priority,
+                filename,
+                buffer_size,
+                actual_flags,
+                existing_memory,
+                buffer_alignment,
+                file_size,
+                settings.local_throttler);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, buffer_alignment, file_size);
+                reader,
+                settings.priority,
+                filename,
+                buffer_size,
+                actual_flags,
+                existing_memory,
+                buffer_alignment,
+                file_size,
+                settings.local_throttler);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
@@ -134,13 +180,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (buffer_size % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned size.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned size.
             buffer_size = align_up(buffer_size);
         }
 
         if (reinterpret_cast<uintptr_t>(existing_memory) % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned offset.
         }
 
         /// Attempt to open a file with O_DIRECT

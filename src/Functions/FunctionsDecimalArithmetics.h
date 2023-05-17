@@ -10,7 +10,6 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 
@@ -56,7 +55,7 @@ struct DecimalOpHelpers
             for (Int32 j = len2 - 1; j >= 0; --j)
             {
                 if (unlikely(i_n1 + i_n2 >= len1 + len2))
-                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
                 UInt16 sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
@@ -66,7 +65,7 @@ struct DecimalOpHelpers
             if (carry > 0)
             {
                 if (unlikely(i_n1 + i_n2 >= len1 + len2))
-                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
                 result[i_n1 + i_n2] += carry;
             }
 
@@ -253,11 +252,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " does not match: 2 or 3 expected",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} does not match: 2 or 3 expected", getName());
 
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
-            throw Exception("Arguments for " + getName() + " function must be Decimal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for {} function must be Decimal", getName());
 
         UInt8 scale = std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
 
@@ -266,17 +265,14 @@ public:
             WhichDataType which_scale(arguments[2].type.get());
 
             if (!which_scale.isUInt8())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
-                        + ". Should be constant UInt8 from range[0, 76]",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                    "Should be constant UInt8 from range[0, 76]", arguments[2].type->getName(), getName());
 
             const ColumnConst * scale_column = checkAndGetColumnConst<ColumnUInt8>(arguments[2].column.get());
 
             if (!scale_column)
-                throw Exception(
-                    "Illegal column of third argument of function " + getName() + ". Should be constant UInt8",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column of third argument of function {}. "
+                    "Should be constant UInt8", getName());
 
             scale = scale_column->getValue<UInt8>();
         }
@@ -288,8 +284,8 @@ public:
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
         if (scale > DecimalUtils::max_precision<Decimal256>)
-            throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value of third argument of function {}: "
+                            "must be integer in range [0, 76]", this->getName());
 
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }

@@ -5,7 +5,7 @@ sidebar_label: QUOTA
 title: "CREATE QUOTA"
 ---
 
-Creates a [quota](../../../operations/access-rights.md#quotas-management) that can be assigned to a user or a role.
+Creates a [quota](../../../guides/sre/user-management/index.md#quotas-management) that can be assigned to a user or a role.
 
 Syntax:
 

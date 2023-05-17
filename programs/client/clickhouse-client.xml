@@ -57,4 +57,28 @@
 
         The same can be done on user-level configuration, just create & adjust: ~/.clickhouse-client/config.xml
     -->
+
+
+    <!-- Analog of .netrc -->
+    <![CDATA[
+    <connections_credentials>
+        <connection>
+            <!-- Name of the connection, host option for the client.
+                 "host" is not the same as "hostname" since you may want to have different settings for one host,
+                 and in this case you can add "prod" and "prod_readonly".
+
+                 Default: "hostname" will be used. -->
+            <name>default</name>
+            <!-- Host that will be used for connection. -->
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password></password>
+            <database></database>
+            <!-- '~' is expanded to HOME, like in any shell -->
+            <history_file></history_file>
+        </connection>
+    </connections_credentials>
+    ]]>
 </config>

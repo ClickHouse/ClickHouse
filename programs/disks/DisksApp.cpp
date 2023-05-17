@@ -119,7 +119,7 @@ void DisksApp::init(std::vector<String> & common_arguments)
     {
         std::cerr << "Unknown command name:  " << command_name << "\n";
         printHelpMessage(options_description);
-        throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
     }
 
     processOptions();

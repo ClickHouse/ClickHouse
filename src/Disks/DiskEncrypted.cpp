@@ -189,7 +189,7 @@ public:
     DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
-            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+            throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 
@@ -289,6 +289,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (read_hint && *read_hint > 0)
+        read_hint = *read_hint + FileEncryption::Header::kSize;
+
+    if (file_size && *file_size > 0)
+        file_size = *file_size + FileEncryption::Header::kSize;
+
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
     if (buffer->eof())
@@ -352,6 +358,19 @@ SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
     return delegate->getDirectorySyncGuard(wrapped_path);
+}
+
+std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const std::vector<String> & paths) const
+{
+    std::vector<String> wrapped_paths;
+    wrapped_paths.reserve(paths.size());
+    for (const auto & path : paths)
+        wrapped_paths.emplace_back(wrappedPath(path));
+    auto metadata = delegate->getSerializedMetadata(wrapped_paths);
+    std::unordered_map<String, String> res;
+    for (size_t i = 0; i != paths.size(); ++i)
+        res.emplace(paths[i], metadata.at(wrapped_paths.at(i)));
+    return res;
 }
 
 void DiskEncrypted::applyNewSettings(

@@ -61,13 +61,18 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         return;
     }
 
+    bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
+
     try
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        nanodbc::ConnectionHolderPtr connection;
+        if (use_connection_pooling)
+            connection = ODBCPooledConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        else
+            connection = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         auto identifier = getIdentifierQuote(std::move(connection));
 

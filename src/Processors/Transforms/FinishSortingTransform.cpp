@@ -31,8 +31,9 @@ FinishSortingTransform::FinishSortingTransform(
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
-        throw Exception("Can't finish sorting. SortDescription of already sorted stream is not prefix of "
-            "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't finish sorting. SortDescription "
+                        "of already sorted stream is not prefix of SortDescription needed to sort");
 
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
@@ -108,6 +109,7 @@ void FinishSortingTransform::generate()
         generated_prefix = true;
     }
 
+    // TODO: Here we should also consider LIMIT optimization.
     generated_chunk = merge_sorter->read();
 
     if (!generated_chunk)

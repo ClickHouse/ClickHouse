@@ -48,7 +48,7 @@ struct MultiplyDecimalsImpl
             return Decimal256(0);
 
         if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
 
         return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
@@ -58,8 +58,8 @@ struct MultiplyDecimalsImpl
 
 REGISTER_FUNCTION(MultiplyDecimals)
 {
-    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(Documentation(
-        R"(
+    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(FunctionDocumentation{
+        .description=R"(
 Performs multiplication on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
@@ -127,7 +127,7 @@ SELECT
 Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
-)"));
+)"});
 
 }
 

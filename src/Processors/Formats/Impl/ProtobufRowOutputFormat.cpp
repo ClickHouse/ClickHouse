@@ -40,9 +40,9 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
 void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     if (!allow_multiple_rows && !first_row)
-        throw Exception(
-            "The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.",
-            ErrorCodes::NO_ROW_DELIMITER);
+        throw Exception(ErrorCodes::NO_ROW_DELIMITER,
+                        "The ProtobufSingle format can't be used "
+                        "to write multiple rows because this format doesn't have any row delimiter.");
 
     if (row_num == 0)
         serializer->setColumns(columns.data(), columns.size());

@@ -7,8 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
-#include <Poco/Version.h>
-
 #include "config.h"
 
 #if USE_SSL
@@ -60,7 +58,7 @@ namespace
         else if (uri.getScheme() == "http")
             return false;
         else
-            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
@@ -77,7 +75,7 @@ namespace
 
             session = std::move(https_session);
 #else
-            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without HTTPS support");
 #endif
         }
         else
@@ -98,12 +96,14 @@ namespace
     private:
         const std::string host;
         const UInt16 port;
-        bool https;
+        const bool https;
         const String proxy_host;
         const UInt16 proxy_port;
-        bool proxy_https;
-        bool resolve_host;
+        const bool proxy_https;
+        const bool resolve_host;
+
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
+
         ObjectPtr allocObject() override
         {
             auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
@@ -123,14 +123,14 @@ namespace
 
     public:
         SingleEndpointHTTPSessionPool(
-                const std::string & host_,
-                UInt16 port_,
-                bool https_,
-                const std::string & proxy_host_,
-                UInt16 proxy_port_,
-                bool proxy_https_,
-                size_t max_pool_size_,
-                bool resolve_host_ = true)
+            const std::string & host_,
+            UInt16 port_,
+            bool https_,
+            const std::string & proxy_host_,
+            UInt16 proxy_port_,
+            bool proxy_https_,
+            size_t max_pool_size_,
+            bool resolve_host_ = true)
             : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
@@ -324,13 +324,14 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     }
 }
 
-std::string HTTPException::makeExceptionMessage(
+Exception HTTPException::makeExceptionMessage(
+    int code,
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body)
 {
-    return fmt::format(
+    return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} {}, "
         "body: {}",

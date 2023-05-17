@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeArray.h>
@@ -31,9 +32,9 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 {
     const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
-    for (size_t i = 0; i < a.size(); ++i)
+    for (const auto & i : a)
     {
-        nested->serializeBinary(a[i], ostr, settings);
+        nested->serializeBinary(i, ostr, settings);
     }
 }
 
@@ -42,6 +43,14 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.max_binary_array_size);
+
     field = Array();
     Array & arr = field.get<Array &>();
     arr.reserve(size);
@@ -74,6 +83,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -357,7 +373,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < nested_column->size())
-        throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
     size_t nested_limit = last_offset - nested_column->size();
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
@@ -373,8 +389,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
     if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
-            ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+            toString(nested_column->size()), toString(last_offset));
 
     column = std::move(mutable_column);
 }
@@ -504,13 +520,45 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
     writeChar(']', ostr);
 }
 
+void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+
+    const IColumn & nested_column = column_array.getData();
+
+    if (offset == next_offset)
+    {
+        writeCString("[]", ostr);
+        return;
+    }
+
+    writeCString("[\n", ostr);
+    for (size_t i = offset; i < next_offset; ++i)
+    {
+        if (i != offset)
+            writeCString(",\n", ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
+        nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
+    }
+    writeChar('\n', ostr);
+    writeChar(' ', indent * 4, ostr);
+    writeChar(']', ostr);
+}
+
 
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextJSON(nested_column, istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
 }
 

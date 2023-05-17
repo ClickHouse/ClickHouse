@@ -15,6 +15,7 @@ namespace DB
 
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
+static const auto FINISH_PRODUCER_NUM_TRIES = 50;
 
 namespace ErrorCodes
 {
@@ -31,7 +32,8 @@ RabbitMQProducer::RabbitMQProducer(
     const bool persistent_,
     std::atomic<bool> & shutdown_called_,
     Poco::Logger * log_)
-    : connection(configuration_, log_)
+    : AsynchronousMessageProducer(log_)
+    , connection(configuration_, log_)
     , routing_keys(routing_keys_)
     , exchange_name(exchange_name_)
     , exchange_type(exchange_type_)
@@ -40,12 +42,13 @@ RabbitMQProducer::RabbitMQProducer(
     , shutdown_called(shutdown_called_)
     , payloads(BATCH)
     , returned(RETURNED_LIMIT)
-    , log(log_)
 {
 }
 
 void RabbitMQProducer::initialize()
 {
+    LOG_TRACE(log, "Initializing producer");
+
     if (connection.connect())
         setupChannel();
     else
@@ -74,11 +77,10 @@ void RabbitMQProducer::finishImpl()
 
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
-    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "push {}", message);
-
     Payload payload;
     payload.message = message;
     payload.id = ++payload_counter;
+    LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
@@ -86,6 +88,7 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
 void RabbitMQProducer::setupChannel()
 {
     producer_channel = connection.createChannel();
+    LOG_TRACE(log, "Created a producer channel");
 
     producer_channel->onError([&](const char * message)
     {
@@ -226,6 +229,8 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 
 void RabbitMQProducer::startProducingTaskLoop()
 {
+    LOG_TRACE(log, "Starting producer loop");
+
     while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
@@ -250,13 +255,33 @@ void RabbitMQProducer::startProducingTaskLoop()
         }
     }
 
-    LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
+    int res = 0;
+    size_t try_num = 0;
+    while (++try_num <= FINISH_PRODUCER_NUM_TRIES && (res = iterateEventLoop()))
+    {
+        LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
+    }
+
+    producer_channel->close()
+    .onSuccess([&]()
+    {
+        LOG_TRACE(log, "Successfully closed producer channel");
+        connection.getHandler().stopLoop();
+    })
+    .onError([&](const char * message)
+    {
+        LOG_ERROR(log, "Failed to close producer channel: {}", message);
+        connection.getHandler().stopLoop();
+    });
+
+    int active = connection.getHandler().startBlockingLoop();
+    LOG_DEBUG(log, "Producer on channel completed (not finished events: {})", active);
 }
 
 
-void RabbitMQProducer::iterateEventLoop()
+int RabbitMQProducer::iterateEventLoop()
 {
-    connection.getHandler().iterateLoop();
+    return connection.getHandler().iterateLoop();
 }
 
 }

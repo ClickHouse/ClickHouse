@@ -28,7 +28,7 @@ struct QuantileReservoirSamplerDeterministic
 
     void add(const Value &)
     {
-        throw Exception("Method add without determinator is not implemented for ReservoirSamplerDeterministic", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add without determinator is not implemented for ReservoirSamplerDeterministic");
     }
 
     template <typename Determinator>

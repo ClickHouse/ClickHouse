@@ -67,13 +67,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
-            throw Exception("Incorrect number of arguments of function " + getName() + ". Must be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments of function {}. Must be 1 or 2.", getName());
 
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument for function {} must have type AggregateFunction - state "
+                            "of aggregate function.", getName());
 
         return type->getReturnType();
     }
@@ -84,10 +85,8 @@ public:
             = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
 
         if (!column_with_states)
-            throw Exception("Illegal column " + arguments.at(0).column->getName()
-                    + " of first argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments.at(0).column->getName(), getName());
 
         ColumnPtr column_with_groups;
 
@@ -126,7 +125,7 @@ public:
                 }
 
                 agg_func.create(place.data()); /// This function can throw.
-                state_created = true; //-V519
+                state_created = true;
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());

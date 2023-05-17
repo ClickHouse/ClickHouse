@@ -1127,7 +1127,7 @@ public:
         const auto & p_column = arguments[1];
 
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
-            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
         double p;
         if (isFloat(p_column.column->getDataType()))
@@ -1135,10 +1135,12 @@ public:
         else if (isUnsignedInteger(p_column.column->getDataType()))
             p = p_column.column->getUInt(0);
         else
-            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
         if (p < 1 || p >= HUGE_VAL)
-            throw Exception{"Second argument for function " + getName() + " must be not less than one and not be an infinity", ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Second argument for function {} must be not less than one and not be an infinity",
+                            getName());
 
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
@@ -1551,33 +1553,33 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>(
+    factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively adds a tuple of intervals to a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>(
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively subtracts a tuple of intervals from a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionTupleAddInterval>(
+    factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1585,16 +1587,16 @@ Adds an interval to another interval or tuple of intervals. The returned value i
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
-    factory.registerFunction<FunctionTupleSubtractInterval>(
+    factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1602,12 +1604,12 @@ Adds an negated interval to another interval or tuple of intervals. The returned
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();

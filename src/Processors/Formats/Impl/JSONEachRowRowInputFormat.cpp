@@ -43,12 +43,13 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
 {
-    name_map = getPort().getHeader().getNamesToIndexesMap();
+    const auto & header = getPort().getHeader();
+    name_map = header.getNamesToIndexesMap();
     if (format_settings_.import_nested_json)
     {
-        for (size_t i = 0; i != header_.columns(); ++i)
+        for (size_t i = 0; i != header.columns(); ++i)
         {
-            const StringRef column_name = header_.getByPosition(i).name;
+            const StringRef column_name = header.getByPosition(i).name;
             const auto split = Nested::splitName(column_name.toView());
             if (!split.second.empty())
             {
@@ -70,21 +71,20 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index]
-        && name == prev_positions[key_index]->getKey())
+        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index]->getMapped();
+        return prev_positions[key_index]->second;
     }
     else
     {
-        auto * it = name_map.find(name);
-
-        if (it)
+        const auto it = name_map.find(name);
+        if (it != name_map.end())
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->getMapped();
+            return it->second;
         }
         else
             return UNKNOWN_FIELD;
@@ -121,7 +121,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
     skipJSONField(*in, name_ref);
 }
@@ -129,7 +129,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index])
-        throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
     const auto & type = getPort().getHeader().getByPosition(index).type;
@@ -142,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -179,7 +179,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
         }
         else
         {

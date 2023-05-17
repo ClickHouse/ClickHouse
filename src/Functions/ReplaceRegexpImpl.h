@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -28,9 +29,11 @@ struct ReplaceRegexpTraits
 /** Replace all matches of regexp 'needle' to string 'replacement'. 'needle' and 'replacement' are constants.
   * 'replacement' can contain substitutions, for example: '\2-\3-\1'
   */
-template <ReplaceRegexpTraits::Replace replace>
+template <typename Name, ReplaceRegexpTraits::Replace replace>
 struct ReplaceRegexpImpl
 {
+    static constexpr auto name = Name::name;
+
     struct Instruction
     {
         /// If not negative, perform substitution of n-th subpattern from the regexp match.
@@ -162,18 +165,21 @@ struct ReplaceRegexpImpl
         ++res_offset;
     }
 
-    static void vector(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+    static void vectorConstantConstant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        if (needle.empty())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+
         ColumnString::Offset res_offset = 0;
-        res_data.reserve(data.size());
-        size_t size = offsets.size();
-        res_offsets.resize(size);
+        res_data.reserve(haystack_data.size());
+        size_t haystack_size = haystack_offsets.size();
+        res_offsets.resize(haystack_size);
 
         re2_st::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
@@ -182,39 +188,89 @@ struct ReplaceRegexpImpl
         re2_st::RE2 searcher(needle, regexp_options);
 
         if (!searcher.ok())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The pattern argument is not a valid re2 pattern: {}",
-                searcher.error());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
         /// Cannot perform search for whole columns. Will process each string separately.
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
-            size_t from = i > 0 ? offsets[i - 1] : 0;
-            const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
-            const size_t haystack_length = static_cast<unsigned>(offsets[i] - from - 1);
+            size_t from = i > 0 ? haystack_offsets[i - 1] : 0;
 
-            processString(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures, instructions);
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - from - 1);
+
+            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
         }
     }
 
-    static void vectorFixed(
-        const ColumnString::Chars & data,
-        size_t n,
-        const String & needle,
+    static void vectorVectorConstant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offsets,
         const String & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        assert(haystack_offsets.size() == needle_offsets.size());
+
         ColumnString::Offset res_offset = 0;
-        size_t size = data.size() / n;
-        res_data.reserve(data.size());
-        res_offsets.resize(size);
+        res_data.reserve(haystack_data.size());
+        size_t haystack_size = haystack_offsets.size();
+        res_offsets.resize(haystack_size);
+
+        re2_st::RE2::Options regexp_options;
+        /// Don't write error messages to stderr.
+        regexp_options.set_log_errors(false);
+
+        /// Cannot perform search for whole columns. Will process each string separately.
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+
+            size_t ndl_from = i > 0 ? needle_offsets[i - 1] : 0;
+            const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
+            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
+            std::string_view needle(ndl_data, ndl_length);
+
+            if (needle.empty())
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+
+            re2_st::RE2 searcher(needle, regexp_options);
+            if (!searcher.ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+            int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+            Instructions instructions = createInstructions(replacement, num_captures);
+
+            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+            res_offsets[i] = res_offset;
+        }
+    }
+
+    static void vectorConstantVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const String & needle,
+        const ColumnString::Chars & replacement_data,
+        const ColumnString::Offsets & replacement_offsets,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets)
+    {
+        assert(haystack_offsets.size() == replacement_offsets.size());
+
+        if (needle.empty())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+
+        ColumnString::Offset res_offset = 0;
+        res_data.reserve(haystack_data.size());
+        size_t haystack_size = haystack_offsets.size();
+        res_offsets.resize(haystack_size);
 
         re2_st::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
@@ -223,22 +279,116 @@ struct ReplaceRegexpImpl
         re2_st::RE2 searcher(needle, regexp_options);
 
         if (!searcher.ok())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The pattern argument is not a valid re2 pattern: {}",
-                searcher.error());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+
+        int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+
+        /// Cannot perform search for whole columns. Will process each string separately.
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+
+            size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
+            const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
+            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+
+            Instructions instructions = createInstructions(std::string_view(repl_data, repl_length), num_captures);
+
+            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+            res_offsets[i] = res_offset;
+        }
+    }
+
+    static void vectorVectorVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offsets,
+        const ColumnString::Chars & replacement_data,
+        const ColumnString::Offsets & replacement_offsets,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets)
+    {
+        assert(haystack_offsets.size() == needle_offsets.size());
+        assert(needle_offsets.size() == replacement_offsets.size());
+
+        ColumnString::Offset res_offset = 0;
+        res_data.reserve(haystack_data.size());
+        size_t haystack_size = haystack_offsets.size();
+        res_offsets.resize(haystack_size);
+
+        re2_st::RE2::Options regexp_options;
+        /// Don't write error messages to stderr.
+        regexp_options.set_log_errors(false);
+
+        /// Cannot perform search for whole columns. Will process each string separately.
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+
+            size_t ndl_from = i > 0 ? needle_offsets[i - 1] : 0;
+            const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
+            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
+            std::string_view needle(ndl_data, ndl_length);
+
+            if (needle.empty())
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+
+            size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
+            const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
+            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+
+            re2_st::RE2 searcher(needle, regexp_options);
+            if (!searcher.ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+            int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+            Instructions instructions = createInstructions(std::string_view(repl_data, repl_length), num_captures);
+
+            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+            res_offsets[i] = res_offset;
+        }
+    }
+
+    static void vectorFixedConstantConstant(
+        const ColumnString::Chars & haystack_data,
+        size_t n,
+        const String & needle,
+        const String & replacement,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets)
+    {
+        if (needle.empty())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+
+        ColumnString::Offset res_offset = 0;
+        size_t haystack_size = haystack_data.size() / n;
+        res_data.reserve(haystack_data.size());
+        res_offsets.resize(haystack_size);
+
+        re2_st::RE2::Options regexp_options;
+        /// Don't write error messages to stderr.
+        regexp_options.set_log_errors(false);
+
+        re2_st::RE2 searcher(needle, regexp_options);
+
+        if (!searcher.ok())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             size_t from = i * n;
-            const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
-            const size_t haystack_length = n;
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+            const size_t hs_length = n;
 
-            processString(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures, instructions);
+            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
         }
     }

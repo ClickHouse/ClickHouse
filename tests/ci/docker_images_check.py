@@ -14,13 +14,14 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, get_commit, post_commit_status
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 NAME = "Push to Dockerhub"
@@ -95,7 +96,6 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
 def get_changed_docker_images(
     pr_info: PRInfo, images_dict: ImagesDict
 ) -> Set[DockerImage]:
-
     if not images_dict:
         return set()
 
@@ -191,20 +191,19 @@ def build_and_push_dummy_image(
         Path(TEMP_PATH)
         / f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}.log"
     )
-    with open(build_log, "wb") as bl:
-        cmd = (
-            f"docker pull {dummy_source}; "
-            f"docker tag {dummy_source} {image.repo}:{version_string}; "
-        )
-        if push:
-            cmd += f"docker push {image.repo}:{version_string}"
+    cmd = (
+        f"docker pull {dummy_source}; "
+        f"docker tag {dummy_source} {image.repo}:{version_string}; "
+    )
+    if push:
+        cmd += f"docker push {image.repo}:{version_string}"
 
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -213,7 +212,7 @@ def build_and_push_dummy_image(
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> Tuple[bool, Path]:
@@ -241,31 +240,28 @@ def build_and_push_one_image(
         f"--cache-from type=registry,ref={image.repo}:{version_string} "
         f"--cache-from type=registry,ref={image.repo}:latest"
     )
-    if additional_cache:
-        cache_from = (
-            f"{cache_from} "
-            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
-        )
+    for tag in additional_cache:
+        assert tag
+        cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
-    with open(build_log, "wb") as bl:
-        cmd = (
-            "docker buildx build --builder default "
-            f"--label build-url={GITHUB_RUN_URL} "
-            f"{from_tag_arg}"
-            # A hack to invalidate cache, grep for it in docker/ dir
-            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
-            f"--tag {image.repo}:{version_string} "
-            f"{cache_from} "
-            f"--cache-to type=inline,mode=max "
-            f"{push_arg}"
-            f"--progress plain {image.full_path}"
-        )
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    cmd = (
+        "docker buildx build --builder default "
+        f"--label build-url={GITHUB_RUN_URL} "
+        f"{from_tag_arg}"
+        # A hack to invalidate cache, grep for it in docker/ dir
+        f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+        f"--tag {image.repo}:{version_string} "
+        f"{cache_from} "
+        f"--cache-to type=inline,mode=max "
+        f"{push_arg}"
+        f"--progress plain {image.full_path}"
+    )
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -274,7 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> TestResults:
@@ -318,7 +314,7 @@ def process_single_image(
 def process_image_with_parents(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool = False,
 ) -> TestResults:
@@ -438,9 +434,13 @@ def main():
 
     result_images = {}
     test_results = []  # type: TestResults
-    additional_cache = ""
-    if pr_info.release_pr or pr_info.merged_pr:
-        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+    additional_cache = []  # type: List[str]
+    if pr_info.release_pr:
+        logging.info("Use %s as additional cache tag", pr_info.release_pr)
+        additional_cache.append(str(pr_info.release_pr))
+    if pr_info.merged_pr:
+        logging.info("Use %s as additional cache tag", pr_info.merged_pr)
+        additional_cache.append(str(pr_info.merged_pr))
 
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined
@@ -455,8 +455,7 @@ def main():
     else:
         description = "Nothing to update"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    description = format_description(description)
 
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
@@ -475,7 +474,8 @@ def main():
         return
 
     gh = Github(get_best_robot_token(), per_page=100)
-    post_commit_status(gh, pr_info.sha, NAME, description, status, url)
+    commit = get_commit(gh, pr_info.sha)
+    post_commit_status(commit, status, url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

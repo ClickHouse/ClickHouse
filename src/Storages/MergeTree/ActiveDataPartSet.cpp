@@ -47,7 +47,10 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
         if (!part_info.contains(it->first))
         {
             if (!part_info.isDisjoint(it->first))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Part {} intersects previous part {}. "
+                                "It is a bug or a result of manual intervention in the ZooKeeper data.",
+                                part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
             ++it;
             break;
         }
@@ -70,7 +73,9 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
     }
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartNameForLogs());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Part {} intersects part {}. It is a bug or a result of manual intervention "
+                        "in the ZooKeeper data.", name, it->first.getPartNameForLogs());
 
     part_info_to_name.emplace(part_info, name);
     return true;

@@ -7,59 +7,55 @@ on: # yamllint disable-line rule:truthy
   release:
     types:
     - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
+        type: string
 
 jobs:
   ReleasePublish:
     runs-on: [self-hosted, style-checker]
     steps:
-    - name: Set envs
+    - name: Set tag from input
+      if: github.event_name == 'workflow_dispatch'
       run: |
-        cat >> "$GITHUB_ENV" << 'EOF'
-        JFROG_API_KEY=${{ secrets.JFROG_ARTIFACTORY_API_KEY }}
-        TEMP_PATH=${{runner.temp}}/release_packages
-        REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
-        EOF
-    - name: Check out repository code
-      uses: ClickHouse/checkout@v1
-      with:
-        # Always use the most recent script version
-        ref: master
-    - name: Download packages and push to Artifactory
+        echo "GITHUB_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+    - name: Set tag from REF
+      if: github.event_name == 'release'
       run: |
-        rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
-        cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-        cd "$REPO_COPY"
-        # Download and push packages to artifactory
-        python3 ./tests/ci/push_to_artifactory.py --release '${{ github.ref }}' \
-          --commit '${{ github.sha }}' --artifactory-url '${{ secrets.JFROG_ARTIFACTORY_URL }}' --all
-        # Download macos binaries to ${{runner.temp}}/download_binary
-        python3 ./tests/ci/download_binary.py --version '${{ github.ref }}' \
-          --commit '${{ github.sha }}' binary_darwin binary_darwin_aarch64
-        mv '${{runner.temp}}/download_binary/'clickhouse-* '${{runner.temp}}/push_to_artifactory'
-    - name: Upload packages to release assets
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{runner.temp}}/push_to_artifactory/*
-        overwrite: true
-        tag: ${{ github.ref }}
-        file_glob: true
+        echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+    - name: Deploy packages and assets
+      run: |
+        curl --silent --data '' --no-buffer \
+          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
   ############################################################################################
   ##################################### Docker images  #######################################
   ############################################################################################
   DockerServerImages:
     runs-on: [self-hosted, style-checker]
     steps:
+    - name: Set tag from input
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        echo "GITHUB_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+    - name: Set tag from REF
+      if: github.event_name == 'release'
+      run: |
+        echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
       uses: ClickHouse/checkout@v1
       with:
         clear-repository: true
         fetch-depth: 0  # otherwise we will have no version info
+        ref: ${{ env.GITHUB_TAG }}
     - name: Check docker clickhouse/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type auto --version "${{ github.ref }}"
-        python3 docker_server.py --release-type auto --version "${{ github.ref }}" --no-ubuntu \
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
+          --image-repo clickhouse/clickhouse-server --image-path docker/server
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
     - name: Cleanup
       if: always()

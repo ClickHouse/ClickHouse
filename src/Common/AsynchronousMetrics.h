@@ -108,6 +108,9 @@ private:
     std::optional<ReadBufferFromFilePRead> uptime;
     std::optional<ReadBufferFromFilePRead> net_dev;
 
+    std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes;
+
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
 
     std::unordered_map<String /* device name */,

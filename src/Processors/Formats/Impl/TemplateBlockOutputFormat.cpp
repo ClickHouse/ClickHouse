@@ -88,7 +88,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
     else
-        throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)

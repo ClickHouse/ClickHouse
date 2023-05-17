@@ -7,12 +7,12 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-
 class SipHash;
-
 
 namespace DB
 {
+
+class IDataPartStorage;
 
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
@@ -33,7 +33,7 @@ struct MergeTreeDataPartChecksum
         uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
 
     void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
-    void checkSize(const DiskPtr & disk, const String & path) const;
+    void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
 
 
@@ -54,10 +54,7 @@ struct MergeTreeDataPartChecksums
 
     bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
-    bool empty() const
-    {
-        return files.empty();
-    }
+    bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
     /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data.
@@ -67,7 +64,7 @@ struct MergeTreeDataPartChecksums
     static bool isBadChecksumsErrorCode(int code);
 
     /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const DiskPtr & disk, const String & path) const;
+    void checkSizes(const IDataPartStorage & storage) const;
 
     /// Returns false if the checksum is too old.
     bool read(ReadBuffer & in);

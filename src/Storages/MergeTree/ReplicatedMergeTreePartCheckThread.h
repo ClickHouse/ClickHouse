@@ -9,7 +9,6 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -37,30 +36,6 @@ public:
     void start();
     void stop();
 
-    /// Don't create more than one instance of this object simultaneously.
-    struct TemporarilyStop : private boost::noncopyable
-    {
-        ReplicatedMergeTreePartCheckThread * parent;
-
-        explicit TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
-        {
-            parent->stop();
-        }
-
-        TemporarilyStop(TemporarilyStop && old) noexcept : parent(old.parent)
-        {
-            old.parent = nullptr;
-        }
-
-        ~TemporarilyStop()
-        {
-            if (parent)
-                parent->start();
-        }
-    };
-
-    TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
-
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
     void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
@@ -71,6 +46,9 @@ public:
     /// Check part by name
     CheckResult checkPart(const String & part_name);
 
+    std::unique_lock<std::mutex> pausePartsCheck();
+
+    /// Can be called only while holding a lock returned from pausePartsCheck()
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:

@@ -85,7 +85,7 @@ public:
     {
         if (!arguments.empty())
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0", getName());
         }
 
         return std::make_shared<DataTypeDateTime>();
@@ -95,7 +95,7 @@ public:
     {
         if (!arguments.empty())
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0", getName());
         }
 
         return std::make_unique<FunctionBaseUTCTimestamp>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>("UTC"));
@@ -107,17 +107,17 @@ public:
 /// UTC_timestamp for MySQL interface support
 REGISTER_FUNCTION(UTCTimestamp)
 {
-    factory.registerFunction<UTCTimestampOverloadResolver>({
-        R"(
+    factory.registerFunction<UTCTimestampOverloadResolver>(FunctionDocumentation{
+        .description=R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 Same as `now('UTC')`. Was added only for MySQL support. `now` is preferred.
 
 Example:
 [example:typical]
 )",
-    Documentation::Examples{
-        {"typical", "SELECT UTCTimestamp();"}},
-    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    .examples{
+        {"typical", "SELECT UTCTimestamp();", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::CaseInsensitive);
 }
 

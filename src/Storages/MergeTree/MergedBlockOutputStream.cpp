@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -175,7 +176,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
-        new_part->setColumns(part_columns, serialization_infos);
+        new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
@@ -242,8 +243,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
-                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}. It is a bug.",
+                    new_part->name);
         }
 
         {
@@ -289,6 +290,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         written_files.emplace_back(std::move(out));
     }
 
+    {
+        /// Write a file with a description of columns.
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
+        DB::writeIntText(new_part->getMetadataVersion(), *out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
+
     if (default_codec != nullptr)
     {
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
@@ -298,8 +307,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        throw Exception("Compression codec have to be specified for part on disk, empty for" + new_part->name
-                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+                "It is a bug.", new_part->name);
     }
 
     {

@@ -1,17 +1,17 @@
 
 [//]: # (This file is included in FAQ > Troubleshooting)
 
--   [Installation](#troubleshooting-installation-errors)
--   [Connecting to the server](#troubleshooting-accepts-no-connections)
--   [Query processing](#troubleshooting-does-not-process-queries)
--   [Efficiency of query processing](#troubleshooting-too-slow)
+- [Installation](#troubleshooting-installation-errors)
+- [Connecting to the server](#troubleshooting-accepts-no-connections)
+- [Query processing](#troubleshooting-does-not-process-queries)
+- [Efficiency of query processing](#troubleshooting-too-slow)
 
 ## Installation {#troubleshooting-installation-errors}
 
 ### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
--   Check firewall settings.
--   If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+- Check firewall settings.
+- If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ### You Cannot Update Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
 
@@ -56,12 +56,25 @@ sudo apt-get clean
 sudo apt-get autoclean
 ```
 
+### You Can't Get Packages With Yum Because Of Wrong Signature
+
+Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2022-09.
+
+The solution is to clean out the cache and lib directory for yum:
+
+```
+sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
+sudo rm -f /etc/yum.repos.d/clickhouse.repo
+```
+
+After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
+
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:
 
--   The server is not running.
--   Unexpected or wrong configuration parameters.
+- The server is not running.
+- Unexpected or wrong configuration parameters.
 
 ### Server Is Not Running {#server-is-not-running}
 
@@ -85,8 +98,8 @@ The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse
 
 If the server started successfully, you should see the strings:
 
--   `<Information> Application: starting up.` — Server started.
--   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
+- `<Information> Application: starting up.` — Server started.
+- `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
@@ -136,30 +149,30 @@ This command starts the server as an interactive app with standard parameters of
 
 Check:
 
--   Docker settings.
+- Docker settings.
 
     If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
 
--   Endpoint settings.
+- Endpoint settings.
 
     Check [listen_host](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
--   HTTP protocol settings.
+- HTTP protocol settings.
 
     Check protocol settings for the HTTP API.
 
--   Secure connection settings.
+- Secure connection settings.
 
     Check:
 
-    -   The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
-    -   Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
+    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
--   User settings.
+- User settings.
 
     You might be using the wrong user name or password.
 

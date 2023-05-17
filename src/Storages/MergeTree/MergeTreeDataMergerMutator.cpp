@@ -31,7 +31,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/Context.h>
-#include <Common/interpolate.h>
+#include <base/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
@@ -113,9 +113,14 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     const auto data_settings = data.getSettings();
     size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
+    if (data_settings->max_number_of_mutations_for_replica > 0 &&
+        occupied >= data_settings->max_number_of_mutations_for_replica)
+        return 0;
+
     /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (occupied <= 1
         || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
@@ -294,10 +299,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block <= (*prev_part)->info.max_block)
+        if (prev_part)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
+            if (part->info.contains((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part->name, (*prev_part)->name);
+
+            if (!part->info.isDisjoint((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
@@ -370,7 +378,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
-            throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge selector returned only one part to merge");
 
         if (parts_to_merge.empty())
         {
@@ -385,7 +393,14 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
                 if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
                     return selectAllPartsToMergeWithinPartition(
-                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
+                        future_part,
+                        can_merge_callback,
+                        best_partition_it->first,
+                        /*final=*/true,
+                        metadata_snapshot,
+                        txn,
+                        out_disable_reason,
+                        /*optimize_skip_merged_partitions=*/true);
             }
 
             if (out_disable_reason)
@@ -522,6 +537,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     ReservationSharedPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
     bool need_prefix,
@@ -538,6 +554,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
+        cleanup,
         merging_params,
         need_prefix,
         parent_part,
@@ -628,8 +645,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     {
         for (size_t i = 0; i < parts.size(); ++i)
             if (parts[i]->name != replaced_parts[i]->name)
-                throw Exception("Unexpected part removed when adding " + new_data_part->name + ": " + replaced_parts[i]->name
-                    + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected part removed when adding {}: {} instead of {}",
+                    new_data_part->name, replaced_parts[i]->name, parts[i]->name);
     }
 
     LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);

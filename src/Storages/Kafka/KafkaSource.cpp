@@ -101,8 +101,8 @@ Chunk KafkaSource::generateImpl()
     auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -133,7 +133,7 @@ Chunk KafkaSource::generateImpl()
         {
             e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                 consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            throw;
+            throw std::move(e);
         }
     };
 
@@ -156,7 +156,7 @@ Chunk KafkaSource::generateImpl()
             // KafkaConsumer::messages, which is accessed from
             // KafkaConsumer::currentTopic() (and other helpers).
             if (consumer->isStalled())
-                throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Polled messages became unusable");
 
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
