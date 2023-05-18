@@ -31,7 +31,6 @@ namespace
 {
 
 using PartialKeyPositions = std::vector<size_t>;
-using Entropies = std::vector<size_t>;
 
 void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, String & result)
 {
@@ -93,13 +92,13 @@ std::pair<size_t, size_t> nextByte(const std::vector<std::string_view> & keys, s
     return {best_position, min_collisions};
 }
 
-std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<std::string_view> & train_data)
+PartialKeyPositions chooseBytes(const std::vector<std::string_view> & train_data)
 {
     if (train_data.size() <= 1)
         return {};
 
     PartialKeyPositions partial_key_positions;
-    Entropies entropies;
+    size_t last_entropy = 0;
 
     size_t max_len = 0; /// length of the longest key in training data
     for (const auto & key : train_data)
@@ -108,12 +107,12 @@ std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<std::str
     while (!allPartialKeysAreUnique(train_data, partial_key_positions))
     {
         auto [new_position, new_entropy] = nextByte(train_data, max_len, partial_key_positions);
-        if (!entropies.empty() && new_entropy == entropies.back())
+        if (last_entropy > 0 && new_entropy == last_entropy)
             break;
         partial_key_positions.push_back(new_position);
-        entropies.push_back(new_entropy);
+        last_entropy = new_entropy;
     }
-    return {partial_key_positions, entropies};
+    return partial_key_positions;
 }
 
 class IdManager
@@ -138,7 +137,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Username {} not registered in entropy learned hashing", user_name);
         auto it_id = it_user->second.find(id);
         if (it_id == it_user->second.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Id {} not registered for user in entropy learned hashing", id);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Id {} not registered for user {} in entropy learned hashing", id, user_name);
         return it_id->second;
     }
 
@@ -194,7 +193,7 @@ public:
                 training_data.emplace_back(string_view);
             }
 
-            PartialKeyPositions partial_key_positions = chooseBytes(training_data).first;
+            PartialKeyPositions partial_key_positions = chooseBytes(training_data);
             auto & id_manager = IdManager::instance();
             id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
 
