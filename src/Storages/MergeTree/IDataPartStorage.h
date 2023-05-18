@@ -65,6 +65,7 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupSettings;
 
 struct WriteSettings;
 
@@ -197,12 +198,12 @@ public:
     /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).
     using TemporaryFilesOnDisks = std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>>;
     virtual void backup(
-        const ReadSettings & read_settings,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
