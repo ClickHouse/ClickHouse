@@ -40,6 +40,11 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+namespace MockS3
+{
+    struct Client;
+}
+
 namespace DB::S3
 {
 
@@ -187,6 +192,9 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
+    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
+
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
 
@@ -195,6 +203,8 @@ public:
 
     bool supportsMultiPartCopy() const;
 private:
+    friend struct ::MockS3::Client;
+
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
