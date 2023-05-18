@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -172,7 +173,7 @@ public:
 
         validateFunctionArgumentTypes(*this, arguments, args);
 
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
@@ -193,11 +194,35 @@ public:
                 training_data.emplace_back(string_view);
             }
 
+            // Assume that partial_key_positions is sorted
             PartialKeyPositions partial_key_positions = chooseBytes(training_data);
             auto & id_manager = IdManager::instance();
             id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
 
-            return result_type->createColumnConst(num_rows, 0u)->convertToFullColumnIfConst();
+            auto col_to = ColumnString::create();
+            auto & data = col_to->getChars();
+            auto & offsets = col_to->getOffsets();
+
+            data.resize(col_data_string->byteSize());
+            offsets.reserve(num_rows);
+
+            size_t current_offset = 0;
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                size_t current_size = col_data_string->getDataAt(i).size;
+                std::fill(data.begin() + current_offset, data.begin() + (current_offset + current_size), '0');
+                data[current_offset + current_size + 1] = 0;
+                for (const auto partial_key_position : partial_key_positions)
+                {
+                    if (partial_key_position >= current_size)
+                        break;
+                    data[current_offset + partial_key_position] = '1';
+                }
+                current_offset += current_size + 1;
+                offsets.push_back(current_offset);
+            }
+
+            return col_to;
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
