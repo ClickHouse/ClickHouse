@@ -31,6 +31,7 @@
 #endif
 
 #include <bit>
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -1062,6 +1063,7 @@ class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+    static constexpr int null_magic_number = 42;
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
@@ -1197,14 +1199,12 @@ private:
     {
         if (const auto * col_from = checkAndGetColumn<ColumnNothing>(column))
         {
-            const ToType h{42};
-            for (size_t i = 0, size = column->size(); i < size; ++i)
-            {
-                if constexpr (first)
-                    vec_to[i] = h;
-                else
+            const ToType h{null_magic_number};
+            if constexpr (first)
+                vec_to.assign(vec_to.size(), h);
+            else
+                for (size_t i = 0, size = vec_to.size(); i < size; ++i)
                     vec_to[i] = combineHashes(key, vec_to[i], h);
-            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
@@ -1343,15 +1343,29 @@ private:
     {
         if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column)) [[likely]]
         {
-            vec_to.resize_fill(vec_to.size(), static_cast<ToType>(42));
-            const auto & nested_col = col_from->getNestedColumn();
             const auto * nested_type = typeid_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
-            typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
-            executeAny<first>(key, nested_type, &nested_col, vec_temp);
-            size_t j = 0;
-            for (size_t i = 0; i < vec_to.size(); ++i)
-                if (!col_from->isNullAt(i))
-                    vec_to[i] = vec_temp[j++];
+            if (nested_type->getTypeId() != TypeIndex::Nothing)
+            {
+                const auto & nested_col = col_from->getNestedColumn();
+                typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
+                executeAny<first>(key, nested_type, &nested_col, vec_temp);
+                size_t j = 0;
+                for (size_t i = 0; i < vec_to.size(); ++i)
+                {
+                    ToType h{null_magic_number};
+                    if (!col_from->isNullAt(i))
+                        h = vec_temp[j++];
+                    if constexpr (first)
+                        vec_to[i] = h;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], h);
+                }
+            }
+            else if constexpr (first)
+                vec_to.assign(vec_to.size(), static_cast<ToType>(null_magic_number));
+            else
+                for (size_t i = 0; i < vec_to.size(); ++i)
+                    vec_to[i] = combineHashes(key, vec_to[i], static_cast<ToType>(null_magic_number));
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
