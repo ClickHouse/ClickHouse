@@ -209,8 +209,7 @@ private:
     {
         const Settings & settings = data.getContext()->getSettingsRef();
         /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
-        const bool enable_parallel_processing_of_joins
-            = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas;
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
         return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
     }
 
