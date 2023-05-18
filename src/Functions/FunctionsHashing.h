@@ -1343,7 +1343,7 @@ private:
     {
         if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column)) [[likely]]
         {
-            vec_to.resize_fill(vec_to.size(), static_cast<ToType>(42)); // NOTE: 42 is consistent with Apache Spark.
+            vec_to.resize_fill(vec_to.size(), static_cast<ToType>(42));
             const auto & nested_col = col_from->getNestedColumn();
             const auto * nested_type = typeid_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
             typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
