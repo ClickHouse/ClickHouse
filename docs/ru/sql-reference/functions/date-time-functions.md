@@ -235,13 +235,13 @@ SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Ti
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-Переводит дату-с-временем в число типа UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
-Для аргумента String, строка конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
+Переводит строку, дату или дату-с-временем в число типа `UInt32` -- [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time).
+Строковый аргумент конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
 
 **Синтаксис**
 
 ``` sql
-toUnixTimestamp(datetime)
+toUnixTimestamp(date)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -256,15 +256,27 @@ toUnixTimestamp(str, [timezone])
 Запрос:
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
+SELECT
+    '2017-11-05 08:07:47' AS dt_str,
+    toUnixTimestamp(dt_str) AS from_str,
+    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDate(dt_str)) AS from_date,
+    toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
 ```
 
 Результат:
 
 ``` text
-┌─unix_timestamp─┐
-│     1509836867 │
-└────────────────┘
+Row 1:
+──────
+dt_str:         2017-11-05 08:07:47
+from_str:       1509869267
+from_str_tokyo: 1509836867
+from_datetime:  1509869267
+from_date:      1509840000
+from_date32:    1509840000
 ```
 
 :::note
