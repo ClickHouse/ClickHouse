@@ -101,7 +101,21 @@ def post_commit_status(
                 raise ex
             time.sleep(i)
     if pr_info:
-        set_status_comment(commit, pr_info)
+        status_updated = False
+        for i in range(RETRY):
+            try:
+                set_status_comment(commit, pr_info)
+                status_updated = True
+                break
+            except Exception as ex:
+                logging.warning(
+                    "Failed to update the status commit, will retry %s times: %s",
+                    RETRY - i - 1,
+                    ex,
+                )
+
+        if not status_updated:
+            logging.error("Failed to update the status comment, continue anyway")
 
 
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
@@ -115,6 +129,18 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
     if not statuses:
         return
+
+    if not [status for status in statuses if status.context == CI_STATUS_NAME]:
+        # This is the case, when some statuses already exist for the check,
+        # but not the CI_STATUS_NAME. We should create it as pending.
+        # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
+        post_commit_status(
+            commit,
+            "pending",
+            create_ci_report(pr_info, statuses),
+            "The report for running CI",
+            CI_STATUS_NAME,
+        )
 
     # We update the report in generate_status_comment function, so do it each
     # run, even in the release PRs and normal pushes

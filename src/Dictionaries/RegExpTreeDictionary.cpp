@@ -20,6 +20,7 @@
 #include <Functions/Regexps.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Sources/BlocksListSource.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -86,6 +87,32 @@ namespace
     }
 }
 
+struct ExternalRegexpQueryBuilder final : public ExternalQueryBuilder
+{
+    explicit ExternalRegexpQueryBuilder(const ExternalQueryBuilder & builder) : ExternalQueryBuilder(builder) {}
+
+    void composeLoadAllQuery(WriteBuffer & out) const override
+    {
+        writeString("SELECT id, parent_id, regexp, keys, values FROM ", out);
+        if (!db.empty())
+        {
+            writeQuoted(db, out);
+            writeChar('.', out);
+        }
+        if (!schema.empty())
+        {
+            writeQuoted(schema, out);
+            writeChar('.', out);
+        }
+        writeQuoted(table, out);
+        if (!where.empty())
+        {
+            writeString(" WHERE ", out);
+            writeString(where, out);
+        }
+    }
+};
+
 struct RegExpTreeDictionary::RegexTreeNode
 {
     std::vector<UInt64> children;
@@ -117,6 +144,7 @@ struct RegExpTreeDictionary::RegexTreeNode
     {
         Field field;
         std::vector<StringPiece> pieces;
+        String original_value;
 
         constexpr bool containsBackRefs() const { return !pieces.empty(); }
     };
@@ -208,12 +236,12 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
                 auto string_pieces = createStringPieces(value, num_captures, regex, logger);
                 if (!string_pieces.empty())
                 {
-                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = values[j], .pieces = std::move(string_pieces)};
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = values[j], .pieces = std::move(string_pieces), .original_value = value};
                 }
                 else
                 {
-                    Field field = parseStringToField(values[j].safeGet<String>(), attr.type);
-                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field)};
+                    Field field = parseStringToField(value, attr.type);
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field), .original_value = value};
                 }
             }
         }
@@ -264,7 +292,7 @@ void RegExpTreeDictionary::initGraph()
         if (regex_nodes.contains(pid))
             regex_nodes[pid]->children.push_back(id);
         else
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {}", pid);
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {} in regexp tree dictionary", pid);
     }
     std::set<UInt64> visited;
     UInt64 topology_id = 0;
@@ -383,6 +411,8 @@ RegExpTreeDictionary::RegExpTreeDictionary(
         sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kKeys));
         sample_block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), kValues));
         ch_source->sample_block = std::move(sample_block);
+        ch_source->query_builder = std::make_shared<ExternalRegexpQueryBuilder>(*ch_source->query_builder);
+        ch_source->load_all_query = ch_source->query_builder->composeLoadAllQuery();
     }
 
     loadData();
@@ -651,6 +681,52 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     return result;
 }
 
+Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
+{
+
+    auto it = regex_nodes.begin();
+    size_t block_size = 0;
+    BlocksList result;
+
+    for (;;)
+    {
+        Block block;
+        auto col_id = std::make_shared<DataTypeUInt64>()->createColumn();
+        auto col_pid = std::make_shared<DataTypeUInt64>()->createColumn();
+        auto col_regex = std::make_shared<DataTypeString>()->createColumn();
+        auto col_keys = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())->createColumn();
+        auto col_values = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())->createColumn();
+
+        for (;it != regex_nodes.end() && block_size < max_block_size; it++, block_size++)
+        {
+            col_id->insert(it->first);
+            const auto & node = it->second;
+            col_pid->insert(node->parent_id);
+            col_regex->insert(node->regex);
+            std::vector<Field> keys, values;
+            for (const auto & [key, attr] : node->attributes)
+            {
+                keys.push_back(key);
+                values.push_back(attr.original_value);
+            }
+            col_keys->insert(Array(keys.begin(), keys.end()));
+            col_values->insert(Array(values.begin(), values.end()));
+        }
+
+        block.insert(ColumnWithTypeAndName(std::move(col_id),std::make_shared<DataTypeUInt64>(),kId));
+        block.insert(ColumnWithTypeAndName(std::move(col_pid),std::make_shared<DataTypeUInt64>(),kParentId));
+        block.insert(ColumnWithTypeAndName(std::move(col_regex),std::make_shared<DataTypeString>(),kRegExp));
+        block.insert(ColumnWithTypeAndName(std::move(col_keys),std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),kKeys));
+        block.insert(ColumnWithTypeAndName(std::move(col_values),std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),kValues));
+        result.push_back(std::move(block));
+        if (it == regex_nodes.end())
+            break;
+        block_size = 0;
+    }
+
+    return Pipe(std::make_shared<BlocksListSource>(std::move(result)));
+}
+
 Columns RegExpTreeDictionary::getColumns(
     const Strings & attribute_names,
     const DataTypes & result_types,
@@ -717,10 +793,6 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-        if (!context->getSettings().regexp_dict_allow_other_sources && typeid_cast<YAMLRegExpTreeDictionarySource *>(source_ptr.get()) == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                            "regexp_tree dictionary doesn't accept sources other than yaml source. "
-                            "To active it, please set regexp_dict_allow_other_sources=true");
 
         return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration, context->getSettings().regexp_dict_allow_hyperscan);
     };

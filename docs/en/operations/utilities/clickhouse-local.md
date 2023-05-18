@@ -41,9 +41,9 @@ If the file is sitting on the same machine as `clickhouse-local`, use the `file`
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
-    ```bash
-    ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
-    ```
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
 
 The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
 
@@ -183,7 +183,7 @@ Arguments:
 - `-S`, `--structure` — table structure for input data.
 - `--input-format` — input format, `TSV` by default.
 - `-f`, `--file` — path to data, `stdin` by default.
-- `-q`, `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
+- `-q`, `--query` — queries to execute with `;` as delimiter. You must specify either `query` or `queries-file` option.
 - `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 - `-N`, `--table` — table name where to put output data, `table` by default.
 - `--format`, `--output-format` — output format, `TSV` by default.

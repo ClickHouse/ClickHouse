@@ -153,27 +153,27 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
 
 void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_segment)
 {
-    if (cache_log)
+    if (!cache_log)
+        return;
+
+    auto file_segment_range = file_segment.range();
+    size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize(false) - 1;
+
+    FilesystemCacheLogElement elem
     {
-        auto file_segment_range = file_segment.range();
-        size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize(false) - 1;
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .source_file_path = source_path,
+        .file_segment_range = { file_segment_range.left, file_segment_right_bound },
+        .requested_range = {},
+        .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+        .file_segment_size = file_segment_range.size(),
+        .read_from_cache_attempted = false,
+        .read_buffer_id = {},
+        .profile_counters = nullptr,
+    };
 
-        FilesystemCacheLogElement elem
-        {
-            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-            .query_id = query_id,
-            .source_file_path = source_path,
-            .file_segment_range = { file_segment_range.left, file_segment_right_bound },
-            .requested_range = {},
-            .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
-            .file_segment_size = file_segment_range.size(),
-            .read_from_cache_attempted = false,
-            .read_buffer_id = {},
-            .profile_counters = nullptr,
-        };
-
-        cache_log->add(elem);
-    }
+    cache_log->add(elem);
 }
 
 void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
@@ -211,10 +211,16 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
     size_t size = offset();
 
+    /// Write data to cache.
+    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
+    current_download_offset += size;
+
     try
     {
         SwapHelper swap(*this, *impl);
         /// Write data to the underlying buffer.
+        /// Actually here WriteBufferFromFileDecorator::nextImpl has to be called, but it is pivate method.
+        /// In particular WriteBufferFromFileDecorator introduces logic with swaps in order to achieve delegation.
         impl->next();
     }
     catch (...)
@@ -225,10 +231,6 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         throw;
     }
-
-    /// Write data to cache.
-    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
-    current_download_offset += size;
 }
 
 void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool throw_on_error)
@@ -292,8 +294,7 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 {
     try
     {
-        SwapHelper swap(*this, *impl);
-        impl->finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
     }
     catch (...)
     {

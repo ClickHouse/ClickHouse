@@ -93,25 +93,25 @@ Accepts 2 parameters: name of the dictionary, key value - expression returning d
 Returned value: 0 if there is no key, 1 if there is a key, type of UInt8
 )"});
 
-    factory.registerFunction<FunctionDictGetHierarchy>(Documentation{ R"(
+    factory.registerFunction<FunctionDictGetHierarchy>(FunctionDocumentation{ .description=R"(
 Creates an array, containing all the parents of a key in the hierarchical dictionary.
 Accepts 2 parameters: name of the dictionary, key value - expression returning a UInt64-type value.
 Returned value: parents for the key, type of Array(UInt64)
 )"});
 
-    factory.registerFunction<FunctionDictIsIn>(Documentation{ R"(
+    factory.registerFunction<FunctionDictIsIn>(FunctionDocumentation{ .description=R"(
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 Accepts 3 parameters: name of the dictionary, key to be checked - expression returning a UInt64-type value, alleged ancestor of the key - expression returning a UInt64-type.
 Returned value: 0 if key is not a child of the ancestor, 1 if key is a child of the ancestor or if key is the ancestor, type of UInt8
 )"});
 
-    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>(Documentation{ R"(
+    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>(FunctionDocumentation{ .description=R"(
 Returns first-level children as an array of indexes. It is the inverse transformation for dictGetHierarchy.
 Accepts 2 parameters: name of the dictionary, key value - expression returning a UInt64-type value.
 Returned value: first-level descendants for the key, type of Array(UInt64)
 )"});
 
-    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>(Documentation{ R"(
+    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>(FunctionDocumentation{ .description=R"(
 Returns all descendants as if dictGetChildren function was applied level times recursively.
 Accepts 3 parameters: name of the dictionary, key value - expression returning a UInt64-type value, level — hierarchy level - If level = 0 returns all descendants to the end - UInt8
 Returned value: descendants for the key, type of Array(UInt64)
