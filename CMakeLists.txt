@@ -106,6 +106,11 @@ option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
 
 if (ENABLE_WOBOQ_CODEBROWSER)
     set (ENABLE_EMBEDDED_COMPILER 0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
+    # woboq codebrowser uses clang tooling, and they could add default system
+    # clang includes, and later clang will warn for those added by itself
+    # includes.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
 endif()
 
 # Global libraries
