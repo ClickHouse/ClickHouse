@@ -663,12 +663,10 @@ Names Block::getDataTypeNames() const
 
 Block::NameMap Block::getNamesToIndexesMap() const
 {
-    NameMap res;
-    res.reserve(index_by_name.size());
-
+    NameMap res(index_by_name.size());
+    res.set_empty_key(StringRef{});
     for (const auto & [name, index] : index_by_name)
         res[name] = index;
-
     return res;
 }
 

@@ -109,6 +109,108 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 └───────────────────────────────────────────────────────┘
 ```
 
+## extractKeyValuePairs
+
+Extracts key-value pairs, i.e. a [Map(String, String)](../../sql-reference/data-types/map.md), from a string. Parsing is robust towards noise (e.g. log files).
+
+A key-value pair consists of a key, followed by a `key_value_delimiter` and a value. Key value pairs must be separated by `pair_delimiter`. Quoted keys and values are also supported. 
+
+**Syntax**
+
+``` sql
+extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character]]])
+```
+
+Alias:
+- `str_to_map`
+- `mapFromString`
+
+**Arguments**
+
+- `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to ` `, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned values**
+
+- A [Map(String, String)](../../sql-reference/data-types/map.md) of key-value pairs.
+
+**Examples**
+
+Simple case:
+
+``` sql
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+```
+
+Result:
+
+``` Result:
+┌─kv──────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+Single quote as quoting character:
+
+``` sql
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+```
+
+Result:
+
+``` text
+┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Escape sequences without escape sequences support:
+
+``` sql
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
+```
+
+Result:
+
+``` text
+┌─kv─────────────────────┐
+│ {'age':'a\\x0A\\n\\0'} │
+└────────────────────────┘
+```
+
+## extractKeyValuePairsWithEscaping
+
+Same as `extractKeyValuePairs` but with escaping support.
+
+Supported escape sequences: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
+Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
+
+This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
+input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
+- Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
+- Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
+
+Leading escape sequences will be skipped in keys and will be considered invalid for values.
+
+**Examples**
+
+Escape sequences with escape sequence support turned on:
+
+``` sql
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+```
+
+Result:
+
+``` result
+┌─kv────────────────┐
+│ {'age':'a\n\n\0'} │
+└───────────────────┘
+```
+
 ## mapAdd
 
 Collect all the keys and sum corresponding values.

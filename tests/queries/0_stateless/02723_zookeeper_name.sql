@@ -11,12 +11,12 @@ INSERT INTO t1 SELECT * FROM generateRandom('k UInt32, v UInt32') LIMIT 1;
 INSERT INTO t2 SELECT * FROM generateRandom('k UInt32, v UInt32') LIMIT 1;
 
 SELECT
-    table,zookeeper_name,count()
+    table, zookeeper_name, count()
 FROM system.replicas
 INNER JOIN system.parts USING (database, table)
 WHERE database = currentDatabase()
-GROUP BY
-    table,zookeeper_name
+GROUP BY table, zookeeper_name
+ORDER BY table, zookeeper_name
 FORMAT CSV;
 
 DROP TABLE t1;

@@ -4,9 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -15,10 +13,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
-#include <base/StringRef.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldVisitorDump.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 
@@ -635,22 +630,27 @@ namespace
             }
         }
 
-        static void checkAllowedType(const DataTypePtr & dt)
+        static void checkAllowedType(const DataTypePtr & type)
         {
-            if (dt->isNullable())
-                checkAllowedTypeHelper(static_cast<const DataTypeNullable *>(dt.get())->getNestedType());
+            if (type->isNullable())
+                checkAllowedTypeHelper(static_cast<const DataTypeNullable *>(type.get())->getNestedType());
             else
-                checkAllowedTypeHelper(dt);
+                checkAllowedTypeHelper(type);
         }
 
-        static void checkAllowedTypeHelper(const DataTypePtr & dt)
+        static void checkAllowedTypeHelper(const DataTypePtr & type)
         {
-            if (isStringOrFixedString(dt))
+            if (isStringOrFixedString(type))
                 return;
-            auto dtsize = dt->getMaximumSizeOfValueInMemory();
-            if (dtsize <= sizeof(UInt64))
-                return;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} in function 'transform'", dt->getName());
+
+            if (type->haveMaximumSizeOfValue())
+            {
+                auto data_type_size = type->getMaximumSizeOfValueInMemory();
+                if (data_type_size <= sizeof(UInt64))
+                    return;
+            }
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} in function 'transform'", type->getName());
         }
 
         /// Can be called from different threads. It works only on the first call.
