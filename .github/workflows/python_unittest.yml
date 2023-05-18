@@ -10,8 +10,8 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   PythonUnitTests:
-    # runs-on: [self-hosted, style-checker, python-unittest]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, style-checker, python-unittest]
+    # runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
