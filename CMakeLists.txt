@@ -102,6 +102,12 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
+
+if (ENABLE_WOBOQ_CODEBROWSER)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
