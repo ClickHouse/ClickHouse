@@ -41,18 +41,6 @@ namespace DB
 /** Perform HTTP POST request and provide response to read.
   */
 
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_REDIRECTS;
-    extern const int HTTP_RANGE_NOT_SATISFIABLE;
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int UNKNOWN_FILE_SIZE;
-    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
-    extern const int ABORTED;
-}
-
 template <typename TSessionFactory>
 class UpdatableSession
 {
@@ -102,6 +90,12 @@ namespace detail
         Poco::URI uri;
         std::string method;
         std::string content_encoding;
+
+        #if USE_ENET
+        std::string protocol = "enet";
+        #else
+        std::string protocol = "tcp";
+        #endif
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session

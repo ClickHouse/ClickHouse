@@ -16,6 +16,8 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+    extern const int ABORTED;
 }
 
 template <typename TSessionFactory>
@@ -103,57 +105,217 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
     if (uri_.getPath().empty())
         uri_.setPath("/");
 
-    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-    request.setHost(uri_.getHost()); // use original, not resolved host name in header
-
-    if (out_stream_callback)
-        request.setChunkedTransferEncoding(true);
-    else if (method == Poco::Net::HTTPRequest::HTTP_POST)
-        request.setContentLength(0);    /// No callback - no body
-
-    for (auto & [header, value] : http_header_entries)
-        request.set(header, value);
-
-    std::optional<HTTPRange> range;
-    if (!for_object_info)
-    {
-        if (withPartialContent(read_range))
-            range = HTTPRange{getOffset(), read_range.end};
-    }
-
-    if (range)
-    {
-        String range_header_value;
-        if (range->end)
-            range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
-        else
-            range_header_value = fmt::format("bytes={}-", *range->begin);
-        LOG_TEST(log, "Adding header: Range: {}", range_header_value);
-        request.set("Range", range_header_value);
-    }
-
-    if (!credentials.getUsername().empty())
-        credentials.authenticate(request);
-
-    LOG_TRACE(log, "Sending request to {}", uri_.toString());
-
     auto sess = current_session->getSession();
+
     try
     {
-        auto & stream_out = sess->sendRequest(request);
+        if (protocol == "enet")
+        {
+            #if USE_ENET
+            UDPReplicationPack request;
 
-        if (out_stream_callback)
-            out_stream_callback(stream_out);
+            for (auto & [header, value] : http_header_entries)
+                request.set(header, value);
 
-        auto result_istr = receiveResponse(*sess, request, response, true);
-        response.getCookies(cookies);
+            for (auto it: uri_.getQueryParameters())
+                request.set(it.first, it.second);
 
-        /// we can fetch object info while the request is being processed
-        /// and we don't want to override any context used by it
-        if (!for_object_info)
-            content_encoding = response.get("Content-Encoding", "");
 
-        return result_istr;
+            std::optional<HTTPRange> range;
+            if (!for_object_info)
+            {
+                if (withPartialContent(read_range))
+                    range = HTTPRange{getOffset(), read_range.end};
+            }
+
+            if (range)
+            {
+                String range_header_value;
+                if (range->end)
+                    range_header_value = fmt::format("{}-{}", *range->begin, *range->end);
+                else
+                    range_header_value = fmt::format("{}-", *range->begin);
+                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                request.set("bytes", range_header_value);
+            }
+
+            /*if (!credentials.getUsername().empty())
+                credentials.authenticate(request);*/
+
+            LOG_TRACE(log, "Sending ENet request to {}", uri_.toString());
+
+            if (enet_initialize() != 0)
+            {
+                LOG_ERROR(log, "Cannot initialize enet.");
+            }
+
+            ENetHost * client;
+            client = enet_host_create (nullptr /* create a client host */,
+                        1 /* only allow 1 outgoing connection */,
+                        2 /* allow up 2 channels to be used, 0 and 1 */,
+                        0 /* assume any amount of incoming bandwidth */,
+                        0 /* assume any amount of outgoing bandwidth */);
+            if (client == nullptr)
+            {
+                LOG_ERROR(log, "An error occurred while trying to create an ENet client host.");
+            }
+
+            auto request_str = request.serialize();
+            auto request_cstr = request_str.c_str();
+
+            ENetPacket * packet = enet_packet_create (request_cstr,
+                                    request_str.size() + 1,
+                                    ENET_PACKET_FLAG_RELIABLE);
+
+            ENetAddress address;
+
+            enet_address_set_host (& address, uri_.getHost().c_str());
+            //address.port = uri_.getPort();
+            //enet_address_set_host (& address, "127.0.0.1");
+            address.port = 9008;
+
+            ENetPeer * peer = enet_host_connect(client, &address, 2, 0);
+
+            ENetEvent event;
+
+            if (enet_host_service(client, &event, 2000) > 0 &&
+                event.type == ENET_EVENT_TYPE_CONNECT)
+            {
+                LOG_INFO(log, "Connected to ENet server");
+            }
+            else
+            {
+                enet_peer_reset(peer);
+                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                enet_deinitialize();
+                throw 1;
+            }
+
+            enet_peer_send(peer, 0, packet);
+
+            enet_host_flush(client);
+
+            UDPReplicationPack resp;
+
+            std::string data = "";
+
+            bool received_resp = false;
+
+            while (enet_host_service(client, &event, 1000) > 0 && !received_resp)
+            {
+                switch (event.type)
+                {
+                    case ENET_EVENT_TYPE_RECEIVE:
+                        // Receive packet from Service
+                        {
+                            if (event.packet->data == nullptr)
+                            {
+                                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                                enet_deinitialize();
+                                throw Exception(ErrorCodes::ABORTED, "Received no data from peer");
+                            }
+                            data = resp.deserialize(reinterpret_cast<char*>(event.packet->data), event.packet->dataLength);
+                            response.setVersion("HTTP/1.1");
+                            response.set("Keep-Alive", "timeout=3");
+                            LOG_INFO(log, "ENET RECEIVED");
+                            enet_packet_destroy(event.packet);
+                            received_resp = true;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (data.size() == 0)
+            {
+                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                enet_peer_disconnect(peer, 0);
+                throw Exception(ErrorCodes::ABORTED, "Received no data from peer");
+            }
+
+            for (auto [key, value]: resp.data)
+            {
+                if (key == "server_protocol_version")
+                {
+                    response.set("Set-Cookie", key + '=' + value);
+                }
+                else
+                {
+                    response.set(key, value);
+                }
+            }
+
+            response.getCookies(cookies);
+
+            if (!for_object_info)
+                content_encoding = response.get("Content-Encoding", "");
+
+            std::istream* result_istr = new std::istream(nullptr);
+            std::stringbuf* str_buf = new std::stringbuf(data);
+            result_istr->rdbuf(str_buf);
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
+            enet_peer_disconnect(peer, 0);
+
+            enet_deinitialize();
+
+            return result_istr;
+            #else
+            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ENet protocol was not enabled during build time");
+            #endif
+        }
+        else
+        {
+            Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+            request.setHost(uri_.getHost()); // use original, not resolved host name in header
+
+            if (out_stream_callback)
+                request.setChunkedTransferEncoding(true);
+            else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                request.setContentLength(0);    /// No callback - no body
+
+            for (auto & [header, value] : http_header_entries)
+                request.set(header, value);
+
+            std::optional<HTTPRange> range;
+            if (!for_object_info)
+            {
+                if (withPartialContent(read_range))
+                    range = HTTPRange{getOffset(), read_range.end};
+            }
+
+            if (range)
+            {
+                String range_header_value;
+                if (range->end)
+                    range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
+                else
+                    range_header_value = fmt::format("bytes={}-", *range->begin);
+                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                request.set("Range", range_header_value);
+            }
+
+            if (!credentials.getUsername().empty())
+                credentials.authenticate(request);
+
+            LOG_TRACE(log, "Sending request to {}", uri_.toString());
+
+            auto & stream_out = sess->sendRequest(request);
+
+            if (out_stream_callback)
+                out_stream_callback(stream_out);
+
+            auto result_istr = receiveResponse(*sess, request, response, true);
+            response.getCookies(cookies);
+
+            /// we can fetch object info while the request is being processed
+            /// and we don't want to override any context used by it
+            if (!for_object_info)
+                content_encoding = response.get("Content-Encoding", "");
+
+            return result_istr;
+        }
     }
     catch (const Poco::Exception & e)
     {
