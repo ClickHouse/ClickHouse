@@ -1,16 +1,16 @@
 name: UnitTests
 
-env:
-  # Force the stdout and stderr streams to be unbuffered
-  PYTHONUNBUFFERED: 1
+# env:
+#   # Force the stdout and stderr streams to be unbuffered
+#   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
-  - workflow_dispatch  # Enable manual triggeringg
-  - push
+  # workflow_dispatch:  # Enable manual triggeringg
+  push
 
 jobs:
   PythonUnitTests:
-    runs-on: [self-hosted, style-checker, python-unittest]
+    runs-on: [self-hosted]
     # runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
