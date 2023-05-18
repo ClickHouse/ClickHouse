@@ -242,7 +242,11 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonl
 
 String StorageReplicatedMergeTree::getEndpointName() const
 {
-    return zookeeper_name + ":" + replica_path;
+    const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
+    if (settings.enable_the_endpoint_id_with_zookeeper_name_prefix)
+        return zookeeper_name + ":" + replica_path;
+
+    return replica_path;
 }
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
@@ -4440,8 +4444,12 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
 
-        /// endpoint format:
-        ///     DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
+        /// The endpoint id:
+        ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
+        ///     new format: DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
+        /// Notice:
+        ///     They are incompatible and the default is the old format.
+        ///     If you want to use the new format, please ensure that 'enable_the_endpoint_id_with_zookeeper_name_prefix' of all nodes is true .
         ///
         getContext()->getInterserverIOHandler().addEndpoint(
             data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
