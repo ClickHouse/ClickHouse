@@ -88,7 +88,7 @@ namespace detail
     {
     protected:
         #if USE_UDT
-        std::string protocol = "tcp";
+        std::string protocol = "udt";
         #else
         std::string protocol = "tcp";
         #endif

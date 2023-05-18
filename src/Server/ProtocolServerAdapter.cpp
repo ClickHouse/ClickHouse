@@ -74,7 +74,7 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     , impl(std::make_unique<UDTServerAdapterImpl>(std::move(udt_server_)))
 {
 }
-
+#endif
 
 
 #if USE_GRPC && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)

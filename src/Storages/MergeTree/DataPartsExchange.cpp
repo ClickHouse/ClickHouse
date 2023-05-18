@@ -10,7 +10,6 @@
 #include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Server/UDPReplicationPack.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -25,6 +24,7 @@
 #include <iterator>
 #include <regex>
 #include <base/sort.h>
+
 
 namespace fs = std::filesystem;
 
@@ -454,7 +454,9 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         writeBinary(desc.file_size, out);
 
         auto file_in = desc.input_buffer_getter();
+
         HashingWriteBuffer hashing_out(out);
+
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())
@@ -534,8 +536,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
-    //uri.setHost("127.0.0.1");
-    uri.setHost(host);
+    //uri.setHost(host);
+    uri.setHost("127.0.0.1");
     uri.setPort(port);
     uri.setQueryParameters(
     {
