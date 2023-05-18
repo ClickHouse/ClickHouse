@@ -608,6 +608,17 @@ See also:
 
 - [JOIN strictness](../../sql-reference/statements/select/join.md/#join-settings)
 
+## max_rows_in_set_to_optimize_join
+
+Maximal size of the set to filter joined tables by each other's row sets before joining.
+
+Possible values:
+
+- 0 — Disable.
+- Any positive integer.
+
+Default value: 100000.
+
 ## temporary_files_codec {#temporary_files_codec}
 
 Sets compression codec for temporary files used in sorting and joining operations on disk.
@@ -1125,6 +1136,12 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 1000.
 
+## connect_timeout_with_failover_secure_ms
+
+Connection timeout for selecting first healthy replica (for secure connections)
+
+Default value: 1000.
+
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
 The wait time in milliseconds for a connection when the connection pool is full.
@@ -1630,7 +1647,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 ### async_insert {#async-insert}
 
-Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+Enables or disables asynchronous inserts. Note that deduplication is disabled by default, see [async_insert_deduplicate](#async-insert-deduplicate).
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
@@ -3562,7 +3579,7 @@ Default value: `1`.
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
 
-## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+## optimize_use_projections {#optimize_use_projections}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
 
@@ -3575,7 +3592,7 @@ Default value: `1`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting).
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
 Possible values:
 

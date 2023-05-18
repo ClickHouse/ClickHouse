@@ -533,6 +533,11 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     assertInitialized();
     auto cache_lock = cache_guard.lock();
 
+    LOG_TEST(
+        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
+        size, file_segment.key(), file_segment.offset(),
+        main_priority->getSize(cache_lock), main_priority->getSizeLimit());
+
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
     /// while checking the limits in both.
@@ -545,7 +550,17 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         const bool query_limit_exceeded = query_priority->getSize(cache_lock) + size > query_priority->getSizeLimit();
         if (query_limit_exceeded && !query_context->recacheOnFileCacheQueryLimitExceeded())
+        {
+            LOG_TEST(log, "Query limit exceeded, space reservation failed, "
+                     "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
+                     file_segment.key(), file_segment.offset());
             return false;
+        }
+
+        LOG_TEST(
+            log, "Using query limit, current usage: {}/{} (while reserving for {}:{})",
+            query_priority->getSize(cache_lock), query_priority->getSizeLimit(),
+            file_segment.key(), file_segment.offset());
     }
 
     size_t queue_size = main_priority->getElementsCount(cache_lock);
@@ -557,8 +572,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         chassert(file_segment.getReservedSize() > 0);
     else
         queue_size += 1;
-
-    size_t removed_size = 0;
 
     class EvictionCandidates final : public std::vector<FileSegmentMetadataPtr>
     {
@@ -585,6 +598,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
     std::unordered_map<Key, EvictionCandidates> to_delete;
 
+    size_t removed_size = 0;
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
@@ -630,14 +644,28 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         if (is_query_priority_overflow())
             return false;
+
+        LOG_TEST(
+            log, "Query limits satisfied (while reserving for {}:{})",
+            file_segment.key(), file_segment.offset());
     }
 
     auto is_main_priority_overflow = [&]
     {
         /// max_size == 0 means unlimited cache size,
         /// max_element_size means unlimited number of cache elements.
-        return (main_priority->getSizeLimit() != 0 && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
+        const bool is_overflow = (main_priority->getSizeLimit() != 0
+                                  && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
             || (main_priority->getElementsLimit() != 0 && queue_size > main_priority->getElementsLimit());
+
+        LOG_TEST(
+            log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            is_overflow, size, removed_size,
+            main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
+            main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
+            file_segment.key(), file_segment.offset());
+
+        return is_overflow;
     };
 
     main_priority->iterate(
