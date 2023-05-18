@@ -7,9 +7,6 @@ env:
 on:  # yamllint disable-line rule:truthy
   workflow_dispatch:  # Enable manual triggering
 
-##########################################################################################
-##################################### SMALL CHECKS #######################################
-##########################################################################################
 jobs:
   PythonUnitTests:
     runs-on: [self-hosted, style-checker, python-unit-test]
