@@ -80,10 +80,10 @@ struct DictionaryAttributeType
 template <typename F>
 constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
+    static_for<AttributeUnderlyingType>([type, my_func = std::forward<F>(func)](auto other)
     {
         if (type == other)
-            func(DictionaryAttributeType<other>{});
+            my_func(DictionaryAttributeType<other>{});
     });
 }
 

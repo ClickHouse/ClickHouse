@@ -77,6 +77,8 @@ public:
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
         UNFREEZE,
+        ENABLE_FAILPOINT,
+        DISABLE_FAILPOINT,
         END
     };
 
@@ -109,6 +111,8 @@ public:
     String backup_name;
 
     String schema_cache_storage;
+
+    String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
