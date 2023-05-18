@@ -1395,8 +1395,8 @@ try
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config(), socket, listen_host, port);
-                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
@@ -1418,8 +1418,8 @@ try
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(config(), socket, listen_host, port, /* secure = */ true);
-                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
                     return ProtocolServerAdapter(
                         listen_host,
                         secure_port_name,
@@ -1872,7 +1872,7 @@ try
             }
 
             if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+                LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
@@ -1884,7 +1884,7 @@ try
                 current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
-                LOG_INFO(log, "Closed connections. But {} remain."
+                LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
@@ -1900,7 +1900,7 @@ try
 
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
-                LOG_INFO(log, "Will shutdown forcefully.");
+                LOG_WARNING(log, "Will shutdown forcefully.");
                 safeExit(0);
             }
         });
