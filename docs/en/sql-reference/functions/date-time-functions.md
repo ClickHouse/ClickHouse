@@ -357,14 +357,14 @@ Alias: `SECOND`.
 
 ## toUnixTimestamp
 
-For DateTime arguments: converts the value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+Converts a string, date or date with time to a `UInt32` number -- [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time).
 
-For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+The string argument is converted according to the timezone (optional second argument, server timezone is used by default).
 
 **Syntax**
 
 ``` sql
-toUnixTimestamp(datetime)
+toUnixTimestamp(date)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -377,15 +377,27 @@ Type: `UInt32`.
 **Example**
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+SELECT
+    '2017-11-05 08:07:47' AS dt_str,
+    toUnixTimestamp(dt_str) AS from_str,
+    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDate(dt_str)) AS from_date,
+    toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
 ```
 
 Result:
 
 ``` text
-┌─unix_timestamp─┐
-│     1509836867 │
-└────────────────┘
+Row 1:
+──────
+dt_str:         2017-11-05 08:07:47
+from_str:       1509869267
+from_str_tokyo: 1509836867
+from_datetime:  1509869267
+from_date:      1509840000
+from_date32:    1509840000
 ```
 
 :::note
