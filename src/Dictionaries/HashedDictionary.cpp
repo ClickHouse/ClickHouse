@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Core/Defines.h>
 
@@ -68,6 +69,9 @@ public:
             shards_queues[shard].emplace(backlog);
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
+
                 if (thread_group)
                     CurrentThread::attachToGroupIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
@@ -226,6 +230,9 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            /// Do not account memory that was occupied by the dictionaries for the query/user context.
+            MemoryTrackerBlockerInThread memory_blocker;
+
             if (thread_group)
                 CurrentThread::attachToGroupIfDetached(thread_group);
             setThreadName("HashedDictDtor");
