@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Settings.h>
