@@ -10,7 +10,7 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   PythonUnitTests:
-    # runs-on: [self-hosted, style-checker, python-unit-test]
+    # runs-on: [self-hosted, style-checker, python-unittest]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
