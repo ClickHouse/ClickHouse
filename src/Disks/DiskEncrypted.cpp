@@ -348,6 +348,23 @@ size_t DiskEncrypted::getFileSize(const String & path) const
     return size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
 }
 
+UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
+{
+    auto wrapped_path = wrappedPath(path);
+    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    if (read_buffer->eof())
+        return 0;
+    auto header = readHeader(*read_buffer);
+    return header.init_vector.get();
+}
+
+size_t DiskEncrypted::getEncryptedFileSize(size_t unencrypted_size) const
+{
+    if (unencrypted_size)
+        return unencrypted_size + FileEncryption::Header::kSize;
+    return 0;
+}
+
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
     auto wrapped_path = wrappedPath(path);
