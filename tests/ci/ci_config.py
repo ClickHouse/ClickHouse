@@ -9,7 +9,7 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -19,7 +19,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "coverity": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
@@ -28,7 +28,7 @@ CI_CONFIG = {
             "official": False,
         },
         "package_aarch64": {
-            "compiler": "clang-15-aarch64",
+            "compiler": "clang-16-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -38,7 +38,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_asan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
@@ -46,7 +46,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_ubsan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
@@ -54,7 +54,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
@@ -62,7 +62,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_msan": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
@@ -70,7 +70,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_debug": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -78,7 +78,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_release": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -86,7 +86,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_tidy": {
-            "compiler": "clang-15",
+            "compiler": "clang-16",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
@@ -95,7 +95,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin": {
-            "compiler": "clang-15-darwin",
+            "compiler": "clang-16-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -104,7 +104,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64": {
-            "compiler": "clang-15-aarch64",
+            "compiler": "clang-16-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -112,7 +112,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64_v80compat": {
-            "compiler": "clang-15-aarch64-v80compat",
+            "compiler": "clang-16-aarch64-v80compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -121,7 +121,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_freebsd": {
-            "compiler": "clang-15-freebsd",
+            "compiler": "clang-16-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -130,7 +130,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-15-darwin-aarch64",
+            "compiler": "clang-16-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -139,7 +139,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_ppc64le": {
-            "compiler": "clang-15-ppc64le",
+            "compiler": "clang-16-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -148,7 +148,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_amd64_compat": {
-            "compiler": "clang-15-amd64-compat",
+            "compiler": "clang-16-amd64-compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",

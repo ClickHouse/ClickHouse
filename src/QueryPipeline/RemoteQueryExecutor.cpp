@@ -671,24 +671,24 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
-                data->creating_pipe_callback = [cur, limits, context = this->context]()
+                data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
+                        my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
                     QueryPlan plan;
                     cur->read(
                         plan,
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        storage_snapshot, query_info, context,
+                        storage_snapshot, query_info, my_context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(context),
-                        BuildQueryPipelineSettings::fromContext(context));
+                        QueryPlanOptimizationSettings::fromContext(my_context),
+                        BuildQueryPipelineSettings::fromContext(my_context));
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
