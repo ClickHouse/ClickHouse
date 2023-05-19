@@ -98,9 +98,9 @@ DynamicResourceManager::State::Resource::~Resource()
     if (attached_to != nullptr)
     {
         ISchedulerNode * root = nodes.find("/")->second.ptr.get();
-        attached_to->event_queue->enqueue([scheduler = attached_to, root]
+        attached_to->event_queue->enqueue([my_scheduler = attached_to, root]
         {
-            scheduler->removeChild(root);
+            my_scheduler->removeChild(root);
         });
     }
 }
