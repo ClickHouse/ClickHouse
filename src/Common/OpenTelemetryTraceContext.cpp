@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -135,6 +136,14 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
         return;
     }
 
+    /// This logging is added for debug purposes, delete it when https://github.com/ClickHouse/ClickHouse/issues/49185 is resolved.
+    LOG_TEST(
+        &Poco::Logger::get("SpanHolder"),
+        "New SpanHolder. Fiber id: {}, parent span_id: {}, new span_id: {}",
+        UInt64(AsyncTaskExecutor::getCurrentFiberInfo().fiber),
+        this->parent_span_id,
+        this->span_id);
+
     /// Set current span as parent of other spans created later on this thread.
     current_fiber_trace_context->span_id = this->span_id;
 }
@@ -143,6 +152,16 @@ void SpanHolder::finish() noexcept
 {
     if (!this->isTraceEnabled())
         return;
+
+    /// This logging is added for debug purposes, delete it when https://github.com/ClickHouse/ClickHouse/issues/49185 is resolved.
+    LOG_TEST(
+        &Poco::Logger::get("SpanHolder"),
+        "Finish SpanHolder. Fiber id: {}, span_id: {}, current_fiber_trace_context.span_id: {}, parent_span_id: {}",
+        UInt64(AsyncTaskExecutor::getCurrentFiberInfo().fiber),
+        span_id,
+        current_fiber_trace_context->span_id,
+        parent_span_id
+        );
 
     // First of all, restore old value of current span.
     assert(current_fiber_trace_context->span_id == span_id);
