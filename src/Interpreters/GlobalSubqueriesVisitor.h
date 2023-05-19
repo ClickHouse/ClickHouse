@@ -205,7 +205,7 @@ public:
     }
 
 private:
-    static bool should_be_executed_globally(const Data & data)
+    static bool shouldBeExecutedGlobally(const Data & data)
     {
         const Settings & settings = data.getContext()->getSettingsRef();
         /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
@@ -217,7 +217,7 @@ private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((should_be_executed_globally(data)
+        if ((shouldBeExecutedGlobally(data)
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
@@ -247,7 +247,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || should_be_executed_globally(data)))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;
