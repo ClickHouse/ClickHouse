@@ -135,7 +135,6 @@ private:
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
     Int64 priority;                    /// priority from <remote_servers>
-
 };
 
 /**
