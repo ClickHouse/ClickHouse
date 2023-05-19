@@ -78,8 +78,6 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
-    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
-    extern const int FAILED_TO_GETPWUID;
     extern const int LOGICAL_ERROR;
 }
 
