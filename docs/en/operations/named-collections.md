@@ -57,8 +57,7 @@ In the above example the `passowrd_sha256_hex` value is the hexadecimal represen
 
 ### XML example
 
-```xml
-$ cat /etc/clickhouse-server/config.d/named_collections.xml
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
 <clickhouse>
      <named_collections>
         <name>
@@ -68,6 +67,27 @@ $ cat /etc/clickhouse-server/config.d/named_collections.xml
         </name>
      </named_collections>
 </clickhouse>
+```
+
+## Modifying named collections
+
+Named collections that are created with DDL queries can be altered or dropped with DDL.  Named collections created with XML files can be managed by editing or deleting the corresponding XML.
+
+### Alter a DDL named collection
+
+Change or add the keys `key1` and `key3` of the collection `collection2`:
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
+```
+
+Remove the key `key2` from `collection2`:
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key2
+```
+
+### Drop the DDL named collection `collection2`:
+```sql
+DROP NAMED COLLECTION collection2
 ```
 
 ## Named collections for accessing S3
@@ -389,3 +409,4 @@ SELECT dictGet('dict', 'b', 1);
 │ a                       │
 └─────────────────────────┘
 ```
+
