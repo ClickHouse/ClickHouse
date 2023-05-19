@@ -7,7 +7,7 @@
 
 # 2023 Changelog
 
-### <a id="234"></a> ClickHouse release 23.4 LTS, 2023-04-26
+### <a id="234"></a> ClickHouse release 23.4, 2023-04-26
 
 #### Backward Incompatible Change
 * Formatter '%M' in function formatDateTime() now prints the month name instead of the minutes. This makes the behavior consistent with MySQL. The previous behavior can be restored using setting "formatdatetime_parsedatetime_m_is_month_name = 0". [#47246](https://github.com/ClickHouse/ClickHouse/pull/47246) ([Robert Schulze](https://github.com/rschu1ze)).
