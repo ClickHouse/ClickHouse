@@ -100,6 +100,8 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
         prewhere_actions->steps.emplace_back(std::move(prewhere_step));
     }
+
+    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
 

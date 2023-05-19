@@ -462,13 +462,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);
         }
 
-        if (index_granularity_rows > data_part->index_granularity_info.fixed_index_granularity)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Mark #{} has {} rows, but max fixed granularity is {}, index granularity size {}",
-                            mark_num, index_granularity_rows, data_part->index_granularity_info.fixed_index_granularity, index_granularity.getMarksCount());
-        }
-
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for part {} for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",

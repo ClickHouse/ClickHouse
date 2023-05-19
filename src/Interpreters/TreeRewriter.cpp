@@ -1253,9 +1253,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
-
-
     if (getContext()->getSettingsRef().enable_positional_arguments)
     {
         if (select_query->groupBy())
@@ -1274,6 +1271,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
         }
     }
+
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

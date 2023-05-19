@@ -17,9 +17,9 @@ namespace Format
 {
     using IndexPositions = PODArrayWithStackMemory<UInt64, 64>;
 
-    static inline void parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 & res, UInt64 argument_number)
+    static inline UInt64 parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 argument_number)
     {
-        res = 0;
+        UInt64 res = 0;
         for (UInt64 pos = l; pos < r; ++pos)
         {
             if (!isNumericASCII(description[pos]))
@@ -29,6 +29,7 @@ namespace Format
                 throw Exception(
                     "Too big number for arguments, must be at most " + std::to_string(argument_number - 1), ErrorCodes::BAD_ARGUMENTS);
         }
+        return res;
     }
 
     static inline void init(
@@ -134,8 +135,7 @@ namespace Format
                             "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
                     is_plain_numbering = false;
 
-                    UInt64 arg;
-                    parseNumber(pattern, last_open, i, arg, argument_number);
+                    UInt64 arg = parseNumber(pattern, last_open, i, argument_number);
 
                     if (arg >= argument_number)
                         throw Exception(

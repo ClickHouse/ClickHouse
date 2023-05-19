@@ -673,10 +673,9 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
         // Setting alters should be executed on all replicas
-        if (alter->isSettingsAlter())
-            return false;
-
-        if (alter->isFreezeAlter())
+        if (alter->isSettingsAlter() ||
+            alter->isFreezeAlter() ||
+            alter->isMovePartitionToDiskOrVolumeAlter())
             return false;
     }
 

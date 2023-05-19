@@ -9,25 +9,24 @@ import atexit
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import (
-    post_commit_status,
-    update_mergeable_check,
-)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from stopwatch import Stopwatch
+from commit_status_helper import (
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_pull_helper import get_image_with_version
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ccache_utils import get_ccache_if_not_exists, upload_ccache
+from upload_result_helper import upload_results
 
 NAME = "Fast test"
 
@@ -35,18 +34,18 @@ NAME = "Fast test"
 csv.field_size_limit(sys.maxsize)
 
 
-def get_fasttest_cmd(
-    workspace, output_path, ccache_path, repo_path, pr_number, commit_sha, image
-):
+def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, image):
     return (
         f"docker run --cap-add=SYS_PTRACE "
+        "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
         f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE "
+        f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
+        f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
-        f"--volume={output_path}:/test_output "
-        f"--volume={ccache_path}:/fasttest-workspace/ccache {image}"
+        f"--volume={output_path}:/test_output {image}"
     )
 
 
@@ -118,21 +117,6 @@ if __name__ == "__main__":
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    if not os.path.exists(CACHES_PATH):
-        os.makedirs(CACHES_PATH)
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {CACHES_PATH}", shell=True)
-    cache_path = os.path.join(CACHES_PATH, "fasttest")
-
-    logging.info("Will try to fetch cache for our build")
-    ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
-    )
-    upload_master_ccache = ccache_for_pr in (-1, 0)
-
-    if not os.path.exists(cache_path):
-        logging.info("cache was not fetched, will create empty dir")
-        os.makedirs(cache_path)
-
     repo_path = os.path.join(temp_path, "fasttest-repo")
     if not os.path.exists(repo_path):
         os.makedirs(repo_path)
@@ -140,7 +124,6 @@ if __name__ == "__main__":
     run_cmd = get_fasttest_cmd(
         workspace,
         output_path,
-        cache_path,
         repo_path,
         pr_info.number,
         pr_info.sha,
@@ -161,7 +144,6 @@ if __name__ == "__main__":
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {cache_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
     additional_logs = []
@@ -190,12 +172,6 @@ if __name__ == "__main__":
         state = "failure"
     else:
         state, description, test_results, additional_logs = process_results(output_path)
-
-    logging.info("Will upload cache")
-    upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
-    if upload_master_ccache:
-        logging.info("Will upload a fallback cache for master")
-        upload_ccache(cache_path, s3_helper, 0, temp_path)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)

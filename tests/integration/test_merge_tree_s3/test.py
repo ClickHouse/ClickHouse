@@ -16,6 +16,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=[
+                "configs/config.xml",
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
             ],
@@ -531,6 +532,8 @@ def test_freeze_unfreeze(cluster, node_name):
     # Unfreeze all partitions from backup2.
     node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
 
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
+
     # Data should be removed from S3.
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/"))) == FILES_OVERHEAD
@@ -562,6 +565,8 @@ def test_freeze_system_unfreeze(cluster, node_name):
 
     # Unfreeze all data from backup3.
     node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
+
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
 
     # Data should be removed from S3.
     assert (

@@ -38,6 +38,11 @@ public:
         from->formatImpl(settings, state, stacked);
         external_ddl->formatImpl(settings, state, stacked);
     }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&from));
+    }
 };
 
 }

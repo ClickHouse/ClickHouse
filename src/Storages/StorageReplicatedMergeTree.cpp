@@ -7932,9 +7932,35 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     return getZeroCopyPartPath(*getSettings(), toString(disk->getType()), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
+bool StorageReplicatedMergeTree::waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait)
+{
+    if (lock.isLocked())
+        return true;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed))
+        return true;
+
+    auto lock_path = lock.lock->getLockPath();
+    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
+    if (!zookeeper)
+        return true;
+
+    Stopwatch time_waiting;
+    const auto & stop_waiting = [&]()
+    {
+        bool timeout_exceeded = milliseconds_to_wait < time_waiting.elapsedMilliseconds();
+        return partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed) || timeout_exceeded;
+    };
+
+    return zookeeper->waitForDisappear(lock_path, stop_waiting);
+}
+
 std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk)
 {
     if (!disk || !disk->supportZeroCopyReplication())
+        return std::nullopt;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed))
         return std::nullopt;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -7949,10 +7975,8 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
 
     /// Create actual lock
     ZeroCopyLock lock(zookeeper, zc_zookeeper_path);
-    if (lock.lock->tryLock())
-        return lock;
-    else
-        return std::nullopt;
+    lock.lock->tryLock();
+    return lock;
 }
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(
@@ -8291,25 +8315,12 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     }
 }
 
-bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
+bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name)
 {
     if (disk->supportZeroCopyReplication())
     {
-        if (is_freezed)
-        {
-            FreezeMetaData meta;
-            if (meta.load(disk, path))
-            {
-                FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", getContext());
-            }
-        }
-        else
-        {
-            String table_id = getTableSharedID();
-
-            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext());
-        }
+        String table_id = getTableSharedID();
+        return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext(), current_zookeeper);
     }
 
     disk->removeRecursive(path);
@@ -8319,11 +8330,10 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context)
+    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper)
 {
     bool keep_shared = false;
 
-    zkutil::ZooKeeperPtr zookeeper = local_context->getZooKeeper();
     NameSet files_not_to_remove;
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;

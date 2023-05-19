@@ -6,11 +6,11 @@ import json
 import os
 import sys
 import time
-from shutil import rmtree
 from typing import List, Tuple
 
+from ci_config import CI_CONFIG, BuildConfig
+from docker_pull_helper import get_image_with_version
 from env_helper import (
-    CACHES_PATH,
     GITHUB_JOB,
     IMAGES_PATH,
     REPO_COPY,
@@ -20,16 +20,13 @@ from env_helper import (
 )
 from s3_helper import S3Helper
 from pr_info import PRInfo
+from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
     Git,
     get_version_from_repo,
     update_version_local,
 )
-from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import CI_CONFIG, BuildConfig
-from docker_pull_helper import get_image_with_version
-from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
@@ -55,7 +52,6 @@ def get_packager_cmd(
     output_path: str,
     build_version: str,
     image_version: str,
-    ccache_path: str,
     official: bool,
 ) -> str:
     package_type = build_config["package_type"]
@@ -74,8 +70,9 @@ def get_packager_cmd(
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
-    cmd += " --cache=ccache"
-    cmd += f" --ccache_dir={ccache_path}"
+    cmd += " --cache=sccache"
+    cmd += " --s3-rw-access"
+    cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
 
     if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
@@ -176,7 +173,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-):
+) -> None:
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -199,19 +196,21 @@ def create_json_artifact(
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
+    "Return prefixes for S3 artifacts paths"
     # FIXME performance
     # performance builds are havily relies on a fixed path for artifacts, that's why
     # we need to preserve 0 for anything but PR number
     # It should be fixed in performance-comparison image eventually
-    performance_pr = "0"
+    # For performance tests we always set PRs prefix
+    performance_pr = "PRs/0"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
-    elif pr_info.number == 0:
+    if pr_info.number == 0:
         # for pushes to master - major version
         return f"{version.major}.{version.minor}", performance_pr
     # PR number for anything else
-    pr_number = str(pr_info.number)
+    pr_number = f"PRs/{pr_info.number}"
     return pr_number, pr_number
 
 
@@ -220,7 +219,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-):
+) -> None:
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
@@ -289,29 +288,12 @@ def main():
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
-    ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
-
-    logging.info("Will try to fetch cache for our build")
-    try:
-        get_ccache_if_not_exists(
-            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
-        )
-    except Exception as e:
-        # In case there are issues with ccache, remove the path and do not fail a build
-        logging.info("Failed to get ccache, building without it. Error: %s", e)
-        rmtree(ccache_path, ignore_errors=True)
-
-    if not os.path.exists(ccache_path):
-        logging.info("cache was not fetched, will create empty dir")
-        os.makedirs(ccache_path)
-
     packager_cmd = get_packager_cmd(
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
         version.string,
         image_version,
-        ccache_path,
         official_flag,
     )
 
@@ -327,12 +309,7 @@ def main():
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
-
-    # Upload the ccache first to have the least build time in case of problems
-    logging.info("Will upload cache")
-    upload_ccache(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
 
     # FIXME performance
     performance_urls = []

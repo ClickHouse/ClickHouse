@@ -264,9 +264,9 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
         DiskPtr tmp_disk{nullptr};
@@ -286,7 +286,8 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::vector<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
+        size_t max_delayed_streams = 0;
+        std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;

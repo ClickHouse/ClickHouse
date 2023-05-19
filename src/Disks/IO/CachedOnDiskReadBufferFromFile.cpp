@@ -1226,7 +1226,7 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         implementation_buffer_read_range_str = "None";
 
     String current_file_segment_info;
-    if (current_file_segment_it == file_segments_holder->file_segments.end())
+    if (current_file_segment_it != file_segments_holder->file_segments.end())
         current_file_segment_info = (*current_file_segment_it)->getInfoForLog();
     else
         current_file_segment_info = "None";

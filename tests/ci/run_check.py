@@ -7,10 +7,11 @@ from typing import Tuple
 from github import Github
 
 from commit_status_helper import (
+    format_description,
     get_commit,
     post_labels,
     remove_labels,
-    reset_mergeable_check,
+    set_mergeable_check,
 )
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
@@ -94,17 +95,17 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     if DO_NOT_TEST_LABEL in pr_info.labels:
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
+    if OK_SKIP_LABELS.intersection(pr_info.labels):
+        return (
+            True,
+            "Don't try new checks for release/backports/cherry-picks",
+            "success",
+        )
+
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
         return False, "Needs 'can be tested' label", "failure"
-
-    if OK_SKIP_LABELS.intersection(pr_info.labels):
-        return (
-            False,
-            "Don't try new checks for release/backports/cherry-picks",
-            "success",
-        )
 
     return True, "No special conditions apply", "pending"
 
@@ -154,7 +155,7 @@ def check_pr_description(pr_info) -> Tuple[str, str]:
                     + second_category
                     + "'"
                 )
-                return result_status[:140], category
+                return result_status, category
 
         elif re.match(
             r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
@@ -195,7 +196,18 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
+    # The case for special branches like backports and releases without created
+    # PRs, like merged backport branches that are reset immediately after merge
+    if pr_info.number == 0:
+        print("::notice ::Cannot run, no PR exists for the commit")
+        sys.exit(1)
+
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
+        print("::notice :: Early finish the check, running in a special PR")
+        sys.exit(0)
+
+    description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
@@ -228,7 +240,7 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    reset_mergeable_check(commit, "skipped")
+    set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(
@@ -246,7 +258,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_error[:139],
+            description=format_description(description_error),
             state="failure",
             target_url=url,
         )

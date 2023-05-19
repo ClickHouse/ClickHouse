@@ -453,6 +453,17 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     ctx->column_num_for_vertical_merge = 0;
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
+    const auto & settings = global_ctx->context->getSettingsRef();
+    size_t max_delayed_streams = 0;
+    if (global_ctx->new_data_part->data_part_storage->supportParallelWrite())
+    {
+        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
+            max_delayed_streams = settings.max_insert_delayed_streams_for_parallel_write;
+        else
+            max_delayed_streams = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+    }
+    ctx->max_delayed_streams = max_delayed_streams;
+
     return false;
 }
 
@@ -544,6 +555,12 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
 
     ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
+
+    while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
+    {
+        ctx->delayed_streams.front()->finish(ctx->need_sync);
+        ctx->delayed_streams.pop_front();
+    }
 
     if (global_ctx->rows_written != ctx->column_elems_written)
     {
@@ -950,10 +967,17 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
+    if (global_ctx->future_part->type != MergeTreeDataPartType::Wide)
+        return MergeAlgorithm::Horizontal;
 
-    for (const auto & part : global_ctx->future_part->parts)
-        if (!part->supportsVerticalMerge())
-            return MergeAlgorithm::Horizontal;
+    if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            if (part->getType() != MergeTreeDataPartType::Wide)
+                return MergeAlgorithm::Horizontal;
+        }
+    }
 
     bool is_supported_storage =
         ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||

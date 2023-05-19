@@ -94,16 +94,17 @@ class ReportColorTheme:
 
 
 def _format_header(header, branch_name, branch_url=None):
-    result = " ".join([w.capitalize() for w in header.split(" ")])
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
     result = result.replace("Clickhouse", "ClickHouse")
     result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
-        result = "ClickHouse " + result
-    result += " for "
+        result = f"ClickHouse {result}"
     if branch_url:
-        result += '<a href="{url}">{name}</a>'.format(url=branch_url, name=branch_name)
+        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
     else:
-        result += branch_name
+        result = f"{result} for {branch_name}"
     return result
 
 

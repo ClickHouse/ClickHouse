@@ -41,6 +41,8 @@ public:
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_);
 
+    static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
+
     String getName() const override { return "Aggregating"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

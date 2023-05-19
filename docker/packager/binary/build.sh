@@ -6,6 +6,7 @@ exec &> >(ts)
 ccache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
 [ -O /build ] || git config --global --add safe.directory /build
@@ -97,7 +98,7 @@ ccache_status
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
   # shellcheck disable=SC2086
-  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
+  DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/install
   cp /build/programs/clickhouse-diagnostics /build/packages/root/usr/bin
   cp /build/programs/clickhouse-diagnostics /output
   bash -x /build/packages/build

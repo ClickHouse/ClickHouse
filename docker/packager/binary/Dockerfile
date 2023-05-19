@@ -19,7 +19,7 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
-    && make install \
+    && make install -j$(nproc) \
     && cd ../.. \
     && rm -rf cctools-port
 
@@ -28,21 +28,23 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
-    && make install \
+    && make install -j$(nproc) \
     && cd ../.. \
     && rm -rf cctools-port
 
 # Download toolchain and SDK for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
+# A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
-    && apt-get install gcc-11 g++-11 --yes \
+    && apt-get install \
+      binutils-riscv64-linux-gnu \
+      gcc-11 \
+      g++-11 \
+      --yes \
     && apt-get clean
-
-# A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
-RUN apt-get install binutils-riscv64-linux-gnu
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
@@ -64,6 +66,10 @@ ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
 
+ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
+RUN curl -Lo /usr/bin/clang-tidy-cache \
+        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
+    && chmod +x /usr/bin/clang-tidy-cache
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
 
@@ -79,6 +85,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get install \
         clang-15 \
         clang-tidy-15 \
+        libclang-rt-15-dev \
         --yes --no-install-recommends \
     && apt-get clean
 

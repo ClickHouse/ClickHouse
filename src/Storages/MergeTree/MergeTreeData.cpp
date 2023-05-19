@@ -189,6 +189,21 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
+static std::optional<size_t> calculatePartSizeSafe(
+    const DataPartStoragePtr & data_part_storage, const String & part_name, Poco::Logger * log)
+{
+    try
+    {
+        return data_part_storage->calculateTotalSizeOnDisk();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("while calculating part size {} on path {}",
+                                                part_name, data_part_storage->getRelativePath()));
+        return {};
+    }
+}
+
 inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
@@ -1021,15 +1036,19 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (part_disk_ptr->exists(marker_path))
         {
             /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
-            size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            auto size_of_part = calculatePartSizeSafe(data_part_storage, part_name, log);
+            auto part_size_str = size_of_part ? formatReadableSizeWithBinarySuffix(*size_of_part) : "failed to calculate size";
+
             LOG_WARNING(log,
                 "Detaching stale part {}{} (size: {}), which should have been deleted after a move. "
                 "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
-            suspicious_broken_parts_bytes += size_of_part;
+            if (size_of_part)
+                suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
 
@@ -1058,17 +1077,20 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (broken)
         {
             /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
-            size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            auto size_of_part = calculatePartSizeSafe(data_part_storage, part_name, log);
+            auto part_size_str = size_of_part ? formatReadableSizeWithBinarySuffix(*size_of_part) : "failed to calculate size";
 
             LOG_ERROR(log,
-                "Detaching broken part {}{} (size: {}). "
-                "If it happened after update, it is likely because of backward incompability. "
-                "You need to resolve this manually",
-                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                      "Detaching broken part {}{} (size: {}). "
+                      "If it happened after update, it is likely because of backward incompatibility. "
+                      "You need to resolve this manually",
+                      getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
-            suspicious_broken_parts_bytes += size_of_part;
+            if (size_of_part)
+                suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
         if (!part->index_granularity_info.is_adaptive)
@@ -1941,7 +1963,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
         LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
         old_name.clear();
     }
@@ -4629,7 +4651,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
@@ -6285,7 +6307,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
     return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, local_context);
 }
 
-bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const String &, bool)
+bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const String &)
 {
     disk->removeRecursive(path);
 
@@ -6300,7 +6322,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
 
     auto disks = getStoragePolicy()->getDisks();
 
-    return Unfreezer().unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path, local_context);
+    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
@@ -6454,7 +6476,7 @@ bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr spa
     if (moving_tagger->parts_to_move.empty())
         return false;
 
-    return moveParts(moving_tagger);
+    return moveParts(moving_tagger, true);
 }
 
 MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
@@ -6511,7 +6533,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
+bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
@@ -6550,21 +6572,41 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
             {
-                /// If we acuqired lock than let's try to move. After one
-                /// replica will actually move the part from disk to some
-                /// zero-copy storage other replicas will just fetch
-                /// metainformation.
-                if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part->name, disk); lock)
+                /// This loop is not endless, if shutdown called/connection failed/replica became readonly
+                /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
+                while (true)
                 {
-                    cloned_part = parts_mover.clonePart(moving_part);
-                    parts_mover.swapClonedPart(cloned_part);
-                }
-                else
-                {
-                    /// Move will be retried but with backoff.
-                    LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
-                    result = false;
-                    continue;
+                    /// If we acquired lock than let's try to move. After one
+                    /// replica will actually move the part from disk to some
+                    /// zero-copy storage other replicas will just fetch
+                    /// metainformation.
+                    if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part->name, disk); lock)
+                    {
+                        if (lock->isLocked())
+                        {
+                            cloned_part = parts_mover.clonePart(moving_part);
+                            parts_mover.swapClonedPart(cloned_part);
+                            break;
+                        }
+                        else if (wait_for_move_if_zero_copy)
+                        {
+                            LOG_DEBUG(log, "Other replica is working on move of {}, will wait until lock disappear", moving_part.part->name);
+                            /// Wait and checks not only for timeout but also for shutdown and so on.
+                            while (!waitZeroCopyLockToDisappear(*lock, 3000))
+                            {
+                                LOG_DEBUG(log, "Waiting until some replica will move {} and zero copy lock disappear", moving_part.part->name);
+                            }
+                        }
+                        else
+                            break;
+                    }
+                    else
+                    {
+                        /// Move will be retried but with backoff.
+                        LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
+                        result = false;
+                        break;
+                    }
                 }
             }
             else /// Ordinary move as it should be

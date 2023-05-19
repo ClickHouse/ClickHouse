@@ -326,7 +326,7 @@ public:
     void checkBrokenDisks();
 
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context);
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -824,7 +824,7 @@ private:
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
-    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
+    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
     /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
@@ -838,8 +838,13 @@ private:
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
-    /// If somebody already holding the lock -- return std::nullopt.
+    /// If no connection to zookeeper, shutdown, readonly -- return std::nullopt.
+    /// If somebody already holding the lock -- return unlocked ZeroCopyLock object (not std::nullopt).
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
+
+    /// Wait for ephemral lock to disappear. Return true if table shutdown/readonly/timeout exceeded, etc.
+    /// Or if node actually disappeared.
+    bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

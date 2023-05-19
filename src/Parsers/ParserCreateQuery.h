@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -169,6 +170,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr type;
     String default_specifier;
     std::optional<bool> null_modifier;
+    bool ephemeral_default = false;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -234,8 +236,21 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (s_ephemeral.ignore(pos, expected))
     {
         default_specifier = s_ephemeral.getName();
-        if (!literal_parser.parse(pos, default_expression, expected) && type)
-            default_expression = std::make_shared<ASTLiteral>(Field());
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
+        {
+            ephemeral_default = true;
+
+            auto default_function = std::make_shared<ASTFunction>();
+            default_function->name = "defaultValueOfTypeName";
+            default_function->arguments = std::make_shared<ASTExpressionList>();
+
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings settings{buf, true};
+            type->as<ASTFunction>()->format(settings);
+
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(buf.str()));
+            default_expression = default_function;
+        }
 
         if (!default_expression && !type)
             return false;
@@ -301,6 +316,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     column_declaration->default_specifier = default_specifier;
     if (default_expression)
     {
+        column_declaration->ephemeral_default = ephemeral_default;
         column_declaration->default_expression = default_expression;
         column_declaration->children.push_back(std::move(default_expression));
     }
