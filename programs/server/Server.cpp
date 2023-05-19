@@ -213,8 +213,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int FAILED_TO_GETPWUID;
-    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
 }
