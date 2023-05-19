@@ -18,7 +18,7 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
-      - name: Labels check
+      - name: Label check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
