@@ -669,11 +669,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 }
 
 
-void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
-    const String & path,
-    WriteMode mode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-        custom_write_object_function)
+void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
+    const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
     auto blob_name = object_storage.generateBlobNameForPath(path);
@@ -694,8 +691,16 @@ void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
 
     operations_to_execute.emplace_back(std::move(write_operation));
 
+    /// See DiskObjectStorage::getBlobPath().
+    Strings blob_path;
+    blob_path.reserve(2);
+    blob_path.emplace_back(object.remote_path);
+    String objects_namespace = object_storage.getObjectsNamespace();
+    if (!objects_namespace.empty())
+        blob_path.emplace_back(objects_namespace);
+
     /// We always use mode Rewrite because we simulate append using metadata and different files
-    size_t object_size = std::move(custom_write_object_function)(object, WriteMode::Rewrite, object_attributes);
+    size_t object_size = std::move(write_blob_function)(blob_path, WriteMode::Rewrite, object_attributes);
 
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
