@@ -492,8 +492,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     for (const auto & index : indices)
     {
         bool has_index =
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
+            source_part->meta.checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
+            source_part->meta.checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
         if (!has_index && materialized_indices.contains(index.name))
         {
@@ -555,7 +555,7 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         // If we ask to materialize and it doesn't exist
-        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.contains(projection.name))
+        if (!source_part->meta.checksums.has(projection.name + ".proj") && materialized_projections.contains(projection.name))
         {
             projections_to_recalc.insert(&projection);
         }
@@ -615,7 +615,7 @@ static NameSet collectFilesToSkip(
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
-    files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+    files_to_skip.insert(DataPartMetadata::SERIALIZATION_FILE_NAME);
 
     auto new_stream_counts = getStreamCounts(new_part, new_part->getColumns().getNames());
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
@@ -684,12 +684,12 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
+            if (source_part->meta.checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
             {
                 add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
                 add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
             }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            else if (source_part->meta.checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
                 add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
@@ -697,7 +697,7 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
         {
-            if (source_part->checksums.has(command.column_name + ".proj"))
+            if (source_part->meta.checksums.has(command.column_name + ".proj"))
                 add_rename(command.column_name + ".proj", "");
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
@@ -759,7 +759,7 @@ static NameToNameVector collectFilesForRenames(
     if (!source_part->getSerializationInfos().empty()
         && new_part->getSerializationInfos().empty())
     {
-        rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+        rename_vector.emplace_back(DataPartMetadata::SERIALIZATION_FILE_NAME, "");
     }
 
     return rename_vector;
@@ -778,13 +778,13 @@ void finalizeMutatedPart(
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
-    if (new_data_part->uuid != UUIDHelpers::Nil)
+    if (new_data_part->meta.uuid != UUIDHelpers::Nil)
     {
-        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(DataPartMetadata::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
-        writeUUIDText(new_data_part->uuid, out_hashing);
-        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+        writeUUIDText(new_data_part->meta.uuid, out_hashing);
+        new_data_part->meta.checksums.files[DataPartMetadata::UUID_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->meta.checksums.files[DataPartMetadata::UUID_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out));
     }
 
@@ -793,37 +793,37 @@ void finalizeMutatedPart(
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
-        new_data_part->ttl_infos.write(out_hashing);
-        new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
-        new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+        new_data_part->meta.ttl_infos.write(out_hashing);
+        new_data_part->meta.checksums.files["ttl.txt"].file_size = out_hashing.count();
+        new_data_part->meta.checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_ttl));
     }
 
     if (!new_data_part->getSerializationInfos().empty())
     {
-        auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
+        auto out_serialization = new_data_part->getDataPartStorage().writeFile(DataPartMetadata::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
-        new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-        new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        new_data_part->meta.checksums.files[DataPartMetadata::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->meta.checksums.files[DataPartMetadata::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
     }
 
     {
         /// Write file with checksums.
         auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
-        new_data_part->checksums.write(*out_checksums);
+        new_data_part->meta.checksums.write(*out_checksums);
         written_files.push_back(std::move(out_checksums));
     }
 
     {
-        auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
+        auto out_comp = new_data_part->getDataPartStorage().writeFile(DataPartMetadata::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
     {
-        auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
+        auto out_metadata = new_data_part->getDataPartStorage().writeFile(DataPartMetadata::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         written_files.push_back(std::move(out_metadata));
     }
@@ -844,10 +844,10 @@ void finalizeMutatedPart(
     /// Close files
     written_files.clear();
 
-    new_data_part->rows_count = source_part->rows_count;
+    new_data_part->meta.rows_count = source_part->meta.rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
     new_data_part->index = source_part->index;
-    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->meta.minmax_idx = source_part->meta.minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
     /// This line should not be here because at that moment
@@ -858,11 +858,11 @@ void finalizeMutatedPart(
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
-    new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
+    new_data_part->setBytesOnDisk(new_data_part->meta.checksums.getTotalSizeOnDisk());
     /// Also use information from checksums
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    new_data_part->default_codec = codec;
+    new_data_part->meta.default_codec = codec;
 }
 
 }
@@ -914,7 +914,7 @@ struct MutationContext
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
+    MinMaxIndexPtr minmax_idx{nullptr};
 
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
@@ -1330,7 +1330,7 @@ private:
         /// (which is locked in shared mode when input streams are created) and when inserting new data
         /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
         /// deadlock is impossible.
-        ctx->compression_codec = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        ctx->compression_codec = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->meta.ttl_infos, ctx->time_of_mutation);
 
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
@@ -1354,7 +1354,7 @@ private:
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
             builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
-        ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx = std::make_shared<MinMaxIndex>();
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1379,7 +1379,7 @@ private:
 
     void finalize()
     {
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->new_data_part->meta.minmax_idx = std::move(ctx->minmax_idx);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
@@ -1533,9 +1533,9 @@ private:
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
-        ctx->new_data_part->checksums = ctx->source_part->checksums;
+        ctx->new_data_part->meta.checksums = ctx->source_part->meta.checksums;
 
-        ctx->compression_codec = ctx->source_part->default_codec;
+        ctx->compression_codec = ctx->source_part->meta.default_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
@@ -1580,22 +1580,22 @@ private:
 
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
-            ctx->new_data_part->checksums.add(std::move(changed_checksums));
+                    ctx->new_data_part, ctx->new_data_part->meta.checksums);
+            ctx->new_data_part->meta.checksums.add(std::move(changed_checksums));
 
             static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
+            if (rename_to.empty() && ctx->new_data_part->meta.checksums.files.contains(rename_from))
             {
-                ctx->new_data_part->checksums.files.erase(rename_from);
+                ctx->new_data_part->meta.checksums.files.erase(rename_from);
             }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
+            else if (ctx->new_data_part->meta.checksums.files.contains(rename_from))
             {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
+                ctx->new_data_part->meta.checksums.files[rename_to] = ctx->new_data_part->meta.checksums.files[rename_from];
+                ctx->new_data_part->meta.checksums.files.erase(rename_from);
             }
         }
 
@@ -1833,9 +1833,9 @@ bool MutateTask::prepare()
     ctx->new_data_part = std::move(builder).build();
     ctx->new_data_part->getDataPartStorage().beginTransaction();
 
-    ctx->new_data_part->uuid = ctx->future_part->uuid;
+    ctx->new_data_part->meta.uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
-    ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
+    ctx->new_data_part->meta.ttl_infos = ctx->source_part->meta.ttl_infos;
 
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
@@ -1845,13 +1845,13 @@ bool MutateTask::prepare()
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
-    ctx->new_data_part->partition.assign(ctx->source_part->partition);
+    ctx->new_data_part->meta.partition.assign(ctx->source_part->meta.partition);
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
     const auto data_settings = ctx->data->getSettings();
-    ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
+    ctx->need_sync = needSyncPart(ctx->source_part->meta.rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
     if (ctx->mutating_pipeline_builder.initialized())

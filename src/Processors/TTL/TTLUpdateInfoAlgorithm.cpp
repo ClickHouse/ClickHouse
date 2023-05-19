@@ -33,31 +33,31 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
 {
     if (ttl_update_field == TTLUpdateField::RECOMPRESSION_TTL)
     {
-        data_part->ttl_infos.recompression_ttl[ttl_update_key] = new_ttl_info;
+        data_part->meta.ttl_infos.recompression_ttl[ttl_update_key] = new_ttl_info;
     }
     else if (ttl_update_field == TTLUpdateField::MOVES_TTL)
     {
-        data_part->ttl_infos.moves_ttl[ttl_update_key] = new_ttl_info;
+        data_part->meta.ttl_infos.moves_ttl[ttl_update_key] = new_ttl_info;
     }
     else if (ttl_update_field == TTLUpdateField::GROUP_BY_TTL)
     {
-        data_part->ttl_infos.group_by_ttl[ttl_update_key] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        data_part->meta.ttl_infos.group_by_ttl[ttl_update_key] = new_ttl_info;
+        data_part->meta.ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
     else if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
     {
-        data_part->ttl_infos.rows_where_ttl[ttl_update_key] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        data_part->meta.ttl_infos.rows_where_ttl[ttl_update_key] = new_ttl_info;
+        data_part->meta.ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
     else if (ttl_update_field == TTLUpdateField::TABLE_TTL)
     {
-        data_part->ttl_infos.table_ttl = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        data_part->meta.ttl_infos.table_ttl = new_ttl_info;
+        data_part->meta.ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
     else if (ttl_update_field == TTLUpdateField::COLUMNS_TTL)
     {
-        data_part->ttl_infos.columns_ttl[ttl_update_key] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        data_part->meta.ttl_infos.columns_ttl[ttl_update_key] = new_ttl_info;
+        data_part->meta.ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
 
 }

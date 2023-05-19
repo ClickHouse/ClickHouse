@@ -164,8 +164,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
             projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
+            projection_part->meta.checksums.getTotalSizeOnDisk(),
+            projection_part->meta.checksums.getTotalChecksumUInt128());
 
     NameSet files_to_remove_after_sync;
     if (reset_columns)
@@ -183,16 +183,16 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
-    new_part->rows_count = rows_count;
+    new_part->meta.rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();
-    new_part->checksums = checksums;
+    new_part->meta.checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     if (default_codec != nullptr)
-        new_part->default_codec = default_codec;
+        new_part->meta.default_codec = default_codec;
 
     return Finalizer(std::move(finalizer));
 }
@@ -220,25 +220,25 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        if (new_part->uuid != UUIDHelpers::Nil)
+        if (new_part->meta.uuid != UUIDHelpers::Nil)
         {
-            auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
+            auto out = new_part->getDataPartStorage().writeFile(DataPartMetadata::UUID_FILE_NAME, 4096, write_settings);
             HashingWriteBuffer out_hashing(*out);
-            writeUUIDText(new_part->uuid, out_hashing);
-            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+            writeUUIDText(new_part->meta.uuid, out_hashing);
+            checksums.files[DataPartMetadata::UUID_FILE_NAME].file_size = out_hashing.count();
+            checksums.files[DataPartMetadata::UUID_FILE_NAME].file_hash = out_hashing.getHash();
             out->preFinalize();
             written_files.emplace_back(std::move(out));
         }
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(storage, new_part->getDataPartStorage(), checksums))
+            if (auto file = new_part->meta.partition.store(storage, new_part->getDataPartStorage(), checksums))
                 written_files.emplace_back(std::move(file));
 
-            if (new_part->minmax_idx->initialized)
+            if (new_part->meta.minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(storage, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->meta.minmax_idx->storeToOldStyleFiles(storage, new_part->getDataPartStorage(), checksums);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -259,12 +259,12 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         }
     }
 
-    if (!new_part->ttl_infos.empty())
+    if (!new_part->meta.ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
         auto out = new_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
         HashingWriteBuffer out_hashing(*out);
-        new_part->ttl_infos.write(out_hashing);
+        new_part->meta.ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -273,11 +273,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (!new_part->getSerializationInfos().empty())
     {
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(DataPartMetadata::SERIALIZATION_FILE_NAME, 4096, write_settings);
         HashingWriteBuffer out_hashing(*out);
         new_part->getSerializationInfos().writeJSON(out_hashing);
-        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        checksums.files[DataPartMetadata::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[DataPartMetadata::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }
@@ -292,7 +292,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     {
         /// Write a file with a description of columns.
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(DataPartMetadata::METADATA_VERSION_FILE_NAME, 4096, write_settings);
         DB::writeIntText(new_part->getMetadataVersion(), *out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
@@ -300,7 +300,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (default_codec != nullptr)
     {
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(DataPartMetadata::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));

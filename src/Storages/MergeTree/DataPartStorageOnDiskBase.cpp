@@ -429,13 +429,13 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     {
         external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
         external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        external_transaction->removeFileIfExists(fs::path(to) / dir_path / DataPartMetadata::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
         disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        disk->removeFileIfExists(fs::path(to) / dir_path / DataPartMetadata::METADATA_VERSION_FILE_NAME);
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);

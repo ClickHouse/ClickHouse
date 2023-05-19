@@ -972,8 +972,8 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         part_column->insert(part->name);
         partition_id_column->insert(part->info.partition_id);
-        part_uuid_column->insert(part->uuid);
-        Tuple tuple(part->partition.value.begin(), part->partition.value.end());
+        part_uuid_column->insert(part->meta.uuid);
+        Tuple tuple(part->meta.partition.value.begin(), part->meta.partition.value.end());
         if (has_partition_value)
             partition_value_column->insert(tuple);
 
@@ -1026,7 +1026,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     for (const auto & part : parts)
     {
         if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
-            res += part->rows_count;
+            res += part->meta.rows_count;
     }
     return res;
 }
@@ -1380,7 +1380,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     /// Remove duplicate parts with the same checksum.
     if (!inserted)
     {
-        if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
+        if ((*it)->meta.checksums.getTotalChecksumHex() == res.part->meta.checksums.getTotalChecksumHex())
         {
             LOG_ERROR(log, "Remove duplicate part {}", data_part_storage->getFullPath());
             res.part->is_duplicate = true;
@@ -1604,7 +1604,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 
         if (!inserted)
         {
-            if ((*it)->checksums.getTotalChecksumHex() == part->checksums.getTotalChecksumHex())
+            if ((*it)->meta.checksums.getTotalChecksumHex() == part->meta.checksums.getTotalChecksumHex())
                 LOG_ERROR(log, "Remove duplicate part {}", part->getDataPartStorage().getFullPath());
             else
                 throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", part->name);
@@ -2345,7 +2345,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.partition_id = part->info.partition_id;
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
-            part_log_elem.rows = part->rows_count;
+            part_log_elem.rows = part->meta.rows_count;
             part_log_elem.part_type = part->getType();
 
             part_log->add(part_log_elem);
@@ -2783,7 +2783,7 @@ size_t MergeTreeData::clearEmptyParts()
         auto parts = getDataPartsVectorForInternalUsage();
         for (const auto & part : parts)
         {
-            if (part->rows_count != 0)
+            if (part->meta.rows_count != 0)
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
@@ -3683,7 +3683,7 @@ void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock 
 {
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
-        if (part->partition.value != existing_part_in_partition->partition.value)
+        if (part->meta.partition.value != existing_part_in_partition->meta.partition.value)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Partition value mismatch between two parts with the same partition ID. "
                 "Existing part: {}, newly added part: {}", existing_part_in_partition->name, part->name);
     }
@@ -4590,7 +4590,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             modifyPartState(part_it, DataPartState::Active);
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
-            ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
+            ssize_t diff_rows = part_copy->meta.rows_count - original_active_part->meta.rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
 
             /// Move parts are non replicated operations, so we take lock here.
@@ -5198,7 +5198,7 @@ BackupEntries MergeTreeData::backupParts(
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
-            part->checksums,
+            part->meta.checksums,
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
             backup_settings,
@@ -5210,7 +5210,7 @@ BackupEntries MergeTreeData::backupParts(
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
             projection_part->getDataPartStorage().backup(
-                projection_part->checksums,
+                projection_part->meta.checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
@@ -5492,7 +5492,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     {
         auto data_parts_lock = (acquired_lock) ? DataPartsLock() : lockParts();
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
-        if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
+        if (existing_part_in_partition && existing_part_in_partition->meta.partition.value != partition.value)
         {
             WriteBufferFromOwnString buf;
             partition.serializeText(*this, buf, FormatSettings{});
@@ -6279,7 +6279,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                         covered_part->remove_time.store(current_time, std::memory_order_relaxed);
 
                         reduce_bytes += covered_part->getBytesOnDisk();
-                        reduce_rows += covered_part->rows_count;
+                        reduce_rows += covered_part->meta.rows_count;
 
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
@@ -6288,7 +6288,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                     reduce_parts += covered_parts.size();
 
                     add_bytes += part->getBytesOnDisk();
-                    add_rows += part->rows_count;
+                    add_rows += part->meta.rows_count;
                     ++add_parts;
 
                     data.modifyPartState(part, DataPartState::Active);
@@ -6579,7 +6579,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (part->isEmpty())
             continue;
 
-        if (!part->minmax_idx->initialized)
+        if (!part->meta.minmax_idx->initialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
 
         filter_column_data.emplace_back();
@@ -6592,7 +6592,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+            && !minmax_idx_condition->checkInHyperrectangle(part->meta.minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         if (partition_pruner)
@@ -6626,18 +6626,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
             for (const auto & part : real_parts)
-                partition_minmax_count_columns[pos]->insert(part->partition.value[i]);
+                partition_minmax_count_columns[pos]->insert(part->meta.partition.value[i]);
         ++pos;
     }
 
-    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
+    size_t minmax_idx_size = real_parts.front()->meta.minmax_idx->hyperrectangle.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->meta.minmax_idx->hyperrectangle[i];
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -6648,7 +6648,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->meta.minmax_idx->hyperrectangle[i];
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -6688,7 +6688,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            insert(column, part->rows_count);
+            insert(column, part->meta.rows_count);
         }
     }
 
@@ -7679,7 +7679,7 @@ try
         part_log_elem.disk_name = result_part->getDataPartStorage().getDiskName();
         part_log_elem.path_on_disk = result_part->getDataPartStorage().getFullPath();
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
-        part_log_elem.rows = result_part->rows_count;
+        part_log_elem.rows = result_part->meta.rows_count;
         part_log_elem.part_type = result_part->getType();
     }
 
@@ -8041,12 +8041,12 @@ size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 
 void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
+    increaseDataVolume(part->getBytesOnDisk(), part->meta.rows_count, 1);
 }
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    increaseDataVolume(-part->getBytesOnDisk(), -part->meta.rows_count, -1);
 }
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
@@ -8375,7 +8375,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     setAllObjectsToDummyTupleType(columns);
 
-    auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+    auto minmax_idx = std::make_shared<MinMaxIndex>();
     minmax_idx->update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
@@ -8389,14 +8389,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
         .build();
 
     if (settings->assign_part_uuids)
-        new_data_part->uuid = UUIDHelpers::generateV4();
+        new_data_part->meta.uuid = UUIDHelpers::generateV4();
 
     new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
-    new_data_part->rows_count = block.rows();
+    new_data_part->meta.rows_count = block.rows();
 
-    new_data_part->partition = partition;
+    new_data_part->meta.partition = partition;
 
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->meta.minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

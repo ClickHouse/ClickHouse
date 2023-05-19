@@ -206,8 +206,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-    global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
-    global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
+    global_ctx->new_data_part->meta.uuid = global_ctx->future_part->uuid;
+    global_ctx->new_data_part->meta.partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -227,7 +227,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        global_ctx->new_data_part->meta.ttl_infos.update(part->meta.ttl_infos);
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
             LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
@@ -240,7 +240,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             auto part_infos = part->getSerializationInfos();
 
             addMissedColumnsToSerializationInfos(
-                part->rows_count,
+                part->meta.rows_count,
                 part->getColumns().getNames(),
                 global_ctx->metadata_snapshot->getColumns(),
                 info_settings,
@@ -252,7 +252,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
-    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
+    const auto & local_part_min_ttl = global_ctx->new_data_part->meta.ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
@@ -275,7 +275,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
+        global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->meta.ttl_infos, global_ctx->time_of_merge);
 
     ctx->tmp_disk = global_ctx->context->getGlobalTemporaryVolume()->getDisk();
 
@@ -332,7 +332,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         size_t expired_columns = 0;
         auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
 
-        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+        for (auto & [column_name, ttl] : global_ctx->new_data_part->meta.ttl_infos.columns_ttl)
         {
             if (ttl.finished())
             {
@@ -660,7 +660,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         /// since they can incorrectly set min,
         /// that will be changed after one more merge/OPTIMIZE.
         if (!part->isEmpty())
-            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+            global_ctx->new_data_part->meta.minmax_idx->merge(*part->meta.minmax_idx);
     }
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages

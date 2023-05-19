@@ -12,16 +12,11 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/DataPartMetadata.h>
 
 
 namespace zkutil
@@ -57,6 +52,7 @@ enum class DataPartRemovalState
 };
 
 /// Description of the data part.
+/// TODO: Migrate everything related to immutable metadata files into DataPartMetadata.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
@@ -141,16 +137,16 @@ public:
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
 
     /// Version of metadata for part (columns, pk and so on)
-    int32_t getMetadataVersion() const { return metadata_version; }
+    int32_t getMetadataVersion() const { return meta.metadata_version; }
 
-    const NamesAndTypesList & getColumns() const { return columns; }
+    const NamesAndTypesList & getColumns() const { return meta.columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
-    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+    const SerializationInfoByName & getSerializationInfos() const { return meta.serialization_infos; }
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
@@ -190,7 +186,7 @@ public:
     /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
     std::pair<time_t, time_t> getMinMaxTime() const;
 
-    bool isEmpty() const { return rows_count == 0; }
+    bool isEmpty() const { return meta.rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
@@ -201,14 +197,13 @@ public:
     String name;
     MergeTreePartInfo info;
 
-    /// Part unique identifier.
-    /// The intention is to use it for identifying cases where the same part is
-    /// processed by multiple shards.
-    UUID uuid = UUIDHelpers::Nil;
+    DataPartMetadata meta;
 
     MergeTreeIndexGranularityInfo index_granularity_info;
 
-    size_t rows_count = 0;
+    /// Amount of rows between marks
+    /// As index always loaded into memory
+    MergeTreeIndexGranularity index_granularity;
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -250,8 +245,6 @@ public:
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
-    mutable TTLInfos ttl_infos;
-
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
     MergeTreeDataPartState getState() const;
@@ -281,59 +274,13 @@ public:
     using Index = Columns;
     Index index;
 
-    MergeTreePartition partition;
-
-    /// Amount of rows between marks
-    /// As index always loaded into memory
-    MergeTreeIndexGranularity index_granularity;
-
-    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-    /// parts based on conditions on these columns imposed by a query.
-    /// Currently this index is built using only columns required by partition expression, but in principle it
-    /// can be built using any set of columns.
-    struct MinMaxIndex
-    {
-        /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        std::vector<Range> hyperrectangle;
-        bool initialized = false;
-
-    public:
-        MinMaxIndex() = default;
-
-        /// For month-based partitioning.
-        MinMaxIndex(DayNum min_date, DayNum max_date)
-            : hyperrectangle(1, Range(min_date, true, max_date, true))
-            , initialized(true)
-        {
-        }
-
-        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
-
-        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
-
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
-
-        void update(const Block & block, const Names & column_names);
-        void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
-    };
-
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
-
-    MinMaxIndexPtr minmax_idx;
-
-    Checksums checksums;
-
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
-    CompressionCodecPtr default_codec;
-
+    /// Information about transaction that created or removed this part.
+    /// Stored in txn_version.txt
+    /// This file may be updated during part's lifetime.
     mutable VersionMetadata version;
-
-    /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -392,38 +339,6 @@ public:
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
-    /// File with compression codec name which was used to compress part columns
-    /// by default. Some columns may have their own compression codecs, but
-    /// default will be stored in this file.
-    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
-
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
-
-    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
-
-    /// File that contains information about kinds of serialization of columns
-    /// and information that helps to choose kind of serialization later during merging
-    /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
-
-    /// Version used for transactions.
-    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
-
-
-    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
-
-    /// One of part files which is used to check how many references (I'd like
-    /// to say hardlinks, but it will confuse even more) we have for the part
-    /// for zero copy replication. Sadly it's very complex.
-    ///
-    /// NOTE: it's not a random "metadata" file for part like 'columns.txt'. If
-    /// two relative parts (for example all_1_1_0 and all_1_1_0_100) has equal
-    /// checksums.txt it means that one part was obtained by FREEZE operation or
-    /// it was mutation without any change for source part. In this case we
-    /// really don't need to remove data from remote FS and need only decrement
-    /// reference counter locally.
-    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
-
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -468,7 +383,7 @@ public:
     bool supportLightweightDeleteMutate() const;
 
     /// True if here is lightweight deleted mask file in part.
-    bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
+    bool hasLightweightDelete() const { return meta.columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
@@ -483,6 +398,23 @@ public:
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
     mutable std::atomic<time_t> last_removal_attemp_time = 0;
+
+    /// TODO: static inline constexpr auto METADATA_FILE_NAME = "metadata.txt";
+    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
+    //asdqwe uh oh, research
+    /// One of part files which is used to check how many references (I'd like
+    /// to say hardlinks, but it will confuse even more) we have for the part
+    /// for zero copy replication. Sadly it's very complex.
+    ///
+    /// NOTE: it's not a random "metadata" file for part like 'columns.txt'. If
+    /// two relative parts (for example all_1_1_0 and all_1_1_0_100) has equal
+    /// checksums.txt it means that one part was obtained by FREEZE operation or
+    /// it was mutation without any change for source part. In this case we
+    /// really don't need to remove data from remote FS and need only decrement
+    /// reference counter locally.
+    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
 
 protected:
 
@@ -499,9 +431,6 @@ protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
-
-    /// Columns description. Cannot be changed, after part initialization.
-    NamesAndTypesList columns;
 
     const Type part_type;
 
@@ -546,9 +475,6 @@ private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
-    /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
-
     /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;
 
@@ -560,11 +486,6 @@ private:
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
 
-    /// Reads part unique identifier (if exists) from uuid.txt
-    void loadUUID();
-
-    static void appendFilesOfUUID(Strings & files);
-
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
@@ -573,12 +494,8 @@ private:
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    static void appendFilesOfChecksums(Strings & files);
-
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
-
-    virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads index file.
     void loadIndex();
@@ -588,13 +505,6 @@ private:
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
-
-    static void appendFilesOfRowsCount(Strings & files);
-
-    /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
-    void loadTTLInfos();
-
-    static void appendFilesOfTTLInfos(Strings & files);
 
     void loadPartitionAndMinMaxIndex();
 
@@ -614,10 +524,6 @@ private:
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
-
-    static void appendFilesOfDefaultCompressionCodec(Strings & files);
-
-    static void appendFilesOfMetadataVersion(Strings & files);
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.

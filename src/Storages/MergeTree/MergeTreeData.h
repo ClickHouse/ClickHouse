@@ -116,7 +116,7 @@ namespace ErrorCodes
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
 /// partition.dat - contains the value of the partitioning expression.
-/// minmax_[Column].idx - MinMax indexes (see IMergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
+/// minmax_[Column].idx - MinMax indexes (see MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special

@@ -68,8 +68,8 @@ MergedColumnOnlyOutputStream::fillChecksums(
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
             projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
+            projection_part->meta.checksums.getTotalSizeOnDisk(),
+            projection_part->meta.checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();

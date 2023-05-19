@@ -566,7 +566,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         if (partition.filterSelfDuplicate())
         {
             LOG_TRACE(log, "found duplicated inserts in the block");
-            partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            partition.block_with_partition.partition = std::move(partition.temp_part.part->meta.partition.value);
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
 
@@ -584,7 +584,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             partition.filterBlockDuplicate(conflict_block_ids, false);
             if (partition.block_id.empty())
                 break;
-            partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            partition.block_with_partition.partition = std::move(partition.temp_part.part->meta.partition.value);
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
     }
@@ -764,7 +764,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 /// We don't need to involve ZooKeeper to obtain checksums as by the time we get
                 /// MutableDataPartPtr here, we already have the data thus being able to
                 /// calculate the checksums.
-                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+                log_entry.part_checksum = part->meta.checksums.getTotalChecksumHex();
             }
             else
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;

@@ -134,7 +134,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->ttl_infos.moves_ttl, time_of_move, true);
+        auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->meta.ttl_infos.moves_ttl, time_of_move, true);
 
         auto to_insert = need_to_move.end();
         auto part_disk_name = part->getDataPartStorage().getDiskName();

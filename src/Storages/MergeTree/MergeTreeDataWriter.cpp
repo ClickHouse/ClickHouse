@@ -357,7 +357,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         if (column.type->hasDynamicSubcolumns())
             column.type = block.getByName(column.name).type;
 
-    auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+    auto minmax_idx = std::make_shared<MinMaxIndex>();
     minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
     MergeTreePartition partition(block_with_partition.partition);
@@ -456,7 +456,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     data_part_storage->beginTransaction();
 
     if (data.storage_settings.get()->assign_part_uuids)
-        new_data_part->uuid = UUIDHelpers::generateV4();
+        new_data_part->meta.uuid = UUIDHelpers::generateV4();
 
     const auto & data_settings = data.getSettings();
 
@@ -465,9 +465,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     infos.add(block);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-    new_data_part->rows_count = block.rows();
-    new_data_part->partition = std::move(partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->meta.rows_count = block.rows();
+    new_data_part->meta.partition = std::move(partition);
+    new_data_part->meta.minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -496,22 +496,22 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     }
 
     if (metadata_snapshot->hasRowsTTL())
-        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->meta.ttl_infos, new_data_part->meta.ttl_infos.table_ttl, block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
+        updateTTL(ttl_entry, new_data_part->meta.ttl_infos, new_data_part->meta.ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
+        updateTTL(ttl_entry, new_data_part->meta.ttl_infos, new_data_part->meta.ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+        updateTTL(ttl_entry, new_data_part->meta.ttl_infos, new_data_part->meta.ttl_infos.columns_ttl[name], block, true);
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     for (const auto & ttl_entry : recompression_ttl_entries)
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
+        updateTTL(ttl_entry, new_data_part->meta.ttl_infos, new_data_part->meta.ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
-    new_data_part->ttl_infos.update(move_ttl_infos);
+    new_data_part->meta.ttl_infos.update(move_ttl_infos);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.

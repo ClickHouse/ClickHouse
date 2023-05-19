@@ -187,13 +187,13 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
+std::unique_ptr<MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
 {
     if (!statistics)
         return nullptr;
 
     size_t range_num = index_names_and_types.size();
-    auto idx = std::make_unique<IMergeTreeDataPart::MinMaxIndex>();
+    auto idx = std::make_unique<MinMaxIndex>();
     idx->hyperrectangle.resize(range_num, Range::createWholeUniverseWithoutNull());
 
     size_t i = 0;
@@ -306,7 +306,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     for (size_t i = 0; i < num_row_groups; ++i)
     {
         auto row_group_meta = meta->RowGroup(static_cast<int>(i));
-        split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        split_minmax_idxes[i] = std::make_shared<MinMaxIndex>();
         split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
 
         size_t j = 0;

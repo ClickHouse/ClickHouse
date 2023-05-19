@@ -105,15 +105,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         /// Print column name but don't pollute logs in case of many columns.
         if (columns_to_read.size() == 1)
             LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
+                data_part->getMarksCount(), data_part->name, data_part->meta.rows_count, columns_to_read.front());
         else
             LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count);
+                data_part->getMarksCount(), data_part->name, data_part->meta.rows_count);
     }
 
     /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
     /// is only used in background merges.
-    addTotalRowsApprox(data_part->rows_count);
+    addTotalRowsApprox(data_part->meta.rows_count);
 
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot, /*with_subcolumns=*/ false, columns_to_read);
@@ -156,7 +156,7 @@ try
 {
     const auto & header = getPort().getHeader();
 
-    if (!isCancelled() && current_row < data_part->rows_count)
+    if (!isCancelled() && current_row < data_part->meta.rows_count)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);

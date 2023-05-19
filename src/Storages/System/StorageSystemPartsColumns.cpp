@@ -127,13 +127,13 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
-                part->partition.serializeText(*info.data, out, format_settings);
+                part->meta.partition.serializeText(*info.data, out, format_settings);
                 columns[res_index++]->insert(out.str());
             }
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->uuid);
+                columns[res_index++]->insert(part->meta.uuid);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getTypeName());
             if (columns_mask[src_index++])
@@ -142,7 +142,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(part->getMarksCount());
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->rows_count);
+                columns[res_index++]->insert(part->meta.rows_count);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getBytesOnDisk());
             if (columns_mask[src_index++])
@@ -263,15 +263,15 @@ void StorageSystemPartsColumns::processNextStorage(
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
                 String file_name = ISerialization::getFileNameForStream(subcolumn, subpath);
 
-                auto bin_checksum = part->checksums.files.find(file_name + ".bin");
-                if (bin_checksum != part->checksums.files.end())
+                auto bin_checksum = part->meta.checksums.files.find(file_name + ".bin");
+                if (bin_checksum != part->meta.checksums.files.end())
                 {
                     size.data_compressed += bin_checksum->second.file_size;
                     size.data_uncompressed += bin_checksum->second.uncompressed_size;
                 }
 
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
-                if (mrk_checksum != part->checksums.files.end())
+                auto mrk_checksum = part->meta.checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
+                if (mrk_checksum != part->meta.checksums.files.end())
                     size.marks += mrk_checksum->second.file_size;
 
                 subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);

@@ -77,7 +77,7 @@ private:
         MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
-    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+    MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
     WriteSettings write_settings;

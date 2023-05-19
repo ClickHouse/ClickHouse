@@ -68,8 +68,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 else
                 {
                     /// NOTE: that this serialization differs from
-                    /// IMergeTreeDataPart::MinMaxIndex::load() to preserve
-                    /// backward compatibility.
+                    /// MinMaxIndex::load() to preserve backward compatibility.
                     ///
                     /// But this is deprecated format, so this is OK.
 

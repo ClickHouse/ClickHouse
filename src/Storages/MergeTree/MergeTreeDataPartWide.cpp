@@ -67,7 +67,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
-    if (checksums.empty())
+    if (meta.checksums.empty())
         return size;
 
     getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -77,15 +77,15 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         if (processed_substreams && !processed_substreams->insert(file_name).second)
             return;
 
-        auto bin_checksum = checksums.files.find(file_name + ".bin");
-        if (bin_checksum != checksums.files.end())
+        auto bin_checksum = meta.checksums.files.find(file_name + ".bin");
+        if (bin_checksum != meta.checksums.files.end())
         {
             size.data_compressed += bin_checksum->second.file_size;
             size.data_uncompressed += bin_checksum->second.uncompressed_size;
         }
 
-        auto mrk_checksum = checksums.files.find(file_name + getMarksFileExtension());
-        if (mrk_checksum != checksums.files.end())
+        auto mrk_checksum = meta.checksums.files.find(file_name + getMarksFileExtension());
+        if (mrk_checksum != meta.checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
     });
 
@@ -149,10 +149,10 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (meta.columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(meta.columns.front()));
 }
 
 
@@ -176,11 +176,11 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
     checkConsistencyBase();
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
-    if (!checksums.empty())
+    if (!meta.checksums.empty())
     {
         if (require_part_metadata)
         {
-            for (const auto & name_type : columns)
+            for (const auto & name_type : meta.columns)
             {
                 getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
@@ -188,13 +188,13 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     String mrk_file_name = file_name + marks_file_extension;
                     String bin_file_name = file_name + DATA_FILE_EXTENSION;
 
-                    if (!checksums.files.contains(mrk_file_name))
+                    if (!meta.checksums.files.contains(mrk_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part {} ",
                             mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
 
-                    if (!checksums.files.contains(bin_file_name))
+                    if (!meta.checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part {}",
@@ -207,7 +207,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
     {
         /// Check that all marks are nonempty and have the same size.
         std::optional<UInt64> marks_size;
-        for (const auto & name_type : columns)
+        for (const auto & name_type : meta.columns)
         {
             getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
@@ -242,10 +242,10 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
     auto check_stream_exists = [this, &marks_file_extension](const String & stream_name)
     {
-        auto bin_checksum = checksums.files.find(stream_name + DATA_FILE_EXTENSION);
-        auto mrk_checksum = checksums.files.find(stream_name + marks_file_extension);
+        auto bin_checksum = meta.checksums.files.find(stream_name + DATA_FILE_EXTENSION);
+        auto mrk_checksum = meta.checksums.files.find(stream_name + marks_file_extension);
 
-        return bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end();
+        return bin_checksum != meta.checksums.files.end() && mrk_checksum != meta.checksums.files.end();
     };
 
     bool res = true;
@@ -273,7 +273,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const auto & column : columns)
+    for (const auto & column : meta.columns)
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;
@@ -281,19 +281,19 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 
 #ifndef NDEBUG
         /// Most trivial types
-        if (rows_count != 0
+        if (meta.rows_count != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
             && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
-            if (rows_in_column != rows_count)
+            if (rows_in_column != meta.rows_count)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Column {} has rows count {} according to size in memory "
                     "and size of single value, but data part {} has {} rows",
-                    backQuote(column.name), rows_in_column, name, rows_count);
+                    backQuote(column.name), rows_in_column, name, meta.rows_count);
             }
         }
 #endif

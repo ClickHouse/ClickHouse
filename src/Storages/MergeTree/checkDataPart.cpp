@@ -96,9 +96,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
     SerializationInfoByName serialization_infos;
 
-    if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
+    if (data_part_storage.exists(DataPartMetadata::SERIALIZATION_FILE_NAME))
     {
-        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, {}, std::nullopt, std::nullopt);
+        auto serialization_file = data_part_storage.readFile(DataPartMetadata::SERIALIZATION_FILE_NAME, {}, std::nullopt, std::nullopt);
         SerializationInfo::Settings settings{ratio_of_defaults, false};
         serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
     }
@@ -231,7 +231,7 @@ IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & 
 {
     IMergeTreeDataPart::Checksums data_checksums;
     data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
+    data_part->meta.checksums.checkEqual(data_checksums, true);
     return data_checksums;
 }
 

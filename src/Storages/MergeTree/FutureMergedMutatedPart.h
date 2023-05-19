@@ -24,7 +24,7 @@ struct FutureMergedMutatedPart
     MergeTreeData::DataPartsVector parts;
     MergeType merge_type = MergeType::Regular;
 
-    const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+    const MergeTreePartition & getPartition() const { return parts.front()->meta.partition; }
 
     FutureMergedMutatedPart() = default;
 

@@ -38,7 +38,7 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
     }
     else
     {
-        const auto & partition_value = part.partition.value;
+        const auto & partition_value = part.meta.partition.value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -54,7 +54,7 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
         if (!is_valid)
         {
             WriteBufferFromOwnString buf;
-            part.partition.serializeText(part.storage, buf, FormatSettings{});
+            part.meta.partition.serializeText(part.storage, buf, FormatSettings{});
             LOG_TRACE(&Poco::Logger::get("PartitionPruner"), "Partition {} gets pruned", buf.str());
         }
     }

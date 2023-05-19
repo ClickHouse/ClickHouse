@@ -32,7 +32,7 @@ namespace ErrorCodes
 class IHiveFile : public WithContext
 {
 public:
-    using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
+    using MinMaxIndex = MinMaxIndex;
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
     enum class FileFormat

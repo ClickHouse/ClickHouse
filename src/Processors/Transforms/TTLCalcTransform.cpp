@@ -15,7 +15,7 @@ TTLCalcTransform::TTLCalcTransform(
     , data_part(data_part_)
     , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcTransform)"))
 {
-    auto old_ttl_infos = data_part->ttl_infos;
+    auto old_ttl_infos = data_part->meta.ttl_infos;
 
     if (metadata_snapshot_->hasRowsTTL())
     {
@@ -84,7 +84,7 @@ Chunk TTLCalcTransform::generate()
 
 void TTLCalcTransform::finalize()
 {
-    data_part->ttl_infos = {};
+    data_part->meta.ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
 }

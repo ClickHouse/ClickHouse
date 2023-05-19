@@ -37,7 +37,7 @@ public:
 
     String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
 
-    const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+    const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->meta.checksums; }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 

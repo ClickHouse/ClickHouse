@@ -406,7 +406,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         size_t max_volume_index = 0;
         for (auto & part_ptr : future_part->parts)
         {
-            ttl_infos.update(part_ptr->ttl_infos);
+            ttl_infos.update(part_ptr->meta.ttl_infos);
             auto disk_name = part_ptr->getDataPartStorage().getDiskName();
             size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
             max_volume_index = std::max(max_volume_index, volume_index);
@@ -1636,7 +1636,7 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
 
         new_part.part_info = old_part->info;
         new_part.part_info.level += 1;
-        new_part.partition = old_part->partition;
+        new_part.partition = old_part->meta.partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
     }
 
@@ -2108,10 +2108,10 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
-                calculated_checksums.checkEqual(part->checksums, true);
+                calculated_checksums.checkEqual(part->meta.checksums, true);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
-                part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
+                part_mutable.writeChecksums(part->meta.checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");

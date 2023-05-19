@@ -358,7 +358,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-            part->getColumns(), part->checksums);
+            part->getColumns(), part->meta.checksums);
 
         /// The double get scheme is needed to retain compatibility with very old parts that were created
         /// before the ReplicatedMergeTreePartHeader was introduced.

@@ -287,8 +287,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.ttl_infos = &part->ttl_infos;
-        part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
+        part_info.ttl_infos = &part->meta.ttl_infos;
+        part_info.compression_codec_desc = part->meta.default_codec->getFullCodecDesc();
         part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
         auto & partition_info = partitions_info[partition_id];
@@ -661,7 +661,7 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
     for (const MergeTreeData::DataPartPtr & part : source_parts)
     {
         /// Exclude expired parts
-        time_t part_max_ttl = part->ttl_infos.part_max_ttl;
+        time_t part_max_ttl = part->meta.ttl_infos.part_max_ttl;
         if (part_max_ttl && part_max_ttl <= current_time)
             continue;
 

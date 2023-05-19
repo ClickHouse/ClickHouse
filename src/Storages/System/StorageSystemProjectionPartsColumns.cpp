@@ -133,7 +133,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
-                parent_part->partition.serializeText(*info.data, out, format_settings);
+                parent_part->meta.partition.serializeText(*info.data, out, format_settings);
                 columns[res_index++]->insert(out.str());
             }
             if (columns_mask[src_index++])
@@ -143,7 +143,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->uuid);
+                columns[res_index++]->insert(parent_part->meta.uuid);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->getTypeName());
             if (columns_mask[src_index++])
@@ -151,7 +151,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getMarksCount());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->rows_count);
+                columns[res_index++]->insert(part->meta.rows_count);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getBytesOnDisk());
             if (columns_mask[src_index++])
@@ -163,7 +163,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->getMarksCount());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->rows_count);
+                columns[res_index++]->insert(parent_part->meta.rows_count);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->getBytesOnDisk());
             if (columns_mask[src_index++])

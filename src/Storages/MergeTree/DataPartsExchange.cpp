@@ -159,12 +159,12 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
-            writeBinary(part->checksums.getTotalSizeOnDisk(), out);
+            writeBinary(part->meta.checksums.getTotalSizeOnDisk(), out);
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
             WriteBufferFromOwnString ttl_infos_buffer;
-            part->ttl_infos.write(ttl_infos_buffer);
+            part->meta.ttl_infos.write(ttl_infos_buffer);
             writeBinary(ttl_infos_buffer.str(), out);
         }
 
@@ -172,7 +172,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeStringBinary(part->getType().toString(), out);
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
-            writeUUIDText(part->uuid, out);
+            writeUUIDText(part->meta.uuid, out);
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
 
@@ -242,7 +242,7 @@ void Service::sendPartFromMemory(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} of part {} is not stored in memory", name, part->name);
 
             writeStringBinary(name, out);
-            projection->checksums.write(out);
+            projection->meta.checksums.write(out);
             NativeWriter block_out(out, 0, projection_sample_block);
             block_out.write(part_in_memory->block);
         }
@@ -253,7 +253,7 @@ void Service::sendPartFromMemory(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} is not stored in memory", part->name);
 
     NativeWriter block_out(out, 0, metadata_snapshot->getSampleBlock());
-    part->checksums.write(out);
+    part->meta.checksums.write(out);
     block_out.write(part_in_memory->block);
 
     data.getSendsThrottler()->add(part_in_memory->block.bytes());
@@ -269,7 +269,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     NameSet files_to_replicate;
     auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
 
-    for (const auto & [name, _] : part->checksums.files)
+    for (const auto & [name, _] : part->meta.checksums.files)
     {
         if (endsWith(name, ".proj"))
             continue;
@@ -280,11 +280,11 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     for (const auto & name : file_names_without_checksums)
     {
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION
-            && name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+            && name == DataPartMetadata::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             continue;
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION
-            && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
+            && name == DataPartMetadata::METADATA_VERSION_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -313,10 +313,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, out, client_protocol_version, from_remote_disk, false);
             data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
-        else if (part->checksums.has(name + ".proj"))
+        else if (part->meta.checksums.has(name + ".proj"))
         {
             // We don't send this projection, just add out checksum to bypass the following check
-            const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
+            const auto & our_checksum = part->meta.checksums.files.find(name + ".proj")->second;
             data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
         }
     }
@@ -348,7 +348,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     }
 
     if (!from_remote_disk && isFullPartStorage(part->getDataPartStorage()))
-        part->checksums.checkEqual(data_checksums, false);
+        part->meta.checksums.checkEqual(data_checksums, false);
 
     return data_checksums;
 }
@@ -719,10 +719,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     if (!is_projection)
     {
         new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        new_data_part->uuid = part_uuid;
+        new_data_part->meta.uuid = part_uuid;
         new_data_part->is_temp = true;
-        new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-        new_data_part->partition.create(metadata_snapshot, block, 0, context);
+        new_data_part->meta.minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+        new_data_part->meta.partition.create(metadata_snapshot, block, 0, context);
     }
 
     MergedBlockOutputStream part_out(
@@ -731,7 +731,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     part_out.write(block);
     part_out.finalizePart(new_data_part, false);
-    new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
+    new_data_part->meta.checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;
 }
@@ -790,8 +790,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
-            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
+            file_name != DataPartMetadata::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
+            file_name != DataPartMetadata::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -948,7 +948,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
-            new_data_part->checksums.checkEqual(data_checksums, false);
+            new_data_part->meta.checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

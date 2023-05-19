@@ -1866,7 +1866,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+                part->meta.minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -1923,7 +1923,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             }
 
             /// Skip the part if its uuid is meant to be excluded
-            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
+            if (part->meta.uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->meta.uuid))
                 continue;
 
             size_t num_granules = part->getMarksCount();
@@ -1934,7 +1934,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_initial_selected_granules += num_granules;
 
             if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types)
+                && !minmax_idx_condition->checkInHyperrectangle(part->meta.minmax_idx->hyperrectangle, minmax_columns_types)
                         .can_be_true)
                 continue;
 
@@ -1951,9 +1951,9 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_granules_after_partition_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))
+            if (part->meta.uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->meta.uuid))
             {
-                auto result = temp_part_uuids.insert(part->uuid);
+                auto result = temp_part_uuids.insert(part->meta.uuid);
                 if (!result.second)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
             }

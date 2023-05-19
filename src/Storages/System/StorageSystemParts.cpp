@@ -147,13 +147,13 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             WriteBufferFromOwnString out;
-            part->partition.serializeText(*info.data, out, format_settings);
+            part->meta.partition.serializeText(*info.data, out, format_settings);
             columns[res_index++]->insert(out.str());
         }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->uuid);
+            columns[res_index++]->insert(part->meta.uuid);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
         if (columns_mask[src_index++])
@@ -161,7 +161,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->rows_count);
+            columns[res_index++]->insert(part->meta.rows_count);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
@@ -247,7 +247,7 @@ void StorageSystemParts::processNextStorage(
         {
             MinimalisticDataPartChecksums helper;
             if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
-                helper.computeTotalChecksums(part->checksums);
+                helper.computeTotalChecksums(part->meta.checksums);
 
             if (columns_mask[src_index++])
             {
@@ -268,9 +268,9 @@ void StorageSystemParts::processNextStorage(
 
         /// delete_ttl_info
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.min));
+            columns[res_index++]->insert(static_cast<UInt32>(part->meta.ttl_infos.table_ttl.min));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.max));
+            columns[res_index++]->insert(static_cast<UInt32>(part->meta.ttl_infos.table_ttl.max));
 
         auto add_ttl_info_map = [&](const TTLInfoMap & ttl_info_map)
         {
@@ -300,14 +300,14 @@ void StorageSystemParts::processNextStorage(
                 columns[res_index++]->insert(max_array);
         };
 
-        add_ttl_info_map(part->ttl_infos.moves_ttl);
+        add_ttl_info_map(part->meta.ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+            columns[res_index++]->insert(queryToString(part->meta.default_codec->getCodecDesc()));
 
-        add_ttl_info_map(part->ttl_infos.recompression_ttl);
-        add_ttl_info_map(part->ttl_infos.group_by_ttl);
-        add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+        add_ttl_info_map(part->meta.ttl_infos.recompression_ttl);
+        add_ttl_info_map(part->meta.ttl_infos.group_by_ttl);
+        add_ttl_info_map(part->meta.ttl_infos.rows_where_ttl);
 
         Array projections;
         for (const auto & [name, _] : part->getProjectionParts())

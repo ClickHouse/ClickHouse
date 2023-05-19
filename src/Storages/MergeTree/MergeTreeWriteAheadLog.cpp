@@ -157,7 +157,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                     .withPartStorageType(MergeTreeDataPartStorageType::Full)
                     .build();
 
-                part->uuid = metadata.part_uuid;
+                part->meta.uuid = metadata.part_uuid;
                 block = block_in.read();
 
                 if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
@@ -202,8 +202,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 CompressionCodecFactory::instance().get("NONE", {}),
                 NO_TRANSACTION_PTR);
 
-            part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-            part->partition.create(metadata_snapshot, block, 0, context);
+            part->meta.minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            part->meta.partition.create(metadata_snapshot, block, 0, context);
             part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);

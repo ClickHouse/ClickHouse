@@ -478,7 +478,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     /// Attach log entry (all replicas already fetched part)
                     log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
                     log_entry.log_entry_id = attach_log_entry_barrier_path;
-                    log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+                    log_entry.part_checksum = part->meta.checksums.getTotalChecksumHex();
                     log_entry.create_time = std::time(nullptr);
                     log_entry.new_part_name = part_info.getPartNameAndCheckFormat(storage.format_version);
 

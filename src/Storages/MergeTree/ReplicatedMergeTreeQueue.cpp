@@ -2224,10 +2224,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (pinned_part_uuids.part_uuids.contains(part->uuid))
+        if (pinned_part_uuids.part_uuids.contains(part->meta.uuid))
         {
             if (out_reason)
-                *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+                *out_reason = "Part " + part->name + " has uuid " + toString(part->meta.uuid) + " which is currently pinned";
             return false;
         }
 
@@ -2333,10 +2333,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    if (pinned_part_uuids.part_uuids.contains(part->uuid))
+    if (pinned_part_uuids.part_uuids.contains(part->meta.uuid))
     {
         if (out_reason)
-            *out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
+            *out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->meta.uuid);
         return false;
     }
 

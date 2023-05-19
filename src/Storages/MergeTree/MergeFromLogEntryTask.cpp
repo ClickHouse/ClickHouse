@@ -163,7 +163,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     size_t max_volume_index = 0;
     for (auto & part_ptr : parts)
     {
-        ttl_infos.update(part_ptr->ttl_infos);
+        ttl_infos.update(part_ptr->meta.ttl_infos);
         auto disk_name = part_ptr->getDataPartStorage().getDiskName();
         size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
         max_volume_index = std::max(max_volume_index, volume_index);

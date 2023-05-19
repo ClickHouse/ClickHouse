@@ -1463,7 +1463,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     {
         std::unordered_map<String, size_t> partition_rows;
         for (const auto & part : prepared_parts)
-            partition_rows[part->info.partition_id] += part->rows_count;
+            partition_rows[part->info.partition_id] += part->meta.rows_count;
         size_t sum_rows = 0;
         size_t max_rows = 0;
         for (const auto & [_, rows] : partition_rows)

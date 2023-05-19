@@ -72,15 +72,15 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
 
 void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
-    auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
-    if (bin_checksum != checksums.files.end())
+    auto bin_checksum = meta.checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
+    if (bin_checksum != meta.checksums.files.end())
     {
         total_size.data_compressed += bin_checksum->second.file_size;
         total_size.data_uncompressed += bin_checksum->second.uncompressed_size;
     }
 
-    auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
-    if (mrk_checksum != checksums.files.end())
+    auto mrk_checksum = meta.checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
+    if (mrk_checksum != meta.checksums.files.end())
         total_size.marks += mrk_checksum->second.file_size;
 }
 
@@ -126,10 +126,10 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (meta.columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage());
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, meta.columns.size(), getDataPartStorage());
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
@@ -137,10 +137,10 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
     if (!getColumnPosition(column.getNameInStorage()))
         return false;
 
-    auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
-    auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
+    auto bin_checksum = meta.checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
+    auto mrk_checksum = meta.checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
 
-    return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
+    return (bin_checksum != meta.checksums.files.end() && mrk_checksum != meta.checksums.files.end());
 }
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
@@ -148,20 +148,20 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
     checkConsistencyBase();
     String mrk_file_name = DATA_FILE_NAME + getMarksFileExtension();
 
-    if (!checksums.empty())
+    if (!meta.checksums.empty())
     {
         /// count.txt should be present even in non custom-partitioned parts
-        if (!checksums.files.contains("count.txt"))
+        if (!meta.checksums.files.contains("count.txt"))
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for count.txt");
 
         if (require_part_metadata)
         {
-            if (!checksums.files.contains(mrk_file_name))
+            if (!meta.checksums.files.contains(mrk_file_name))
                 throw Exception(
                     ErrorCodes::NO_FILE_IN_DATA_PART,
                     "No marks file checksum for column in part {}",
                     getDataPartStorage().getFullPath());
-            if (!checksums.files.contains(DATA_FILE_NAME_WITH_EXTENSION))
+            if (!meta.checksums.files.contains(DATA_FILE_NAME_WITH_EXTENSION))
                 throw Exception(
                     ErrorCodes::NO_FILE_IN_DATA_PART,
                     "No data file checksum for in part {}",
@@ -193,7 +193,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
+            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(meta.columns.size()) * index_granularity.getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,

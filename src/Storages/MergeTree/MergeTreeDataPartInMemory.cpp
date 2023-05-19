@@ -27,7 +27,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::InMemory, parent_part_)
 {
-    default_codec = CompressionCodecFactory::instance().get("NONE", {});
+    meta.default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
@@ -66,16 +66,16 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     auto new_data_part = storage.getDataPartBuilder(name, data_part_volume, new_relative_path)
-        .withPartFormat(storage.choosePartFormatOnDisk(block.bytes(), rows_count))
+        .withPartFormat(storage.choosePartFormatOnDisk(block.bytes(), meta.rows_count))
         .build();
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
     new_data_part_storage->beginTransaction();
 
-    new_data_part->uuid = uuid;
-    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
-    new_data_part->partition.value = partition.value;
-    new_data_part->minmax_idx = minmax_idx;
+    new_data_part->meta.uuid = meta.uuid;
+    new_data_part->setColumns(meta.columns, {}, metadata_snapshot->getMetadataVersion());
+    new_data_part->meta.partition.value = meta.partition.value;
+    new_data_part->meta.minmax_idx = meta.minmax_idx;
 
     if (new_data_part_storage->exists())
     {
@@ -90,7 +90,7 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec, NO_TRANSACTION_PTR);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, meta.columns, indices, compression_codec, NO_TRANSACTION_PTR);
     out.write(block);
 
     const auto & projections = metadata_snapshot->getProjections();
@@ -100,7 +100,7 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
         {
             auto old_projection_part = asInMemoryPart(projection);
             auto new_projection_part = new_data_part->getProjectionPartBuilder(projection_name)
-                .withPartFormat(storage.choosePartFormatOnDisk(old_projection_part->block.bytes(), rows_count))
+                .withPartFormat(storage.choosePartFormatOnDisk(old_projection_part->block.bytes(), meta.rows_count))
                 .build();
 
             new_projection_part->is_temp = false; // clean up will be done on parent part
@@ -149,11 +149,11 @@ void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool 
 
 void MergeTreeDataPartInMemory::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
-    auto it = checksums.files.find("data.bin");
-    if (it != checksums.files.end())
+    auto it = meta.checksums.files.find("data.bin");
+    if (it != meta.checksums.files.end())
         total_size.data_uncompressed += it->second.uncompressed_size;
 
-    for (const auto & column : columns)
+    for (const auto & column : meta.columns)
         each_columns_size[column.name].data_uncompressed += block.getByName(column.name).column->byteSize();
 }
 

@@ -580,7 +580,7 @@ static void injectPartConstVirtualColumns(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
+                    column = DataTypeUUID().createColumnConst(rows, part->meta.uuid)->convertToFullColumnIfConst();
                 else
                     column = DataTypeUUID().createColumn();
 
@@ -601,7 +601,7 @@ static void injectPartConstVirtualColumns(
             else if (virtual_column_name == "_partition_value")
             {
                 if (rows)
-                    inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
+                    inserter.insertPartitionValueColumn(rows, part->meta.partition.value, partition_value_type, virtual_column_name);
                 else
                     inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
             }
