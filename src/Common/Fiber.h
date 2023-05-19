@@ -4,4 +4,141 @@
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 
-using Fiber = boost::context::fiber;
+/// Class wrapper for boost::context::fiber.
+/// It tracks current executing fiber for thread and
+/// supports storing fiber-specific data
+/// that will be destroyed on fiber destructor.
+class Fiber
+{
+public:
+    using CleanUpFn = std::function<void(void *)>;
+    using Impl = boost::context::fiber;
+
+    template< typename StackAlloc, typename Fn>
+    Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), std::forward<Fn>(fn))
+    {
+    }
+
+    Fiber() = default;
+
+    Fiber(Fiber && other) = default;
+    Fiber & operator=(Fiber && other) = default;
+
+    Fiber(const Fiber &) = delete;
+    Fiber & operator =(const Fiber &) = delete;
+
+    ~Fiber()
+    {
+        for (auto & [_, data] : local_data)
+            data.cleanup_fn(data.ptr);
+    }
+
+    explicit operator bool() const
+    {
+        return impl.operator bool();
+    }
+
+    void resume()
+    {
+        /// Update information about current executing fiber.
+        auto & current_fiber_info = getCurrentFiberInfo();
+        auto parent_fiber_info = current_fiber_info;
+        current_fiber_info = FiberInfo{this, &parent_fiber_info};
+        impl = std::move(impl).resume();
+        /// Restore current fiber info.
+        current_fiber_info = parent_fiber_info;
+    }
+
+    /// Set pointer to fiber-specific data, it will be stored in hash-map
+    /// using provided key and cleaned on fiber destructor using provided
+    /// cleanup function.
+    void setLocalData(void * key, void * ptr, CleanUpFn cleanup_fn)
+    {
+        local_data[key] = FiberLocalData{ptr, cleanup_fn};
+    }
+
+    /// Get pointer to fiber-specific data by key.
+    /// If no data was stored by this key, return nullptr.
+    void * getLocalData(void * key)
+    {
+        return local_data[key].ptr;
+    }
+
+    struct FiberInfo
+    {
+        Fiber * fiber = nullptr;
+        FiberInfo * parent_info = nullptr;
+    };
+
+    static FiberInfo & getCurrentFiberInfo()
+    {
+        thread_local static FiberInfo current_fiber_info;
+        return current_fiber_info;
+    }
+
+private:
+    struct FiberLocalData
+    {
+        void * ptr;
+        CleanUpFn cleanup_fn;
+    };
+
+    Impl impl;
+    std::unordered_map<void *, FiberLocalData> local_data;
+};
+
+/// Implementation for fiber local variable.
+/// If we are not in fiber, it returns thread local data.
+/// If we are in fiber, it returns fiber local data.
+/// Fiber local data is destroyed in Fiber destructor.
+/// On first request, fiber local data is copied from parent
+/// fiber data or from current thread data if there is no parent fiber.
+template <typename T>
+class FiberLocal
+{
+public:
+    T & operator*()
+    {
+        return get();
+    }
+
+    T * operator->()
+    {
+        return &get();
+    }
+
+private:
+    friend Fiber;
+
+    T & get()
+    {
+        return getInstanceForFiber(Fiber::getCurrentFiberInfo());
+    }
+
+    T & getInstanceForFiber(const Fiber::FiberInfo & fiber_info)
+    {
+        /// If it's not a fiber, return thread local instance.
+        if (!fiber_info.fiber)
+            return getThreadLocalInstance();
+
+        T * ptr = static_cast<T *>(fiber_info.fiber->getLocalData(this));
+        /// If it's the first request, we need to initialize instance for the fiber
+        /// using instance from parent fiber or main thread that executes this fiber.
+        if (!ptr)
+        {
+            auto parent_instance = getInstanceForFiber(*fiber_info.parent_info);
+            /// Crete new object and store pointer inside Fiber, so it will be destroyed in Fiber destructor.
+            ptr = new T(parent_instance);
+            fiber_info.fiber->setLocalData(this, ptr, [](void * to_delete){ delete static_cast<T *>(to_delete); });
+        }
+
+        return *ptr;
+    }
+
+    T & getThreadLocalInstance()
+    {
+        static thread_local T thread_local_instance;
+        return thread_local_instance;
+    }
+};
+
