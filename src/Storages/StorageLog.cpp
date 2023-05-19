@@ -27,7 +27,9 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -926,10 +928,8 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto local_context = backup_entries_collector.getContext();
-    ReadSettings read_settings = local_context->getBackupReadSettings();
+    auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
 
-    auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -944,6 +944,8 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
+    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+
     /// *.bin
     for (const auto & data_file : data_files)
     {
@@ -951,10 +953,10 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String data_file_name = fileName(data_file.path);
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
-        backup_entries_collector.addBackupEntry(
-            data_path_in_backup_fs / data_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, read_settings, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
 
     /// __marks.mrk
@@ -964,16 +966,16 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String marks_file_name = fileName(marks_file_path);
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
-        backup_entries_collector.addBackupEntry(
-            data_path_in_backup_fs / marks_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, read_settings, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, copy_encrypted));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(
