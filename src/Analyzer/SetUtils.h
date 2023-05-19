@@ -9,8 +9,8 @@
 namespace DB
 {
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+class ISet;
+using SetPtr = std::shared_ptr<ISet>;
 
 /** Make set for constant part of IN subquery.
   * Throws exception if parameters are not valid for IN function.

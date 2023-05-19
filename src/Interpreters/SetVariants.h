@@ -10,6 +10,7 @@
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ namespace ErrorCodes
 
 
 /// For the case where there is one numeric key.
-template <typename FieldType, typename TData, bool use_cache = true, bool is_prob = false>    /// UInt8/16/32/64 for any types with corresponding bit width.
+template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
 struct SetMethodOneNumber
 {
     using Data = TData;
@@ -33,7 +34,39 @@ struct SetMethodOneNumber
     Data data;
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
-        void, FieldType, use_cache, false, false, is_prob>;
+        void, FieldType, use_cache, false, false>;
+    
+};
+
+template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+struct SetMethodOneNumberProb
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+        void, FieldType, false, false, false, true>;
+
+    SetMethodOneNumberProb(size_t size_of_filter_, float p_) : data(size_of_filter_, p_) {}
+    
+};
+
+template <typename TData>    /// UInt8/16/32/64 for any types with corresponding bit width.
+struct SetMethodProb
+{
+
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    using State = ColumnsHashing::HashMethodProb<typename Data::value_type>;
+
+    
+    SetMethodProb(size_t size_of_filter_, float p_) : data(size_of_filter_, p_) {}
+    
 };
 
 
@@ -210,8 +243,13 @@ struct NonClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
-    std::unique_ptr<SetMethodOneNumber<UInt32, ProbHashSet<UInt32, HashCRC32<UInt32>>, false, true>>          prob_key32;
-    std::unique_ptr<SetMethodOneNumber<UInt64, ProbHashSet<UInt64, HashCRC32<UInt64>>, false, true>>          prob_key64;
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetBloomFilt<UInt32, HashCRC32<UInt32>>>>          key32_bloom;
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilt<UInt32, HashCRC32<UInt32>>>>          key32_cuckoo;
+    std::unique_ptr<SetMethodProb<ProbHashSetBloomFilt<UInt128, UInt128TrivialHash>>>        prob_hashed_bloom;
+    std::unique_ptr<SetMethodProb<ProbHashSetCuckooFilt<UInt128, UInt128TrivialHash>>>       prob_hashed_cuckoo;
+
+    //std::unique_ptr<SetMethodOneNumber<UInt64, ProbHashSet<UInt64, HashCRC32<UInt64>>, false, true>>     prob_key64;
 };
 
 struct ClearableSet
@@ -233,10 +271,21 @@ struct ClearableSet
     /** Unlike Aggregator, `concat` method is not used here.
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
+      * 
+      *
       */
-    std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>           prob_key32;
-    std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>           prob_key64;
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetBloomFilt<UInt32, HashCRC32<UInt32>>>>          key32_bloom;
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilt<UInt32, HashCRC32<UInt32>>>>          key32_cuckoo;
+    std::unique_ptr<SetMethodProb<ProbHashSetBloomFilt<UInt128, UInt128TrivialHash>>>                prob_hashed_bloom;
+    std::unique_ptr<SetMethodProb<ProbHashSetCuckooFilt<UInt128, UInt128TrivialHash>>>               prob_hashed_cuckoo;
 };
+
+// struct NonClearableSetProb 
+// {
+//     std::unique_ptr<SetMethodOneNumber<UInt32, ProbHashSet<UInt32, HashCRC32<UInt32>>, false, true>>          prob_key32;
+//     std::unique_ptr<SetMethodOneNumber<UInt64, ProbHashSet<UInt64, HashCRC32<UInt64>>, false, true>>          prob_key64;
+
+// };
 
 template <typename Variant>
 struct SetVariantsTemplate: public Variant
@@ -255,9 +304,30 @@ struct SetVariantsTemplate: public Variant
         M(nullable_keys128)     \
         M(nullable_keys256)     \
         M(hashed)               \
-        M(prob_key32)           \
-        M(prob_key64)
-
+        M(prob_hashed_bloom)    \
+        M(prob_hashed_cuckoo)   \
+        M(key32_bloom)          \
+        M(key32_cuckoo)     
+    
+     #define APPLY_FOR_PROB_SET_VARIANTS(M) \
+        M(prob_hashed_bloom)    \
+        M(prob_hashed_cuckoo)   \
+        M(key32_bloom)          \
+        M(key32_cuckoo)           
+    
+    #define APPLY_FOR_NOT_PROB_SET_VARIANTS(M) \
+        M(key8)                 \
+        M(key16)                \
+        M(key32)                \
+        M(key64)                \
+        M(key_string)           \
+        M(key_fixed_string)     \
+        M(keys128)              \
+        M(keys256)              \
+        M(nullable_keys128)     \
+        M(nullable_keys256)     \
+        M(hashed)               
+    
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
@@ -269,22 +339,32 @@ struct SetVariantsTemplate: public Variant
     #define M(NAME) NAME,
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
+
     };
 
     Type type = Type::EMPTY;
 
     bool empty() const { return type == Type::EMPTY; }
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool is_prob = false);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+
+    static Type chooseMethodProb(const ColumnRawPtrs & key_columns, Sizes & key_sizes, String name_of_filter);
 
     void init(Type type_);
+
+    void initProb(Type type_, size_t size_of_filter_, float precision);
 
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
     size_t getTotalByteCount() const;
 };
 
+
+
+
 using SetVariants = SetVariantsTemplate<NonClearableSet>;
 using ClearableSetVariants = SetVariantsTemplate<ClearableSet>;
+
+//using SetVariantsProb = SetVariantsTemplateProb<NonClearableSetProb>;
 
 }

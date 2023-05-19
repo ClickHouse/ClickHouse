@@ -3,7 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/SetVariants.h>
-
+#include <iostream>
 
 namespace DB
 {
@@ -15,7 +15,31 @@ namespace ErrorCodes
 
 template <typename Variant>
 void SetVariantsTemplate<Variant>::init(Type type_)
-{
+{ 
+   
+    type = type_;
+
+
+    switch (type)
+    {
+        case Type::EMPTY: break;
+
+    #define M(NAME) \
+        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(0, 0); break;
+        APPLY_FOR_PROB_SET_VARIANTS(M)
+    #undef M
+
+    #define M(NAME) \
+        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(); break;
+        APPLY_FOR_NOT_PROB_SET_VARIANTS(M)
+    #undef M
+    }
+    
+}
+
+template <typename Variant>
+void SetVariantsTemplate<Variant>::initProb(Type type_, [[maybe_unused]] size_t size_of_filter_, [[maybe_unused]] float precision_)
+{ 
     type = type_;
 
     switch (type)
@@ -23,10 +47,17 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         case Type::EMPTY: break;
 
     #define M(NAME) \
-        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(); break;
-        APPLY_FOR_SET_VARIANTS(M)
+        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(size_of_filter_, precision_); break;
+        APPLY_FOR_PROB_SET_VARIANTS(M)
     #undef M
+
+    #define M(NAME) \
+        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(); break;
+        APPLY_FOR_NOT_PROB_SET_VARIANTS(M)
+    #undef M
+
     }
+
 }
 
 template <typename Variant>
@@ -40,6 +71,7 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         case Type::NAME: return (NAME)->data.size();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
+
     }
 
     UNREACHABLE();
@@ -56,13 +88,14 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
+
     }
 
     UNREACHABLE();
 }
 
 template <typename Variant>
-typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool is_prob)
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
     /// Check if at least one of the specified keys is nullable.
     /// Create a set of nested key columns from the corresponding key columns.
@@ -85,15 +118,6 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     size_t keys_size = nested_key_columns.size();
-
-     if (is_prob) {
-        if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality()) {
-            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
-            if (size_of_field == 4)
-                return Type::prob_key32;
-        }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error probal in: numeric column has sizeOfField 32.");
-    }
 
     bool all_fixed = true;
     size_t keys_bytes = 0;
@@ -178,7 +202,69 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     return Type::hashed;
 }
 
+
+template <typename Variant>
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethodProb(const ColumnRawPtrs & key_columns, [[maybe_unused]] Sizes & key_sizes, String name_of_filter)
+{
+    /// Check if at least one of the specified keys is nullable.
+    /// Create a set of nested key columns from the corresponding key columns.
+    /// Here "nested" means that, if a key column is nullable, we take its nested
+    /// column; otherwise we take the key column as is.
+    ColumnRawPtrs nested_key_columns;
+    nested_key_columns.reserve(key_columns.size());
+
+    
+    for (const auto & col : key_columns)
+    {
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+        {
+            nested_key_columns.push_back(&nullable->getNestedColumn());
+        }
+        else
+            nested_key_columns.push_back(col);
+    }
+
+    size_t keys_size = nested_key_columns.size();
+
+    key_sizes.resize(keys_size);
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        if (!nested_key_columns[j]->isFixedAndContiguous())
+        {
+            break;
+        }
+        key_sizes[j] = nested_key_columns[j]->sizeOfValueIfFixed();
+    }
+    
+    if (name_of_filter == "bloom_filter") {
+        if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality())
+        {
+            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
+            if (size_of_field == 4)
+                return Type::key32_bloom;
+        }
+        return Type::prob_hashed_bloom;
+    }
+    else if ( name_of_filter == "cuckoo_filter") {
+        if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality())
+        {
+            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
+            if (size_of_field == 4)
+                return Type::key32_cuckoo;
+        }
+        return Type::prob_hashed_cuckoo;
+    }
+    else {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error probal in: this filter doesn't exist");
+    }
+    
+    //throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error probal in: numeric column has sizeOfField 32.");
+
+}
+
+
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
+//template struct SetVariantsTemplateProb<NonClearableSetProb>;
 
 }

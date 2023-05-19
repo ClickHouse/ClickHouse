@@ -11,6 +11,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
+#include <iostream>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -40,6 +42,10 @@ public:
 
     using Base = HashTable<Key, TCell, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
+
+    HashSetTable() {
+        std::cout << "INIT HashSetTable\n";
+    }
 
     void merge(const Self & rhs)
     {

@@ -3,10 +3,12 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/BloomFilt.h>
+#include <Common/HashTable/CuckoFilt.h>
+#include <memory>
 
 
 template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
-class ProbHashSet : protected Hash,
+class ProbHashSetBloomFilt : protected Hash,
                     protected Allocator
 {
 private:
@@ -21,11 +23,7 @@ public:
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }
 
-    ProbHashSet() : bl_filt(1000) {}
-
-    // ProbHashSet(size_t reserve_for_num_elements) : bl_filt(reserve_for_num_elements)
-    // { }
-
+    ProbHashSetBloomFilt(size_t size_of_filter_ = 1000, float precision_ = 0.01f) : bl_filt(size_of_filter_, precision_) {}
 
 
     template <typename KeyHolder>
@@ -35,21 +33,9 @@ public:
         bl_filt.insert(key);
         inserted = true;
         it = (&fl);
-        //emplace(key_holder, it, inserted, hash(key));
     }
 
-    //  template <typename KeyHolder>
-    // void ALWAYS_INLINE emplace([[maybe_unused]] KeyHolder && key_holder, LookupResult & it,
-    //                               bool & inserted, [[maybe_unused]]  size_t hash_value)
-    // {
-    //     m_size++;
-    //     inserted = true;
-    //     it = fl;
-
-    // }
-
-    LookupResult ALWAYS_INLINE find(const Key & x)
-    {
+    LookupResult ALWAYS_INLINE find(const Key & x) {
         if (bl_filt.lookup(x)) {
             return &fl;
         } else {
@@ -57,14 +43,81 @@ public:
         }
     }
 
-     size_t size() const
-    {
+     size_t size() const {
         return m_size;
     }
 
-    size_t getBufferSizeInBytes() const
-    {
+    size_t getBufferSizeInBytes() const {
         return bl_filt.getBufferSizeInBytes();
+    }
+
+    void clear() {
+        bl_filt.clear();
+    }
+
+};
+
+
+template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
+class ProbHashSetCuckooFilt : protected Hash,
+                    protected Allocator
+{
+    using Conteiner = CuckooFilter<Key, Hash, Allocator>;
+    using ConteinerPtr = std::shared_ptr<CuckooFilter<Key, Hash, Allocator>>;
+private:
+    bool fl = true;
+    size_t m_size = 0;
+    std::vector<ConteinerPtr> cu_filts;
+    size_t size_of_filter;
+    float  precision;
+
+public:
+    using key_type = Key;
+    using value_type = Key;
+    using LookupResult = bool *;
+
+    size_t hash(const Key & x) const { return Hash::operator()(x); }
+
+    ProbHashSetCuckooFilt(size_t size_of_filter_ = 1000, float precision_ = 0.01f) :  size_of_filter(size_of_filter_),  precision(precision_) {
+        cu_filts.emplace_back(std::make_shared<Conteiner>(size_of_filter, 0, precision));
+    }
+
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted) {
+        const auto & key = keyHolderGetKey(key_holder);
+        while (!cu_filts.back()->insert(key)) {
+            cu_filts.emplace_back(std::make_shared<Conteiner>(size_of_filter - m_size));
+        }
+        m_size++;
+        inserted = true;
+        it = (&fl);
+    }
+
+    LookupResult ALWAYS_INLINE find(const Key & x) {
+        for(size_t i = 0; i < cu_filts.size(); i++) {
+            if(cu_filts[i]->lookup(x))
+                return &fl;
+        }
+        return nullptr;
+    }
+
+     size_t size() const {
+        return m_size;
+    }
+
+    size_t getBufferSizeInBytes() const {
+        size_t res = 0;
+        for(size_t i = 0; i < cu_filts.size(); i++) {
+            res += cu_filts[i]->getBufferSizeInBytes();
+        }
+        return res;
+    }
+
+    void clear() {
+        cu_filts.clear();
+        cu_filts.emplace_back(std::make_shared<Conteiner>(size_of_filter, 0, precision));
+          
     }
 
 };

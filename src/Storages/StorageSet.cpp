@@ -215,7 +215,7 @@ void registerStorageSet(StorageFactory & factory)
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
         return std::make_shared<StorageSet<false>>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent, 0, "", 0);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
     
 }
@@ -235,7 +235,8 @@ void registerStorageProbSet(StorageFactory & factory)
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
         return std::make_shared<StorageSet<true>>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment,
+            set_settings.persistent, set_settings.size_of_filter, set_settings.name_of_filter, set_settings.precision);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
     
 }

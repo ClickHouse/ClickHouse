@@ -8,8 +8,8 @@
 namespace DB
 {
 
-class Set;
-using ConstSetPtr = std::shared_ptr<const Set>;
+class ISet;
+using ConstSetPtr = std::shared_ptr<const ISet>;
 
 
 /** A column containing multiple values in the `IN` section.

@@ -16,8 +16,8 @@ namespace DB
 
 class QueryPlan;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+class ISet;
+using SetPtr = std::shared_ptr<ISet>;
 class InterpreterSelectWithUnionQuery;
 
 /// Represents a set in a query that might be referenced at analysis time and built later during execution.

@@ -5,6 +5,7 @@
 //#include <MurmurHash3.h>
 //#include <Functions/FunctionsHashing.h>
 #include <city.h>
+#include <vector>
 #include <random>
 #include <Common/HashTable/HashTableAllocator.h>
 
@@ -13,7 +14,7 @@ class BloomFilt : protected Hash,
                 protected Allocator
 {
 public:
-    BloomFilt(size_t max_item, double  = 0.001);
+    BloomFilt(size_t max_item, double p = 0.001);
 
     size_t hash(const T & x) const { return Hash::operator()(x); }
 
@@ -27,13 +28,8 @@ public:
 
     size_t getBufferSizeInBytes() const;
 
-    ~BloomFilt() {
-        if (array)
-        {
-            Allocator::free(array, size_of_filter * sizeof(bool));
-            array = nullptr;
-        }
-    }
+    void clear();
+
 
 private:
     static constexpr UInt64 SEED_GEN_A = 845897321;
@@ -48,7 +44,7 @@ private:
     const double size_param = log(2.0);
     const size_t min_size = 10;
     size_t size_of_filter, number_of_hash, number_of_elem;
-    bool * array = nullptr;
+    std::vector<bool> buf;
 
 };
 
@@ -61,9 +57,11 @@ BloomFilt<T, Hash, Allocator>::BloomFilt(size_t max_item, double p) : number_of_
 
     double lg = -log(p);
     size_of_filter = std::max(min_size, static_cast<size_t>(static_cast<double>(max_item) * lg / (size_param * size_param)));
-    //array = new bool[size_of_filter];
-    array = reinterpret_cast<bool *>(Allocator::alloc(size_of_filter * sizeof(bool)));
+  
     number_of_hash = std::max(static_cast<size_t>(1), static_cast<size_t>(lg / size_param));
+
+    buf.reserve(size_of_filter);
+    buf.assign(size_of_filter, false);
 }
 
 template <typename T, typename Hash, typename Allocator>
@@ -73,8 +71,7 @@ double BloomFilt<T, Hash, Allocator>::bitsPerItem() const {
 
 template <typename T, typename Hash, typename Allocator>
 std::array<uint64_t, 2> BloomFilt<T, Hash, Allocator>::_hash(size_t elem) const {
-    //std::array<uint64_t, 2> hashValue;
-    //MurmurHash3_x64_128((&elem), sizeof(size_t), 0, hashValue.data());
+    
     char * ptr = reinterpret_cast<char *>(&elem);
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(ptr, sizeof(size_t), seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(ptr, sizeof(size_t), SEED_GEN_A * seed + SEED_GEN_B);
@@ -94,7 +91,7 @@ void BloomFilt<T, Hash, Allocator>::insert(const T & elem) {
     size_t _ha = hash(elem);
     std::array<uint64_t, 2> hashValues = _hash(_ha);
     for (size_t n = 0; n < number_of_hash; n++) {
-      array[nthHash(n, hashValues[0], hashValues[1])] = true;
+      buf[nthHash(n, hashValues[0], hashValues[1])] = true;
     }
 }
 
@@ -104,7 +101,7 @@ bool BloomFilt<T, Hash, Allocator>::lookup(const T & elem) const {
     std::array<uint64_t, 2> hashValues = _hash(_ha);
 
     for (size_t n = 0; n < number_of_hash; n++) {
-        if (!array[nthHash(n, hashValues[0], hashValues[1])]) {
+        if (!buf[nthHash(n, hashValues[0], hashValues[1])]) {
             return false;
         }
     }
@@ -114,5 +111,10 @@ bool BloomFilt<T, Hash, Allocator>::lookup(const T & elem) const {
 
 template <typename T, typename Hash, typename Allocator>
 size_t BloomFilt<T, Hash, Allocator>::getBufferSizeInBytes() const {
-    return size_of_filter * sizeof(bool);
+    return size_of_filter;
+}
+
+template <typename T, typename Hash, typename Allocator>
+void BloomFilt<T, Hash, Allocator>::clear() {
+    buf.assign(size_of_filter, false);
 }

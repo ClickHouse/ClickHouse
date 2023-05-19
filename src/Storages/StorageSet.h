@@ -4,6 +4,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/ISet.h>
+#include <Interpreters/ProbSet.h>
 #include <Disks/IDisk.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Common/logger_useful.h>
@@ -13,7 +15,7 @@ namespace DB
 
 
 // class Set;
-using SetPtr_ = std::shared_ptr<Set>;
+//using SetPtr_ = std::shared_ptr<Set>;
 
 // class ProbSet;
 //using ProbSetPtr_ = std::shared_ptr<ProbSet>;
@@ -79,7 +81,10 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        bool persistent_);
+        bool persistent_,
+        size_t size_of_filter_,
+        String name_of_filter_,
+        Float32 precision_);
 
     String getName() const override {
         if constexpr (is_prob) {
@@ -98,8 +103,10 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
-    SetPtr_ set;
-    //ProbSetPtr_ probSet;
+    SetPtr set;
+    size_t size_of_filter;
+    String name_of_filter;
+    Float32 precision;
 
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
@@ -115,12 +122,22 @@ StorageSet<is_prob>::StorageSet(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), false, true))
+    bool persistent_,
+    size_t size_of_filter_,
+    String name_of_filter_,
+    Float32 precision_)
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_},
+        size_of_filter(size_of_filter_), name_of_filter(name_of_filter_), precision(precision_)
+    
 {
+    if constexpr (is_prob) {
+        set = std::make_shared<ProbSet>(SizeLimits(), false, true, size_of_filter, name_of_filter, precision);
+    } else {
+        set = std::make_shared<Set>(SizeLimits(), false, true);
+
+    }
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
-    set->setHeader(header.getColumnsWithTypeAndName(), is_prob);
+    set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
 }
@@ -157,11 +174,14 @@ void StorageSet<is_prob>::truncate(const ASTPtr &, const StorageMetadataPtr & me
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header.getColumnsWithTypeAndName(), is_prob);
+    if constexpr (is_prob) {
+        set = std::make_shared<ProbSet>(SizeLimits(), false, true, size_of_filter, name_of_filter, precision);
+    } else {
+        set = std::make_shared<Set>(SizeLimits(), false, true);
+    set->setHeader(header.getColumnsWithTypeAndName());
 }
 
 
 }
 
-
+}

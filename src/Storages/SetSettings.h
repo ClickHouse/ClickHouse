@@ -11,6 +11,9 @@ class ASTStorage;
 
 #define SET_RELATED_SETTINGS(M, ALIAS) \
     M(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0) \
+    M(UInt32, size_of_filter, 1000, "Size of filter", 0) \
+    M(Float, precision, 0.01f, "Precision", 0) \
+    M(String, name_of_filter, "bloom_filter", "Name of the filter to use set", 0) \
     M(String, disk, "default", "Name of the disk used to persist set data", 0)
 
 #define LIST_OF_SET_SETTINGS(M, ALIAS) \

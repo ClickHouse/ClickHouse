@@ -18,15 +18,17 @@ namespace DB
 
 /** Data structure for implementation of IN expression.
   */
-class Set : public ISet
+class ProbSet : public ISet
 {
 public:
     /// 'fill_set_elements': in addition to hash table
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : ISet(limits_, fill_set_elements_, transform_null_in_)
+    ProbSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_, 
+            size_t size_of_filter_, String name_of_filter_, float precision_)
+        : ISet(limits_, fill_set_elements_, transform_null_in_), 
+        size_of_filter(size_of_filter_), name_of_filter(name_of_filter_), precision(precision_)
     {
     }
 
@@ -36,11 +38,18 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    
+    //void setHeader(const ColumnsWithTypeAndName & header) override;
+   
 protected:
     void initialize_data(ColumnRawPtrs key_columns) override;
 
 private:
+
+    //SetVariants data;
+
+    size_t size_of_filter;
+    String name_of_filter;
+    float precision;
 
     template <typename Method>
       void insertFromBlockImpl(
@@ -78,13 +87,10 @@ private:
           size_t rows,
           ConstNullMapPtr null_map) const;
 
-   
-};
-
 // using SetPtr = std::shared_ptr<Set>;
 // using ConstSetPtr = std::shared_ptr<const Set>;
 // using Sets = std::vector<SetPtr>;
 
-
+};
 
 }

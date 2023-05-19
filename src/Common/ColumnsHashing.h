@@ -16,6 +16,9 @@
 #include <memory>
 #include <cassert>
 
+//del
+#include <iostream>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -42,6 +45,7 @@ struct HashMethodOneNumber
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
+         std::cout << "Init HashMet\n";
         if constexpr (nullable)
         {
             const auto * null_column = checkAndGetColumn<ColumnNullable>(key_columns[0]);
@@ -55,6 +59,7 @@ struct HashMethodOneNumber
 
     explicit HashMethodOneNumber(const IColumn * column) : Base(column)
     {
+         std::cout << "Init HashMet\n";
         if constexpr (nullable)
         {
             const auto * null_column = checkAndGetColumn<ColumnNullable>(column);
@@ -724,6 +729,28 @@ struct HashMethodHashed
     ColumnRawPtrs key_columns;
 
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
+        : key_columns(std::move(key_columns_)) {}
+
+    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
+    {
+        return hash128(row, key_columns.size(), key_columns);
+    }
+};
+
+/// For Prob In.
+template <typename Value>
+struct HashMethodProb
+    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, void, false, false>, Value, void, false, false>
+{
+    using Key = UInt128;
+    using Self = HashMethodProb<Value>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, void, false, false>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    ColumnRawPtrs key_columns;
+
+    HashMethodProb(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_)) {}
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const

@@ -3,6 +3,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ISet.h>
 #include <Interpreters/Set.h>
 #include <IO/Operators.h>
 
