@@ -69,13 +69,9 @@ public:
         return disk.writeFile(path, buf_size, mode, settings);
     }
 
-    void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function) override
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
-        disk.writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+        disk.writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
     }
 
     void removeFile(const std::string & path) override

@@ -161,7 +161,7 @@ public:
     void remove();
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
-    /// Load checksums from checksums.txt if exists. Load index if required.
+    /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 

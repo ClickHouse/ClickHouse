@@ -51,6 +51,8 @@ struct ReplicatedMergeTreeMutationEntry
     bool isAlterMutation() const { return alter_version != -1; }
 
     std::shared_ptr<const IBackupEntry> backup() const;
+
+    String getBlockNumbersForLogs() const;
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;
