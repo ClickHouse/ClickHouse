@@ -2778,6 +2778,17 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
+
+std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    if (!shared->auxiliary_zookeepers.empty())
+        return shared->auxiliary_zookeepers;
+    else
+        return std::map<String, zkutil::ZooKeeperPtr>();
+}
+
 #if USE_ROCKSDB
 MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
 {
