@@ -1,5 +1,5 @@
 ---
-slug: /zh/operations/system-tables/zookeeper_connection
+slug: /en/operations/system-tables/zookeeper_connection
 ---
 #zookeeper_connection
 
