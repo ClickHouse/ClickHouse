@@ -1,0 +1,3 @@
+<clickhouse>
+    <background_schedule_pool_size>1</background_schedule_pool_size>
+</clickhouse>
