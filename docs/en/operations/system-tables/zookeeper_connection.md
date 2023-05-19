@@ -7,14 +7,14 @@ This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_
 
 Columns:
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — zookeeper cluster name.
--   `host` ([String](../../sql-reference/data-types/string.md)) — connected zookeeper node host.
--   `port` ([String](../../sql-reference/data-types/string.md)) — connected zookeeper node port.
--   `index` ([UInt8](../../sql-reference/data-types/int-uint.md)) — connected zookeeper node index in zk cluster config.
--   `connected_time` ([String](../../sql-reference/data-types/string.md)) — when establish the connection to this zk node.
--   `is_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Does current connection expired.
--   `keeper_api_version` ([String](../../sql-reference/data-types/string.md)) — shows keeper api version.
--   `client_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — zookeeper connection session id.
+-   `name` ([String](../../sql-reference/data-types/string.md)) — ZooKeeper cluster's name.
+-   `host` ([String](../../sql-reference/data-types/string.md)) — The hostname/IP of the ZooKeeper node that ClickHouse connected to.
+-   `port` ([String](../../sql-reference/data-types/string.md)) — The port of the ZooKeeper node that ClickHouse connected to.
+-   `index` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config.
+-   `connected_time` ([String](../../sql-reference/data-types/string.md)) — When the connection was established
+-   `is_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the current connection expired.
+-   `keeper_api_version` ([String](../../sql-reference/data-types/string.md)) — Keeper API version.
+-   `client_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Session id of the connection.
 
 Example:
 
