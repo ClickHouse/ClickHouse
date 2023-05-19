@@ -3213,17 +3213,6 @@ Possible values:
 
 Default value: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
-
-Possible values:
-
-- 0 — Working with geo data types is disabled.
-- 1 — Working with geo data types is enabled.
-
-Default value: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
