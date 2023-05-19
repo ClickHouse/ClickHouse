@@ -104,13 +104,13 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the read task (MergeTreeReadTask). When a thread calls getTask(), it will wait for
     /// it (if not yet ready) after getting the task.
-    auto task = [=, reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
+    auto task = [=, my_reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
     {
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
 
-        reader->prefetchBeginOfRange(priority);
-        return std::move(reader);
+        my_reader->prefetchBeginOfRange(priority);
+        return std::move(my_reader);
     };
     return scheduleFromThreadPool<IMergeTreeDataPart::MergeTreeReaderPtr>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }

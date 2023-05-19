@@ -113,10 +113,10 @@ public:
 
     WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
 
+    static bool canUseReadThroughCache();
+
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
-
-    String getCachePath(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 

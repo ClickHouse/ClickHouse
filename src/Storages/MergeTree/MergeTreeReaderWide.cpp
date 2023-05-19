@@ -242,7 +242,7 @@ void MergeTreeReaderWide::addStreams(
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+            data_part_info_for_read, stream_name, DATA_FILE_EXTENSION,
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
