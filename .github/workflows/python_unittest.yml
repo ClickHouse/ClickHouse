@@ -1,8 +1,8 @@
 name: UnitTests
 
-# env:
+env:
 #   # Force the stdout and stderr streams to be unbuffered
-#   PYTHONUNBUFFERED: 1
+  PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
   # workflow_dispatch:  # Enable manual triggeringg
@@ -17,6 +17,10 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
+      - name: List test files
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          ls -1 *_test.py          
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
