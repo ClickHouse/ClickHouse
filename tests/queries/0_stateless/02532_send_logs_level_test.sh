@@ -17,6 +17,6 @@ $CLICKHOUSE_CLIENT -nm -q "
 # instead of "last" value, hence you cannot simply append another
 # --send_logs_level here.
 CLICKHOUSE_CLIENT_CLEAN=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=test/g')
-$CLICKHOUSE_CLIENT_CLEAN -q "select * from data" |& grep -o -e '<Unknown>.*' -e '<Test>.*'
+$CLICKHOUSE_CLIENT_CLEAN -q "select * from data" |& grep -o -e '<Unknown>.*' -e '<Test>.*' | grep -v "SpanHolder"
 
 $CLICKHOUSE_CLIENT -q "drop table data"
