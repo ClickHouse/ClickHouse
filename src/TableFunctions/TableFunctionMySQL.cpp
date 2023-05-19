@@ -25,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
 }
 
 void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
