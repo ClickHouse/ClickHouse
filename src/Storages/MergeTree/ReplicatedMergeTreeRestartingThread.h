@@ -29,6 +29,7 @@ public:
 
     void shutdown(bool part_of_full_shutdown);
 
+    void run();
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
@@ -42,8 +43,6 @@ private:
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     UInt32 consecutive_check_failures = 0;  /// How many consecutive checks have failed
     bool first_time = true;                 /// Activate replica for the first time.
-
-    void run();
 
     /// Restarts table if needed, returns false if it failed to restart replica.
     bool runImpl();
