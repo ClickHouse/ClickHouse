@@ -57,4 +57,7 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
         node.restart_clickhouse(stop_start_wait_sec=20)
         assert_values()
 
+    # check that we activate it in the end
+    node.query_with_retry("INSERT INTO replicated_table_partitioned VALUES(20, 30)")
+
     node.query("DROP TABLE replicated_table_partitioned SYNC")

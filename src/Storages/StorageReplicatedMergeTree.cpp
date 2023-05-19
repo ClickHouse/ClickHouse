@@ -4416,6 +4416,9 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 
         startBeingLeader();
 
+        /// Activate replica in a separate thread if we are not calling from attach thread
+        restarting_thread.start(/*schedule=*/!from_attach_thread);
+
         if (from_attach_thread)
         {
             /// Try activating replica in current thread.
@@ -4423,9 +4426,6 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         }
         else
         {
-            /// Activate replica in a separate thread.
-            restarting_thread.start();
-
             /// Wait while restarting_thread finishing initialization.
             /// NOTE It does not mean that replication is actually started after receiving this event.
             /// It only means that an attempt to startup replication was made.
