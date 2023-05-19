@@ -13,6 +13,7 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -38,6 +39,7 @@ def test_startup_with_small_bg_pool(started_cluster):
     assert_values()
 
     node.query("DROP TABLE replicated_table SYNC")
+
 
 def test_startup_with_small_bg_pool_partitioned(started_cluster):
     node.query(
