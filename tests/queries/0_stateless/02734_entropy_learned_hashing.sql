@@ -22,12 +22,21 @@ SELECT cityHash64(y) FROM tbl2;
 
 DROP TABLE IF EXISTS tbl3;
 CREATE TABLE tbl3 (x String, y String) ENGINE=Memory;
--- first position 3 will be chosen, and then 2. this tests checks that the array of positions it sorted.
+-- first position 3 will be chosen, and then 2. this test checks that the array of positions it sorted.
 INSERT INTO tbl3 VALUES ('taa', 'aa'), ('tab', 'ab'), ('tac', 'ac'), ('tbc', 'bc');
 SELECT trainEntropyLearnedHash(x, 'id3') FROM tbl3;
 SELECT entropyLearnedHash(x, 'id3') FROM tbl3;
 SELECT cityHash64(y) FROM tbl3;
 
+DROP TABLE IF EXISTS tbl4;
+CREATE TABLE tbl4 (x String, y String) ENGINE=Memory;
+-- different length strings
+INSERT INTO tbl4 VALUES ('a', 'a'), ('b', 'b'), ('acb', 'ab'), ('bca', 'ba');
+SELECT trainEntropyLearnedHash(x, 'id4') FROM tbl4;
+SELECT entropyLearnedHash(x, 'id4') FROM tbl4;
+SELECT cityHash64(y) FROM tbl4;
+
 DROP TABLE tbl1;
 DROP TABLE tbl2;
 DROP TABLE tbl3;
+DROP TABLE tbl4;
