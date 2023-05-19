@@ -609,17 +609,19 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         if (releasable)
         {
-            removed_size += segment_metadata->size();
-            --queue_size;
-
             auto segment = segment_metadata->file_segment;
             if (segment->state() == FileSegment::State::DOWNLOADED)
             {
                 const auto & key = segment->key();
+
                 auto it = to_delete.find(key);
                 if (it == to_delete.end())
                     it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
                 it->second.add(segment_metadata);
+
+                removed_size += segment_metadata->size();
+                --queue_size;
+
                 return PriorityIterationResult::CONTINUE;
             }
 
