@@ -3,9 +3,7 @@ slug: /zh/operations/system-tables/zookeeper_connection
 ---
 #zookeeper_connection
 
-This table does not exist if ClickHouse Cluster does not config zookeeper. The 'system.zookeeper_connection' table will shows current clickhouse-cluster connected zookeepers info.
-
-each rows will shows the node information of a zk cluster connected to.
+This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
 
 Columns:
 
