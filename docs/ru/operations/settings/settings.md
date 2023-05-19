@@ -4105,6 +4105,26 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 
 Значение по умолчанию: `''`.
 
+:::warning
+То, как этот параметр влияет на парсинг значений типа Date или DateTime, может показаться неочевидным. Пример и пояснение см. ниже:
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timezone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+Это происходит из-за различного происхождения значения, используемого для сравнения:
+- `toDateTime('2000-01-01 00:00:00')` создаёт значение типа `DateTime` как и в любом другом случае, в том числе применяет параметр `session_timezone` из контекста запроса,
+- `2000-01-01 00:00:00` парсится в `DateTime` того же типа, что и колонка `d` (в том числе с той же `timezone`), и параметр `session_timezone` в данном случае не учитывается.
+
 **Смотрите также**
 
 - [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)

@@ -4077,6 +4077,26 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 1999-12-13 07:23:23.123
 ```
 
+:::warning
+The way this setting affects parsing of Date or DateTime types may seem non-obvious, see example and explanation below:
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timezone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+This happens due to different parsing pipelines:
+  - `toDateTime('2000-01-01 00:00:00')` creates a new DateTime in a usual way, and thus `session_timezone` setting from query context is applied.
+  - `2000-01-01 00:00:00` is parsed to a DateTime inheriting type of `d` column, including DateTime's time zone, and `session_timezone` has no impact on this value.
+
 Possible values:
 
 -    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
