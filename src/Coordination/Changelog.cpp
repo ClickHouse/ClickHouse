@@ -284,7 +284,7 @@ private:
             do
             {
                 res = ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
-            } 
+            }
             while (res < 0 && errno == EINTR);
 
             if (res != 0)
