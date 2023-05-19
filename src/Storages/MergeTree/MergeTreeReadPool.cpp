@@ -56,6 +56,13 @@ MergeTreeReadPool::MergeTreeReadPool(
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{threads_}
 {
+    /// parts don't contain duplicate MergeTreeDataPart's.
+    const auto per_part_sum_marks = fillPerPartInfo(
+        parts_ranges, storage_snapshot, is_part_on_remote_disk,
+        predict_block_size_bytes,
+        column_names, virtual_column_names, prewhere_info,
+        actions_settings, reader_settings, per_part_params);
+
     if (std::ranges::count(is_part_on_remote_disk, true))
     {
         const auto & settings = context_->getSettingsRef();
@@ -81,13 +88,6 @@ MergeTreeReadPool::MergeTreeReadPool(
             }
         }
     }
-
-    /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(
-        parts_ranges, storage_snapshot, is_part_on_remote_disk,
-        predict_block_size_bytes,
-        column_names, virtual_column_names, prewhere_info,
-        actions_settings, reader_settings, per_part_params);
 
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges);
 }
