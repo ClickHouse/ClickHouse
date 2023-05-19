@@ -2142,6 +2142,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
 void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -2154,7 +2155,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
 
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, backup_settings, local_context));
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 }
 
