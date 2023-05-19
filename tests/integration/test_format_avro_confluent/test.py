@@ -190,6 +190,7 @@ def test_select_auth_encoded(started_cluster):
         ["2"],
     ]
 
+
 def test_select_auth_encoded_complex(started_cluster):
     # type: (ClickHouseCluster) -> None
 
@@ -228,7 +229,8 @@ def test_select_auth_encoded_complex(started_cluster):
     )
 
     run_query(
-        instance, "create table avro_data_auth_encoded_complex(value Int64) engine = Memory()"
+        instance,
+        "create table avro_data_auth_encoded_complex(value Int64) engine = Memory()",
     )
     settings = {"format_avro_schema_registry_url": schema_registry_url}
     run_query(
