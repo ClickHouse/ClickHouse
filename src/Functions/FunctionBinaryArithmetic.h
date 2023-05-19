@@ -41,6 +41,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
