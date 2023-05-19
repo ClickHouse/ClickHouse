@@ -4423,7 +4423,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         }
         else
         {
-            /// Activate replica in a seperate thread.
+            /// Activate replica in a separate thread.
             restarting_thread.start();
 
             /// Wait while restarting_thread finishing initialization.
