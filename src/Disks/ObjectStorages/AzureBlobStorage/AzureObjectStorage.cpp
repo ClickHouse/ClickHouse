@@ -129,7 +129,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes>,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -138,14 +137,12 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
-    auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
+    return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         settings.get()->max_single_part_upload_size,
         buf_size,
         patchSettings(write_settings));
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.remote_path);
 }
 
 void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
