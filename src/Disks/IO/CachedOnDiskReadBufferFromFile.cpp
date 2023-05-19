@@ -708,14 +708,18 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         }
         else if (current_write_offset < file_offset_of_buffer_end)
         {
+            const auto path = file_segment.getPathInLocalCache();
+            size_t file_size = 0;
+            if (fs::exists(path))
+                file_size = fs::file_size(path);
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Expected {} >= {} ({})",
-                current_write_offset, file_offset_of_buffer_end, getInfoForLog());
+                "Invariant failed. Expected {} >= {} (size on fs: {}, {})",
+                current_write_offset, file_offset_of_buffer_end, file_size, getInfoForLog());
         }
     }
-
-    if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+    else if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
     {
         /**
         * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
@@ -884,25 +888,28 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (!result)
     {
-#ifndef NDEBUG
-        if (read_type == ReadType::CACHED)
+        auto debug_check = [&]()
         {
-            size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-            if (cache_file_size == 0)
+            if (read_type == ReadType::CACHED)
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Attempt to read from an empty cache file: {} (just before actual read)",
-                    cache_file_size);
+                size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+                if (cache_file_size == 0)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Attempt to read from an empty cache file: {} (just before actual read)",
+                        cache_file_size);
+                }
             }
-        }
-        else
-        {
-            assert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
-        }
+            else
+            {
+                chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
+            }
+            chassert(!implementation_buffer->hasPendingData());
+            return true;
+        };
 
-        assert(!implementation_buffer->hasPendingData());
-#endif
+        chassert(debug_check());
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -927,6 +934,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
+
+            chassert(file_offset_of_buffer_end + size <= file_segment.range().size());
         }
         else
         {
