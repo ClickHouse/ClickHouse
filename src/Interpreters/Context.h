@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
