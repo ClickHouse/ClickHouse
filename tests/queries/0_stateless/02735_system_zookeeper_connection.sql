@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 
 DROP TABLE IF EXISTS test_zk_connection_table;
 
