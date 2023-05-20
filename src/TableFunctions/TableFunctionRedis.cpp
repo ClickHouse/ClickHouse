@@ -1,17 +1,15 @@
 #include <TableFunctions/TableFunctionRedis.h>
 
 #include <Common/Exception.h>
+#include <IO/WriteBuffer.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 
@@ -23,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INVALID_REDIS_STORAGE_TYPE;
 }
 
 
@@ -31,7 +30,11 @@ StoragePtr TableFunctionRedis::executeImpl(
 {
     auto columns = getActualTableStructure(context);
     auto storage = std::make_shared<StorageRedis>(
-        StorageID(configuration->db_id, table_name), configuration, columns, ConstraintsDescription(), String{});// TODO
+        StorageID(toString(configuration->db_index), table_name), // TODO
+        *configuration,
+        columns,
+        ConstraintsDescription(),
+        String{});
     storage->startup();
     return storage;
 }
@@ -42,21 +45,14 @@ ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr contex
     String structure;
     switch (configuration->storage_type)
     {
-        case StorageRedis::StorageType::SIMPLE:
+        case RedisStorageType::SIMPLE:
             structure = "key String, value String";
             break;
-        case StorageRedis::StorageType::HASH:
+        case RedisStorageType::HASH_MAP:
             structure = "key String, field, String, value String";
             break;
-        case StorageRedis::StorageType::LIST:
-            structure = "key String, value Array(String)";
-            break;
-        case StorageRedis::StorageType::SET:
-            structure = "key String, value Array(String)";
-            break;
-        case StorageRedis::StorageType::ZSET:
-            structure = "key String, value Array(String)";
-            break;
+        case RedisStorageType::UNKNOWN:
+            throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "invalid redis storage type.");
     }
     return parseColumnsListFromString(structure, context);
 }
@@ -74,7 +70,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'Redis' requires from 4 parameters: "
-            "redis('host:port', db_id, 'password', 'storage_type')");
+            "redis('host:port', db_index, 'password', 'storage_type')");
     }
     configuration = StorageRedis::getConfiguration(args, context);
 }

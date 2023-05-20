@@ -3,11 +3,6 @@
 #include <string>
 #include <vector>
 
-#include <Poco/Redis/Array.h>
-#include <Poco/Redis/Client.h>
-#include <Poco/Redis/Command.h>
-#include <Poco/Redis/Type.h>
-
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -30,7 +25,7 @@ namespace DB
 
 
     RedisSource::RedisSource(
-        ConnectionPtr connection_,
+        RedisConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
