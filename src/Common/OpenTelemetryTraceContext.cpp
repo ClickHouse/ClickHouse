@@ -5,7 +5,8 @@
 #include <Common/Exception.h>
 #include <base/hex.h>
 #include <Core/Settings.h>
-#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/AsyncTaskExecutor.h>
 
@@ -249,26 +250,26 @@ String TracingContext::composeTraceparentHeader() const
 
 void TracingContext::deserialize(ReadBuffer & buf)
 {
-    buf >> this->trace_id
-        >> "\n"
-        >> this->span_id
-        >> "\n"
-        >> this->tracestate
-        >> "\n"
-        >> this->trace_flags
-        >> "\n";
+    readUUIDText(trace_id, buf);
+    assertChar('\n', buf);
+    readIntText(span_id, buf);
+    assertChar('\n', buf);
+    readString(tracestate, buf);
+    assertChar('\n', buf);
+    readIntText(trace_flags, buf);
+    assertChar('\n', buf);
 }
 
 void TracingContext::serialize(WriteBuffer & buf) const
 {
-    buf << this->trace_id
-        << "\n"
-        << this->span_id
-        << "\n"
-        << this->tracestate
-        << "\n"
-        << this->trace_flags
-        << "\n";
+    writeUUIDText(trace_id, buf);
+    writeChar('\n', buf);
+    writeIntText(span_id, buf);
+    writeChar('\n', buf);
+    writeString(tracestate, buf);
+    writeChar('\n', buf);
+    writeIntText(trace_flags, buf);
+    writeChar('\n', buf);
 }
 
 const TracingContextOnThread & CurrentContext()
