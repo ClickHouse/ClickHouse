@@ -19,7 +19,7 @@ function execute_query()
     local ddl_version=$1 && shift
     local opts=(
         --opentelemetry-traceparent "00-$trace_id-5150000000000515-01"
-        --opentelemetry-tracestate "a\nb cd"
+        --opentelemetry-tracestate $'a\nb cd'
         --distributed_ddl_output_mode "none"
         --distributed_ddl_entry_format_version "$ddl_version"
     )

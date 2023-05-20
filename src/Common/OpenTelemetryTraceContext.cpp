@@ -254,7 +254,7 @@ void TracingContext::deserialize(ReadBuffer & buf)
     assertChar('\n', buf);
     readIntText(span_id, buf);
     assertChar('\n', buf);
-    readString(tracestate, buf);
+    readEscapedString(tracestate, buf);
     assertChar('\n', buf);
     readIntText(trace_flags, buf);
     assertChar('\n', buf);
@@ -266,7 +266,7 @@ void TracingContext::serialize(WriteBuffer & buf) const
     writeChar('\n', buf);
     writeIntText(span_id, buf);
     writeChar('\n', buf);
-    writeString(tracestate, buf);
+    writeEscapedString(tracestate, buf);
     writeChar('\n', buf);
     writeIntText(trace_flags, buf);
     writeChar('\n', buf);
