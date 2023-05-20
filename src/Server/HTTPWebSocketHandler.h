@@ -7,7 +7,6 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/WebSocket/WebSocket.h>
 #include <Server/WebSocket/WebSocketServerConnection.h>
-#include <Server/WebSocket/ReadBufferFromWebSocket.h>
 
 #include "Poco/Util/ServerApplication.h"
 #include <Poco/Net/WebSocket.h>

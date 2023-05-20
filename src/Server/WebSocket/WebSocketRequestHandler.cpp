@@ -29,9 +29,13 @@ void WebSocketRequestHandler::processQuery(
 //    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 //     const auto & config = server.config();
 //
-    Poco::JSON::Object::Ptr params = nullptr;
-    if (request->has("params")) {
+    Poco::JSON::Object::Ptr params;
+    if (request->has("params"))
         params = request->get("params").extract<Poco::JSON::Object::Ptr>();
+
+    std::string query_id = "";
+    if (request->has("query_id")) {
+        query_id = request->get("query_id").extract<std::string>();
     }
 
     ///temporary solution should be changed cause
@@ -49,43 +53,37 @@ void WebSocketRequestHandler::processQuery(
         if (name.empty())
             return true;
 
-        if (name == "query_id")
-            return true;
-
         return false;
     };
 
     std::string database = "";
     std::string default_format = "";
-    std::string query_id = "";
 
 
     SettingsChanges settings_changes;
-    for (const auto & [key, value] : *params)
+    if (!params.isNull())
     {
-        if (key == "database")
+        for (const auto & [key, value] : *params)
         {
-            if (database.empty())
-                database = value.toString();
-        }
-        else if (key == "default_format")
-        {
-            if (default_format.empty())
-                default_format = value.toString();
-        }
-        else if (key == "query_id")
-        {
-            if (query_id.empty())
-                query_id = value.toString();
-        }
-        else if (param_could_be_skipped(key))
-        {
-        }
-        else
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
-                settings_changes.push_back({key, value.toString()});
+            if (key == "database")
+            {
+                if (database.empty())
+                    database = value.toString();
+            }
+            else if (key == "default_format")
+            {
+                if (default_format.empty())
+                    default_format = value.toString();
+            }
+            else if (param_could_be_skipped(key))
+            {
+            }
+            else
+            {
+                /// Other than query parameters are treated as settings.
+                if (!customizeQueryParam(context, key, value))
+                    settings_changes.push_back({key, value.toString()});
+            }
         }
     }
 

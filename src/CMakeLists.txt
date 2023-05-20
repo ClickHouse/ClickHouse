@@ -79,7 +79,7 @@ add_subdirectory (Formats)
 
 
 set(dbms_headers)
-set(dbms_sources Server/WebSocket/ReadBufferFromWebSocket.h Server/WebSocket/ReadBufferFromWebSocket.cpp)
+set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
