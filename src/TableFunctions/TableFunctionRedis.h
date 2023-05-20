@@ -23,7 +23,7 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<StorageRedis::Configuration> configuration;
+    std::optional<RedisConfiguration> configuration;
 };
 
 }
