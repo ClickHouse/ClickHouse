@@ -125,6 +125,8 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    String getConnectedAddress() const override { return connected_zk_address; }
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback);
@@ -179,7 +181,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() override;
+    DB::KeeperApiVersion getApiVersion() const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -201,6 +203,7 @@ public:
 
 private:
     ACLs default_acls;
+    String connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
 

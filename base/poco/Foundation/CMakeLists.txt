@@ -86,7 +86,6 @@ set (SRCS
     src/LoggingFactory.cpp
     src/LoggingRegistry.cpp
     src/LogStream.cpp
-    src/Manifest.cpp
     src/MD5Engine.cpp
     src/MemoryPool.cpp
     src/MemoryStream.cpp
@@ -107,7 +106,6 @@ set (SRCS
     src/PatternFormatter.cpp
     src/Pipe.cpp
     src/PipeImpl.cpp
-    src/PipeStream.cpp
     src/PriorityNotificationQueue.cpp
     src/Process.cpp
     src/PurgeStrategy.cpp

@@ -60,7 +60,7 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
         /// The loop can be further optimized.
         UInt64 number = rng();
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLE<UInt64>(data, number);
+        unalignedStoreLittleEndian<UInt64>(data, number);
 #else
         unalignedStore<UInt64>(data, number);
 #endif

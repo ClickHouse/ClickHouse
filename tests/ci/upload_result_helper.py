@@ -59,9 +59,10 @@ def upload_results(
     additional_files: List[str],
     check_name: str,
 ) -> str:
-    s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(
-        " ", "_"
-    ).replace("(", "_").replace(")", "_").replace(",", "_")
+    normalized_check_name = check_name.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_")):
+        normalized_check_name = normalized_check_name.replace(*r)
+    s3_path_prefix = f"{pr_number}/{commit_sha}/{normalized_check_name}"
     additional_urls = process_logs(
         s3_client, additional_files, s3_path_prefix, test_results
     )

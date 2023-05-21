@@ -289,15 +289,20 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     nuraft::ptr<nuraft::buffer> latest_snapshot_ptr;
     { /// save snapshot into memory
         std::lock_guard lock(snapshots_lock);
-        if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() > latest_snapshot_meta->get_last_log_idx())
         {
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but our last log index is {}",
+                "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
         }
+        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        {
+            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+        }
+
         latest_snapshot_ptr = latest_snapshot_buf;
     }
 
@@ -372,19 +377,32 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         {
             { /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
-                auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                if (error_code)
+
+                if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                 {
-                    throw Exception(
-                        ErrorCodes::SYSTEM_ERROR,
-                        "Snapshot {} was created failed, error: {}",
+                    LOG_INFO(
+                        log,
+                        "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                        "created",
                         snapshot->snapshot_meta->get_last_log_idx(),
-                        error_code.message());
+                        latest_snapshot_meta->get_last_log_idx());
                 }
-                latest_snapshot_path = path;
-                latest_snapshot_meta = snapshot->snapshot_meta;
-                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
+                else
+                {
+                    auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                    if (error_code)
+                    {
+                        throw Exception(
+                            ErrorCodes::SYSTEM_ERROR,
+                            "Snapshot {} was created failed, error: {}",
+                            snapshot->snapshot_meta->get_last_log_idx(),
+                            error_code.message());
+                    }
+                    latest_snapshot_path = path;
+                    latest_snapshot_meta = snapshot->snapshot_meta;
+                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+                    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
+                }
             }
 
             {

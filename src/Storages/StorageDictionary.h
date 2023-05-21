@@ -74,6 +74,10 @@ public:
         size_t max_block_size,
         size_t threads) override;
 
+    /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
+    /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
     std::shared_ptr<const IDictionary> getDictionary() const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);

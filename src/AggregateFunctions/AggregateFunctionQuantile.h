@@ -163,15 +163,11 @@ public:
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
             /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
-#ifdef OS_DARWIN
 #   pragma clang diagnostic push
 #   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-#endif
             if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
-#ifdef OS_DARWIN
 #   pragma clang diagnostic pop
-#endif
         }
 
         if constexpr (has_second_arg)

@@ -104,13 +104,13 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the read task (MergeTreeReadTask). When a thread calls getTask(), it will wait for
     /// it (if not yet ready) after getting the task.
-    auto task = [=, reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
+    auto task = [=, my_reader = std::move(reader), context = getContext()]() mutable -> MergeTreeReaderPtr &&
     {
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
 
-        reader->prefetchBeginOfRange(priority);
-        return std::move(reader);
+        my_reader->prefetchBeginOfRange(priority);
+        return std::move(my_reader);
     };
     return scheduleFromThreadPool<IMergeTreeDataPart::MergeTreeReaderPtr>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }
@@ -297,10 +297,29 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
 
 size_t MergeTreePrefetchedReadPool::getApproxSizeOfGranule(const IMergeTreeDataPart & part) const
 {
-    ColumnSize columns_size{};
-    for (const auto & col_name : column_names)
-        columns_size.add(part.getColumnSize(col_name));
-    return columns_size.data_compressed / part.getMarksCount();
+    const auto & columns = part.getColumns();
+    auto all_columns_are_fixed_size = columns.end() == std::find_if(
+        columns.begin(), columns.end(),
+        [](const auto & col){ return col.type->haveMaximumSizeOfValue() == false; });
+
+    if (all_columns_are_fixed_size)
+    {
+        size_t approx_size = 0;
+        for (const auto & col : columns)
+            approx_size += col.type->getMaximumSizeOfValueInMemory() * fixed_index_granularity;
+
+        if (!index_granularity_bytes)
+            return approx_size;
+
+        return std::min(index_granularity_bytes, approx_size);
+    }
+
+    const size_t approx_size = static_cast<size_t>(std::round(static_cast<double>(part.getBytesOnDisk()) / part.getMarksCount()));
+
+    if (!index_granularity_bytes)
+        return approx_size;
+
+    return std::min(index_granularity_bytes, approx_size);
 }
 
 MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInfos(
