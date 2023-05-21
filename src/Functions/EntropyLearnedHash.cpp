@@ -9,6 +9,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Functions/FunctionsHashing.h>
+#include "../../contrib/libfarmhash/farmhash.h"
 
 /// Implementation of entropy-learned hashing: https://doi.org/10.1145/3514221.3517894
 /// If you change something in this file, please don't deviate too much from the pseudocode in the paper!
@@ -254,28 +256,56 @@ public:
     explicit FunctionEntropyLearnedHash(const String & user_name_) : IFunction(), user_name(user_name_) {}
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
+        FunctionArgumentDescriptors mandatory_args{
             {"data", &isString<IDataType>, nullptr, "String"},
-            {"id", &isString<IDataType>, nullptr, "String"}
+            {"id", &isString<IDataType>, nullptr, "String"},
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"arbitraryHashFunction", &isString<IDataType>, nullptr, "String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const IColumn * id_col = arguments.back().column.get();
+        std::function<uint64_t(const char *s, size_t len)> hash_function;
+        const auto arg_count = arguments.size();
+
+        auto farmHashLambda = [](const char *s, size_t len) -> uint64_t {
+            return static_cast<uint64_t>(NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len));
+        };
+
+        if (arg_count == 2) {
+            hash_function = CityHash_v1_0_2::CityHash64;
+        } else {
+            const IColumn * hash_function_col = arguments[2].column.get();
+            const ColumnConst * hash_function_col_const = checkAndGetColumn<ColumnConst>(hash_function_col);
+            String hash_function_name = hash_function_col_const->getValue<String>();
+            String lowercase_name = hash_function_name;
+            std::transform(hash_function_name.begin(), hash_function_name.end(), lowercase_name.begin(), [](unsigned char c) {
+                return std::tolower(c);
+            });
+            if (lowercase_name == "cityhash64")
+                hash_function = CityHash_v1_0_2::CityHash64;
+            else if (lowercase_name == "farmhash64")
+                hash_function = farmHashLambda;
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Hash function {} is not supported", hash_function_name);
+        }
+
+        const IColumn * id_col = arguments[1].column.get();
         const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
         const String id = id_col_const->getValue<String>();
 
@@ -294,7 +324,7 @@ public:
             {
                 std::string_view string_ref = col_data_string->getDataAt(i).toView();
                 getPartialKey(string_ref, partial_key_positions, partial_key);
-                col_res_vec[i] = CityHash_v1_0_2::CityHash64(partial_key.data(), partial_key.size());
+                col_res_vec[i] = hash_function(partial_key.data(), partial_key.size());
             }
 
             return col_res;
