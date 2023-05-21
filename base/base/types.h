@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <type_traits>
+#include <ostream>
 
 using Int8 = int8_t;
 using Int16 = int16_t;
@@ -42,13 +44,12 @@ using String = std::string;
 
 struct BFloat16 {
 public:
-    BFloat16() : data(0) {}
+    BFloat16() = default;
 
-    explicit BFloat16(float value) {
+    template<typename Type>
+    BFloat16(Type value) {
       fromValue(value);
     }
-
-    explicit BFloat16(uint16_t x): data(x) {}
 
     /// Take the most significant 16 bits of the floating point number.
     template <typename Value>
@@ -63,101 +64,250 @@ public:
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     static Float32 toFloat32(const BFloat16 & x) {
-        return std::bit_cast<DB::Float32>(x.data << 16);
+        return std::bit_cast<Float32>(x.data << 16);
     }
 
     Float32 toFloat32() const {
-        return std::bit_cast<DB::Float32>(this->data << 16);
+        return std::bit_cast<Float32>(this->data << 16);
     }
 
-    bool operator==(const BFloat16& other) const {
-        return data == other.data;
+    Float64 toFloat64() const {
+        return std::bit_cast<Float64>(UInt64(this->data) << 32);
     }
 
-    bool operator!=(const BFloat16& other) const {
-        return data != other.data;
+    friend inline BFloat16 operator+(BFloat16 a, BFloat16 b) {
+        return BFloat16(static_cast<float>(a) + static_cast<float>(b));
     }
 
-    bool operator<(const BFloat16& other) const {
-        return toFloat32() < other.toFloat32();
+    friend inline BFloat16 operator-(BFloat16 a, BFloat16 b) {
+        return BFloat16(static_cast<float>(a) - static_cast<float>(b));
     }
 
-    bool operator<=(const BFloat16& other) const {
-        return toFloat32() <= other.toFloat32();
+    friend inline BFloat16 operator*(BFloat16 a, BFloat16 b) {
+        return BFloat16(static_cast<float>(a) * static_cast<float>(b));
     }
 
-    bool operator>(const BFloat16& other) const {
-        return toFloat32() > other.toFloat32();
+    friend inline BFloat16 operator/(BFloat16 a, BFloat16 b) {
+        return BFloat16(static_cast<float>(a) / static_cast<float>(b));
     }
 
-    bool operator>=(const BFloat16& other) const {
-        return toFloat32() >= other.toFloat32();
+    friend inline BFloat16 operator-(BFloat16 a) {
+        a.data ^= 0x8000;
+        return a;
     }
 
-    BFloat16 operator+(const BFloat16& other) const {
-        return BFloat16(toFloat32() + other.toFloat32());
+    friend inline bool operator<(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) < static_cast<float>(b);
     }
 
-    BFloat16 operator-(const BFloat16& other) const {
-        return BFloat16(toFloat32() - other.toFloat32());
+    friend inline bool operator<=(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) <= static_cast<float>(b);
     }
 
-    BFloat16 operator*(const BFloat16& other) const {
-        return BFloat16(toFloat32() * other.toFloat32());
+    friend inline bool operator==(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) == static_cast<float>(b);
     }
 
-    BFloat16 operator/(const BFloat16& other) const {
-        return BFloat16(toFloat32() / other.toFloat32());
+    friend inline bool operator!=(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) != static_cast<float>(b);
     }
 
-    BFloat16& operator+=(const BFloat16& other) {
-        *this = *this + other;
-        return *this;
+    friend inline bool operator>(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) > static_cast<float>(b);
     }
 
-    BFloat16& operator-=(const BFloat16& other) {
-        *this = *this - other;
-        return *this;
+    friend inline bool operator>=(BFloat16 a, BFloat16 b) {
+        return static_cast<float>(a) >= static_cast<float>(b);
     }
 
-    BFloat16& operator*=(const BFloat16& other) {
-        *this = *this * other;
-        return *this;
+    friend inline BFloat16& operator+=(BFloat16& a, BFloat16 b) {
+        a = a + b;
+        return a;
     }
 
-    BFloat16& operator/=(const BFloat16& other) {
-        *this = *this / other;
-        return *this;
+    friend inline BFloat16& operator-=(BFloat16& a, BFloat16 b) {
+        a = a - b;
+        return a;
     }
 
-    BFloat16& operator++() {
-        *this += BFloat16(1.0f);
-        return *this;
+    friend inline BFloat16 operator++(BFloat16& a) {
+        a += BFloat16(1);
+        return a;
     }
 
-    BFloat16 operator++(int) {
-        BFloat16 temp = *this;
-        ++(*this);
+    friend inline BFloat16 operator--(BFloat16& a) {
+        a -= BFloat16(1);
+        return a;
+    }
+
+    friend inline BFloat16 operator++(BFloat16& a, int) {
+        BFloat16 temp = a;
+        ++a;
         return temp;
     }
 
-    BFloat16& operator--() {
-        *this -= BFloat16(1.0f);
-        return *this;
+    friend inline BFloat16 operator--(BFloat16& a, int) {
+        BFloat16 temp = a;
+        --a;
+        return temp;
     }
 
-    BFloat16 operator--(int) {
-        BFloat16 temp = *this;
-        --(*this);
-        return temp;
+    friend inline BFloat16& operator*=(BFloat16& a, BFloat16 b) {
+        a = a * b;
+        return a;
+    }
+
+    friend inline BFloat16& operator/=(BFloat16& a, BFloat16 b) {
+        a = a / b;
+        return a;
     }
 
     operator float() const {
         return toFloat32();
     }
 
+    explicit operator bool() const {
+        return static_cast<bool>(float(*this));
+    }
+
+    explicit operator short() const {
+        return static_cast<short>(float(*this));
+    }
+
+    explicit operator int() const {
+        return static_cast<int>(float(*this));
+    }
+
+    explicit operator long() const {
+        return static_cast<long>(float(*this));
+    }
+
+    explicit operator char() const {
+        return static_cast<char>(float(*this));
+    }
+
+    explicit operator signed char() const {
+        return static_cast<signed char>(float(*this));
+    }
+
+    explicit operator unsigned char() const {
+        return static_cast<unsigned char>(float(*this));
+    }
+
+    explicit operator unsigned short() const {
+        return static_cast<unsigned short>(float(*this));
+    }
+
+    explicit operator unsigned int() const {
+        return static_cast<unsigned int>(float(*this));
+    }
+
+    explicit operator unsigned long() const {
+        return static_cast<unsigned long>(float(*this));
+    }
+
+    explicit operator unsigned long long() const {
+        return static_cast<unsigned long long>(float(*this));
+    }
+
+    explicit operator long long() const {
+        return static_cast<long long>(float(*this));
+    }
+
+    explicit operator double() const {
+        return static_cast<double>(float(*this));
+    }
+
+    friend inline std::ostream& operator<<(std::ostream& os, const BFloat16& bf) {
+        os << static_cast<float>(bf);
+        return os;
+    }
+
+/// Arithmetic with floats
+
+    friend inline float operator+(BFloat16 a, float b) {
+        return static_cast<float>(a) + b;
+    }
+    friend inline float operator-(BFloat16 a, float b) {
+        return static_cast<float>(a) - b;
+    }
+    friend inline float operator*(BFloat16 a, float b) {
+        return static_cast<float>(a) * b;
+    }
+    friend inline float operator/(BFloat16 a, float b) {
+        return static_cast<float>(a) / b;
+    }
+
+    friend inline float operator+(float a, BFloat16 b) {
+        return a + static_cast<float>(b);
+    }
+    friend inline float operator-(float a, BFloat16 b) {
+        return a - static_cast<float>(b);
+    }
+    friend inline float operator*(float a, BFloat16 b) {
+        return a * static_cast<float>(b);
+    }
+    friend inline float operator/(float a, BFloat16 b) {
+        return a / static_cast<float>(b);
+    }
+
+    friend inline float& operator+=(float& a, const BFloat16& b) {
+        return a += static_cast<float>(b);
+    }
+    friend inline float& operator-=(float& a, const BFloat16& b) {
+        return a -= static_cast<float>(b);
+    }
+    friend inline float& operator*=(float& a, const BFloat16& b) {
+        return a *= static_cast<float>(b);
+    }
+    friend inline float& operator/=(float& a, const BFloat16& b) {
+        return a /= static_cast<float>(b);
+    }
+
 private:
     uint16_t data;
 };
+
+}
+
+namespace std {
+
+using DB::BFloat16;
+
+inline bool signbit(const BFloat16& a) { return std::signbit(float(a)); }
+inline bool isinf(const BFloat16& a) { return std::isinf(float(a)); }
+inline bool isnan(const BFloat16& a) { return std::isnan(float(a)); }
+inline bool isfinite(const BFloat16& a) { return std::isfinite(float(a)); }
+inline BFloat16 abs(const BFloat16& a) { return BFloat16(std::abs(float(a))); }
+inline BFloat16 exp(const BFloat16& a) { return BFloat16(std::exp(float(a))); }
+inline BFloat16 log(const BFloat16& a) { return BFloat16(std::log(float(a))); }
+
+inline BFloat16 log10(const BFloat16& a) {
+  return BFloat16(std::log10(float(a)));
+}
+
+inline BFloat16 sqrt(const BFloat16& a) {
+  return BFloat16(std::sqrt(float(a)));
+}
+
+inline BFloat16 pow(const BFloat16& a, const BFloat16& b) {
+  return BFloat16(std::pow(float(a), float(b)));
+}
+
+inline BFloat16 sin(const BFloat16& a) { return BFloat16(std::sin(float(a))); }
+inline BFloat16 cos(const BFloat16& a) { return BFloat16(std::cos(float(a))); }
+inline BFloat16 tan(const BFloat16& a) { return BFloat16(std::tan(float(a))); }
+
+inline BFloat16 tanh(const BFloat16& a) {
+  return BFloat16(std::tanh(float(a)));
+}
+
+inline BFloat16 floor(const BFloat16& a) {
+  return BFloat16(std::floor(float(a)));
+}
+
+inline BFloat16 ceil(const BFloat16& a) {
+  return BFloat16(std::ceil(float(a)));
+}
 
 }

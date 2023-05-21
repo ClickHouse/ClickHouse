@@ -154,7 +154,7 @@ namespace
 {
 
 template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+requires (sizeof(TUint) >= 2)
 class DfcmPredictor
 {
 public:
@@ -184,9 +184,13 @@ private:
         {
             hash = ((hash << 2) ^ static_cast<std::size_t>(value >> 40)) & (table.size() - 1);
         }
-        else
+        else if constexpr (sizeof(TUint) >= 4)
         {
             hash = ((hash << 4) ^ static_cast<std::size_t>(value >> 23)) & (table.size() - 1);
+        }
+        else
+        {
+            hash = ((hash << 3) ^ static_cast<std::size_t>(value >> 7)) & (table.size() - 1);
         }
     }
 
@@ -196,7 +200,7 @@ private:
 };
 
 template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+requires (sizeof(TUint) >= 2)
 class FcmPredictor
 {
 public:
@@ -225,9 +229,13 @@ private:
         {
             hash = ((hash << 6) ^ static_cast<std::size_t>(value >> 48)) & (table.size() - 1);
         }
-        else
+        else if constexpr (sizeof(TUint) >= 4)
         {
             hash = ((hash << 1) ^ static_cast<std::size_t>(value >> 22)) & (table.size() - 1);
+        }
+        else
+        {
+            hash = ((hash << 1) ^ static_cast<std::size_t>(value >> 6)) & (table.size() - 1);
         }
     }
 

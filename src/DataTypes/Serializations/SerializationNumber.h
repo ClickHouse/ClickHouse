@@ -1,7 +1,9 @@
 #pragma once
 
+#include <type_traits>
 #include <Core/Types.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -12,7 +14,7 @@ class ColumnVector;
 template <typename T>
 class SerializationNumber : public SimpleTextSerialization
 {
-    static_assert(is_arithmetic_v<T>);
+    static_assert(is_arithmetic_v<T> || std::is_same_v<T, BFloat16>);
 
 public:
     using FieldType = T;

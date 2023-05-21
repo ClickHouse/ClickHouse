@@ -47,7 +47,7 @@ template <class T> concept is_integer =
     || std::is_same_v<T, Int256>
     || std::is_same_v<T, UInt256>;
 
-template <class T> concept is_floating_point = std::is_floating_point_v<T>;
+template <class T> concept is_floating_point = std::is_floating_point_v<T> || std::is_same_v<T, DB::BFloat16>;
 
 template <typename T>
 struct is_arithmetic // NOLINT(readability-identifier-naming)
@@ -59,6 +59,7 @@ template <> struct is_arithmetic<Int128> { static constexpr bool value = true; }
 template <> struct is_arithmetic<UInt128> { static constexpr bool value = true; };
 template <> struct is_arithmetic<Int256> { static constexpr bool value = true; };
 template <> struct is_arithmetic<UInt256> { static constexpr bool value = true; };
+template <> struct is_arithmetic<DB::BFloat16> { static constexpr bool value = true; };
 
 
 template <typename T>

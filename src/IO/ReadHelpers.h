@@ -1097,6 +1097,7 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(BFloat16 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
 template <std::endian endian, typename T>
@@ -1266,6 +1267,7 @@ inline void readCSV(UInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(Int128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(BFloat16 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)

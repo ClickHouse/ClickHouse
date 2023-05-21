@@ -171,7 +171,7 @@ inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, U
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+requires (IsDataTypeDecimal<FromDataType> && (is_arithmetic_v<typename ToDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>))
 inline ReturnType convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -181,7 +181,7 @@ inline ReturnType convertFromDecimalImpl(const typename FromDataType::FieldType 
 }
 
 template <typename FromDataType, typename ToDataType>
-requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+requires (IsDataTypeDecimal<FromDataType> && (is_arithmetic_v<typename ToDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>))
 inline typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
@@ -192,14 +192,14 @@ inline typename ToDataType::FieldType convertFromDecimal(const typename FromData
 }
 
 template <typename FromDataType, typename ToDataType>
-requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+requires (IsDataTypeDecimal<FromDataType> && (is_arithmetic_v<typename ToDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>))
 inline bool tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertFromDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+requires ((is_arithmetic_v<typename FromDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>) && IsDataTypeDecimal<ToDataType>)
 inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -208,7 +208,7 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (std::is_floating_point_v<FromFieldType>)
+    if constexpr (is_floating_point<FromFieldType>)
     {
         if (!std::isfinite(value))
         {
@@ -244,7 +244,7 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
 }
 
 template <typename FromDataType, typename ToDataType>
-requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+requires ((is_arithmetic_v<typename FromDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>) && IsDataTypeDecimal<ToDataType>)
 inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
@@ -253,7 +253,7 @@ inline typename ToDataType::FieldType convertToDecimal(const typename FromDataTy
 }
 
 template <typename FromDataType, typename ToDataType>
-requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+requires ((is_arithmetic_v<typename FromDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>) && IsDataTypeDecimal<ToDataType>)
 inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);

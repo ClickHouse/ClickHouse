@@ -78,6 +78,9 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
+        case ExternalResultDescription::ValueType::vtBFloat16:
+            assert_cast<ColumnBFloat16 &>(column).insertValue(pqxx::from_string<float>(value));
+            break;
         case ExternalResultDescription::ValueType::vtEnum8:
         case ExternalResultDescription::ValueType::vtEnum16:
         case ExternalResultDescription::ValueType::vtFixedString:
