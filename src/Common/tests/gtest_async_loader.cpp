@@ -629,6 +629,46 @@ TEST(AsyncLoader, StaticPriorities)
     ASSERT_EQ(schedule, "A9E9D9F9G9H9C4B3");
 }
 
+TEST(AsyncLoader, SimplePrioritization)
+{
+    AsyncLoaderTest t({
+        {.max_threads = 1, .priority = 0},
+        {.max_threads = 1, .priority = 1},
+        {.max_threads = 1, .priority = 2},
+    });
+
+    t.loader.start();
+
+    std::atomic<int> executed{0}; // Number of previously executed jobs (to test execution order)
+    LoadJobPtr job_to_prioritize;
+
+    auto job_func_A_booster = [&] (const LoadJobPtr &)
+    {
+        ASSERT_EQ(executed++, 0);
+        t.loader.prioritize(job_to_prioritize, 2);
+    };
+
+    auto job_func_B_tester = [&] (const LoadJobPtr &)
+    {
+        ASSERT_EQ(executed++, 2);
+    };
+
+    auto job_func_C_boosted = [&] (const LoadJobPtr &)
+    {
+        ASSERT_EQ(executed++, 1);
+    };
+
+    std::vector<LoadJobPtr> jobs;
+    jobs.push_back(makeLoadJob({}, 1, "A", job_func_A_booster)); // 0
+    jobs.push_back(makeLoadJob({jobs[0]}, 1, "tester", job_func_B_tester)); // 1
+    jobs.push_back(makeLoadJob({}, 0, "C", job_func_C_boosted)); // 2
+    auto task = makeLoadTask(t.loader, { jobs.begin(), jobs.end() });
+
+    job_to_prioritize = jobs[2]; // C
+
+    scheduleAndWaitLoadAll(task);
+}
+
 TEST(AsyncLoader, DynamicPriorities)
 {
     AsyncLoaderTest t({
@@ -646,15 +686,53 @@ TEST(AsyncLoader, DynamicPriorities)
 
     for (bool prioritize : {false, true})
     {
+        // Although all pools have max_threads=1, workers from different pools can run simultaneously just after `prioritize()` call
+        std::barrier sync(2);
+        bool wait_sync = prioritize;
+        std::mutex schedule_mutex;
         std::string schedule;
 
         LoadJobPtr job_to_prioritize;
 
+        // Order of execution of jobs D and E after prioritization is undefined, because it depend on `ready_seqno`
+        // (Which depends on initial `schedule()` order, which in turn depend on `std::unordered_map` order)
+        // So we have to obtain `ready_seqno` to be sure.
+        UInt64 ready_seqno_D = 0;
+        UInt64 ready_seqno_E = 0;
+
         auto job_func = [&] (const LoadJobPtr & self)
         {
+            {
+                std::unique_lock lock{schedule_mutex};
+                schedule += fmt::format("{}{}", self->name, self->execution_pool());
+            }
+
             if (prioritize && self->name == "C")
-                t.loader.prioritize(job_to_prioritize, 9); // dynamic prioritization
-            schedule += fmt::format("{}{}", self->name, self->pool());
+            {
+                for (const auto & state : t.loader.getJobStates())
+                {
+                    if (state.job->name == "D")
+                        ready_seqno_D = state.ready_seqno;
+                    if (state.job->name == "E")
+                        ready_seqno_E = state.ready_seqno;
+                }
+
+                // Jobs D and E should be enqueued at the moment
+                ASSERT_LT(0, ready_seqno_D);
+                ASSERT_LT(0, ready_seqno_E);
+
+                // Dynamic prioritization G0 -> G9
+                // Note that it will spawn concurrent worker in higher priority pool
+                t.loader.prioritize(job_to_prioritize, 9);
+
+                sync.arrive_and_wait(); // (A) wait for higher priority worker (B) to test they can be concurrent
+            }
+
+            if (wait_sync && (self->name == "D" || self->name == "E"))
+            {
+                wait_sync = false;
+                sync.arrive_and_wait(); // (B)
+            }
         };
 
         // Job DAG with initial priorities. During execution of C4, job G0 priority is increased to G9, postponing B3 job executing.
@@ -676,14 +754,19 @@ TEST(AsyncLoader, DynamicPriorities)
         jobs.push_back(makeLoadJob({ jobs[6] }, 0, "H", job_func)); // 7
         auto task = t.schedule({ jobs.begin(), jobs.end() });
 
-        job_to_prioritize = jobs[6];
+        job_to_prioritize = jobs[6]; // G
 
         t.loader.start();
         t.loader.wait();
         t.loader.stop();
 
         if (prioritize)
-            ASSERT_EQ(schedule, "A4C4E9D9F9G9B3H0");
+        {
+            if (ready_seqno_D < ready_seqno_E)
+                ASSERT_EQ(schedule, "A4C4D9E9F9G9B3H0");
+            else
+                ASSERT_EQ(schedule, "A4C4E9D9F9G9B3H0");
+        }
         else
             ASSERT_EQ(schedule, "A4C4B3E2D1F0G0H0");
     }
