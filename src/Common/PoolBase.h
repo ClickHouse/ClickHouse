@@ -146,12 +146,12 @@ public:
 
             if (timeout < 0)
             {
-                LOG_INFO(log, "No free connections in pool. Waiting undefinitelly.");
+                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
                 available.wait(lock);
             }
             else
             {
-                auto timeout_ms = std::chrono::microseconds(timeout);
+                auto timeout_ms = std::chrono::milliseconds(timeout);
                 LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
                 available.wait_for(lock, timeout_ms);
             }
