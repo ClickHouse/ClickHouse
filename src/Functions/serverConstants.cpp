@@ -60,7 +60,7 @@ namespace
     };
 
 
-    /// Returns default timezone for current session.
+    /// Returns timezone for current session.
     class FunctionTimezone : public FunctionConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
@@ -187,8 +187,6 @@ Returns the timezone name in which server operates.
      .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
      .categories{"Constant", "Miscellaneous"}
 });
-    factory.registerAlias("serverTimeZone", "serverTimezone");
-    factory.registerAlias("servertimezone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
