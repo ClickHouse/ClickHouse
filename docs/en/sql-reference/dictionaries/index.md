@@ -2206,7 +2206,7 @@ Regular expression tree dictionaries are a special type of dictionary which repr
 Regular expression tree dictionaries are defined in ClickHouse open-source using the YAMLRegExpTree source which is provided the path to a YAML file containing the regular expression tree.
 
 ```sql
-create dictionary regexp_dict
+CREATE DICTIONARY regexp_dict
 (
     regexp String,
     name String,
@@ -2322,7 +2322,7 @@ clickhouse client \
 You can see how to [Insert Local Files](https://clickhouse.com/docs/en/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
 ``` sql
-create dictionary regexp_dict
+CREATE DICTIONARY regexp_dict
 (
     regexp String,
     name String,
