@@ -1,4 +1,5 @@
 #include <string_view>
+#include <unordered_map>
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
@@ -25,6 +26,7 @@
 
 #include <Common/logger_useful.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/CommonParsers.h>
 
 using namespace std::literals;
 
@@ -1085,6 +1087,8 @@ public:
 
             ParserKeyword filter("FILTER");
             ParserKeyword over("OVER");
+            ParserKeyword respect_nulls("RESPECT NULLS");
+            ParserKeyword ignore_nulls("IGNORE NULLS");
 
             if (filter.ignore(pos, expected))
             {
@@ -1099,6 +1103,17 @@ public:
                 if (!filter_parser.parse(pos, function_node_as_iast, expected))
                     return false;
             }
+
+            NullsAction nulls_action = NullsAction::EMPTY;
+            if (respect_nulls.ignore(pos, expected))
+            {
+                nulls_action = NullsAction::RESPECT_NULLS;
+            }
+            if (ignore_nulls.ignore(pos, expected))
+            {
+                nulls_action = NullsAction::IGNORE_NULLS;
+            }
+            function_node->name = transformFunctionNameForRepectNulls(function_node->name, nulls_action);
 
             if (over.ignore(pos, expected))
             {
@@ -1132,6 +1147,30 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
+
+    enum NullsAction
+    {
+        EMPTY = 0,
+        RESPECT_NULLS = 1,
+        IGNORE_NULLS = 2,
+    };
+    static String transformFunctionNameForRepectNulls(const String & original_function_name, NullsAction nulls_action)
+    {
+        static std::unordered_map<String, std::vector<String>> renamed_functions_with_nulls = {
+            {"first_value", {"first_value", "first_value_respect_nulls", "first_value"}},
+            {"last_value", {"last_value", "last_value_respect_nulls", "last_value"}},
+        };
+        auto it = renamed_functions_with_nulls.find(original_function_name);
+        if (it == renamed_functions_with_nulls.end())
+        {
+            if (nulls_action == NullsAction::EMPTY)
+                return original_function_name;
+            else
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "Function {} does not support RESPECT NULLS or IGNORE NULLS", original_function_name);
+        }
+        return it->second[nulls_action];
+    }
 };
 
 /// Layer for priority brackets and tuple function
@@ -2353,7 +2392,6 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         {
             if (!layers.back()->parse(pos, expected, next))
                 break;
-
             if (layers.back()->isFinished())
             {
                 if (layers.size() == 1)

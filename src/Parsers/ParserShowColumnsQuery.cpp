@@ -7,14 +7,19 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <boost/algorithm/string.hpp>
+
 namespace DB
 {
 
 bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr like;
-    ASTPtr from_database;
-    ASTPtr from_table;
+    ASTPtr from1;
+    ASTPtr from2;
+
+    String from1_str;
+    String from2_str;
 
     auto query = std::make_shared<ASTShowColumnsQuery>();
 
@@ -27,26 +32,38 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (ParserKeyword("FULL").ignore(pos, expected))
         query->full = true;
 
-    if (!ParserKeyword("COLUMNS").ignore(pos, expected) || ParserKeyword("FIELDS").ignore(pos, expected))
+    if (!(ParserKeyword("COLUMNS").ignore(pos, expected) || ParserKeyword("FIELDS").ignore(pos, expected)))
         return false;
 
     if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier().parse(pos, from_table, expected))
+        if (!ParserCompoundIdentifier().parse(pos, from1, expected))
             return false;
     }
     else
         return false;
 
-    tryGetIdentifierNameInto(from_table, query->from_table);
-    bool abbreviated_form = query->from_table.contains("."); /// FROM <db>.<table>
+    tryGetIdentifierNameInto(from1, from1_str);
 
-    if (!abbreviated_form)
+    bool abbreviated_form = from1_str.contains("."); // FROM database.table
+    if (abbreviated_form)
+    {
+        std::vector<String> split;
+        boost::split(split, from1_str, boost::is_any_of("."));
+        query->database = split[0];
+        query->table = split[1];
+    }
+    else
+    {
         if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from_database, expected))
+            if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
 
-    tryGetIdentifierNameInto(from_database, query->from_database);
+        tryGetIdentifierNameInto(from2, from2_str);
+
+        query->table = from1_str;
+        query->database = from2_str;
+    }
 
     if (ParserKeyword("NOT").ignore(pos, expected))
         query->not_like = true;

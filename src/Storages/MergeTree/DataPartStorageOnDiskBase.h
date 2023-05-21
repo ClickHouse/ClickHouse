@@ -50,12 +50,12 @@ public:
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
 
     void backup(
-        const ReadSettings & read_settings,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const override;
 
     MutableDataPartStoragePtr freeze(
@@ -64,7 +64,8 @@ public:
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         bool copy_instead_of_hardlink,
-        const NameSet & files_to_copy_instead_of_hardlinks) const override;
+        const NameSet & files_to_copy_instead_of_hardlinks,
+        DiskTransactionPtr external_transaction) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,

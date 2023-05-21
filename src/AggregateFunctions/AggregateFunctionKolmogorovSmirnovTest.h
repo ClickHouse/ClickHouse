@@ -43,6 +43,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
+        UInt64 pos_tmp;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
@@ -65,14 +66,22 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                     now_s -= n2_d;
                     ++pos_y;
                 }
-                max_s = std::max(max_s, now_s);
-                min_s = std::min(min_s, now_s);
             }
             else
             {
-                now_s += n1_d;
-                ++pos_x;
+                pos_tmp = pos_x + 1;
+                while (pos_tmp < x.size() && unlikely(fabs(x[pos_tmp] - x[pos_x]) <= tol))
+                    pos_tmp++;
+                now_s += n1_d * (pos_tmp - pos_x);
+                pos_x = pos_tmp;
+                pos_tmp = pos_y + 1;
+                while (pos_tmp < y.size() && unlikely(fabs(y[pos_tmp] - y[pos_y]) <= tol))
+                    pos_tmp++;
+                now_s -= n2_d * (pos_tmp - pos_y);
+                pos_y = pos_tmp;
             }
+            max_s = std::max(max_s, now_s);
+            min_s = std::min(min_s, now_s);
         }
         now_s += n1_d * (x.size() - pos_x) - n2_d * (y.size() - pos_y);
         min_s = std::min(min_s, now_s);
@@ -91,9 +100,9 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         UInt64 ny_g = n2 / g;
 
         if (method == "auto")
-            method = std::max(n1, n2) <= 10000 ? "exact" : "asymp";
+            method = std::max(n1, n2) <= 10000 ? "exact" : "asymptotic";
         else if (method == "exact" && nx_g >= std::numeric_limits<Int32>::max() / ny_g)
-            method = "asymp";
+            method = "asymptotic";
 
         Float64 p_value = std::numeric_limits<Float64>::infinity();
 
@@ -143,7 +152,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
             }
             p_value = c[n1];
         }
-        else if (method == "asymp")
+        else if (method == "asymp" || method == "asymptotic")
         {
             Float64 n = std::min(n1, n2);
             Float64 m = std::max(n1, n2);
@@ -242,9 +251,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
         method = params[1].get<String>();
-        if (method != "auto" && method != "exact" && method != "asymp")
+        if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
-                    "It must be one of: 'auto', 'exact', 'asymp'", getName());
+                    "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());
     }
 
     String getName() const override
