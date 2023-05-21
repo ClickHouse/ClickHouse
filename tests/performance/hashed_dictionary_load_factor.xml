@@ -9,11 +9,12 @@
         </substitution>
 
         <substitution>
-            <name>shards</name>
+            <name>load_factor</name>
             <values>
-                <value>1</value>
-                <value>8</value>
-                <value>16</value>
+                <!-- 0. will be prepended -->
+                <value>5</value>
+                <value>7</value>
+                <value>99</value>
             </values>
         </substitution>
     </substitutions>
@@ -36,19 +37,19 @@
     </create_query>
 
     <create_query>
-        CREATE DICTIONARY IF NOT EXISTS simple_key_{layout_suffix}_dictionary_s{shards}
+        CREATE DICTIONARY IF NOT EXISTS simple_key_{layout_suffix}_dictionary_l0_{load_factor}
         (
             id UInt64,
             value_int UInt64
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(TABLE 'simple_key_dictionary_source_table'))
-        LAYOUT({layout_suffix}(SHARDS {shards}))
+        LAYOUT({layout_suffix}(MAX_LOAD_FACTOR 0.{load_factor}))
         LIFETIME(0)
     </create_query>
 
     <create_query>
-        CREATE DICTIONARY IF NOT EXISTS complex_key_{layout_suffix}_dictionary_s{shards}
+        CREATE DICTIONARY IF NOT EXISTS complex_key_{layout_suffix}_dictionary_l0_{load_factor}
         (
             id UInt64,
             id_key String,
@@ -56,36 +57,36 @@
         )
         PRIMARY KEY id, id_key
         SOURCE(CLICKHOUSE(TABLE 'complex_key_dictionary_source_table'))
-        LAYOUT(COMPLEX_KEY_{layout_suffix}(SHARDS {shards}))
+        LAYOUT(COMPLEX_KEY_{layout_suffix}(MAX_LOAD_FACTOR 0.{load_factor}))
         LIFETIME(0)
     </create_query>
 
     <fill_query>INSERT INTO simple_key_dictionary_source_table SELECT number, number FROM numbers(3_000_000)</fill_query>
     <fill_query>INSERT INTO complex_key_dictionary_source_table SELECT number, toString(number), number FROM numbers(2_000_000)</fill_query>
 
-    <fill_query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_s{shards}</fill_query>
-    <fill_query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_s{shards}</fill_query>
+    <fill_query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_l0_{load_factor}</fill_query>
+    <fill_query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_l0_{load_factor}</fill_query>
 
-    <query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_s{shards}</query>
-    <query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_s{shards}</query>
+    <query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_l0_{load_factor}</query>
+    <query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_l0_{load_factor}</query>
 
     <query>
         WITH rand64() % 3_000_000 as key
-        SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_s{shards}', key)
+        SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_l0_{load_factor}', key)
         FROM numbers(3_000_000)
         FORMAT Null
     </query>
 
     <query>
         WITH (rand64() % 2_000_000, toString(rand64() % 2_000_000)) as key
-        SELECT dictHas('default.complex_key_{layout_suffix}_dictionary_s{shards}', key)
+        SELECT dictHas('default.complex_key_{layout_suffix}_dictionary_l0_{load_factor}', key)
         FROM numbers(2_000_000)
         FORMAT Null
     </query>
 
-    <drop_query>DROP DICTIONARY IF EXISTS simple_key_{layout_suffix}_dictionary_s{shards}</drop_query>
-    <drop_query>DROP DICTIONARY IF EXISTS complex_key_{layout_suffix}_dictionary_s{shards}</drop_query>
+    <drop_query>DROP DICTIONARY simple_key_{layout_suffix}_dictionary_l0_{load_factor}</drop_query>
+    <drop_query>DROP DICTIONARY complex_key_{layout_suffix}_dictionary_l0_{load_factor}</drop_query>
 
-    <drop_query>DROP TABLE IF EXISTS simple_key_dictionary_source_table</drop_query>
-    <drop_query>DROP TABLE IF EXISTS complex_key_dictionary_source_table</drop_query>
+    <drop_query>DROP TABLE simple_key_dictionary_source_table</drop_query>
+    <drop_query>DROP TABLE complex_key_dictionary_source_table</drop_query>
 </test>
