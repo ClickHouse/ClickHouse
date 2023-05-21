@@ -3,6 +3,8 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/utils/xml/XmlSerializer.h>
 
 namespace DB::S3
 {
@@ -48,6 +50,105 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
         headers.emplace(std::move(header), std::move(value));
 
     return headers;
+}
+
+Aws::String ComposeObjectRequest::SerializePayload() const
+{
+    if (component_names.empty())
+        return {};
+
+    Aws::Utils::Xml::XmlDocument payload_doc = Aws::Utils::Xml::XmlDocument::CreateWithRootNode("ComposeRequest");
+    auto root_node = payload_doc.GetRootElement();
+
+    for (const auto & name : component_names)
+    {
+        auto component_node = root_node.CreateChildElement("Component");
+        auto name_node = component_node.CreateChildElement("Name");
+        name_node.SetText(name);
+    }
+
+    return payload_doc.ConvertToString();
+}
+
+void ComposeObjectRequest::AddQueryStringParameters(Aws::Http::URI & /*uri*/) const
+{
+}
+
+Aws::Http::HeaderValueCollection ComposeObjectRequest::GetRequestSpecificHeaders() const
+{
+    if (content_type.empty())
+        return {};
+
+    return {Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, content_type)};
+}
+
+Aws::Endpoint::EndpointParameters ComposeObjectRequest::GetEndpointContextParams() const
+{
+    EndpointParameters parameters;
+    if (BucketHasBeenSet())
+        parameters.emplace_back("Bucket", GetBucket(), Aws::Endpoint::EndpointParameter::ParameterOrigin::OPERATION_CONTEXT);
+
+    return parameters;
+}
+
+const Aws::String & ComposeObjectRequest::GetBucket() const
+{
+    return bucket;
+}
+
+bool ComposeObjectRequest::BucketHasBeenSet() const
+{
+    return !bucket.empty();
+}
+
+void ComposeObjectRequest::SetBucket(const Aws::String & value)
+{
+    bucket = value;
+}
+
+void ComposeObjectRequest::SetBucket(Aws::String && value)
+{
+    bucket = std::move(value);
+}
+
+void ComposeObjectRequest::SetBucket(const char * value)
+{
+    bucket.assign(value);
+}
+
+const Aws::String & ComposeObjectRequest::GetKey() const
+{
+    return key;
+}
+
+bool ComposeObjectRequest::KeyHasBeenSet() const
+{
+    return !key.empty();
+}
+
+void ComposeObjectRequest::SetKey(const Aws::String & value)
+{
+    key = value;
+}
+
+void ComposeObjectRequest::SetKey(Aws::String && value)
+{
+    key = std::move(value);
+}
+
+void ComposeObjectRequest::SetKey(const char * value)
+{
+    key.assign(value);
+}
+
+void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
+{
+    component_names = std::move(component_names_);
+}
+
+void ComposeObjectRequest::SetContentType(Aws::String value)
+{
+    content_type = std::move(value);
 }
 
 }
