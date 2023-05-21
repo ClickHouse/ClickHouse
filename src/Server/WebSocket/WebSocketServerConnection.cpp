@@ -14,6 +14,8 @@ void WebSocketServerConnection::run()
 
     while (!connection_closed && received_bytes != 0 && (flags_and_opcode & WebSocket::FRAME_OP_BITMASK) != WebSocket::FRAME_OP_CLOSE)
     {
+        /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
+        frame_buffer.setCapacity(0);
         try {
             received_bytes = webSocket.receiveFrame(frame_buffer, flags_and_opcode);
         } catch (const Exception& e) {
@@ -61,6 +63,7 @@ void WebSocketServerConnection::run()
                 break;
 
             default:
+                message_buffer.setCapacity(0);
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary data processing is not implemented yet");
         }
 
@@ -73,24 +76,24 @@ void WebSocketServerConnection::run()
                 message_buffer.setCapacity(0);
 
             } catch (const Exception& e) {
+                message_buffer.setCapacity(0);
                 int err_code = e.code();
                 logger_.information(Poco::format("err code: %d", err_code));
                 // INVALID_JSON_FORMAT
-                if (err_code == 692) {
+                if (err_code == 698) {
                     sendErrorMessage("invalid json format");
                 }
                 // UNKNOWN_MESSAGE_TYPE
-                else if (err_code == 693) {
+                else if (err_code == 699) {
                     sendErrorMessage("unknown message type");
                 } else {
                     //TODO: add a reasonable exception wrapper here
+                    sendErrorMessage("different error code: " + toString(err_code));
                     throw Exception(e);
                 }
             }
         }
 
-        /// DO NOT CHANGE SETCAPACITY TO CLEAR, CLEAR SETS BUFFER TO FINILIZED STATE AND BUFFER CAN NOT BE REUSED IN FUTURE
-        frame_buffer.setCapacity(0);
     }
 }
 
