@@ -131,6 +131,8 @@
     M(ZooKeeperBytesSent, "Number of bytes send over network while communicating with ZooKeeper.") \
     M(ZooKeeperBytesReceived, "Number of bytes received over network while communicating with ZooKeeper.") \
     \
+    M(DistributedConnectionTries, "Total count of distributed connection attempts.") \
+    M(DistributedConnectionUsable, "Total count of successful distributed connections to a usable server (with required table, but maybe stale).") \
     M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry.") \
     M(DistributedConnectionMissingTable, "Number of times we rejected a replica from a distributed query, because it did not contain a table needed for the query.") \
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.") \
