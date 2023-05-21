@@ -579,16 +579,17 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
 
         // Update priority and push job forward through ready queue if needed
         UInt64 ready_seqno = info->second.ready_seqno;
-        if (ready_seqno)
-            old_pool.ready_queue.erase(ready_seqno);
-        job->pool_id.store(new_pool_id); // Set user-facing pool and priority (may affect executing jobs)
+
+        // Requeue job into the new pool queue without allocations
         if (ready_seqno)
         {
-            NOEXCEPT_SCOPE({
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                new_pool.ready_queue.emplace(ready_seqno, job);
-            });
+            new_pool.ready_queue.insert(old_pool.ready_queue.extract(ready_seqno));
+            if (canSpawnWorker(new_pool, lock))
+                spawn(new_pool, lock);
         }
+
+        // Set user-facing pool and priority (may affect executing jobs)
+        job->pool_id.store(new_pool_id);
 
         // Recurse into dependencies
         for (const auto & dep : job->dependencies)
