@@ -102,7 +102,7 @@ void WriteBufferFromWebSocket::ConstructDataMessage(WriteBuffer & msg, bool is_l
     writeText("\"" + msg_type + "\"", msg);
     if (!query_id.empty()){
         writeCString(",\"query_id\":\"", msg);
-        writeText(query_id, msg);
+        writeText(query_id + "\"", msg);
     }
     writeCString(",\"data\":\"", msg);
 

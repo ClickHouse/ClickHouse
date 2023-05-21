@@ -136,7 +136,7 @@ void WebSocketRequestHandler::handleRequest(Poco::JSON::Object::Ptr & request, D
     //auto data = request->get("data").extract<std::string>();
 
 
-    WriteBufferFromWebSocket output(webSocket, "");
+    WriteBufferFromWebSocket output(webSocket, "response");
 //    std::string str;
 //    WriteBufferFromOwnString output;
 
