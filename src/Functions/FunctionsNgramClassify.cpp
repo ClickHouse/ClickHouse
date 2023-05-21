@@ -10,8 +10,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Functions/FunctionFactory.h>
 #include <fstream>
+#include <vector>
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "base/defines.h"
+#include "base/types.h"
 
 /*
 - - - - - - - - - - - - - Чего я хочу - - - - - - - - - - - - - -
@@ -37,7 +39,7 @@ struct NgramTextClassificationImpl
 {
     using ResultType = Float64;
     template <typename ModelMap>
-    ALWAYS_INLINE inline Float64 naiveBayes(
+    static Float64 naiveBayes(
         const ModelMap & text, // text is normalized
         const ModelMap & model) // model is not normalized
     {
@@ -74,11 +76,21 @@ struct NgramTextClassificationImpl
 
     template<class ModelMap>
     class NgramModel {
+        // модель, в которой лежит только одна запись какого-то slice-а
+        // 
     public:
         explicit NgramModel(const String &filename) {
             load(filename);
         }
-        void load(const String &filename) {
+        /*
+        Формат модели
+
+        Имя N[сколько грам]
+        [N-gram1] [cnt1]
+        [N-gram2] [cnt2]
+        ...
+        */
+        void load(const String &filename) { // загружаем из файла модель
             map.clear();
             std::ifstream in(filename);
             in >> name >> n;
@@ -91,7 +103,10 @@ struct NgramTextClassificationImpl
             }
             in.close();
         }
-        void learn(const String &name_, size_t n_, const String &text) {
+        Float64 score(const NgramModel<ModelMap> &text_model) {
+            return naiveBayes(text_model, map);
+        }
+        void learn(const String &name_, size_t n_, const String &text) { // загружаем из строки модель
             name = name_;
             n = n_;
             map = buildModel<ModelMap>(text, n);
@@ -136,6 +151,64 @@ struct NgramTextClassificationImpl
         ModelMap map;
     };
 
+    template<class ModelMap>
+    class Slice {
+        // for example, Lang-slice, explicity slice, ..., e.t.c.
+    public:
+        Slice() = default;
+        explicit Slice(const std::string &directory) {
+            load(directory);
+        }
+
+        String classify(const String &text) {
+            ModelMap text_map = buildModel<ModelMap>(text, n);
+            Float64 best_score = 0.;
+            String result;
+            for (const auto &model : models) {
+                Float64 local_result = model.score(text_map);
+                if (local_result > best_score) {
+                    best_score = local_result;
+                    result = model.getName();
+                }
+            }
+            return result;
+        }
+
+        std::vector<std::pair<String, Float64>> score(const String &text, bool sorted = false) {
+            ModelMap text_map = buildModel<ModelMap>(text, n);
+            std::vector<std::pair<String, Float64>> result;
+            for (const auto &model : models) {
+                result.emplace_back(model.getName(), model.score(text_map));
+            }
+            if (sorted) {
+                sort(result.begin(), result.end(), [](const auto &a, const auto &b){ return a.second > b.second; });
+            }
+            return result;
+        }
+        /*
+        TODO: Score, ...
+        */
+    private:
+        std::vector<NgramModel<ModelMap>> models;
+        std::string name;
+        size_t n;
+        void load(const std::string &directory) {
+            const std::filesystem::path path{directory};
+            for (auto const& dir_entry : std::filesystem::directory_iterator{path}) {
+                models.emplace_back(dir_entry.path());
+            }
+            if (models.emptu()) {
+                // BOOM
+            }
+            n = models[0].getN();
+            for (const auto &model : models) {
+                if (model.getN() != n) {
+                    // BOOM
+                }
+            }
+        }
+    };
+
     struct StringSlice {
         const size_t p = 313;
         size_t precalced_pn;
@@ -174,7 +247,7 @@ struct NgramTextClassificationImpl
     };
 
     template <typename ModelMap>
-    ALWAYS_INLINE std::unordered_map<size_t, int> static buildModel(const String &text, size_t n) {
+    std::unordered_map<size_t, int> static buildModel(const String &text, size_t n) {
         // depends on custom_Hash
         StringSlice ss(text, n);
         std::unordered_map<size_t, int> map;
@@ -187,7 +260,7 @@ struct NgramTextClassificationImpl
     }
 
     template <typename ModelMap>
-    ALWAYS_INLINE Float64 ngramScore(const String &text, const NgramModel<ModelMap> &model) {
+    Float64 ngramScore(const String &text, const NgramModel<ModelMap> &model) {
         // depends on buildModel
         ModelMap text_model = buildModel<ModelMap>(text, model.getN());
         return naiveBayes(text_model, model.getMap());
