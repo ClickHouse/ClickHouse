@@ -566,7 +566,7 @@ TEST(AsyncLoader, TestOverload)
     AsyncLoaderTest t(3);
     t.loader.start();
 
-    size_t max_threads = t.loader.getMaxThreads();
+    size_t max_threads = t.loader.getMaxThreads(/* pool = */ 0);
     std::atomic<int> executing{0};
 
     for (int concurrency = 4; concurrency <= 8; concurrency++)
@@ -794,8 +794,64 @@ TEST(AsyncLoader, SetMaxThreads)
         syncs[idx]->arrive_and_wait(); // (A)
         sync_index++;
         if (sync_index < syncs.size())
-            t.loader.setMaxThreads(max_threads_values[sync_index]);
+            t.loader.setMaxThreads(/* pool = */ 0, max_threads_values[sync_index]);
         syncs[idx]->arrive_and_wait(); // (B) this sync point is required to allow `executing` value to go back down to zero after we change number of workers
     }
     t.loader.wait();
+}
+
+TEST(AsyncLoader, DynamicPools)
+{
+    const size_t max_threads[] { 2, 10 };
+    const int jobs_in_chain = 16;
+    AsyncLoaderTest t({
+        {.max_threads = max_threads[0], .priority = 0},
+        {.max_threads = max_threads[1], .priority = 1},
+    });
+
+    t.loader.start();
+
+    std::atomic<size_t> executing[2] { 0, 0 }; // Number of currently executing jobs per pool
+
+    for (int concurrency = 1; concurrency <= 12; concurrency++)
+    {
+        std::atomic<bool> boosted{false}; // Visible concurrency was increased
+        std::atomic<int> left{concurrency * jobs_in_chain / 2}; // Number of jobs to start before `prioritize()` call
+
+        LoadJobSet jobs_to_prioritize;
+
+        auto job_func = [&] (const LoadJobPtr & self)
+        {
+            auto pool_id = self->execution_pool();
+            executing[pool_id]++;
+            if (executing[pool_id] > max_threads[0])
+                boosted = true;
+            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
+
+            // Dynamic prioritization
+            if (--left == 0)
+            {
+                for (const auto & job : jobs_to_prioritize)
+                    t.loader.prioritize(job, 1);
+            }
+
+            t.randomSleepUs(100, 200, 100);
+
+            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
+            executing[pool_id]--;
+        };
+
+        std::vector<LoadTaskPtr> tasks;
+        tasks.reserve(concurrency);
+        for (int i = 0; i < concurrency; i++)
+            tasks.push_back(makeLoadTask(t.loader, t.chainJobSet(jobs_in_chain, job_func)));
+        jobs_to_prioritize = getGoals(tasks); // All jobs
+        scheduleAndWaitLoadAll(tasks);
+
+        ASSERT_EQ(executing[0], 0);
+        ASSERT_EQ(executing[1], 0);
+        ASSERT_EQ(boosted, concurrency > 2);
+        boosted = false;
+    }
+
 }

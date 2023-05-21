@@ -42,6 +42,11 @@ std::exception_ptr LoadJob::exception() const
     return load_exception;
 }
 
+size_t LoadJob::execution_pool() const
+{
+    return execution_pool_id;
+}
+
 size_t LoadJob::pool() const
 {
     return pool_id;
@@ -113,8 +118,9 @@ void LoadJob::enqueued()
         enqueue_time = std::chrono::system_clock::now();
 }
 
-void LoadJob::execute(const LoadJobPtr & self)
+void LoadJob::execute(size_t pool, const LoadJobPtr & self)
 {
+    execution_pool_id = pool;
     start_time = std::chrono::system_clock::now();
     func(self);
 }
@@ -657,6 +663,7 @@ void AsyncLoader::worker(Pool & pool)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
+    size_t pool_id = &pool - &*pools.begin();
     LoadJobPtr job;
     std::exception_ptr exception_from_job;
     while (true)
@@ -691,7 +698,7 @@ void AsyncLoader::worker(Pool & pool)
 
         try
         {
-            job->execute(job);
+            job->execute(pool_id, job);
             exception_from_job = {};
         }
         catch (...)
