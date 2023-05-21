@@ -96,7 +96,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , task_tracker(
           std::make_unique<WriteBufferFromS3::TaskTracker>(
               std::move(schedule_),
-              upload_settings.s3_max_inflight_parts_for_one_file))
+              upload_settings.max_inflight_parts_for_one_file))
 {
     LOG_TRACE(log, "Create WriteBufferFromS3, {}", getLogDetails());
 
