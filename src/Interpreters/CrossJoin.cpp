@@ -33,9 +33,6 @@ CrossJoin::CrossJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_
 {
 }
 
-enum {
-    ABSTRACT_LIMIT = 228,
-};
 
 bool CrossJoin::addJoinedBlock(const Block & block, bool check_limits) 
 {
