@@ -153,7 +153,7 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
 
     *future_placeholder = scheduler(std::move(func_with_notification), Priority{});
 
-    LOG_TEST(log, "add ended, in queue {}", futures.size());
+    LOG_TEST(log, "add ended, in queue {}, limit {}", futures.size(), max_tasks_inflight);
 
     waitInFlight();
 }
