@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,19 +8,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 # Prepare data
-mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/tmp/
-echo '"id","str","int","text"' > ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv
-echo '1,"abc",123,"abacaba"' >> ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv
-echo '2,"def",456,"bacabaa"' >> ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv
-echo '3,"story",78912,"acabaab"' >> ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv
-echo '4,"history",21321321,"cabaaba"' >> ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv
+unique_name=${CLICKHOUSE_TEST_UNIQUE_NAME}
+user_files_tmp_dir=${CLICKHOUSE_USER_FILES_PATH}/${unique_name}
+mkdir -p ${user_files_tmp_dir}/tmp/
+echo '"id","str","int","text"' > ${user_files_tmp_dir}/tmp.csv
+echo '1,"abc",123,"abacaba"' >> ${user_files_tmp_dir}/tmp.csv
+echo '2,"def",456,"bacabaa"' >> ${user_files_tmp_dir}/tmp.csv
+echo '3,"story",78912,"acabaab"' >> ${user_files_tmp_dir}/tmp.csv
+echo '4,"history",21321321,"cabaaba"' >> ${user_files_tmp_dir}/tmp.csv
 
 tmp_dir=${CLICKHOUSE_TEST_UNIQUE_NAME}
 [[ -d $tmp_dir ]] && rm -rd $tmp_dir
 mkdir $tmp_dir
-cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${tmp_dir}/tmp.csv
-cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${CLICKHOUSE_USER_FILES_PATH}/tmp/tmp.csv
-cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${CLICKHOUSE_USER_FILES_PATH}/tmp.myext
+cp ${user_files_tmp_dir}/tmp.csv ${tmp_dir}/tmp.csv
+cp ${user_files_tmp_dir}/tmp.csv ${user_files_tmp_dir}/tmp/tmp.csv
+cp ${user_files_tmp_dir}/tmp.csv ${user_files_tmp_dir}/tmp.myext
 
 #################
 echo "Test 1: create filesystem database and check implicit calls"
@@ -31,8 +32,8 @@ CREATE DATABASE test1 ENGINE = Filesystem;
 """
 echo $?
 ${CLICKHOUSE_CLIENT} --query "SHOW DATABASES" | grep "test1"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp/tmp.csv\`;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.csv\`;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp/tmp.csv\`;"
 ${CLICKHOUSE_LOCAL} -q "SELECT COUNT(*) FROM \"${tmp_dir}/tmp.csv\""
 
 #################
@@ -62,9 +63,9 @@ CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1| grep -F "Code: 107" > /dev/null && echo "OK"
 
 # BAD_ARGUMENTS: Cannot determine the file format by it's extension
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp.myext\`;" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.myext\`;" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK"
 
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE test1;"
 rm -rd $tmp_dir
-rm -rd $CLICKHOUSE_USER_FILES_PATH
+rm -rd $user_files_tmp_dir
