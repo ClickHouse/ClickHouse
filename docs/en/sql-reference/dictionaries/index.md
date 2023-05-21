@@ -2201,7 +2201,7 @@ Result:
 
 Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of (user agent)[https://en.wikipedia.org/wiki/User_agent] strings, which can be expressed elegantly with regexp tree dictionaries.
 
-### Use Regular Expression Tree Dictionary in ClickHouse Open-Source Environment
+### Use Regular Expression Tree Dictionary in ClickHouse Open-Source
 
 Regular expression tree dictionaries are defined in ClickHouse open-source using the YAMLRegExpTree source which is provided the path to a YAML file containing the regular expression tree.
 
@@ -2238,15 +2238,14 @@ The dictionary source `YAMLRegExpTree` represents the structure of a regexp tree
       version: '10'
 ```
 
-This config consists of a list of Regular Expression Tree nodes. Each node has following structure:
+This config consists of a list of regular expression tree nodes. Each node has the following structure:
 
-- **regexp** means the regular expression of this node.
-- **user defined attributes** is a list of dictionary attributes defined in the dictionary structure. In this case, we have two attributes: `name` and `version`. The first node has both attributes. The second node only has `name` attribute, because the `version` is defined in the children nodes.
-  - The value of an attribute could contain a **back reference** which refers to a capture group of the matched regular expression. Reference number ranges from 1 to 9 and writes as `$1` or `\1`. During the query execution, the back reference in the value will be replaced by the matched capture group.
-- **children nodes** is the children of a regexp tree node, which has their own attributes and children nodes. String matching preceeds in a depth-first fasion. If a string matches any regexp node in the top layer, the dictionary checks if the string matches the children nodes of it. If it matches, we assign the attributes of the matching nodes. If two or more nodes define the same attribute, children nodes have more priority.
-  - the name of **children nodes** in YAML files can be arbitrary.
+- **regexp**: the regular expression of the node.
+- **attributes**: a list of user-defined dictionary attributes. In this example, there are two attributes: `name` and `version`. The first node defines both attributes. The second node only defines attribute `name`. Attribute `version` is provided by the child nodes of the second node.
+  - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
+- **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
 
-Due to the specialty of regexp tree dictionary, we only allow functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
+Regexp tree dictionaries only allow access using functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
 
 Example:
 
@@ -2262,16 +2261,16 @@ Result:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-In this case, we match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node, so the dictionary continues to look into the children nodes and find it matches `3[12]/tclwebkit`. As a result, the value of `name` is `Android` defined in the first layer and the value of `version` is `12` defined the child node.
+In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node. The dictionary then continues to look into the child nodes and find that the string also matches `3[12]/tclwebkit`. As a result, the value of attribute `name` is `Android` (defined in the first layer) and the value of `version` is `12` (defined the child node).
 
-With a powerful YAML configure file, we can use RepexpTree dictionary as a UA parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
+With a powerful YAML configure file, we can use a regexp tree dictionaries as a user agent string parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
-We have shown how Regular Expression Tree work in the local environment, but we cannot use `YAMLRegExpTree` in the cloud. If we have a local YAML file, we can use this file to create Regular Expression Tree Dictionary in the local environment, then dump this dictionary to a csv file by the `dictionary` table function and [INTO OUTFILE](../statements/select/into-outfile.md) clause.
+Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.
 
 ```sql
-select * from dictionary(regexp_dict) into outfile('regexp_dict.csv')
+SELECT * FROM dictionary(regexp_dict) INTO OUTFILE('regexp_dict.csv')
 ```
 
 The content of csv file is:
@@ -2285,15 +2284,15 @@ The content of csv file is:
 6,2,"3[12]/tclwebkit","['version']","['10']"
 ```
 
-The schema of dumped file is always
+The schema of dumped file is:
 
-- `id UInt64` represents the id of the RegexpTree node.
-- `parent_id UInt64` represents the id of the parent of a node.
-- `regexp String` represents the regular expression string.
-- `keys Array(String)` represents the names of user defined attributes.
-- `values Array(String)` represents the values of user defined attributes.
+- `id UInt64`: the id of the RegexpTree node.
+- `parent_id UInt64`: the id of the parent of a node.
+- `regexp String`: the regular expression string.
+- `keys Array(String)`: the names of user-defined attributes.
+- `values Array(String)`: the values of user-defined attributes.
 
-On the cloud, we can create a table `regexp_dictionary_source_table` with the above table structure.
+To create the dictionary in ClickHouse Cloud, first create a table `regexp_dictionary_source_table` with below table structure:
 
 ```sql
 CREATE TABLE regexp_dictionary_source_table
