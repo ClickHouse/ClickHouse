@@ -32,7 +32,7 @@ class IColumn;
   */
 
 #define COMMON_SETTINGS(M, ALIAS) \
-    M(Dialect, dialect, Dialect::clickhouse, "Which dialect will be used to parse query", 0)\
+    M(Dialect, dialect, Dialect::prql, "Which dialect will be used to parse query", 0)\
     M(UInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.", 0) \
     M(UInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.", 0) \
     M(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading", 0) \

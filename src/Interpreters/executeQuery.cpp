@@ -380,20 +380,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            char input[end - begin + 1];
-            char * tmp1 = input;
-            memcpy(tmp1, begin, end - begin + 1);
-            char new_begin[5000];
+            char input[end - begin];
+            memcpy(input, begin, sizeof(input));
+            char new_begin[max_query_size];
+            memset(new_begin, 0, sizeof(new_begin));
             int res = to_sql(input, new_begin);
             if (res == -1) {
                 throw;
             }
             begin = new_begin;
-            end = new_begin + 4999;
-            
+            end = new_begin;
+            while (*end) {
+                ++end;
+            }
+
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-            // TODO: prql to sql
         }
         else
         {

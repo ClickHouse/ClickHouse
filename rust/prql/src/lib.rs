@@ -12,7 +12,6 @@ pub unsafe extern "C" fn to_sql(query: *const c_char, out: *mut c_char) -> c_int
     let (is_err, sql_result) = match prql_compiler::compile(&prql_query, None) {
         Ok(sql_str) => (false, sql_str),
         Err(err) => {
-            //let err_str = format!("{}", err);
             (true, err.to_string())
         }
     };
@@ -37,7 +36,6 @@ pub unsafe extern "C" fn to_json(query: *const c_char, out: *mut c_char) -> c_in
     let (is_err, sql_result) = match prql_to_pl(&prql_query).and_then(json::from_pl) {
         Ok(sql_str) => (false, sql_str),
         Err(err) => {
-            //let err_str = format!("{}", err);
             (true, err.to_string())
         }
     };
