@@ -144,8 +144,6 @@ public:
 
     std::string getObjectsNamespace() const override { return bucket; }
 
-    std::string generateBlobNameForPath(const std::string & path) override;
-
     bool isRemote() const override { return true; }
 
     void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
