@@ -503,6 +503,8 @@ The server successfully detected this situation and will download merged part fr
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
     M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     \
+    M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.") \
+    \
     M(LogTest, "Number of log messages with level Test") \
     M(LogTrace, "Number of log messages with level Trace") \
     M(LogDebug, "Number of log messages with level Debug") \
