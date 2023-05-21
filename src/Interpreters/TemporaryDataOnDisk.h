@@ -138,7 +138,8 @@ public:
     Stat finishWriting();
     bool isWriteFinished() const;
 
-    Block read();
+    Block read(bool finalize_earlier = true);
+    void resetReading();
 
     String getPath() const;
 

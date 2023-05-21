@@ -293,7 +293,7 @@ bool TemporaryFileStream::isWriteFinished() const
     return out_writer == nullptr;
 }
 
-Block TemporaryFileStream::read()
+Block TemporaryFileStream::read(bool finalize_earlier)
 {
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
@@ -307,12 +307,19 @@ Block TemporaryFileStream::read()
     }
 
     Block block = in_reader->read();
-    if (!block)
+    if (!block && finalize_earlier)
     {
         /// finalize earlier to release resources, do not wait for the destructor
         this->release();
     }
     return block;
+}
+
+void TemporaryFileStream::resetReading() {
+    if (!isWriteFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
+    in_reader.reset();
+    in_reader = std::make_unique<InputReader>(getPath(), header);
 }
 
 void TemporaryFileStream::updateAllocAndCheck()

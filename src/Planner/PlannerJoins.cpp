@@ -26,6 +26,7 @@
 #include <Analyzer/JoinNode.h>
 
 #include <Dictionaries/IDictionary.h>
+#include <Interpreters/CrossJoin.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
@@ -630,6 +631,10 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     trySetStorageInTableJoin(right_table_expression, table_join);
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
+
+    if (table_join->kind() == JoinKind::Cross) {
+        return std::make_shared<CrossJoin>(planner_context->getQueryContext(), table_join, right_table_expression_header);
+    }
 
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
