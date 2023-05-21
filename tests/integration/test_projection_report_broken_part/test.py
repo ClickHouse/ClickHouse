@@ -16,6 +16,7 @@ node = cluster.add_instance(
     ],
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -23,6 +24,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_projection_broken_part():
     node.query(
@@ -57,4 +59,7 @@ def test_projection_broken_part():
 
     time.sleep(2)
 
-    assert int(node.query("select sum(b) from test_projection_broken_parts_1 group by a")) == 6
+    assert (
+        int(node.query("select sum(b) from test_projection_broken_parts_1 group by a"))
+        == 6
+    )
