@@ -660,7 +660,7 @@ TEST(AsyncLoader, SimplePrioritization)
 
     std::vector<LoadJobPtr> jobs;
     jobs.push_back(makeLoadJob({}, 1, "A", job_func_A_booster)); // 0
-    jobs.push_back(makeLoadJob({jobs[0]}, 1, "tester", job_func_B_tester)); // 1
+    jobs.push_back(makeLoadJob({jobs[0]}, 1, "B", job_func_B_tester)); // 1
     jobs.push_back(makeLoadJob({}, 0, "C", job_func_C_boosted)); // 2
     auto task = makeLoadTask(t.loader, { jobs.begin(), jobs.end() });
 
