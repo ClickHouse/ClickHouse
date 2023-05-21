@@ -57,7 +57,13 @@ public:
     LoadStatus status() const;
     std::exception_ptr exception() const;
 
-    // Returns current pool of the job. May differ from initial pool.
+    // Returns pool in which the job is executing (was executed). May differ from initial pool and from current pool.
+    // Value is only valid (and constant) after execution started.
+    size_t execution_pool() const;
+
+    // Returns current pool of the job. May differ from initial and execution pool.
+    // This value is intended for creating new jobs during this job execution.
+    // Value may change during job execution by `prioritize()`.
     size_t pool() const;
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
@@ -90,8 +96,9 @@ private:
 
     void scheduled();
     void enqueued();
-    void execute(const LoadJobPtr & self);
+    void execute(size_t pool, const LoadJobPtr & self);
 
+    std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
     std::function<void(const LoadJobPtr & self)> func;
 
@@ -185,7 +192,7 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
 }
 
 template <class... Args>
-inline void scheduleLoad(Args && ... args)
+inline void scheduleLoadAll(Args && ... args)
 {
     (scheduleLoad(std::forward<Args>(args)), ...);
 }
@@ -208,16 +215,16 @@ inline void waitLoad(const LoadTaskPtrs & tasks)
 }
 
 template <class... Args>
-inline void waitLoad(Args && ... args)
+inline void waitLoadAll(Args && ... args)
 {
     (waitLoad(std::forward<Args>(args)), ...);
 }
 
 template <class... Args>
-inline void scheduleAndWaitLoad(Args && ... args)
+inline void scheduleAndWaitLoadAll(Args && ... args)
 {
-    scheduleLoad(std::forward<Args>(args)...);
-    waitLoad(std::forward<Args>(args)...);
+    scheduleLoadAll(std::forward<Args>(args)...);
+    waitLoadAll(std::forward<Args>(args)...);
 }
 
 inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
