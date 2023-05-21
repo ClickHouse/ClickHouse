@@ -890,11 +890,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
         for (const auto & node : actions_to_execute->getNodes())
         {
             const auto & set_key = node.result_name;
-            const auto * planner_set = planner_context->getSetOrNull(set_key);
+            auto * planner_set = planner_context->getSetOrNull(set_key);
             if (!planner_set)
                 continue;
 
-            if (planner_set->getSet()->isCreated() || !planner_set->getSubqueryNode())
+            if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
                 continue;
 
             auto subquery_options = select_query_options.subquery();
@@ -904,8 +904,16 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
                 planner_context->getGlobalPlannerContext());
             subquery_planner.buildQueryPlanIfNeeded();
 
+            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+            bool tranform_null_in = settings.transform_null_in;
+            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+
             SubqueryForSet subquery_for_set;
+            subquery_for_set.key = set_key;
+            subquery_for_set.set_in_progress = set;
             subquery_for_set.set = planner_set->getSet();
+            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));

@@ -155,10 +155,7 @@ public:
 
     virtual ~IObjectStorage() = default;
 
-    /// Path to directory with objects cache
-    virtual const std::string & getCacheBasePath() const;
-
-    static IAsynchronousReader & getThreadPoolReader();
+    virtual const std::string & getCacheName() const;
 
     static ThreadPool & getThreadPoolWriter();
 
@@ -168,9 +165,10 @@ public:
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) = 0;
+        const Poco::Util::AbstractConfiguration &,
+        const std::string & /*config_prefix*/,
+        ContextPtr)
+    {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -185,15 +183,12 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+    virtual std::string generateBlobNameForPath(const std::string & path);
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
-    virtual bool supportsAppend() const { return false; }
-
-    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
-    /// which is used to define a cache key for the source object path.
+    /// Remove filesystem cache.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
@@ -207,12 +202,8 @@ public:
 
     virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
-protected:
-    /// Should be called from implementation of applyNewSettings()
-    void applyRemoteThrottlingSettings(ContextPtr context);
-
-    /// Should be used by implementation of read* and write* methods
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:

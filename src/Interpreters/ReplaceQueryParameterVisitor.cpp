@@ -84,10 +84,20 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    if (ast_param.name == "_request_body")
-        data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
-    else
-        data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
+
+    const SerializationPtr & serialization = data_type->getDefaultSerialization();
+    try
+    {
+        if (ast_param.name == "_request_body")
+            serialization->deserializeWholeText(temp_column, read_buffer, format_settings);
+        else
+            serialization->deserializeTextEscaped(temp_column, read_buffer, format_settings);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, ast_param.name);
+        throw;
+    }
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,

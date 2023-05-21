@@ -58,7 +58,9 @@ static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames)
+    MutationCommands & for_file_renames,
+    const StorageMetadataPtr & table_metadata_snapshot,
+    Poco::Logger * log)
 {
     auto part_columns = part->getColumnsDescription();
 
@@ -142,6 +144,29 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
+                if (!table_metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+                {
+                    /// We cannot add the column because there's no such column in table.
+                    /// It's okay if the column was dropped. It may also absent in dropped_columns
+                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
+                    /// But we don't know for sure what happened.
+                    auto part_metadata_version = part->getMetadataVersion();
+                    auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
+                    if (table_metadata_version <= part_metadata_version)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+
+                    if (part_metadata_version < table_metadata_version)
+                    {
+                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
+                                         "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
+                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                        continue;
+                    }
+                }
+
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
@@ -464,10 +489,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
 
-    for (size_t i = 0; i < indices.size(); ++i)
+    for (const auto & index : indices)
     {
-        const auto & index = indices[i];
-
         bool has_index =
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
@@ -1724,6 +1747,8 @@ bool MutateTask::prepare()
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
+    /// Skip using large sets in KeyCondition
+    context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
 
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
@@ -1774,7 +1799,8 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
-    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
+    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter,
+                                                    ctx->for_file_renames, ctx->metadata_snapshot, ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
@@ -1836,6 +1862,11 @@ bool MutateTask::prepare()
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
+        /// In case of replicated merge tree with zero copy replication
+        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+        ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
+
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
@@ -1862,6 +1893,12 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
+
+        /// In case of replicated merge tree with zero copy replication
+        /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state
+        /// Some of the files within the blobs are shared with source part, some belongs only to the part
+        /// Keeper has to be asked with unlock request to release the references to the blobs
+        ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }

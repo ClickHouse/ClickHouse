@@ -1,7 +1,5 @@
 #include "config.h"
 #include <Common/ProfileEvents.h>
-#include "IO/ParallelReadBuffer.h"
-#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -12,6 +10,8 @@
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/ParallelReadBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -44,7 +44,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/narrowPipe.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -574,14 +573,34 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
         return {};
 
     size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id, request_settings);
+    auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
-    int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-    auto read_buf = wrapReadBufferWithCompressionMethod(
-        createS3ReadBuffer(current_key, object_size),
-        chooseCompressionMethod(current_key, compression_hint),
-        zstd_window_log_max);
+    InputFormatPtr input_format;
+    std::unique_ptr<ReadBuffer> owned_read_buf;
 
-    auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
+    auto read_buf_or_factory = createS3ReadBuffer(current_key, object_size);
+    if (read_buf_or_factory.buf_factory)
+    {
+        input_format = FormatFactory::instance().getInputRandomAccess(
+            format,
+            std::move(read_buf_or_factory.buf_factory),
+            sample_block,
+            getContext(),
+            max_block_size,
+            /* is_remote_fs */ true,
+            compression_method,
+            format_settings);
+    }
+    else
+    {
+        owned_read_buf = wrapReadBufferWithCompressionMethod(
+            std::move(read_buf_or_factory.buf),
+            compression_method,
+            static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max));
+        input_format = FormatFactory::instance().getInput(
+            format, *owned_read_buf, sample_block, getContext(), max_block_size, format_settings);
+    }
+
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
@@ -595,7 +614,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(bucket) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(bucket) / current_key, std::move(owned_read_buf), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
@@ -603,49 +622,36 @@ std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
     return create_reader_scheduler([this] { return createReader(); }, 0);
 }
 
-std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
+StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
 {
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
-
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
-    const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
-    const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+    const bool object_too_small = object_size <= 2 * download_buffer_size;
 
-    if (!use_parallel_download || object_too_small)
+    // Create a read buffer that will prefetch the first ~1 MB of the file.
+    // When reading lots of tiny files, this prefetching almost doubles the throughput.
+    // For bigger files, parallel reading is more useful.
+    if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
-        if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-            return createAsyncS3ReadBuffer(key, read_settings, object_size);
-
-        return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, request_settings, read_settings);
-    }
-
-    assert(object_size > 0);
-    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
-    {
-        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
-        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        LOG_TRACE(log, "Downloading object of size {} from S3 with initial prefetch", object_size);
+        return {.buf = createAsyncS3ReadBuffer(key, read_settings, object_size)};
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, version_id, download_buffer_size, object_size, request_settings, read_settings);
-
-    LOG_TRACE(log,
-        "Downloading from S3 in {} threads. Object size: {}, Range size: {}.",
-        download_thread_num, object_size, download_buffer_size);
-
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
+        client, bucket, key, version_id, object_size, request_settings, read_settings);
+    return {.buf_factory = std::move(factory)};
 }
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     const String & key, const ReadSettings & read_settings, size_t object_size)
 {
+    auto context = getContext();
     auto read_buffer_creator =
-        [this, read_settings]
-        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+        [this, read_settings, object_size]
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return std::make_shared<ReadBufferFromS3>(
+        return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,
             path,
@@ -655,16 +661,24 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             /* use_external_buffer */true,
             /* offset */0,
             read_until_position,
-            /* restricted_seek */true);
+            /* restricted_seek */true,
+            object_size);
     };
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, object_size}},
-        read_settings);
+        read_settings,
+        /* cache_log */nullptr);
 
-    auto & pool_reader = getContext()->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-    auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(pool_reader, read_settings, std::move(s3_impl));
+    auto modified_settings{read_settings};
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
+
+    auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+        pool_reader, modified_settings, std::move(s3_impl),
+        context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
@@ -763,8 +777,7 @@ public:
                 key,
                 configuration_.request_settings,
                 std::nullopt,
-                DBMS_DEFAULT_BUFFER_SIZE,
-                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"),
+                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
             3);
@@ -997,6 +1010,16 @@ bool StorageS3::supportsSubsetOfColumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
+bool StorageS3::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
+}
+
+bool StorageS3::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
+}
+
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1069,10 +1092,7 @@ Pipe StorageS3::read(
             max_download_threads));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
@@ -1249,6 +1269,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
+        auth_settings.server_side_encryption_kms_config,
         std::move(headers),
         S3::CredentialsConfiguration{
         auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),

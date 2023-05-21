@@ -87,8 +87,6 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return false; }
-
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
     bool isRemote() const override { return true; }

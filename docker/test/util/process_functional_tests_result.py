@@ -18,7 +18,7 @@ SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 RETRIES_SIGN = "Some tests were restarted"
 
 
-def process_test_log(log_path):
+def process_test_log(log_path, broken_tests):
     total = 0
     skipped = 0
     unknown = 0
@@ -59,11 +59,19 @@ def process_test_log(log_path):
 
                 total += 1
                 if TIMEOUT_SIGN in line:
-                    failed += 1
-                    test_results.append((test_name, "Timeout", test_time, []))
+                    if test_name in broken_tests:
+                        success += 1
+                        test_results.append((test_name, "BROKEN", test_time, []))
+                    else:
+                        failed += 1
+                        test_results.append((test_name, "Timeout", test_time, []))
                 elif FAIL_SIGN in line:
-                    failed += 1
-                    test_results.append((test_name, "FAIL", test_time, []))
+                    if test_name in broken_tests:
+                        success += 1
+                        test_results.append((test_name, "BROKEN", test_time, []))
+                    else:
+                        failed += 1
+                        test_results.append((test_name, "FAIL", test_time, []))
                 elif UNKNOWN_SIGN in line:
                     unknown += 1
                     test_results.append((test_name, "FAIL", test_time, []))
@@ -71,8 +79,19 @@ def process_test_log(log_path):
                     skipped += 1
                     test_results.append((test_name, "SKIPPED", test_time, []))
                 else:
-                    success += int(OK_SIGN in line)
-                    test_results.append((test_name, "OK", test_time, []))
+                    if OK_SIGN in line and test_name in broken_tests:
+                        skipped += 1
+                        test_results.append(
+                            (
+                                test_name,
+                                "NOT_FAILED",
+                                test_time,
+                                ["This test passed. Update broken_tests.txt.\n"],
+                            )
+                        )
+                    else:
+                        success += int(OK_SIGN in line)
+                        test_results.append((test_name, "OK", test_time, []))
                 test_end = False
             elif (
                 len(test_results) > 0 and test_results[-1][1] == "FAIL" and not test_end
@@ -110,7 +129,7 @@ def process_test_log(log_path):
     )
 
 
-def process_result(result_path):
+def process_result(result_path, broken_tests):
     test_results = []
     state = "success"
     description = ""
@@ -134,7 +153,7 @@ def process_result(result_path):
             success_finish,
             retries,
             test_results,
-        ) = process_test_log(result_path)
+        ) = process_test_log(result_path, broken_tests)
         is_flacky_check = 1 < int(os.environ.get("NUM_TRIES", 1))
         logging.info("Is flaky check: %s", is_flacky_check)
         # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
@@ -186,9 +205,17 @@ if __name__ == "__main__":
     parser.add_argument("--in-results-dir", default="/test_output/")
     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
+    parser.add_argument("--broken-tests", default="/broken_tests.txt")
     args = parser.parse_args()
 
-    state, description, test_results = process_result(args.in_results_dir)
+    broken_tests = list()
+    if os.path.exists(args.broken_tests):
+        logging.info(f"File {args.broken_tests} with broken tests found")
+        with open(args.broken_tests) as f:
+            broken_tests = f.read().splitlines()
+        logging.info(f"Broken tests in the list: {len(broken_tests)}")
+
+    state, description, test_results = process_result(args.in_results_dir, broken_tests)
     logging.info("Result parsed")
     status = (state, description)
     write_results(args.out_results_file, args.out_status_file, test_results, status)

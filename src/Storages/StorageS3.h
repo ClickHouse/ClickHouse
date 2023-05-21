@@ -16,6 +16,7 @@
 #include <Poco/URI.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -203,6 +204,12 @@ private:
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 
+    struct ReadBufferOrFactory
+    {
+        std::unique_ptr<ReadBuffer> buf;
+        SeekableReadBufferFactoryPtr buf_factory;
+    };
+
     ReaderHolder reader;
 
     std::vector<NameAndTypePair> requested_virtual_columns;
@@ -223,7 +230,7 @@ private:
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
+    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 
@@ -232,7 +239,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext
+class StorageS3 : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -357,6 +364,10 @@ private:
     bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const KeysWithInfo::const_iterator & begin,

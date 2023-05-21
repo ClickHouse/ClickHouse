@@ -319,6 +319,9 @@ struct CheckRequest : virtual Request
     String path;
     int32_t version = -1;
 
+    /// should it check if a node DOES NOT exist
+    bool not_exists = false;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
@@ -463,6 +466,8 @@ public:
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
+    virtual String getConnectedAddress() const = 0;
+
     /// If the method will throw an exception, callbacks won't be called.
     ///
     /// After the method is executed successfully, you must wait for callbacks
@@ -524,7 +529,7 @@ public:
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() = 0;
+    virtual DB::KeeperApiVersion getApiVersion() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

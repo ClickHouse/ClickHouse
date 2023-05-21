@@ -201,7 +201,19 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    /** But using mmap on server-side is unsafe for the following reasons:
+      * - concurrent modifications of a file will result in SIGBUS;
+      * - IO error from the device will result in SIGBUS;
+      * - recovery from this signal is not feasible even with the usage of siglongjmp,
+      *   as it might require stack unwinding from arbitrary place;
+      * - arbitrary slowdown due to page fault in arbitrary place in the code is difficult to debug.
+      *
+      * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
+      */
+
+    if (S_ISREG(file_stat.st_mode)
+        && context->getApplicationType() != Context::ApplicationType::SERVER
+        && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -405,6 +417,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
 bool StorageFile::supportsSubsetOfColumns() const
 {
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+}
+
+bool StorageFile::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
+}
+
+bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -791,15 +813,7 @@ Pipe StorageFile::read(
             std::move(read_buffer)));
     }
 
-    Pipe pipe = Pipe::unitePipes(std::move(pipes));
-    /// Parallelize output as much as possible
-    /// Note: number of streams can be 0 if paths is empty
-    ///       It happens if globs in file(path, ...) expands to empty set i.e. no files to process
-    if (num_streams > 0 && num_streams < max_num_streams)
-    {
-        pipe.resize(max_num_streams);
-    }
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

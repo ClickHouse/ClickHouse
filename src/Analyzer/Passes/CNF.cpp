@@ -162,14 +162,13 @@ private:
 class PushOrVisitor
 {
 public:
-    PushOrVisitor(ContextPtr context, size_t max_atoms_, size_t num_atoms_)
+    PushOrVisitor(ContextPtr context, size_t max_atoms_)
         : max_atoms(max_atoms_)
-        , num_atoms(num_atoms_)
         , and_resolver(FunctionFactory::instance().get("and", context))
         , or_resolver(FunctionFactory::instance().get("or", context))
     {}
 
-    bool visit(QueryTreeNodePtr & node)
+    bool visit(QueryTreeNodePtr & node, size_t num_atoms)
     {
         if (max_atoms && num_atoms > max_atoms)
             return false;
@@ -187,7 +186,10 @@ public:
         {
             auto & arguments = function_node->getArguments().getNodes();
             for (auto & argument : arguments)
-                visit(argument);
+            {
+                if (!visit(argument, num_atoms))
+                    return false;
+            }
         }
 
         if (name == "or")
@@ -217,7 +219,7 @@ public:
             auto rhs = createFunctionNode(or_resolver, std::move(other_node), std::move(and_function_arguments[1]));
             node = createFunctionNode(and_resolver, std::move(lhs), std::move(rhs));
 
-            visit(node);
+            return visit(node, num_atoms);
         }
 
         return true;
@@ -225,7 +227,6 @@ public:
 
 private:
     size_t max_atoms;
-    size_t num_atoms;
 
     const FunctionOverloadResolverPtr and_resolver;
     const FunctionOverloadResolverPtr or_resolver;
@@ -516,8 +517,8 @@ std::optional<CNF> CNF::tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr co
         visitor.visit(node_cloned, false);
     }
 
-    if (PushOrVisitor visitor(context, max_atoms, atom_count);
-        !visitor.visit(node_cloned))
+    if (PushOrVisitor visitor(context, max_atoms);
+        !visitor.visit(node_cloned, atom_count))
             return std::nullopt;
 
     CollectGroupsVisitor collect_visitor;

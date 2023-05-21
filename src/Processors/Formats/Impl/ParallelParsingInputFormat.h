@@ -94,7 +94,7 @@ public:
     };
 
     explicit ParallelParsingInputFormat(Params params)
-        : IInputFormat(std::move(params.header), params.in)
+        : IInputFormat(std::move(params.header), &params.in)
         , internal_parser_creator(params.internal_parser_creator)
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
