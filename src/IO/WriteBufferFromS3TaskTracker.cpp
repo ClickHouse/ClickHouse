@@ -46,6 +46,8 @@ size_t WriteBufferFromS3::TaskTracker::consumeReady()
             }
             catch (...)
             {
+                futures.erase(it);
+
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }

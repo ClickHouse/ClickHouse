@@ -137,6 +137,9 @@ void WriteBufferFromS3::preFinalize()
 
     LOG_TRACE(log, "preFinalize WriteBufferFromS3. {}", getLogDetails());
 
+    /// This function should not be run again if an exception has occurred
+    is_prefinalized = true;
+
     hidePartialData();
 
     if (hidden_size > 0)
@@ -167,8 +170,6 @@ void WriteBufferFromS3::preFinalize()
     {
         writeMultipartUpload();
     }
-
-    is_prefinalized = true;
 }
 
 void WriteBufferFromS3::finalizeImpl()
