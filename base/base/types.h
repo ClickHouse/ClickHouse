@@ -44,6 +44,7 @@ using String = std::string;
 
 struct BFloat16 {
 public:
+<<<<<<< HEAD
     BFloat16() = default;
 
     template<typename Type>
@@ -51,6 +52,16 @@ public:
       fromValue(value);
     }
 
+=======
+    BFloat16() : data(0) {}
+
+    explicit BFloat16(float value) {
+      fromValue(value);
+    }
+
+    explicit BFloat16(uint16_t x): data(x) {}
+
+>>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
     /// Take the most significant 16 bits of the floating point number.
     template <typename Value>
     static BFloat16 toBFloat16(const Value & x) {
@@ -64,6 +75,7 @@ public:
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     static Float32 toFloat32(const BFloat16 & x) {
+<<<<<<< HEAD
         return std::bit_cast<Float32>(x.data << 16);
     }
 
@@ -162,10 +174,102 @@ public:
         return a;
     }
 
+=======
+        return std::bit_cast<DB::Float32>(x.data << 16);
+    }
+
+    Float32 toFloat32() const {
+        return std::bit_cast<DB::Float32>(this->data << 16);
+    }
+
+    bool operator==(const BFloat16& other) const {
+        return data == other.data;
+    }
+
+    bool operator!=(const BFloat16& other) const {
+        return data != other.data;
+    }
+
+    bool operator<(const BFloat16& other) const {
+        return toFloat32() < other.toFloat32();
+    }
+
+    bool operator<=(const BFloat16& other) const {
+        return toFloat32() <= other.toFloat32();
+    }
+
+    bool operator>(const BFloat16& other) const {
+        return toFloat32() > other.toFloat32();
+    }
+
+    bool operator>=(const BFloat16& other) const {
+        return toFloat32() >= other.toFloat32();
+    }
+
+    BFloat16 operator+(const BFloat16& other) const {
+        return BFloat16(toFloat32() + other.toFloat32());
+    }
+
+    BFloat16 operator-(const BFloat16& other) const {
+        return BFloat16(toFloat32() - other.toFloat32());
+    }
+
+    BFloat16 operator*(const BFloat16& other) const {
+        return BFloat16(toFloat32() * other.toFloat32());
+    }
+
+    BFloat16 operator/(const BFloat16& other) const {
+        return BFloat16(toFloat32() / other.toFloat32());
+    }
+
+    BFloat16& operator+=(const BFloat16& other) {
+        *this = *this + other;
+        return *this;
+    }
+
+    BFloat16& operator-=(const BFloat16& other) {
+        *this = *this - other;
+        return *this;
+    }
+
+    BFloat16& operator*=(const BFloat16& other) {
+        *this = *this * other;
+        return *this;
+    }
+
+    BFloat16& operator/=(const BFloat16& other) {
+        *this = *this / other;
+        return *this;
+    }
+
+    BFloat16& operator++() {
+        *this += BFloat16(1.0f);
+        return *this;
+    }
+
+    BFloat16 operator++(int) {
+        BFloat16 temp = *this;
+        ++(*this);
+        return temp;
+    }
+
+    BFloat16& operator--() {
+        *this -= BFloat16(1.0f);
+        return *this;
+    }
+
+    BFloat16 operator--(int) {
+        BFloat16 temp = *this;
+        --(*this);
+        return temp;
+    }
+
+>>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
     operator float() const {
         return toFloat32();
     }
 
+<<<<<<< HEAD
     explicit operator bool() const {
         return static_cast<bool>(float(*this));
     }
@@ -264,10 +368,13 @@ public:
         return a /= static_cast<float>(b);
     }
 
+=======
+>>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
 private:
     uint16_t data;
 };
 
+<<<<<<< HEAD
 }
 
 namespace std {
@@ -310,4 +417,6 @@ inline BFloat16 ceil(const BFloat16& a) {
   return BFloat16(std::ceil(float(a)));
 }
 
+=======
+>>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
 }

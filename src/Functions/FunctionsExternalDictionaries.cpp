@@ -47,9 +47,9 @@ Returned value: value of the dictionary attribute parsed in the attribute’s da
 Throws an exception if cannot parse the value of the attribute or the value does not match the attribute data type.
 )" };
 
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "attribute’s data type") });
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "attribute’s data type") });
-    factory.registerFunction<FunctionDictGetOrNull>(FunctionDocumentation{ .description=dict_get_or_null_description });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(Documentation{ fmt::format(dict_get_description, "attribute’s data type") });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(Documentation{ fmt::format(dict_get_or_default_description, "attribute’s data type") });
+    factory.registerFunction<FunctionDictGetOrNull>(Documentation{ dict_get_or_null_description });
 
     factory.registerFunction<FunctionDictGetUInt8>(Documentation{ fmt::format(dict_get_description, "UInt8") });
     factory.registerFunction<FunctionDictGetUInt16>(Documentation{ fmt::format(dict_get_description, "UInt16") });
@@ -87,7 +87,7 @@ Throws an exception if cannot parse the value of the attribute or the value does
     factory.registerFunction<FunctionDictGetIPv6OrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "IPv6") });
     factory.registerFunction<FunctionDictGetStringOrDefault>(Documentation{ fmt::format(dict_get_or_default_description, "String") });
 
-    factory.registerFunction<FunctionDictHas>(FunctionDocumentation{ .description=R"(
+    factory.registerFunction<FunctionDictHas>(Documentation{ R"(
 Checks whether a key is present in a dictionary.
 Accepts 2 parameters: name of the dictionary, key value - expression returning dictionary key-type value or tuple-type value - depending on the dictionary configuration.
 Returned value: 0 if there is no key, 1 if there is a key, type of UInt8
