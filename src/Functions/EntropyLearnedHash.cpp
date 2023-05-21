@@ -283,10 +283,6 @@ public:
         std::function<uint64_t(const char *s, size_t len)> hash_function;
         const auto arg_count = arguments.size();
 
-        auto farmHashLambda = [](const char *s, size_t len) -> uint64_t {
-            return static_cast<uint64_t>(NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len));
-        };
-
         if (arg_count == 2) {
             hash_function = CityHash_v1_0_2::CityHash64;
         } else {
@@ -300,7 +296,9 @@ public:
             if (lowercase_name == "cityhash64")
                 hash_function = CityHash_v1_0_2::CityHash64;
             else if (lowercase_name == "farmhash64")
-                hash_function = farmHashLambda;
+                hash_function = [](const char *s, size_t len) -> uint64_t {
+                    return static_cast<uint64_t>(NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len));
+                };
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Hash function {} is not supported", hash_function_name);
         }
