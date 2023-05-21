@@ -17,30 +17,24 @@
 class DateLUT : private boost::noncopyable
 {
 public:
-    /// Return singleton DateLUTImpl instance for server's (native) time zone.
-    static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance()
-    {
-        const auto & date_lut = getInstance();
-        return *date_lut.default_impl.load(std::memory_order_acquire);
-    }
-
-    /// Return singleton DateLUTImpl instance for timezone set by `timezone` setting for current session is used.
-    /// If it is not set, server's timezone (the one which server has) is being used.
+    /// Return singleton DateLUTImpl instance for session timezone.
+    /// The session timezone is configured by a session setting.
+    /// If not set (empty string), it is the server timezone.
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
         const auto & date_lut = getInstance();
 
         if (DB::CurrentThread::isInitialized())
         {
-            std::string effective_time_zone;
-            const auto query_context = DB::CurrentThread::get().getQueryContext();
+            std::string context_timezone;
+            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
             {
-                effective_time_zone = extractTimezoneFromContext(query_context);
+                context_timezone = extractTimezoneFromContext(query_context);
 
-                if (!effective_time_zone.empty())
-                    return date_lut.getImplementation(effective_time_zone);
+                if (!context_timezone.empty())
+                    return date_lut.getImplementation(context_timezone);
             }
 
             /// Timezone is passed in query_context, but on CH-Client we have no query context,
@@ -48,10 +42,10 @@ public:
             const auto global_context = DB::CurrentThread::get().getGlobalContext();
             if (global_context)
             {
-                effective_time_zone = extractTimezoneFromContext(global_context);
+                context_timezone = extractTimezoneFromContext(global_context);
 
-                if (!effective_time_zone.empty())
-                    return date_lut.getImplementation(effective_time_zone);
+                if (!context_timezone.empty())
+                    return date_lut.getImplementation(context_timezone);
             }
 
         }
@@ -67,6 +61,13 @@ public:
         return date_lut.getImplementation(time_zone);
     }
 
+    // Return singleton DateLUTImpl for the server time zone.
+    static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance()
+    {
+        const auto & date_lut = getInstance();
+        return *date_lut.default_impl.load(std::memory_order_acquire);
+    }
+
     static void setDefaultTimezone(const std::string & time_zone)
     {
         auto & date_lut = getInstance();
@@ -80,7 +81,7 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    static std::string extractTimezoneFromContext(const DB::ContextPtr query_context);
+    static std::string extractTimezoneFromContext(DB::ContextPtr query_context);
 
     const DateLUTImpl & getImplementation(const std::string & time_zone) const;
 
