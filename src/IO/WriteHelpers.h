@@ -152,11 +152,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-<<<<<<< HEAD
     else if constexpr (std::is_same_v<T, float>)
-=======
-    else if (std::is_same_v<T, float>)
->>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
@@ -166,15 +162,9 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     else
     {
         if (DecomposedBFloat16(x).isIntegerInRepresentableRange())
-<<<<<<< HEAD
             result = itoa(Int32(static_cast<float>(x)), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(static_cast<float>(x), buffer) - buffer;
-=======
-            result = itoa(Int32(x), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
->>>>>>> 01c711c1c4b4675053955fcc8f1439453c707729
     }
 
     if (result <= 0)
