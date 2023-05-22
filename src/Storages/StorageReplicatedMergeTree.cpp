@@ -4416,20 +4416,29 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 
         startBeingLeader();
 
-        /// In this thread replica will be activated.
-        restarting_thread.start();
+        /// Activate replica in a separate thread if we are not calling from attach thread
+        restarting_thread.start(/*schedule=*/!from_attach_thread);
+
+        if (from_attach_thread)
+        {
+            /// Try activating replica in current thread.
+            restarting_thread.run();
+        }
+        else
+        {
+            /// Wait while restarting_thread finishing initialization.
+            /// NOTE It does not mean that replication is actually started after receiving this event.
+            /// It only means that an attempt to startup replication was made.
+            /// Table may be still in readonly mode if this attempt failed for any reason.
+            startup_event.wait();
+        }
+
         /// And this is just a callback
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
             LOG_TEST(log, "Received event for expired session. Waking up restarting thread");
             restarting_thread.start();
         });
-
-        /// Wait while restarting_thread finishing initialization.
-        /// NOTE It does not mean that replication is actually started after receiving this event.
-        /// It only means that an attempt to startup replication was made.
-        /// Table may be still in readonly mode if this attempt failed for any reason.
-        startup_event.wait();
 
         startBackgroundMovesIfNeeded();
 

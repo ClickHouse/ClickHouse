@@ -1,3 +1,4 @@
+-- Tags: no-replicated-database
 
 create table mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
 set insert_keeper_fault_injection_probability=0;
