@@ -47,10 +47,10 @@ scope_guard AccessChangesNotifier::subscribeForChanges(AccessEntityType type, co
     list.push_back(handler);
     auto handler_it = std::prev(list.end());
 
-    return [handlers=handlers, type, handler_it]
+    return [my_handlers = handlers, type, handler_it]
     {
-        std::lock_guard lock2{handlers->mutex};
-        auto & list2 = handlers->by_type[static_cast<size_t>(type)];
+        std::lock_guard lock2{my_handlers->mutex};
+        auto & list2 = my_handlers->by_type[static_cast<size_t>(type)];
         list2.erase(handler_it);
     };
 }
@@ -63,13 +63,13 @@ scope_guard AccessChangesNotifier::subscribeForChanges(const UUID & id, const On
     list.push_back(handler);
     auto handler_it = std::prev(list.end());
 
-    return [handlers=handlers, it, handler_it]
+    return [my_handlers = handlers, it, handler_it]
     {
-        std::lock_guard lock2{handlers->mutex};
+        std::lock_guard lock2{my_handlers->mutex};
         auto & list2 = it->second;
         list2.erase(handler_it);
         if (list2.empty())
-            handlers->by_id.erase(it);
+            my_handlers->by_id.erase(it);
     };
 }
 

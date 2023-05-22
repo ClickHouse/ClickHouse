@@ -141,8 +141,8 @@ def test_backup_to_s3_native_copy():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("BackupImpl.*using native copy")
-    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log("BackupWriterS3.*using native copy")
+    assert node.contains_in_log("BackupReaderS3.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
     )
@@ -155,8 +155,8 @@ def test_backup_to_s3_native_copy_other_bucket():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("BackupImpl.*using native copy")
-    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log("BackupWriterS3.*using native copy")
+    assert node.contains_in_log("BackupReaderS3.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
     )
@@ -167,8 +167,35 @@ def test_backup_to_s3_native_copy_multipart():
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination, size=1000000)
-    assert node.contains_in_log("BackupImpl.*using native copy")
-    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
+    assert node.contains_in_log("BackupWriterS3.*using native copy")
+    assert node.contains_in_log("BackupReaderS3.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
     )
+
+
+def test_incremental_backup_append_table_def():
+    backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+
+    node.query(
+        "CREATE TABLE data (x UInt32, y String) Engine=MergeTree() ORDER BY y PARTITION BY x%10 SETTINGS storage_policy='policy_s3'"
+    )
+
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(100)")
+    assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
+
+    node.query(f"BACKUP TABLE data TO {backup_name}")
+
+    node.query("ALTER TABLE data MODIFY SETTING parts_to_throw_insert=100")
+
+    incremental_backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+
+    node.query(
+        f"BACKUP TABLE data TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    node.query("DROP TABLE data")
+    node.query(f"RESTORE TABLE data FROM {incremental_backup_name}")
+
+    assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
+    assert "parts_to_throw_insert = 100" in node.query("SHOW CREATE TABLE data")
