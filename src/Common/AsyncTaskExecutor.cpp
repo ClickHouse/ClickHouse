@@ -59,30 +59,19 @@ struct AsyncTaskExecutor::Routine
     struct AsyncCallback
     {
         AsyncTaskExecutor & executor;
-        Fiber::Impl & fiber_impl;
+        SuspendCallback suspend_callback;
 
         void operator()(int fd, Poco::Timespan timeout, AsyncEventTimeoutType type, const std::string & desc, uint32_t events)
         {
             executor.processAsyncEvent(fd, timeout, type, desc, events);
-            fiber_impl = std::move(fiber_impl).resume();
+            suspend_callback();
             executor.clearAsyncEvent();
         }
     };
 
-    struct ResumeCallback
+    void operator()(SuspendCallback suspend_callback)
     {
-        Fiber::Impl & fiber_impl;
-
-        void operator()()
-        {
-            fiber_impl = std::move(fiber_impl).resume();
-        }
-    };
-
-    Fiber::Impl operator()(Fiber::Impl && sink)
-    {
-        auto async_callback = AsyncCallback{executor, sink};
-        auto suspend_callback = ResumeCallback{sink};
+        auto async_callback = AsyncCallback{executor, suspend_callback};
         try
         {
             executor.task->run(async_callback, suspend_callback);
@@ -100,7 +89,6 @@ struct AsyncTaskExecutor::Routine
         }
 
         executor.routine_is_finished = true;
-        return std::move(sink);
     }
 };
 
