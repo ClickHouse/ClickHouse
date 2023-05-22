@@ -51,7 +51,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         if (i == num_tries - 1)
             throw;
 
-        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {}", i + 1, blob_path, e.Message);
+        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
     };
 
     for (size_t i = 0; i < num_tries; ++i)
