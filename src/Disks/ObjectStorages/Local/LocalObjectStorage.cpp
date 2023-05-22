@@ -125,7 +125,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> /* attributes */,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
@@ -133,9 +132,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
     LOG_TEST(log, "Write object: {}", object.remote_path);
-    auto impl = std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(
-        std::move(impl), std::move(finalize_callback), object.remote_path);
+    return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)

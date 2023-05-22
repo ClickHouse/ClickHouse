@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
@@ -24,13 +24,14 @@ namespace DB
  * Data is divided on chunks with size greater than 'minimum_upload_part_size'. Last chunk can be less than this threshold.
  * Each chunk is written as a part to S3.
  */
-class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromS3 final : public WriteBufferFromFileBase
 {
 public:
     WriteBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
+        size_t buf_size_,
         const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -39,8 +40,9 @@ public:
     ~WriteBufferFromS3() override;
     void nextImpl() override;
     void preFinalize() override;
+    std::string getFileName() const override { return key; }
+    void sync() override { next(); }
 
-public:
     class IBufferAllocationPolicy
     {
     public:

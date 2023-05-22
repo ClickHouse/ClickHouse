@@ -8,7 +8,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
@@ -160,8 +159,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     const StoredObject & object,
     WriteMode mode, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
-    size_t buf_size [[maybe_unused]],
+    size_t buf_size,
     const WriteSettings & write_settings)
 {
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
@@ -174,17 +172,15 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
-    auto s3_buffer = std::make_unique<WriteBufferFromS3>(
+    return std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
         object.remote_path,
+        buf_size,
         settings_ptr->request_settings,
         attributes,
         std::move(scheduler),
         disk_write_settings);
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(
-        std::move(s3_buffer), std::move(finalize_callback), object.remote_path);
 }
 
 void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
@@ -443,7 +439,6 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
     s3_settings.set(std::move(new_s3_settings));
     client.set(std::move(new_client));
-    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
