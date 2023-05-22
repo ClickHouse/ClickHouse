@@ -88,7 +88,7 @@ public:
             return false;
 
         res_offsets.resize(col_times->size());
-        res_chars.reserve(col_times->size() * 10); /// heuristic
+        res_chars.resize(col_times->size() * 10); /// heuristic
 
         const PaddedPODArray<typename DataType::FieldType> & times_data = col_times->getData();
 
@@ -102,7 +102,7 @@ public:
                 times = 0;
 
             if (res_chars.size() + times + 1 >= res_chars.capacity())
-                res_chars.reserve(2 * res_chars.capacity());
+                res_chars.resize(2 * res_chars.capacity());
 
             memset(res_chars.begin() + pos, space, times);
             pos += times;
