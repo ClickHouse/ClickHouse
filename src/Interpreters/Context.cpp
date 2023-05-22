@@ -1623,6 +1623,31 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     return res;
 }
 
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+{
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+
+        /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
+        ///
+        ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
+        ///
+        auto new_hash = table_expression->getTreeHash();
+        if (hash != new_hash)
+        {
+            key = toString(new_hash.first) + '_' + toString(new_hash.second);
+            table_function_results[key] = res;
+        }
+    }
+
+    return res;
+}
+
 
 void Context::addViewSource(const StoragePtr & storage)
 {
