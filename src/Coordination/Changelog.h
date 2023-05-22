@@ -11,6 +11,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -87,9 +88,9 @@ class Changelog
 {
 public:
     Changelog(
-        DiskPtr disk_,
         Poco::Logger * log_,
-        LogFileSettings log_file_settings);
+        LogFileSettings log_file_settings,
+        KeeperContextPtr keeper_context_);
 
     Changelog(Changelog &&) = delete;
 
@@ -152,6 +153,8 @@ private:
     /// Pack log_entry into changelog record
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
+    DiskPtr getDisk() const;
+
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
 
@@ -169,7 +172,6 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-    DiskPtr disk;
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     Poco::Logger * log;
@@ -222,6 +224,8 @@ private:
     uint64_t last_durable_idx{0};
 
     nuraft::wptr<nuraft::raft_server> raft_server;
+
+    KeeperContextPtr keeper_context;
 
     bool initialized = false;
 };

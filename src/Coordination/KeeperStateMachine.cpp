@@ -43,7 +43,6 @@ namespace
 KeeperStateMachine::KeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    DiskPtr disk_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -52,7 +51,6 @@ KeeperStateMachine::KeeperStateMachine(
     : commit_callback(commit_callback_)
     , coordination_settings(coordination_settings_)
     , snapshot_manager(
-          disk_,
           coordination_settings->snapshots_to_keep,
           keeper_context_,
           coordination_settings->compress_snapshots_with_zstd_format,

@@ -1237,6 +1237,6 @@ struct HTTPContext : public IHTTPContext
 
 #else 
 
-#include <Coordination/Context/Context.h>
+#include <Coordination/Standalone/Context.h>
 
 #endif

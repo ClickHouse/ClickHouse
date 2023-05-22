@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <Coordination/Changelog.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -85,17 +86,19 @@ class ChangelogWriter
 public:
     ChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
-        DiskPtr disk_,
+        KeeperContextPtr keeper_context_,
         LogFileSettings log_file_settings_)
         : existing_changelogs(existing_changelogs_)
         , log_file_settings(log_file_settings_)
-        , disk(disk_)
+        , keeper_context(std::move(keeper_context_))
         , log(&Poco::Logger::get("Changelog"))
     {
     }
 
     void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
     {
+        auto disk = getDisk();
+
         try
         {
             if (mode == WriteMode::Append && file_description->expectedEntriesCountInLog() != log_file_settings.rotate_interval)
@@ -146,7 +149,7 @@ public:
     /// There is bug when compressed_buffer has value, file_buf's ownership transfer to compressed_buffer
     bool isFileSet() const
     {
-        return compressed_buffer.get() != nullptr || file_buf.get() != nullptr;
+        return compressed_buffer != nullptr || file_buf != nullptr;
     }
 
     bool appendRecord(ChangelogRecord && record)
@@ -276,7 +279,7 @@ private:
 
         const auto * file_buffer = tryGetFileBuffer();
 
-        if (log_file_settings.max_size != 0)
+        if (log_file_settings.max_size != 0 && isLocalDisk())
         {
             int res = -1;
             do
@@ -354,11 +357,12 @@ private:
         {
             initial_file_size = 0;
             prealloc_done = true;
-            LOG_WARNING(log, "Could not preallocate space on disk {} using fallocate", disk->getName());
+            LOG_WARNING(log, "Could not preallocate space on disk {} using fallocate", getDisk()->getName());
             return;
         }
 
 #ifdef OS_LINUX
+        if (isLocalDisk())
         {
             int res = -1;
             do
@@ -383,6 +387,16 @@ private:
         prealloc_done = true;
     }
 
+    DiskPtr getDisk() const
+    {
+        return keeper_context->getLogDisk();
+    }
+
+    bool isLocalDisk() const
+    {
+        return dynamic_cast<DiskLocal *>(getDisk().get()) != nullptr;
+    }
+
     std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
 
     ChangelogFileDescriptionPtr current_file_description{nullptr};
@@ -396,7 +410,7 @@ private:
 
     LogFileSettings log_file_settings;
 
-    DiskPtr disk;
+    KeeperContextPtr keeper_context;
 
     Poco::Logger * const log;
 };
@@ -533,17 +547,19 @@ private:
 };
 
 Changelog::Changelog(
-    DiskPtr disk_,
     Poco::Logger * log_,
-    LogFileSettings log_file_settings)
-    : disk(disk_)
-    , changelogs_detached_dir("detached")
+    LogFileSettings log_file_settings,
+    KeeperContextPtr keeper_context_)
+    : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
+    , keeper_context(std::move(keeper_context_))
 {
     /// Load all files in changelog directory
+
+    auto disk = getDisk();
 
     for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
     {
@@ -564,7 +580,7 @@ Changelog::Changelog(
     append_completion_thread = ThreadFromGlobalPool([this] { appendCompletionThread(); });
 
     current_writer = std::make_unique<ChangelogWriter>(
-        existing_changelogs, disk, log_file_settings);
+        existing_changelogs, keeper_context, log_file_settings);
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -636,7 +652,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                 break;
             }
 
-            ChangelogReader reader(disk, changelog_description.path);
+            ChangelogReader reader(getDisk(), changelog_description.path);
             last_log_read_result = reader.readChangelog(logs, start_to_read_from, log);
             last_log_read_result->log_start_index = changelog_description.from_log_index;
 
@@ -703,7 +719,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
         {
             LOG_INFO(log, "Removing chagelog {} because it's empty or read finished with error", description->path);
-            disk->removeFile(description->path);
+            getDisk()->removeFile(description->path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
             std::erase_if(logs, [last_log_read_result](const auto & item) { return item.first >= last_log_read_result->log_start_index; });
         }
@@ -748,8 +764,15 @@ std::string getCurrentTimestampFolder()
 
 }
 
+DiskPtr Changelog::getDisk() const
+{
+    return keeper_context->getLogDisk();
+}
+
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 {
+    auto disk = getDisk();
+
     const auto timestamp_folder = (fs::path(changelogs_detached_dir) / getCurrentTimestampFolder()).generic_string();
 
     for (auto itr = begin; itr != end;)
@@ -920,7 +943,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                disk->removeFile(itr->second->path);
+                getDisk()->removeFile(itr->second->path);
                 itr = existing_changelogs.erase(itr);
             }
         }
@@ -974,7 +997,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             {
                 try
                 {
-                    disk->removeFile(itr->second->path);
+                    getDisk()->removeFile(itr->second->path);
                     LOG_INFO(log, "Removed changelog {} because of compaction.", itr->second->path);
                 }
                 catch (Exception & e)
@@ -1179,7 +1202,7 @@ void Changelog::cleanLogThread()
     {
         try
         {
-            disk->removeFile(path);
+            getDisk()->removeFile(path);
             LOG_INFO(log, "Removed changelog {} because of compaction.", path);
         }
         catch (Exception & e)

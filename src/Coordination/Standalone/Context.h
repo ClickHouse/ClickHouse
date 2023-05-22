@@ -2,6 +2,8 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <Coordination/KeeperDispatcher.h>
+
 #include <Common/MultiVersion.h>
 #include <Common/RemoteHostFilter.h>
 
@@ -85,6 +87,7 @@ public:
     void setPath(const String & path);
 
     MultiVersion<Macros>::Version getMacros() const;
+    void setMacros(std::unique_ptr<Macros> && macros);
 
     BackgroundSchedulePool & getSchedulePool() const;
 
@@ -106,6 +109,12 @@ public:
     ThrottlerPtr getLocalWriteThrottler() const;
 
     ReadSettings getReadSettings() const;
+
+    std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
+    void initializeKeeperDispatcher(bool start_async) const;
+    void shutdownKeeperDispatcher() const;
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 };
 
 }
