@@ -23,14 +23,6 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Name
 {
     std::string column_identifier;
 
-    // if (column_source_node->hasAlias())
-    //     column_identifier += column_source_node->getAlias();
-    // else if (const auto * table_source_node = column_source_node->as<TableNode>())
-    //     column_identifier += table_source_node->getStorageID().getFullNameNotQuoted();
-
-    // if (!column_identifier.empty())
-    //     column_identifier += '.';
-
     column_identifier += column.name;
     column_identifier += '_' + std::to_string(column_identifiers.size());
 
