@@ -422,7 +422,8 @@ def test_ttl_empty_parts(started_cluster):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1
+                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0,
+                cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime = 1
 
         """.format(
                 replica=node.name

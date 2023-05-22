@@ -3147,6 +3147,8 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
 
 bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
+    cleanup_thread.wakeupEarlierIfNeeded();
+
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
         return false;
@@ -6589,7 +6591,7 @@ bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
     return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
-void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
+size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     auto table_lock = lockForShare(
             RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -6598,8 +6600,9 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Now these parts are in Deleting state. If we fail to remove some of them we must roll them back to Outdated state.
     /// Otherwise they will not be deleted.
     DataPartsVector parts = grabOldParts();
+    size_t total_parts_to_remove = parts.size();
     if (parts.empty())
-        return;
+        return total_parts_to_remove;
 
     DataPartsVector parts_to_delete_only_from_filesystem;    // Only duplicates
     DataPartsVector parts_to_delete_completely;              // All parts except duplicates
@@ -6707,6 +6710,8 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         /// Otherwise nobody will try to remove them again (see grabOldParts).
         delete_parts_from_fs_and_rollback_in_case_of_error(parts_to_remove_from_filesystem, "old");
     }
+
+    return total_parts_to_remove;
 }
 
 
