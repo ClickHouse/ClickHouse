@@ -1729,25 +1729,21 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
-    {
         materializeBlockInplace(block);
-    }
 
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (!joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
         }))
-        {
-            /// Joined
-        }
-        else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
+
+    block.shrinkToFit();
 }
 
 HashJoin::~HashJoin()

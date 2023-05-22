@@ -151,6 +151,17 @@ public:
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
+    /** See IColumn::shrinkToFit() */
+    void shrinkToFit()
+    {
+        for (auto & elem : data)
+        {
+            auto mutate_column = IColumn::mutate(std::move(elem.column));
+            mutate_column->shrinkToFit();
+            elem.column = std::move(mutate_column);
+        }
+    }
+
     void clear();
     void swap(Block & other) noexcept;
 
