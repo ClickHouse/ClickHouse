@@ -238,12 +238,11 @@ public:
         for (const auto & [name, text] : texts)
         {
             auto processed_corpus_it = model.emplace(
-                name, 
+                name,
                 ProcessedNgramCorpus{
-                    std::unique_ptr<Probability[]>(new Probability[map_size]{}), 
+                    std::unique_ptr<Probability[]>(new Probability[map_size]{}),
                     0u,
-                }
-                );
+                });
             if (!processed_corpus_it.second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad configuration of ngram classifier: duplicate of model name {}", name);
 
