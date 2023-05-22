@@ -45,6 +45,8 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    NamesAndTypesList getVirtuals() const override;
+
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
@@ -155,6 +157,7 @@ public:
     using IteratorWrapper = std::function<FailoverOptions()>;
 
     StorageURLSource(
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
@@ -178,7 +181,9 @@ public:
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
-    static SeekableReadBufferFactoryPtr getFirstAvailableURLReadBuffer(
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+
+    static std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -196,7 +201,9 @@ private:
     InitializeFunc initialize;
 
     String name;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> uri_iterator;
+    Poco::URI curr_uri;
 
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;

@@ -134,7 +134,13 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
         if (args_to_idx.contains("format"))
-            configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+        {
+            auto format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+            /// Set format to configuration only of it's not 'auto',
+            /// because we can have default format set in configuration.
+            if (format != "auto")
+                configuration.format = format;
+        }
 
         if (args_to_idx.contains("structure"))
             configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
