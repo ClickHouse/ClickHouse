@@ -1,7 +1,7 @@
 version: '2.3'
 services:
     mongo1:
-        image: mongo:5.0
+        image: mongo:5.1
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
