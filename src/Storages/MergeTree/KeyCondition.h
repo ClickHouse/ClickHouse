@@ -419,13 +419,14 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
-
-    bool transformConstantWithValidFunctions(
+    
+    bool transformConstColumnWithValidFunctions(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        Field & out_value,
+        ColumnPtr const_column,
+        ColumnPtr & out_column,
         DataTypePtr & out_type,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
@@ -434,6 +435,14 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
+        DataTypePtr & out_type);
+    
+    bool canConstantsBeWrappedByMonotonicFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        const ColumnPtr & in_column,
+        ColumnPtr & out_column,
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
@@ -449,7 +458,8 @@ private:
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num);
+        size_t & out_key_column_num,
+        bool strict_condition);
 
     /// Checks that the index can not be used.
     ///
