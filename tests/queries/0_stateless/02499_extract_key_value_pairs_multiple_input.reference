@@ -121,9 +121,9 @@ SELECT
     x;
 {}
 -- semi-colon as pair delimiter
--- expected output: {'age':'31','name':'neymar','team':'psg'}
+-- expected output: {'age':'31','anotherkey':'anothervalue','name':'neymar','random_key':'value_with_comma,still_part_of_value:still_part_of_value','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;invalid1:invalid1,invalid2:invalid2', ':', ';') AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;random_key:value_with_comma,still_part_of_value:still_part_of_value;anotherkey:anothervalue', ':', ';') AS s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -132,7 +132,7 @@ WITH
     ) AS x
 SELECT
     x;
-{'age':'31','name':'neymar','team':'psg'}
+{'age':'31','anotherkey':'anothervalue','name':'neymar','random_key':'value_with_comma,still_part_of_value:still_part_of_value','team':'psg'}
 -- both comma and semi-colon as pair delimiters
 -- expected output: {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
@@ -333,6 +333,18 @@ WITH
 SELECT
     x;
 {}
+-- key value delimiter should be considered valid part of value
+WITH
+    extractKeyValuePairs('formula=1+2=3 argument1=1 argument2=2 result=3, char="=" char2== string="foo=bar"', '=') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+{'argument1':'1','argument2':'2','char':'=','char2':'=','formula':'1+2=3','result':'3','string':'foo=bar'}
 -- check str_to_map alias (it is case-insensitive)
 WITH
     sTr_tO_mAp('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,

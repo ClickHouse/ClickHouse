@@ -267,14 +267,16 @@ or
 LAYOUT(HASHED())
 ```
 
-If `shards` greater then 1 (default is `1`) the dictionary will load data in parallel, useful if you have huge amount of elements in one dictionary.
-
 Configuration example:
 
 ``` xml
 <layout>
   <hashed>
+    <!-- If shards greater then 1 (default is `1`) the dictionary will load
+         data in parallel, useful if you have huge amount of elements in one
+         dictionary. -->
     <shards>10</shards>
+
     <!-- Size of the backlog for blocks in parallel queue.
 
          Since the bottleneck in parallel loading is rehash, and so to avoid
@@ -284,6 +286,14 @@ Configuration example:
          10000 is good balance between memory and speed.
          Even for 10e10 elements and can handle all the load without starvation. -->
     <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+    <!-- Maximum load factor of the hash table, with greater values, the memory
+         is utilized more efficiently (less memory is wasted) but read/performance
+         may deteriorate.
+
+         Valid values: [0.5, 0.99]
+         Default: 0.5 -->
+    <max_load_factor>0.5</max_load_factor>
   </hashed>
 </layout>
 ```
@@ -291,7 +301,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
 ### sparse_hashed
@@ -304,14 +314,18 @@ Configuration example:
 
 ``` xml
 <layout>
-  <sparse_hashed />
+  <sparse_hashed>
+    <!-- <shards>1</shards> -->
+    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+    <!-- <max_load_factor>0.5</max_load_factor> -->
+  </sparse_hashed>
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
 It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
@@ -325,8 +339,9 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_hashed>
-    <shards>1</shards>
+    <!-- <shards>1</shards> -->
     <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+    <!-- <max_load_factor>0.5</max_load_factor> -->
   </complex_key_hashed>
 </layout>
 ```
@@ -334,7 +349,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
 ### complex_key_sparse_hashed
@@ -346,7 +361,9 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_sparse_hashed>
-    <shards>1</shards>
+    <!-- <shards>1</shards> -->
+    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+    <!-- <max_load_factor>0.5</max_load_factor> -->
   </complex_key_sparse_hashed>
 </layout>
 ```
@@ -354,7 +371,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
 ### hashed_array
@@ -2197,16 +2214,16 @@ Result:
 └─────────────────────────────────┴───────┘
 ```
 
-## RegExp Tree Dictionary {#regexp-tree-dictionary}
+## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-Regexp Tree dictionary stores multiple trees of regular expressions with attributions. Users can retrieve strings in the dictionary. If a string matches the root of the regexp tree, we will collect the corresponding attributes of the matched root and continue to walk the children. If any of the children matches the string, we will collect attributes and rewrite the old ones if conflicts occur, then continue the traverse until we reach leaf nodes.
+Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of (user agent)[https://en.wikipedia.org/wiki/User_agent] strings, which can be expressed elegantly with regexp tree dictionaries.
 
-Example of the ddl query for creating Regexp Tree dictionary:
+### Use Regular Expression Tree Dictionary in ClickHouse Open-Source
 
-<CloudDetails />
+Regular expression tree dictionaries are defined in ClickHouse open-source using the YAMLRegExpTree source which is provided the path to a YAML file containing the regular expression tree.
 
 ```sql
-create dictionary regexp_dict
+CREATE DICTIONARY regexp_dict
 (
     regexp String,
     name String,
@@ -2218,17 +2235,15 @@ LAYOUT(regexp_tree)
 ...
 ```
 
-**Source**
+The dictionary source `YAMLRegExpTree` represents the structure of a regexp tree. For example:
 
-We introduce a type of source called `YAMLRegExpTree` representing the structure of Regexp Tree dictionary. An Example of a valid yaml config is like:
-
-```xml
+```yaml
 - regexp: 'Linux/(\d+[\.\d]*).+tlinux'
   name: 'TencentOS'
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -2240,17 +2255,14 @@ We introduce a type of source called `YAMLRegExpTree` representing the structure
       version: '10'
 ```
 
-The key `regexp` represents the regular expression of a tree node. The name of key is same as the dictionary key. The `name` and `version` is user-defined attributions in the dicitionary. The `versions` (which can be any name that not appear in attributions or the key) indicates the children nodes of this tree.
+This config consists of a list of regular expression tree nodes. Each node has the following structure:
 
-**Back Reference**
+- **regexp**: the regular expression of the node.
+- **attributes**: a list of user-defined dictionary attributes. In this example, there are two attributes: `name` and `version`. The first node defines both attributes. The second node only defines attribute `name`. Attribute `version` is provided by the child nodes of the second node.
+  - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
+- **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
 
-The value of an attribution could contain a back reference which refers to a capture group of the matched regular expression. Reference number ranges from 1 to 9 and writes as `$1` or `\1`.
-
-During the query execution, the back reference in the value will be replaced by the matched capture group.
-
-**Query**
-
-Due to the specialty of Regexp Tree dictionary, we only allow functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull` work with it.
+Regexp tree dictionaries only allow access using functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
 
 Example:
 
@@ -2260,10 +2272,81 @@ SELECT dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024');
 
 Result:
 
-```
+```text
 ┌─dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024')─┐
-│ ('Andriod','12')                                                │
+│ ('Android','12')                                                │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node. The dictionary then continues to look into the child nodes and finds that the string also matches `3[12]/tclwebkit`. As a result, the value of attribute `name` is `Android` (defined in the first layer) and the value of attribute `version` is `12` (defined the child node).
+
+With a powerful YAML configure file, we can use a regexp tree dictionaries as a user agent string parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
+
+### Use Regular Expression Tree Dictionary in ClickHouse Cloud
+
+Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.
+
+```sql
+SELECT * FROM dictionary(regexp_dict) INTO OUTFILE('regexp_dict.csv')
+```
+
+The content of csv file is:
+
+```text
+1,0,"Linux/(\d+[\.\d]*).+tlinux","['version','name']","['\\1','TencentOS']"
+2,0,"(\d+)/tclwebkit(\d+[\.\d]*)","['comment','version','name']","['test $1 and $2','$1','Android']"
+3,2,"33/tclwebkit","['version']","['13']"
+4,2,"3[12]/tclwebkit","['version']","['12']"
+5,2,"3[12]/tclwebkit","['version']","['11']"
+6,2,"3[12]/tclwebkit","['version']","['10']"
+```
+
+The schema of dumped file is:
+
+- `id UInt64`: the id of the RegexpTree node.
+- `parent_id UInt64`: the id of the parent of a node.
+- `regexp String`: the regular expression string.
+- `keys Array(String)`: the names of user-defined attributes.
+- `values Array(String)`: the values of user-defined attributes.
+
+To create the dictionary in ClickHouse Cloud, first create a table `regexp_dictionary_source_table` with below table structure:
+
+```sql
+CREATE TABLE regexp_dictionary_source_table
+(
+    id UInt64,
+    parent_id UInt64,
+    regexp String,
+    keys   Array(String),
+    values Array(String)
+) ENGINE=Memory;
+```
+
+Then update the local CSV by
+
+```bash
+clickhouse client \
+    --host MY_HOST \
+    --secure \
+    --password MY_PASSWORD \
+    --query "
+    INSERT INTO regexp_dictionary_source_table 
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
+    FORMAT CSV" < regexp_dict.csv
+```
+
+You can see how to [Insert Local Files](https://clickhouse.com/docs/en/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
+
+``` sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
 ```
 
 ## Embedded Dictionaries {#embedded-dictionaries}

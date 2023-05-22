@@ -9,7 +9,7 @@ sidebar_label: GRANT
 - Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 
-To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement) statement.
+To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants) statement.
 
 ## Granting Privilege Syntax
 
