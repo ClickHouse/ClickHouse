@@ -1,7 +1,6 @@
 #include "config.h"
 
 #if USE_MYSQL
-#include <Databases/MySQL/FetchTablesColumnsList.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -16,7 +15,7 @@
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
 
 
@@ -26,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
 }
 
 void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -61,15 +59,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
-    const auto & settings = context->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(*pool, configuration->database, {configuration->table}, settings, settings.mysql_datatypes_support_level);
-
-    const auto columns = tables_and_columns.find(configuration->table);
-    if (columns == tables_and_columns.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
-                        (configuration->database.empty() ? "" : (backQuote(configuration->database) + "." + backQuote(configuration->table))));
-
-    return columns->second;
+    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
@@ -78,8 +68,6 @@ StoragePtr TableFunctionMySQL::executeImpl(
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context);
-
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
@@ -87,7 +75,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         configuration->table,
         configuration->replace_query,
         configuration->on_duplicate_clause,
-        columns,
+        ColumnsDescription{},
         ConstraintsDescription{},
         String{},
         context,

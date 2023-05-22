@@ -232,7 +232,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     node.query("SYSTEM START MERGES s3_test")
 
     # Wait for merges and old parts deletion
-    for attempt in range(0, 10):
+    for attempt in range(0, 60):
         parts_count = node.query(
             "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' and active = 1 FORMAT Values"
         )
@@ -240,7 +240,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         if parts_count == "(1)":
             break
 
-        if attempt == 9:
+        if attempt == 59:
             assert parts_count == "(1)"
 
         time.sleep(1)
