@@ -642,7 +642,8 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
             ENGINE = MergeTree
             ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
+            cleanup_thread_preferred_points_per_iteration=0;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT *, _channel_id AS channel_id FROM test.rabbitmq;
     """
@@ -1116,7 +1117,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         CREATE TABLE test.destination(key UInt64, value UInt64)
         ENGINE = MergeTree()
         ORDER BY key
-        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
+        cleanup_thread_preferred_points_per_iteration=0;
     """
     )
 

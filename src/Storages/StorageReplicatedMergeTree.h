@@ -342,8 +342,8 @@ public:
 private:
     std::atomic_bool are_restoring_replica {false};
 
-    /// Delete old parts from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK();
+    /// Delete old parts from disk and from ZooKeeper. Returns the number of removed parts
+    size_t clearOldPartsAndRemoveFromZK();
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
