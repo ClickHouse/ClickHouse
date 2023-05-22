@@ -1,5 +1,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Disks/IDisk.h>
+#include <city.h>
 
 
 namespace DB

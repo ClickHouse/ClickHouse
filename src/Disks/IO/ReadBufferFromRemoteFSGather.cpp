@@ -12,22 +12,24 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+}
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBuffer(nullptr, 0)
-    , read_buffer_creator(std::move(read_buffer_creator_))
-    , blobs_to_read(blobs_to_read_)
+    : ReadBufferFromFileBase(0, nullptr, 0)
     , settings(settings_)
+    , blobs_to_read(blobs_to_read_)
+    , read_buffer_creator(std::move(read_buffer_creator_))
+    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
-    if (cache_log_ && settings.enable_filesystem_cache_log)
-        cache_log = cache_log_;
-
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 
@@ -38,9 +40,9 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
-    if (current_buf != nullptr && !with_cache)
+    if (current_buf && !with_cache)
     {
-        appendFilesystemCacheLog();
+        appendUncachedReadInfo();
     }
 
     current_object = object;
@@ -70,7 +72,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     return current_read_buffer_creator();
 }
 
-void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
+void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
 {
     if (!cache_log || current_object.remote_path.empty())
         return;
@@ -218,44 +220,23 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     return result;
 }
 
-size_t ReadBufferFromRemoteFSGather::getFileOffsetOfBufferEnd() const
-{
-    return file_offset_of_buffer_end;
-}
-
 void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
-    if (position != read_until_position)
-    {
-        read_until_position = position;
-        reset();
-    }
-}
+    if (position == read_until_position)
+        return;
 
-void ReadBufferFromRemoteFSGather::reset()
-{
+    read_until_position = position;
     current_buf.reset();
 }
 
-String ReadBufferFromRemoteFSGather::getFileName() const
+off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 {
-    return current_object.remote_path;
-}
+    if (whence != SEEK_SET)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only seeking with SEEK_SET is allowed");
 
-size_t ReadBufferFromRemoteFSGather::getFileSize() const
-{
-    size_t size = 0;
-    for (const auto & object : blobs_to_read)
-        size += object.bytes_size;
-    return size;
-}
-
-String ReadBufferFromRemoteFSGather::getInfoForLog()
-{
-    if (!current_buf)
-        return "";
-
-    return current_buf->getInfoForLog();
+    file_offset_of_buffer_end = offset;
+    current_buf.reset();
+    return file_offset_of_buffer_end;
 }
 
 size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
@@ -269,7 +250,7 @@ size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
 ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
 {
     if (!with_cache)
-        appendFilesystemCacheLog();
+        appendUncachedReadInfo();
 }
 
 }
