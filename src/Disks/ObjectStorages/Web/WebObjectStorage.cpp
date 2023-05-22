@@ -9,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -211,7 +210,6 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     const StoredObject & /* object */,
     WriteMode /* mode */,
     std::optional<ObjectAttributes> /* attributes */,
-    FinalizeCallback && /* finalize_callback */,
     size_t /* buf_size */,
     const WriteSettings & /* write_settings */)
 {

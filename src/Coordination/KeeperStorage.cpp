@@ -339,37 +339,37 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
             nodes.emplace(delta.path, UncommittedNode{.node = nullptr});
     }
 
-    auto & [node, acls, last_applied_zxid] = nodes.at(delta.path);
-
     std::visit(
-        [&, &my_node = node, &my_acls = acls, &my_last_applied_zxid = last_applied_zxid]<typename DeltaType>(const DeltaType & operation)
+        [&]<typename DeltaType>(const DeltaType & operation)
         {
+            auto & [node, acls, last_applied_zxid] = nodes.at(delta.path);
+
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
-                assert(!my_node);
-                my_node = std::make_shared<Node>();
-                my_node->stat = operation.stat;
-                my_node->setData(operation.data);
-                my_acls = operation.acls;
-                my_last_applied_zxid = delta.zxid;
+                assert(!node);
+                node = std::make_shared<Node>();
+                node->stat = operation.stat;
+                node->setData(operation.data);
+                acls = operation.acls;
+                last_applied_zxid = delta.zxid;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                assert(my_node);
-                my_node = nullptr;
-                my_last_applied_zxid = delta.zxid;
+                assert(node);
+                node = nullptr;
+                last_applied_zxid = delta.zxid;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDelta>)
             {
-                assert(my_node);
-                my_node->invalidateDigestCache();
+                assert(node);
+                node->invalidateDigestCache();
                 operation.update_fn(*node);
-                my_last_applied_zxid = delta.zxid;
+                last_applied_zxid = delta.zxid;
             }
             else if constexpr (std::same_as<DeltaType, SetACLDelta>)
             {
-                my_acls = operation.acls;
-                my_last_applied_zxid = delta.zxid;
+                acls = operation.acls;
+                last_applied_zxid = delta.zxid;
             }
         },
         delta.operation);
