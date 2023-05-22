@@ -725,8 +725,12 @@
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
-    <!-- Comma-separated list of prefixes for user-defined settings. -->
-    <custom_settings_prefixes></custom_settings_prefixes>
+    <!-- Comma-separated list of prefixes for user-defined settings.
+         The server will allow to set these settings, and retrieve them with the getSetting function.
+         They are also logged in the query_log, similarly to other settings, but have no special effect.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+    -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
