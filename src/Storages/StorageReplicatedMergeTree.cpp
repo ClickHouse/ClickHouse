@@ -3284,7 +3284,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             PartitionIdsHint partitions_to_merge_in;
             if (can_assign_merge)
             {
-                auto lightweight_merge_pred = TrivialMergePredicate(queue);
+                auto lightweight_merge_pred = LocalMergePredicate(queue);
                 partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                     max_source_parts_size_for_merge, lightweight_merge_pred, merge_with_ttl_allowed, NO_TRANSACTION_PTR);
                 if (partitions_to_merge_in.empty())

@@ -29,7 +29,7 @@ template <class Predicate>
 inline typename DB::ASTs::size_type erase_if(DB::ASTs & asts, Predicate pred)
 {
     auto old_size = asts.size();
-    asts.erase(std::remove_if(asts.begin(), asts.end(), pred), asts.end());
+    std::erase_if(asts, pred);
     return old_size - asts.size();
 }
 

@@ -251,11 +251,10 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectM
     if (!partitions_hint)
         return res;
 
-    auto new_end_it = std::remove_if(res.begin(), res.end(), [partitions_hint](const auto & part)
+    std::erase_if(res, [partitions_hint](const auto & part)
     {
         return !partitions_hint->contains(part->info.partition_id);
     });
-    res.erase(new_end_it, res.end());
     return res;
 }
 
