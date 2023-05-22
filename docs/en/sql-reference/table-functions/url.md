@@ -46,3 +46,12 @@ SELECT * FROM test_table;
 
 Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
+
+## Virtual Columns
+
+- `_path` — Path to the `URL`.
+- `_file` — Resource name of the `URL`.
+
+**See Also**
+
+- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
