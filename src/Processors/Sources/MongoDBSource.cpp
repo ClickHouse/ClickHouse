@@ -424,7 +424,7 @@ Poco::MongoDB::Document::Vector MongoDBCursor::nextDocuments(Poco::MongoDB::Conn
     }
 }
 
-Int64 MongoDBCursor::cursorID()
+Int64 MongoDBCursor::cursorID() const
 {
     return cursorID_;
 }

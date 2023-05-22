@@ -47,7 +47,7 @@ public:
 
     Poco::MongoDB::Document::Vector nextDocuments(Poco::MongoDB::Connection & connection);
 
-    Int64 cursorID();
+    Int64 cursorID() const;
 
 private:
     const bool is_wire_protocol_old;
