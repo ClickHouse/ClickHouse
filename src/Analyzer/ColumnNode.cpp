@@ -117,7 +117,10 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
                 else
                 {
                     const auto & table_storage_id = table_node->getStorageID();
-                    column_identifier_parts = { table_storage_id.getDatabaseName(), table_storage_id.getTableName() };
+                    if (table_storage_id.hasDatabase())
+                        column_identifier_parts = { table_storage_id.getDatabaseName(), table_storage_id.getTableName() };
+                    else
+                        column_identifier_parts = { table_storage_id.getTableName() };
                 }
             }
         }

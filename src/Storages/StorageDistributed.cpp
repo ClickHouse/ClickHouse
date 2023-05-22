@@ -943,7 +943,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
-        auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+        auto resolved_remote_storage_id = remote_storage_id;
+        if (remote_storage_id.hasDatabase())
+            resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
         auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
@@ -1059,7 +1061,7 @@ void StorageDistributed::read(
             remote_table_function_ptr);
 
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
     }
     else
     {

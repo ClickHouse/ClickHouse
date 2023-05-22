@@ -91,6 +91,8 @@ ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
     if (!temporary_table_name.empty())
         return std::make_shared<ASTTableIdentifier>(temporary_table_name);
 
+    if (!storage_id.hasDatabase())
+        return std::make_shared<ASTTableIdentifier>(storage_id.getTableName());
     return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
 }
 
