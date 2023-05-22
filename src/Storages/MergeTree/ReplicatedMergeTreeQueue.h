@@ -394,7 +394,8 @@ public:
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
                                                         std::optional<PartitionIdsHint> && partition_ids_hint);
 
-    MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
+    MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+                                         Strings & mutation_ids) const;
 
     /// Return mutation commands for part which could be not applied to
     /// it according to part mutation version. Used when we apply alter commands on fly,
