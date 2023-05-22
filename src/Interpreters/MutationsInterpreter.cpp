@@ -109,13 +109,16 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
+ColumnDependencies getAllColumnDependencies(
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & updated_columns,
+    const std::function<bool(const String & file_name)> & has_index_or_projection)
 {
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_index_or_projection);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -286,6 +289,11 @@ bool MutationsInterpreter::Source::hasLightweightDeleteMask() const
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
     return data && data->getSettings()->materialize_ttl_recalculate_only;
+}
+
+bool MutationsInterpreter::Source::hasIndexOrProjection(const String & file_name) const
+{
+    return part && part->checksums.has(file_name);
 }
 
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
@@ -524,8 +532,54 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
+    for (const auto & [_, names] : column_to_affected_materialized)
+        updated_columns.insert(names.begin(), names.end());
+
+    std::function<bool(const String & file_name)> has_index_or_projection
+        = [&](const String & file_name) { return source.hasIndexOrProjection(file_name); };
+
     if (settings.recalculate_dependencies_of_updated_columns)
-        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_index_or_projection);
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (source.hasIndexOrProjection("skp_idx_" + index.name + ".idx") || source.hasIndexOrProjection("skp_idx_" + index.name + ".idx2"))
+        {
+            // If some dependent columns gets mutated
+            bool mutate = false;
+            const auto & index_cols = index.expression->getRequiredColumns();
+            for (const auto & col : index_cols)
+            {
+                if (updated_columns.contains(col))
+                {
+                    mutate = true;
+                    break;
+                }
+            }
+            if (mutate)
+                materialized_indices.insert(index.name);
+        }
+    }
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (source.hasIndexOrProjection(projection.getDirectoryName()))
+        {
+            // If some dependent columns gets mutated
+            bool mutate = false;
+            const auto & projection_cols = projection.required_columns;
+            for (const auto & col : projection_cols)
+            {
+                if (updated_columns.contains(col))
+                {
+                    mutate = true;
+                    break;
+                }
+            }
+            if (mutate)
+                materialized_projections.insert(projection.name);
+        }
+    }
 
     std::vector<String> read_columns;
     /// First, break a sequence of commands into stages.
@@ -680,20 +734,27 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(indices_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
-            auto query = (*it).expression_list_ast->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-            const auto required_columns = syntax_result->requiredSourceColumns();
-            for (const auto & column : required_columns)
-                dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
-            materialized_indices.emplace(command.index_name);
+            if (!source.hasIndexOrProjection("skp_idx_" + it->name + ".idx")
+                && !source.hasIndexOrProjection("skp_idx_" + it->name + ".idx2"))
+            {
+                auto query = (*it).expression_list_ast->clone();
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                const auto required_columns = syntax_result->requiredSourceColumns();
+                for (const auto & column : required_columns)
+                    dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
+                materialized_indices.emplace(command.index_name);
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            for (const auto & column : projection.required_columns)
-                dependencies.emplace(column, ColumnDependency::PROJECTION);
-            materialized_projections.emplace(command.projection_name);
+            if (!source.hasIndexOrProjection(projection.getDirectoryName()))
+            {
+                for (const auto & column : projection.required_columns)
+                    dependencies.emplace(column, ColumnDependency::PROJECTION);
+                materialized_projections.emplace(command.projection_name);
+            }
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
@@ -712,7 +773,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(
+                    NameSet(all_columns_vec.begin(), all_columns_vec.end()), false, has_index_or_projection);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
@@ -737,7 +799,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+                auto all_dependencies = getAllColumnDependencies(
+                    metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()), has_index_or_projection);
 
                 for (const auto & dependency : all_dependencies)
                 {
@@ -746,7 +809,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_index_or_projection);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
