@@ -110,7 +110,7 @@ WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 #ifndef NDEBUG
     if (!finalized)
     {
-        LOG_ERROR(log, "WriteBufferFromPocoSocket is not finalized in destructor. It's a bug");
+        LOG_ERROR(&Poco::Logger::get("WriteBufferFromPocoSocket"), "WriteBufferFromPocoSocket is not finalized in destructor. It's a bug");
         std::terminate();
     }
 #else
