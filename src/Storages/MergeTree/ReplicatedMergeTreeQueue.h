@@ -32,7 +32,7 @@ class ReplicatedMergeTreeQueue
 {
 private:
     friend class CurrentlyExecuting;
-    friend class TrivialMergePredicate;
+    friend class LocalMergePredicate;
     friend class ReplicatedMergeTreeMergePredicate;
     friend class MergeFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
@@ -493,10 +493,10 @@ public:
 
 /// Lightweight version of ReplicatedMergeTreeMergePredicate that do not make any ZooKeeper requests,
 /// but may return false-positive results. Checks only a subset of required conditions.
-class TrivialMergePredicate
+class LocalMergePredicate
 {
 public:
-    TrivialMergePredicate(ReplicatedMergeTreeQueue & queue_);
+    LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
 
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
@@ -561,7 +561,7 @@ public:
     String getCoveringVirtualPart(const String & part_name) const;
 
 private:
-    TrivialMergePredicate nested_pred;
+    LocalMergePredicate nested_pred;
 
     const ReplicatedMergeTreeQueue & queue;
 

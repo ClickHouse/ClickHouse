@@ -1,4 +1,6 @@
 
+drop table if exists rmt;
+
 create table rmt (n int, m int) engine=ReplicatedMergeTree('/test/02439/{shard}/{database}', '{replica}') partition by n order by n;
 insert into rmt select number, number from numbers(50);
 insert into rmt values (1, 2);
@@ -21,4 +23,6 @@ system flush logs;
 
 -- it should not list unneeded partitions where we cannot merge anything
 select distinct path from system.zookeeper_log where path like '/test/02439/s1/' || currentDatabase() || '/block_numbers/%'
-    and op_num in ('List', 'SimpleList', 'FilteredList') and path not like '%/block_numbers/1'
+    and op_num in ('List', 'SimpleList', 'FilteredList') and path not like '%/block_numbers/1';
+
+drop table rmt;

@@ -160,14 +160,13 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         Strings children = zookeeper->getChildren(queue_path);
 
-        auto to_remove_it = std::remove_if(
-            children.begin(), children.end(), [&](const String & path)
+        size_t removed_entries = std::erase_if(children,
+            [&](const String & path)
             {
                 return already_loaded_paths.count(path);
             });
 
-        LOG_DEBUG(log, "Having {} queue entries to load, {} entries already loaded.", (to_remove_it - children.begin()), (children.end() - to_remove_it));
-        children.erase(to_remove_it, children.end());
+        LOG_DEBUG(log, "Having {} queue entries to load, {} entries already loaded.", children.size(), removed_entries);
 
         ::sort(children.begin(), children.end());
 
@@ -2104,7 +2103,7 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
     return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
 }
 
-TrivialMergePredicate::TrivialMergePredicate(ReplicatedMergeTreeQueue & queue_)
+LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : queue(queue_)
 {
 }
@@ -2190,7 +2189,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         inprogress_quorum_part.clear();
 }
 
-bool TrivialMergePredicate::operator()(
+bool LocalMergePredicate::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
@@ -2316,7 +2315,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     return nested_pred.canMergeTwoParts(left, right, out_reason);
 }
 
-bool TrivialMergePredicate::canMergeTwoParts(
+bool LocalMergePredicate::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     String * out_reason) const
@@ -2404,7 +2403,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     return nested_pred.canMergeSinglePart(part, out_reason);
 }
 
-bool TrivialMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
 {
     std::lock_guard lock(queue.state_mutex);
 
