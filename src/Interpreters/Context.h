@@ -34,7 +34,11 @@
 
 
 namespace Poco::Net { class IPAddress; }
-namespace zkutil { class ZooKeeper; }
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 struct OvercommitTracker;
 
@@ -829,6 +833,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    /// return Auxiliary Zookeeper map
+    std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
