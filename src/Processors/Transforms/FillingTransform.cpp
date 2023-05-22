@@ -786,7 +786,7 @@ void FillingTransform::transform(Chunk & chunk)
             });
 
         /// generate suffix for the previous range
-        if (!last_range_sort_prefix.empty())
+        if (!last_range_sort_prefix.empty() && new_sort_prefix)
             generateSuffixIfNeeded(result_columns, res_fill_columns, res_interpolate_columns, res_sort_prefix_columns, res_other_columns);
 
         transformRange(
