@@ -397,6 +397,16 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Requests the removal of unused capacity.
+    /// It is a non-binding request to reduce the capacity of the underlying container to its size.
+    virtual void shrinkToFit()
+    {
+      /// Create a new column with the same values and move it into the initial column
+      auto temporary_copy = cloneEmpty();
+      temporary_copy->insertRangeFrom(*this, 0, size());
+      getPtr() = std::move(temporary_copy);
+    }
+
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}
 
