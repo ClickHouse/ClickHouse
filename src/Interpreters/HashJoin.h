@@ -290,8 +290,6 @@ public:
                 APPLY_FOR_HASH_JOIN_VARIANTS(M)
             #undef M
             }
-
-
         }
 
         size_t getTotalRowCount(Type which) const
