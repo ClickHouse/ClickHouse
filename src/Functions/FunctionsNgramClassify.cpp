@@ -2,6 +2,7 @@
 #include <Functions/FunctionsNgramClassify.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/register_objects.h>
 
