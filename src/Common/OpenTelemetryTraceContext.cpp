@@ -15,7 +15,7 @@ namespace OpenTelemetry
 {
 
 /// This code can be executed inside fibers, we should use fiber local tracing context.
-FiberLocal<TracingContextOnThread> current_trace_context;
+thread_local FiberLocal<TracingContextOnThread> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {

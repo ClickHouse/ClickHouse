@@ -22,7 +22,7 @@ enum class AsyncEventTimeoutType
 };
 
 using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
-using ResumeCallback = std::function<void()>;
+using SuspendCallback = std::function<void()>;
 
 struct FiberInfo
 {
@@ -38,7 +38,7 @@ struct FiberInfo
 struct AsyncTask
 {
 public:
-    virtual void run(AsyncCallback async_callback, ResumeCallback suspend_callback) = 0;
+    virtual void run(AsyncCallback async_callback, SuspendCallback suspend_callback) = 0;
     virtual ~AsyncTask() = default;
 };
 
