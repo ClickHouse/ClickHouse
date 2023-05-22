@@ -424,7 +424,7 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
 
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
-    factory.registerFunction<FunctionGenerateRandomStructure>(
+    factory.registerFunction<FunctionGenerateRandomStructure>(FunctionDocumentation
         {
             .description=R"(
 Generates a random table structure.
