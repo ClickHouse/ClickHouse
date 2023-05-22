@@ -10,6 +10,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include "../../contrib/libfarmhash/farmhash.h"
 
 /// Implementation of entropy-learned hashing: https://doi.org/10.1145/3514221.3517894
@@ -286,9 +287,7 @@ public:
         const auto arg_count = arguments.size();
 
         if (arg_count == 2)
-        {
             hash_function = CityHash_v1_0_2::CityHash64;
-        }
         else
         {
             const IColumn * hash_function_col = arguments[2].column.get();
@@ -305,6 +304,8 @@ public:
             else if (lowercase_name == "farmhash64")
                 hash_function = [](const char * s, size_t len) -> uint64_t
                 { return static_cast<uint64_t>(NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len)); };
+            else if (lowercase_name == "siphash64")
+                hash_function = [](const char * s, size_t len) -> uint64_t { return sipHash64(s, len); };
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Hash function {} is not supported", hash_function_name);
         }

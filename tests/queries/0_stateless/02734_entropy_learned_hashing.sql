@@ -39,14 +39,21 @@ SELECT cityHash64(y) FROM tbl4;
 DROP TABLE IF EXISTS tbl5;
 CREATE TABLE tbl5 (x String) ENGINE=Memory;
 INSERT INTO tbl5 VALUES ('a'), ('b'), ('c');
-SELECT trainEntropyLearnedHash(x, 'id1') FROM tbl5;
-SELECT entropyLearnedHash(x, 'id1', 'farmHash64') FROM tbl5;
-SELECT farmHash64('a');
-SELECT farmHash64('b');
-SELECT farmHash64('c');
+SELECT trainEntropyLearnedHash(x, 'id5') FROM tbl5;
+SELECT entropyLearnedHash(x, 'id5', 'farmHash64') FROM tbl5;
+SELECT farmHash64(x) FROM tbl5;
+
+DROP TABLE IF EXISTS tbl6;
+CREATE TABLE tbl6 (x String) ENGINE=Memory;
+INSERT INTO tbl6 VALUES ('a'), ('b'), ('c');
+SELECT trainEntropyLearnedHash(x, 'id6') FROM tbl6;
+SELECT entropyLearnedHash(x, 'id6', 'sipHash64') FROM tbl6;
+SELECT sipHash64(x) FROM tbl6;
+
 
 DROP TABLE tbl1;
 DROP TABLE tbl2;
 DROP TABLE tbl3;
 DROP TABLE tbl4;
 DROP TABLE tbl5;
+DROP TABLE tbl6;
