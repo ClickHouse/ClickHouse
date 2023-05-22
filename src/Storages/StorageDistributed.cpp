@@ -421,6 +421,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     ClusterPtr cluster = getCluster();
 
+    if (local_context->getSettingsRef().allow_experimental_analyzer && cluster->maybeCrossReplication())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Analyzer is not compatible with cross-replication cluster configuration,"
+                                                     "you should disable allow_experimental_analyzer setting");
+
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
     if (query_info.use_custom_key)

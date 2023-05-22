@@ -43,6 +43,12 @@ insert into shard_0.num2_01232 select number from numbers(3);
 insert into shard_1.num2_01232 select number from numbers(2);
 create table distr2 (number UInt64) engine = Distributed(test_cluster_two_shards_different_databases, '', num2_01232);
 
+-- Analyzer is not compatible with cross-replication
+set allow_experimental_analyzer = 1;
+set send_logs_level = 'fatal';
+select * from distr order by number; -- { serverError NOT_IMPLEMENTED }
+set send_logs_level = 'error';
+set allow_experimental_analyzer = 0;
 select * from distr order by number;
 select '-';
 select * from distr2 order by number;

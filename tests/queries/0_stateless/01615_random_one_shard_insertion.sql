@@ -19,7 +19,9 @@ insert into distr select number from numbers(100);
 
 select count() != 0 from shard_0.tbl;
 select count() != 0 from shard_1.tbl;
-select * from distr order by number LIMIT 20;
+-- Analyzer is not compatible with cross-replication
+select * from distr order by number LIMIT 20 SETTINGS allow_experimental_analyzer=1; -- { serverError NOT_IMPLEMENTED }
+select * from distr order by number LIMIT 20 SETTINGS allow_experimental_analyzer=0;
 
 drop table if exists shard_0.tbl;
 drop table if exists shard_1.tbl;

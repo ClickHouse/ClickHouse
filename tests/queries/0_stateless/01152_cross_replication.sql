@@ -24,7 +24,10 @@ SHOW CREATE TABLE shard_1.demo_loan_01568;
 CREATE TABLE demo_loan_01568_dist AS shard_0.demo_loan_01568 ENGINE=Distributed('test_cluster_two_shards_different_databases', '', 'demo_loan_01568', id % 2);
 INSERT INTO demo_loan_01568_dist VALUES (1, '2021-04-13', 'qwerty', 3.14159), (2, '2021-04-14', 'asdfgh', 2.71828);
 SYSTEM FLUSH DISTRIBUTED demo_loan_01568_dist;
-SELECT * FROM demo_loan_01568_dist ORDER BY id;
+
+-- Analyzer is not compatible with cross-replication
+SELECT * FROM demo_loan_01568_dist ORDER BY id SETTINGS allow_experimental_analyzer=1; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM demo_loan_01568_dist ORDER BY id SETTINGS allow_experimental_analyzer=0;
 
 SELECT * FROM shard_0.demo_loan_01568;
 SELECT * FROM shard_1.demo_loan_01568;
