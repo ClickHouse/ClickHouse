@@ -27,7 +27,7 @@ def test_empty_parts_alter_delete(started_cluster):
         "CREATE TABLE empty_parts_delete (d Date, key UInt64, value String) "
         "ENGINE = ReplicatedMergeTree('/clickhouse/tables/empty_parts_delete', 'r1') "
         "PARTITION BY toYYYYMM(d) ORDER BY key "
-        "SETTINGS old_parts_lifetime = 1"
+        "SETTINGS old_parts_lifetime = 1, cleanup_delay_period=0, cleanup_thread_preferred_points_per_iteration=0"
     )
 
     node1.query("INSERT INTO empty_parts_delete VALUES (toDate('2020-10-10'), 1, 'a')")

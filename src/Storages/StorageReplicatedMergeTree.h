@@ -456,6 +456,8 @@ private:
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
+    UInt64 merge_selecting_sleep_ms;
+
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
 

@@ -108,7 +108,7 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
         return;
 
     /// Do not re-check all parts too often (avoid constantly calling getNumberOfOutdatedPartsWithExpiredRemovalTime())
-    if (!wakeup_check_timer.compareAndRestart(storage_settings->cleanup_delay_period / 4))
+    if (!wakeup_check_timer.compareAndRestart(storage_settings->cleanup_delay_period / 4.0))
         return;
 
     UInt64 prev_run_timestamp_ms = prev_cleanup_timestamp_ms.load(std::memory_order_relaxed);
