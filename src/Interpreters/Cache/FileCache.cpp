@@ -563,17 +563,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
             file_segment.key(), file_segment.offset());
     }
 
-    size_t queue_size = main_priority->getElementsCount(cache_lock);
-    chassert(queue_size <= main_priority->getElementsLimit());
-
     /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt.
     auto queue_iterator = file_segment.getQueueIterator();
-    if (queue_iterator)
-        chassert(file_segment.getReservedSize() > 0);
-    else
-        queue_size += 1;
-
-    size_t removed_size = 0;
+    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
     class EvictionCandidates final : public std::vector<FileSegmentMetadataPtr>
     {
@@ -599,6 +591,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     };
 
     std::unordered_map<Key, EvictionCandidates> to_delete;
+    size_t freeable_space = 0, freeable_count = 0;
 
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
@@ -619,8 +612,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
                     it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
                 it->second.add(segment_metadata);
 
-                removed_size += segment_metadata->size();
-                --queue_size;
+                freeable_space += segment_metadata->size();
+                freeable_count += 1;
 
                 return PriorityIterationResult::CONTINUE;
             }
@@ -636,7 +629,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         auto is_query_priority_overflow = [&]
         {
-            const size_t new_size = query_priority->getSize(cache_lock) + size - removed_size;
+            const size_t new_size = query_priority->getSize(cache_lock) + size - freeable_space;
             return new_size > query_priority->getSizeLimit();
         };
 
@@ -656,9 +649,11 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     auto is_main_priority_overflow = [&]
     {
         /// max_size == 0 means unlimited cache size,
-        /// max_element_size means unlimited number of cache elements.
-        return (main_priority->getSizeLimit() != 0 && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
-            || (main_priority->getElementsLimit() != 0 && queue_size > main_priority->getElementsLimit());
+        /// max_element_size == 0 means unlimited number of cache elements.
+        return (main_priority->getSizeLimit() != 0
+                && (main_priority->getSize(cache_lock) + size - freeable_space > main_priority->getSizeLimit()))
+            || (main_priority->getElementsLimit() != 0
+                && (main_priority->getElementsCount(cache_lock) + 1 - freeable_count > main_priority->getElementsLimit()));
     };
 
     main_priority->iterate(
