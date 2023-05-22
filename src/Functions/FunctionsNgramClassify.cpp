@@ -1,5 +1,3 @@
-#pragma once
-
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsNgramClassify.h>
 #include <Common/BitHelpers.h>

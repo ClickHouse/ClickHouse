@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
