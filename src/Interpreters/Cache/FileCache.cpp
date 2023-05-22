@@ -585,7 +585,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
         ~EvictionCandidates()
         {
-            // todo: it looks redundant, - why is it needed?
+            /// If failed to reserve space, we don't delete the candidates but drop the flag instead
+            /// so the segments can used again
             for (const auto & candidate : candidates)
                 candidate->removal_candidate = false;
         }
