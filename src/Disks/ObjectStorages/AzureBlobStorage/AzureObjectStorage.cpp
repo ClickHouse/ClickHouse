@@ -282,7 +282,6 @@ void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguratio
 {
     auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
     settings.set(std::move(new_settings));
-    applyRemoteThrottlingSettings(context);
     /// We don't update client
 }
 
