@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnFunction.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -93,6 +94,17 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
             return column;
 
         return ColumnMap::create(nested_no_lc);
+    }
+
+    /// Special case when column is a lazy argument of short circuit function.
+    /// We should call recursiveRemoveLowCardinality on the result column
+    /// when function will be executed.
+    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
+    {
+        if (!column_function->isShortCircuitArgument())
+            return column;
+
+        return column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
     }
 
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))

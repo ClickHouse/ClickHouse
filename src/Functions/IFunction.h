@@ -381,7 +381,7 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
+    /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
