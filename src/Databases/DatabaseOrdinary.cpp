@@ -218,13 +218,19 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
         std::move(startup_after),
         TABLE_STARTUP_PRIORITY,
         fmt::format("startup table {}", name.getFullName()),
-        [this, table = getTableUnlocked(name.table)] (const LoadJobPtr &)
+        [this, name] (const LoadJobPtr &)
         {
-            /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
-            /// until startup finished.
-            auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
-            table->startup();
-            logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
+            if (auto table = DatabaseOrdinary::tryGetTable(name.table, {}))
+            {
+                /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
+                /// until startup finished.
+                auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
+                table->startup();
+                logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
+            }
+            else
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist during startup",
+                    backQuote(name.database), backQuote(name.table));
         });
 
     return startup_table[name.table] = makeLoadTask(async_loader, {job});
