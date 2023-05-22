@@ -100,7 +100,7 @@ public:
         {
             const ColumnArray * res;
             bool is_const = false;
-            if (typeid_cast<const ColumnConst *>(col.column.get())) 
+            if (typeid_cast<const ColumnConst *>(col.column.get()))
             {
                 res = checkAndGetColumn<ColumnArray>(checkAndGetColumnConst<ColumnArray>(col.column.get())->getDataColumnPtr().get());
                 is_const = true;
