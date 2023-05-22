@@ -43,6 +43,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
+        UInt64 pos_tmp;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
@@ -65,14 +66,22 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                     now_s -= n2_d;
                     ++pos_y;
                 }
-                max_s = std::max(max_s, now_s);
-                min_s = std::min(min_s, now_s);
             }
             else
             {
-                now_s += n1_d;
-                ++pos_x;
+                pos_tmp = pos_x + 1;
+                while (pos_tmp < x.size() && unlikely(fabs(x[pos_tmp] - x[pos_x]) <= tol))
+                    pos_tmp++;
+                now_s += n1_d * (pos_tmp - pos_x);
+                pos_x = pos_tmp;
+                pos_tmp = pos_y + 1;
+                while (pos_tmp < y.size() && unlikely(fabs(y[pos_tmp] - y[pos_y]) <= tol))
+                    pos_tmp++;
+                now_s -= n2_d * (pos_tmp - pos_y);
+                pos_y = pos_tmp;
             }
+            max_s = std::max(max_s, now_s);
+            min_s = std::min(min_s, now_s);
         }
         now_s += n1_d * (x.size() - pos_x) - n2_d * (y.size() - pos_y);
         min_s = std::min(min_s, now_s);
