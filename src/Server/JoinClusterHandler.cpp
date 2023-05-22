@@ -9,11 +9,14 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/JSON/Parser.h>
+#include <Interpreters/Context.h>
+#include <Coordination/TinyContext.h>
 
 namespace DB
 {
 
-void JoinClusterHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+template <class ContextWithKeeperDispatcherPtr>
+void JoinClusterHandler<ContextWithKeeperDispatcherPtr>::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -34,10 +37,16 @@ void JoinClusterHandler::handleRequest(HTTPServerRequest & request, HTTPServerRe
 
         AddToClusterAction add_server_action{.server = std::make_shared<nuraft::srv_config>(server_id, keeper_endpoint)};
 
-        keeper_dispatcher->addServerToCluster(add_server_action);
+        auto keeper_dispatcher = context->tryGetKeeperDispatcher();
+        if (keeper_dispatcher) {
+            keeper_dispatcher->addServerToCluster(add_server_action);
 
-        const char * data = "Ok.\n";
-        response.sendBuffer(data, strlen(data));
+            const char * data = "Ok.\n";
+            response.sendBuffer(data, strlen(data));
+        } else {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+            LOG_ERROR((&Poco::Logger::get("JoinClusterHandler")), "Got join_cluster request before keeper was initialized");
+        }
     }
     catch (...)
     {
@@ -60,16 +69,20 @@ void JoinClusterHandler::handleRequest(HTTPServerRequest & request, HTTPServerRe
     }
 }
 
+template <class ContextWithKeeperDispatcherPtr>
 HTTPRequestHandlerFactoryPtr
-createJoinClusterMainHandlerFactory(IServer & server, std::shared_ptr<KeeperDispatcher> & keeper_dispatcher, const std::string & name)
+createJoinClusterMainHandlerFactory(IServer & server, std::shared_ptr<ContextWithKeeperDispatcherPtr> & context, const std::string & name)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JoinClusterHandler>>(
-        server, keeper_dispatcher);
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JoinClusterHandler<ContextWithKeeperDispatcherPtr>>>(server, context);
     handler->attachNonStrictPath("/join_cluster");
     handler->allowPostAndGetParamsAndOptionsRequest();
     factory->addHandler(handler);
     return factory;
 }
+
+/// Explicit instantiations
+template class JoinClusterHandler<ContextMutablePtr>;
+template class JoinClusterHandler<TinyContextPtr>;
 
 }

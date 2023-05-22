@@ -8,6 +8,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "Interpreters/Context_fwd.h"
 #include "JoinClusterHandler.h"
 #include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
@@ -157,8 +158,8 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addHandler(js_handler);
 
 #if USE_NURAFT
-    auto keeper_dispatcher_ptr = server.context()->getGlobalContext()->getKeeperDispatcher();
-    auto join_cluster_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JoinClusterHandler>>(server, keeper_dispatcher_ptr);
+    auto join_cluster_handler
+        = std::make_shared<HandlingRuleHTTPHandlerFactory<JoinClusterHandler<ContextMutablePtr>>>(server, server.context()->getGlobalContext());
     join_cluster_handler->attachNonStrictPath("/join_cluster");
     join_cluster_handler->allowPostAndGetParamsAndOptionsRequest();
     factory.addHandler(join_cluster_handler);

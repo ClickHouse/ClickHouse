@@ -10,11 +10,12 @@ class Context;
 class IServer;
 
 /// Replies "Ok.\n" if join request was successfully put info join_cluster_queue
+template <class ContextWithKeeperDispatcherPtr>
 class JoinClusterHandler : public HTTPRequestHandler
 {
 public:
-    explicit JoinClusterHandler(IServer & server_, std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_)
-        : server(server_), keeper_dispatcher(keeper_dispatcher_)
+    explicit JoinClusterHandler(IServer & server_, ContextWithKeeperDispatcherPtr context_)
+        : server(server_), context(context_)
     {
     }
 
@@ -22,7 +23,7 @@ public:
 
 private:
     IServer & server;
-    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
+    ContextWithKeeperDispatcherPtr context;
 };
 
 }

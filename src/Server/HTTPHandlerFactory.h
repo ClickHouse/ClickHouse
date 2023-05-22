@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Common/AsynchronousMetrics.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
@@ -138,10 +139,9 @@ createPrometheusMainHandlerFactory(IServer & server,
     AsynchronousMetrics & async_metrics,
     const std::string & name);
 
+template <class ContextWithKeeperDispatcherPtr>
 HTTPRequestHandlerFactoryPtr
-createJoinClusterMainHandlerFactory(IServer & server, 
-    std::shared_ptr<KeeperDispatcher> & keeper_dispatcher,
-    const std::string & name);
+createJoinClusterMainHandlerFactory(IServer & server, ContextWithKeeperDispatcherPtr& context, const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer
