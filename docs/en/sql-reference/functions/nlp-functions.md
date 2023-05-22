@@ -38,6 +38,41 @@ Result:
 │ ['I','think','it','is','a','bless','in','disguis'] │
 └────────────────────────────────────────────────────┘
 ```
+### Supported languages for stem()
+
+:::note
+The stem() function uses the [Snowball stemming](https://snowballstem.org/) library, see the Snowball website for updated languages etc.
+:::
+
+- Arabic
+- Armenian
+- Basque
+- Catalan
+- Danish
+- Dutch
+- English
+- Finnish
+- French
+- German
+- Greek
+- Hindi
+- Hungarian
+- Indonesian
+- Irish
+- Italian
+- Lithuanian
+- Nepali
+- Norwegian
+- Porter
+- Portuguese
+- Romanian
+- Russian
+- Serbian
+- Spanish
+- Swedish
+- Tamil
+- Turkish
+- Yiddish
 
 ## lemmatize
 
