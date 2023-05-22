@@ -13,8 +13,25 @@ struct ArrayPackBitsToUint64Impl
     static bool needOneArray() { return true; }
 
 
-    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
+        auto call = [&](const auto & types)
+        {
+            using Types = std::decay_t<decltype(types)>;
+            using DataType = typename Types::LeftType;
+            if constexpr (IsDataTypeDecimalOrNumber<DataType>)
+            {
+                return true;
+            }
+            return false;
+        };
+        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "array pack bits function cannot be performed on type {}",
+                expression_return->getName());
+        }
         return std::make_shared<DataTypeUInt64>();
     }
 
