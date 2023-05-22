@@ -10,6 +10,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 
 #include <base/types.h>
 

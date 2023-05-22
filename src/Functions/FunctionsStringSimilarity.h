@@ -6,8 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -26,7 +25,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Impl, typename Name>
@@ -56,8 +54,7 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
