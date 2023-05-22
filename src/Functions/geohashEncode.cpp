@@ -37,7 +37,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    // ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -59,7 +59,50 @@ public:
     }
 
     template <typename LonType, typename LatType>
-    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result) const
+    bool tryVectorVector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result) const
+    {
+        const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
+        const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
+        if (!latitude || !longitude)
+            return false;
+
+        auto col_str = ColumnString::create();
+        ColumnString::Chars & out_vec = col_str->getChars();
+        ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+        const size_t size = lat_column->size();
+
+        out_offsets.resize(size);
+        out_vec.resize(size * (GEOHASH_MAX_TEXT_LENGTH + 1));
+
+        char * begin = reinterpret_cast<char *>(out_vec.data());
+        char * pos = begin;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const Float64 longitude_value = longitude->getElement(i);
+            const Float64 latitude_value = latitude->getElement(i);
+            const UInt64 precision_value = std::min<UInt64>(precision_column->get64(i), GEOHASH_MAX_TEXT_LENGTH);
+
+            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
+
+            pos += encoded_size;
+            *pos = '\0';
+            out_offsets[i] = ++pos - begin;
+        }
+        out_vec.resize(pos - begin);
+
+        if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
+
+        result = std::move(col_str);
+
+        return true;
+
+    }
+
+    template <typename LonType, typename LatType>
+    bool tryVectorConstant(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result) const
     {
         const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
         const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
@@ -105,16 +148,29 @@ public:
         const IColumn * longitude = arguments[0].column.get();
         const IColumn * latitude = arguments[1].column.get();
 
-        const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
-                arguments.size() == 3 ? arguments[2].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
+        if (arguments.size() < 3 || isColumnConst(*arguments[3].column))
+        {
+            const UInt64 precision_value = std::min<UInt64>(
+                GEOHASH_MAX_TEXT_LENGTH, arguments.size() == 3 ? arguments[2].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
 
-        ColumnPtr res_column;
+            ColumnPtr res_column;
+            if (tryVectorConstant<Float32, Float32>(longitude, latitude, precision_value, res_column)
+                || tryVectorConstant<Float64, Float32>(longitude, latitude, precision_value, res_column)
+                || tryVectorConstant<Float32, Float64>(longitude, latitude, precision_value, res_column)
+                || tryVectorConstant<Float64, Float64>(longitude, latitude, precision_value, res_column))
+                return res_column;
+        }
+        else
+        {
+            const IColumn * precision = arguments[2].column.get();
+            ColumnPtr res_column;
+            if (tryVectorVector<Float32, Float32>(longitude, latitude, precision, res_column)
+                || tryVectorVector<Float64, Float32>(longitude, latitude, precision, res_column)
+                || tryVectorVector<Float32, Float64>(longitude, latitude, precision, res_column)
+                || tryVectorVector<Float64, Float64>(longitude, latitude, precision, res_column))
+                return res_column;
 
-        if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float32, Float64>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float64, Float64>(longitude, latitude, precision_value, res_column))
-            return res_column;
+        }
 
         std::string arguments_description;
         for (size_t i = 0; i < arguments.size(); ++i)
