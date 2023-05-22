@@ -107,7 +107,7 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto result_ast = query_node_typed.toAST();
+    auto result_ast = query_node_typed.toAST({ .fully_qualified_identifiers = false });
 
     while (true)
     {
