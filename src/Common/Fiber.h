@@ -11,7 +11,12 @@
 class Fiber
 {
 public:
-    using CleanUpFn = std::function<void(void *)>;
+    struct CleanUpFn
+    {
+        virtual void operator()(void *) = 0;
+        virtual ~CleanUpFn() = default;
+    };
+
     using Impl = boost::context::fiber;
 
     template< typename StackAlloc, typename Fn>
@@ -30,7 +35,7 @@ public:
     ~Fiber()
     {
         for (auto & [_, data] : local_data)
-            data.cleanup_fn(data.ptr);
+            (*data.cleanup_fn)(data.ptr);
     }
 
     explicit operator bool() const
@@ -52,7 +57,7 @@ public:
     /// Set pointer to fiber-specific data, it will be stored in hash-map
     /// using provided key and cleaned on fiber destructor using provided
     /// cleanup function.
-    void setLocalData(void * key, void * ptr, CleanUpFn cleanup_fn)
+    void setLocalData(void * key, void * ptr, CleanUpFn * cleanup_fn)
     {
         local_data[key] = FiberLocalData{ptr, cleanup_fn};
     }
@@ -80,7 +85,7 @@ private:
     struct FiberLocalData
     {
         void * ptr;
-        CleanUpFn cleanup_fn;
+        CleanUpFn * cleanup_fn;
     };
 
     Impl impl;
@@ -93,10 +98,43 @@ private:
 /// Fiber local data is destroyed in Fiber destructor.
 /// On first request, fiber local data is copied from parent
 /// fiber data or from current thread data if there is no parent fiber.
+/// Implementation is similar to boost::fiber::fiber_specific_ptr
+/// (we cannot use it because we don't use boost::fiber API.
 template <typename T>
 class FiberLocal
 {
 public:
+    struct DefaultCleanUpFn : public Fiber::CleanUpFn
+    {
+        void operator()(void * data) override
+        {
+            delete static_cast<T *>(data);
+        }
+    };
+
+    struct CustomCleanUpFn : public Fiber::CleanUpFn
+    {
+        explicit CustomCleanUpFn(void (*fn_)(T*)) : fn(fn_)
+        {
+        }
+
+        void operator()(void * data) override
+        {
+            if (likely(fn != nullptr))
+                fn(static_cast<T *>(data));
+        }
+
+        void (*fn)(T*);
+    };
+
+    FiberLocal() : cleanup_fn(std::make_unique<DefaultCleanUpFn>())
+    {
+    }
+
+    explicit FiberLocal(void (*fn)(T*)) : cleanup_fn(std::make_unique<CustomCleanUpFn>(fn))
+    {
+    }
+
     T & operator*()
     {
         return get();
@@ -129,7 +167,7 @@ private:
             auto parent_instance = getInstanceForFiber(*fiber_info.parent_info);
             /// Crete new object and store pointer inside Fiber, so it will be destroyed in Fiber destructor.
             ptr = new T(parent_instance);
-            fiber_info.fiber->setLocalData(this, ptr, [](void * to_delete){ delete static_cast<T *>(to_delete); });
+            fiber_info.fiber->setLocalData(this, ptr, cleanup_fn.get());
         }
 
         return *ptr;
@@ -140,5 +178,7 @@ private:
         static thread_local T thread_local_instance;
         return thread_local_instance;
     }
+
+    std::unique_ptr<Fiber::CleanUpFn> cleanup_fn;
 };
 
