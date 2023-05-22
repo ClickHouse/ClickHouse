@@ -357,9 +357,9 @@ Alias: `SECOND`.
 
 ## toUnixTimestamp
 
-Converts a string, date or date with time to a `UInt32` number -- [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time).
+Converts a string, a date or a date with time to the [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time) in `UInt32` representation.
 
-The string argument is converted according to the timezone (optional second argument, server timezone is used by default).
+If the function is called with a string, it accepts an optional timezone argument.
 
 **Syntax**
 
@@ -382,6 +382,7 @@ SELECT
     toUnixTimestamp(dt_str) AS from_str,
     toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
     toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
     toUnixTimestamp(toDate(dt_str)) AS from_date,
     toUnixTimestamp(toDate32(dt_str)) AS from_date32
 FORMAT Vertical;
@@ -392,12 +393,13 @@ Result:
 ``` text
 Row 1:
 ──────
-dt_str:         2017-11-05 08:07:47
-from_str:       1509869267
-from_str_tokyo: 1509836867
-from_datetime:  1509869267
-from_date:      1509840000
-from_date32:    1509840000
+dt_str:          2017-11-05 08:07:47
+from_str:        1509869267
+from_str_tokyo:  1509836867
+from_datetime:   1509869267
+from_datetime64: 1509869267
+from_date:       1509840000
+from_date32:     1509840000
 ```
 
 :::note
