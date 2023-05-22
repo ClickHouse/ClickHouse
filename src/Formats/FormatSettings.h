@@ -220,6 +220,7 @@ struct FormatSettings
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        bool output_compliant_nested_types = true;
     } parquet;
 
     struct Pretty
@@ -227,7 +228,6 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
-        UInt64 squash_milliseconds = 100;
         bool color = true;
 
         bool output_format_pretty_row_numbers = false;
