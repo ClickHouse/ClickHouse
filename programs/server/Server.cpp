@@ -1872,7 +1872,7 @@ try
             }
 
             if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+                LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
@@ -1884,7 +1884,7 @@ try
                 current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
-                LOG_INFO(log, "Closed connections. But {} remain."
+                LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
@@ -1900,7 +1900,7 @@ try
 
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
-                LOG_INFO(log, "Will shutdown forcefully.");
+                LOG_WARNING(log, "Will shutdown forcefully.");
                 safeExit(0);
             }
         });

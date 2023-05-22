@@ -161,7 +161,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     WriteMode mode, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
-    size_t buf_size,
+    size_t buf_size [[maybe_unused]],
     const WriteSettings & write_settings)
 {
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
@@ -180,7 +180,6 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         object.remote_path,
         settings_ptr->request_settings,
         attributes,
-        buf_size,
         std::move(scheduler),
         disk_write_settings);
 
@@ -444,7 +443,6 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
     s3_settings.set(std::move(new_s3_settings));
     client.set(std::move(new_client));
-    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
