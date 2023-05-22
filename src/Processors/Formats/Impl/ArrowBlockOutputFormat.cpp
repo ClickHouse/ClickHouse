@@ -58,7 +58,9 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             format_settings.arrow.output_fixed_string_as_fixed_byte_array);
     }
 
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
+    auto chunks = std::vector<Chunk>();
+    chunks.push_back(std::move(chunk));
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
 
     if (!writer)
         prepareWriter(arrow_table->schema());
