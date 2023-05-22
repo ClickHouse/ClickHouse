@@ -74,10 +74,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-
 namespace impl
 {
-
     struct SipHashKey
     {
         UInt64 key0 = 0;
@@ -1348,7 +1346,8 @@ private:
             {
                 const auto & nested_col = col_from->getNestedColumn();
                 typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
-                executeAny<first>(key, nested_type, &nested_col, vec_temp);
+                bool nested_is_first = true;
+                executeForArgument(key, nested_type, &nested_col, vec_temp, nested_is_first);
                 size_t j = 0;
                 for (size_t i = 0; i < vec_to.size(); ++i)
                 {
@@ -1366,6 +1365,11 @@ private:
             else
                 for (size_t i = 0; i < vec_to.size(); ++i)
                     vec_to[i] = combineHashes(key, vec_to[i], static_cast<ToType>(null_magic_number));
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnNullable>(column))
+        {
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
+            executeNullable<first>(key, from_type, full_column.get(), vec_to);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
