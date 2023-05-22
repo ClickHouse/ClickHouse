@@ -68,7 +68,7 @@ const char * analyzeImpl(
     bool has_alternative_on_depth_0 = false;
     bool has_case_insensitive_flag = false;
 
-    /// Substring with a position.
+    /// Substring with is_prefix.
     using Substring = std::pair<std::string, bool>;
     using Substrings = std::vector<Substring>;
 
