@@ -165,9 +165,10 @@ public:
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) = 0;
+        const Poco::Util::AbstractConfiguration &,
+        const std::string & /*config_prefix*/,
+        ContextPtr)
+    {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -204,10 +205,6 @@ public:
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
-
-protected:
-    /// Should be called from implementation of applyNewSettings()
-    void applyRemoteThrottlingSettings(ContextPtr context);
 
 private:
     mutable std::mutex throttlers_mutex;

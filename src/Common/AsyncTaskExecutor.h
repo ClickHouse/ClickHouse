@@ -24,6 +24,11 @@ enum class AsyncEventTimeoutType
 using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
 using ResumeCallback = std::function<void()>;
 
+struct FiberInfo
+{
+    const Fiber * fiber = nullptr;
+    const FiberInfo * parent_fiber_info = nullptr;
+};
 
 /// Base class for a task that will be executed in a fiber.
 /// It has only one method - run, that takes 2 callbacks:
@@ -75,6 +80,7 @@ public:
     };
 #endif
 
+    static FiberInfo getCurrentFiberInfo();
 protected:
     /// Method that is called in resume() before actual fiber resuming.
     /// If it returns false, resume() will return immediately without actual fiber resuming.
@@ -116,6 +122,48 @@ private:
     std::atomic_bool is_cancelled = false;
 
     std::unique_ptr<AsyncTask> task;
+};
+
+/// Simple implementation for fiber local variable.
+template <typename T>
+struct FiberLocal
+{
+public:
+    FiberLocal()
+    {
+        /// Initialize main instance for this thread. Instances for fibers will inherit it,
+        /// (it's needed because main instance could be changed before creating fibers
+        /// and changes should be visible in fibers).
+        data[nullptr] = T();
+    }
+
+    T & operator*()
+    {
+        return get();
+    }
+
+    T * operator->()
+    {
+        return &get();
+    }
+
+private:
+    T & get()
+    {
+        return getInstanceForFiber(AsyncTaskExecutor::getCurrentFiberInfo());
+    }
+
+    T & getInstanceForFiber(FiberInfo info)
+    {
+        auto it = data.find(info.fiber);
+        /// If it's the first request, we need to initialize instance for the fiber
+        /// using instance from parent fiber or main thread that created fiber.
+        if (it == data.end())
+            it = data.insert({info.fiber, getInstanceForFiber(*info.parent_fiber_info)}).first;
+        return it->second;
+    }
+
+    std::unordered_map<const Fiber *, T> data;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

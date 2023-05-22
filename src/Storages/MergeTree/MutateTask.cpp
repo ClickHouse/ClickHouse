@@ -59,7 +59,9 @@ static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames)
+    MutationCommands & for_file_renames,
+    const StorageMetadataPtr & table_metadata_snapshot,
+    Poco::Logger * log)
 {
     auto part_columns = part->getColumnsDescription();
 
@@ -143,6 +145,29 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
+                if (!table_metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+                {
+                    /// We cannot add the column because there's no such column in table.
+                    /// It's okay if the column was dropped. It may also absent in dropped_columns
+                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
+                    /// But we don't know for sure what happened.
+                    auto part_metadata_version = part->getMetadataVersion();
+                    auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
+                    if (table_metadata_version <= part_metadata_version)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+
+                    if (part_metadata_version < table_metadata_version)
+                    {
+                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
+                                         "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
+                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                        continue;
+                    }
+                }
+
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
@@ -1777,7 +1802,8 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
-    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
+    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter,
+                                                    ctx->for_file_renames, ctx->metadata_snapshot, ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 

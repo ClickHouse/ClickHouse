@@ -548,6 +548,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty mutation commands list");
 
+    /// TODO Should we get columns, indices and projections from the part itself? Table metadata may be different
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
