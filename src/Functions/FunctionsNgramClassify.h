@@ -22,10 +22,17 @@
 
 namespace DB
 {
-/** Ngram classifiers;
+/** N-gram naive Bayes most probable classifier
+  * ngramClassify(model, text)
   *
-  * ngramClassify(model, text) - classify text by naive Bayes classifier
-  * Also support UTF8 formats.
+  * Classifier uses n-grams with paramatrized N.
+  * It gets name of model and column with texts
+  * It returns column of most probable class of
+  * given model.
+  * Models are configures by config.
+  * See programs/server/config.d/ngram_classifiers.xml
+  *
+  * Also support UTF8 formats:
   * ngramClassifyUTF8(model, text)
   */
 

@@ -466,6 +466,8 @@ murmurHash3_64
 negate
 neighbor
 netloc
+ngramClassify
+ngramClassifyUTF8
 ngramDistance
 ngramDistanceCaseInsensitive
 ngramDistanceCaseInsensitiveUTF8

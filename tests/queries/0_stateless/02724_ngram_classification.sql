@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 create table some_table(str String) engine=MergeTree primary key(str);
 create table some_table_utf8(str String) engine=MergeTree primary key(str);
 
