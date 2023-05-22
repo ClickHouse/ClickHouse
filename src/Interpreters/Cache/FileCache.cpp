@@ -634,13 +634,16 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
             return new_size > query_priority->getSizeLimit();
         };
 
-        query_priority->iterate(
-            [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
-            { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
-            cache_lock);
-
         if (is_query_priority_overflow())
-            return false;
+        {
+            query_priority->iterate(
+                [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+                { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
+                cache_lock);
+
+            if (is_query_priority_overflow())
+                return false;
+        }
 
         LOG_TEST(
             log, "Query limits satisfied (while reserving for {}:{})",
@@ -654,7 +657,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         const bool is_overflow = (main_priority->getSizeLimit() != 0
                                   && (main_priority->getSize(cache_lock) + size - freeable_space > main_priority->getSizeLimit()))
             || (main_priority->getElementsLimit() != 0
-                && (main_priority->getElementsCount(cache_lock) + 1 - freeable_count > main_priority->getElementsLimit()));
+                && freeable_count == 0 && main_priority->getElementsCount(cache_lock) == main_priority->getElementsLimit());
 
         LOG_TEST(
             log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
@@ -666,13 +669,16 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         return is_overflow;
     };
 
-    main_priority->iterate(
-        [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
-        { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
-        cache_lock);
-
     if (is_main_priority_overflow())
-        return false;
+    {
+        main_priority->iterate(
+            [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+            { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
+            cache_lock);
+
+        if (is_main_priority_overflow())
+            return false;
+    }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
