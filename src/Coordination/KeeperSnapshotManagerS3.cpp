@@ -149,6 +149,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
+                DBMS_DEFAULT_BUFFER_SIZE,
                 request_settings_1
             };
         };
