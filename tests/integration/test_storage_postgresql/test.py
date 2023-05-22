@@ -198,7 +198,9 @@ def test_non_default_scema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(100)")
     assert result == expected
 
-    table_function = """postgresql('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema')"""
+    parameters = "'postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema'"
+    table_function = f"postgresql({parameters})"
+    table_engine = f"PostgreSQL({parameters})"
     result = node1.query(f"SELECT * FROM {table_function}")
     assert result == expected
 
@@ -224,10 +226,19 @@ def test_non_default_scema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(200)")
     assert result == expected
 
+    node1.query(f"CREATE TABLE test.test_pg_auto_schema_engine ENGINE={table_engine}")
+    node1.query(f"CREATE TABLE test.test_pg_auto_schema_function AS {table_function}")
+
+    expected = "a\tNullable(Int32)\t\t\t\t\t\n"
+    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_engine") == expected
+    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_function") == expected
+
     cursor.execute("DROP SCHEMA test_schema CASCADE")
     cursor.execute('DROP SCHEMA "test.nice.schema" CASCADE')
     node1.query("DROP TABLE test.test_pg_table_schema")
     node1.query("DROP TABLE test.test_pg_table_schema_with_dots")
+    node1.query("DROP TABLE test.test_pg_auto_schema_engine")
+    node1.query("DROP TABLE test.test_pg_auto_schema_function")
 
 
 def test_concurrent_queries(started_cluster):

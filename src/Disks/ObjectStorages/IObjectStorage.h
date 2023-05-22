@@ -50,8 +50,6 @@ struct ObjectMetadata
     std::optional<ObjectAttributes> attributes;
 };
 
-using FinalizeCallback = std::function<void(size_t bytes_count)>;
-
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
@@ -121,7 +119,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 
@@ -167,9 +164,10 @@ public:
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) = 0;
+        const Poco::Util::AbstractConfiguration &,
+        const std::string & /*config_prefix*/,
+        ContextPtr)
+    {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -206,10 +204,6 @@ public:
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
-
-protected:
-    /// Should be called from implementation of applyNewSettings()
-    void applyRemoteThrottlingSettings(ContextPtr context);
 
 private:
     mutable std::mutex throttlers_mutex;
