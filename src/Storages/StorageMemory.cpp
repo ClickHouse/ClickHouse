@@ -23,7 +23,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
@@ -307,8 +308,6 @@ namespace
 
         BackupEntries generate() override
         {
-            ReadSettings read_settings = context->getBackupReadSettings();
-
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
@@ -321,20 +320,28 @@ namespace
             {
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
-                CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size};
-                NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
+                auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path, read_settings)};
+                data_out->finalize();
+                data_out.reset();
+                data_out_compressed->finalize();
+                data_out_compressed.reset();
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)};
             }
 
             /// Writing index.mrk
             {
                 auto index_mrk_path = temp_dir / fs::path{file_paths[index_mrk_pos]}.filename();
                 auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
-                CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
-                index.write(index_mrk_out);
-                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path, read_settings)};
+                auto index_mrk_out = std::make_unique<CompressedWriteBuffer>(*index_mrk_out_compressed);
+                index.write(*index_mrk_out);
+                index_mrk_out->finalize();
+                index_mrk_out.reset();
+                index_mrk_out_compressed->finalize();
+                index_mrk_out_compressed.reset();
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, index_mrk_path)};
             }
 
             /// Writing columns.txt

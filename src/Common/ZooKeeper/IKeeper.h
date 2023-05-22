@@ -466,6 +466,8 @@ public:
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
+    virtual String getConnectedAddress() const = 0;
+
     /// If the method will throw an exception, callbacks won't be called.
     ///
     /// After the method is executed successfully, you must wait for callbacks
