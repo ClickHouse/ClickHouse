@@ -70,7 +70,7 @@ public:
             memset(res_chars.begin() + pos, space, times);
             pos += times;
 
-            *(res_chars.begin() + pos) = '\n';
+            *(res_chars.begin() + pos) = '\0';
             pos += 1;
 
             res_offsets[i] = pos;
@@ -107,7 +107,7 @@ public:
             memset(res_chars.begin() + pos, space, times);
             pos += times;
 
-            *(res_chars.begin() + pos) = '\n';
+            *(res_chars.begin() + pos) = '\0';
             pos += 1;
 
             res_offsets[i] = pos;
