@@ -917,6 +917,8 @@ void KeeperDispatcher::updateConfiguration(
         }
 
         snapshot_s3.updateS3Configuration(config, macros);
+    } else {
+        LOG_INFO(log, "Not initial loading and external updates are allowed. Config update will be ignered");
     }
 }
 

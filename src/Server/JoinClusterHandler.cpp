@@ -31,9 +31,9 @@ void JoinClusterHandler<ContextWithKeeperDispatcherPtr>::handleRequest(HTTPServe
         std::string json(buf, bytes_read);
 
         Poco::JSON::Parser parser;
-        auto ret = parser.parse(json).extract<Poco::JSON::Object>();
-        auto server_id = ret.get("server_id").extract<Int32>();
-        auto keeper_endpoint = ret.get("server_keeper_endpoint").extract<std::string>();
+        auto ret = parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+        auto server_id = ret->get("server_id").convert<int>();
+        auto keeper_endpoint = ret->get("server_keeper_endpoint").convert<std::string>();
 
         AddToClusterAction add_server_action{.server = std::make_shared<nuraft::srv_config>(server_id, keeper_endpoint)};
 

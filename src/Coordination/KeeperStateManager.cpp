@@ -240,13 +240,13 @@ std::vector<Poco::Net::SocketAddress> KeeperStateManager::parseJoinClusterEndpoi
         std::string full_prefix = config_prefix + ".join_cluster." + server_key;
 
         if (getMultipleValuesFromConfig(config, full_prefix, "hostname").size() > 1
-            || getMultipleValuesFromConfig(config, full_prefix, "port").size() > 1)
+            || getMultipleValuesFromConfig(config, full_prefix, "http_port").size() > 1)
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <hostname> or <port> specified for a single <server>");
+            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <hostname> or <http_port> specified for a single <server>");
         }
 
         std::string hostname = config.getString(full_prefix + ".hostname");
-        int port = config.getInt(full_prefix + ".port");
+        int port = config.getInt(full_prefix + ".http_port");
 
         if (hostname_checks_enabled)
         {
