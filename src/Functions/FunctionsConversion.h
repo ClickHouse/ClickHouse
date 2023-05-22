@@ -300,7 +300,7 @@ struct ConvertImpl
                             if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
                                 vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
                             else if constexpr (std::is_same_v<Name, NameToUnixTimestamp> && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
-                                vec_to[i] = static_cast<ToFieldType>(vec_from[i] * 86400);
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
                             else
                                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
