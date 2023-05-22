@@ -164,20 +164,17 @@ def get_ssl_context(cert_name):
 def execute_query_https(
     query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
-    try:
-        url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={query}"
-        headers = {"X-ClickHouse-User": user}
-        if enable_ssl_auth:
-            headers["X-ClickHouse-SSL-Certificate-Auth"] = "on"
-        if password:
-            headers["X-ClickHouse-Key"] = password
-        http_client = urllib3.PoolManager(ssl_context=get_ssl_context(cert_name))
-        response = http_client.request("GET", url, headers=headers)
-        if response.status != 200:
-            raise Exception(response.status)
-        return response.data.decode("utf-8")
-    except:
-        raise
+    url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={query}"
+    headers = {"X-ClickHouse-User":user}
+    if enable_ssl_auth:
+        headers["X-ClickHouse-SSL-Certificate-Auth"] = "on"
+    if password:
+        headers["X-ClickHouse-Key"] = password
+    http_client=urllib3.PoolManager(ssl_context=get_ssl_context(cert_name))
+    response = http_client.request('GET', url, headers=headers)
+    if response.status != 200:
+        raise Exception(response.status)
+    return response.data.decode("utf-8")
 
 
 def test_https():
