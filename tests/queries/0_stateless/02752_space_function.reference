@@ -1,21 +1,56 @@
-const times, uint
-   
-   
-   
-   
-const times, int
-   
-   
-   
-   
-negative const times
-
-
-
-
+const, uint
+   	3
+   	3
+   	3
+   	3
+const, int
+   	3
+   	3
+   	3
+   	3
+const, int, negative
+	0
+	0
+	0
+	0
 negative tests
+null
 \N
-non-const times, uint
+const, uint, multiple
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+const int, multiple
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+non-const, uint
    	3
   	2
  	1
@@ -32,7 +67,7 @@ non-const times, uint
                     	20
      	5
        	7
-non-const times, int
+non-const, int
    	3
   	2
  	1
