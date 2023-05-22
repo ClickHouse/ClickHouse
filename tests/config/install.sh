@@ -57,7 +57,7 @@ ln -sf $SRC_PATH/config.d/reverse_dns_query_function.xml $DEST_SERVER_PATH/confi
 ln -sf $SRC_PATH/config.d/compressed_marks_and_index.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/disable_s3_env_credentials.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/ngram_classifiers.xml $DEST_SERVER_PATH/config.d/
+sed "s#{path}#$DEST_SERVER_PATH#g" $SRC_PATH/config.d/ngram_classifiers.xml > $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
@@ -108,10 +108,10 @@ ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
-ln -sf $SRC_PATH/offensive-ngrams.txt $DEST_SERVER_PATH/config.d
-ln -sf $SRC_PATH/non-offensive-ngrams.txt $DEST_SERVER_PATH/config.d
-ln -sf $SRC_PATH/offensive-ngrams-utf8.txt $DEST_SERVER_PATH/config.d
-ln -sf $SRC_PATH/non-offensive-ngrams-utf8.txt $DEST_SERVER_PATH/config.d
+ln -sf $SRC_PATH/offensive-ngrams.txt $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/non-offensive-ngrams.txt $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/offensive-ngrams-utf8.txt $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/non-offensive-ngrams-utf8.txt $DEST_SERVER_PATH/
 
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \

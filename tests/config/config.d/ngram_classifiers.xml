@@ -5,11 +5,11 @@
             <ngram_classes>
                 <ngram_class>
                     <ngram_class_name>positive</ngram_class_name>
-                    <ngram_class_path>/etc/clickhouse-server/config.d/offensive-ngrams.txt</ngram_class_path>
+                    <ngram_class_path>{path}/offensive-ngrams.txt</ngram_class_path>
                 </ngram_class>
                 <ngram_class>
                     <ngram_class_name>negative</ngram_class_name>
-                    <ngram_class_path>/etc/clickhouse-server/config.d/non-offensive-ngrams.txt</ngram_class_path>
+                    <ngram_class_path>{path}/non-offensive-ngrams.txt</ngram_class_path>
                 </ngram_class>
             </ngram_classes>
         </ngram_classifier>
@@ -18,11 +18,11 @@
             <ngram_classes>
                 <ngram_class>
                     <ngram_class_name>positive</ngram_class_name>
-                    <ngram_class_path>/etc/clickhouse-server/config.d/offensive-ngrams-utf8.txt</ngram_class_path>
+                    <ngram_class_path>{path}/offensive-ngrams-utf8.txt</ngram_class_path>
                 </ngram_class>
                 <ngram_class>
                     <ngram_class_name>negative</ngram_class_name>
-                    <ngram_class_path>/etc/clickhouse-server/config.d/non-offensive-ngrams-utf8.txt</ngram_class_path>
+                    <ngram_class_path>{path}/non-offensive-ngrams-utf8.txt</ngram_class_path>
                 </ngram_class>
             </ngram_classes>
         </ngram_classifier>
