@@ -41,6 +41,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
+    off_t file_size;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
@@ -63,6 +64,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+        file_size = getFileSize();
     }
 
     ~ReadBufferFromHDFSImpl() override
@@ -94,6 +96,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         else
         {
             num_bytes_to_read = internal_buffer.size();
+        }
+        if (file_size != 0 && file_offset >= file_size)
+        {
+            return false;
         }
 
         ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
