@@ -26,7 +26,7 @@ namespace DB
 {
 /**
   * Implementation of naive Bayes Classifier
-  * Classifier uses n-grams with paramatrized N. 
+  * Classifier uses n-grams with paramatrized N.
   * Implementation is inspired by NgramDistanceImpl.
   */
 template <size_t N, class CodePoint, bool UTF8>
