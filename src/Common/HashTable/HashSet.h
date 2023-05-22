@@ -47,6 +47,8 @@ public:
         std::cout << "INIT HashSetTable\n";
     }
 
+    using Base::Base;
+
     void merge(const Self & rhs)
     {
         if (!this->hasZero() && rhs.hasZero())

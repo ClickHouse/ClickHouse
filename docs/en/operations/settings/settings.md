@@ -608,6 +608,17 @@ See also:
 
 - [JOIN strictness](../../sql-reference/statements/select/join.md/#join-settings)
 
+## max_rows_in_set_to_optimize_join
+
+Maximal size of the set to filter joined tables by each other's row sets before joining.
+
+Possible values:
+
+- 0 — Disable.
+- Any positive integer.
+
+Default value: 100000.
+
 ## temporary_files_codec {#temporary_files_codec}
 
 Sets compression codec for temporary files used in sorting and joining operations on disk.
@@ -1027,7 +1038,7 @@ Timeout to close idle TCP connections after specified number of seconds.
 
 Possible values:
 
-- Positive integer (0 - close immediatly, after 0 seconds).
+- Positive integer (0 - close immediately, after 0 seconds).
 
 Default value: 3600.
 
@@ -1122,6 +1133,12 @@ Could be used for throttling speed when replicating the data to add or replace n
 
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
+
+Default value: 1000.
+
+## connect_timeout_with_failover_secure_ms
+
+Connection timeout for selecting first healthy replica (for secure connections)
 
 Default value: 1000.
 
@@ -1360,6 +1377,12 @@ Possible values:
 
 Default value: `default`.
 
+## allow_experimental_parallel_reading_from_replicas
+
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+
+Default value: `false`.
+
 ## compile_expressions {#compile-expressions}
 
 Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
@@ -1410,8 +1433,8 @@ and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in mor
 
 Possible values:
 
-- 0 - Yes
-- 1 - No
+- 0 - Disabled
+- 1 - Enabled
 
 Default value: `0`.
 
@@ -1514,7 +1537,7 @@ Default value: `0`.
 
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
-The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
 
 Possible values:
 
@@ -1524,7 +1547,7 @@ Default value: 0 (no restriction).
 
 ## query_cache_max_entries {#query-cache-max-entries}
 
-The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+The maximum number of query results the current user may store in the [query cache](../query-cache.md). 0 means unlimited.
 
 Possible values:
 
@@ -1630,7 +1653,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 ### async_insert {#async-insert}
 
-Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+Enables or disables asynchronous inserts. Note that deduplication is disabled by default, see [async_insert_deduplicate](#async-insert-deduplicate).
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
@@ -1691,7 +1714,7 @@ Default value: `100000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
-The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
 
 Possible values:
 
@@ -1722,7 +1745,7 @@ Possible values:
 
 Default value: `0`.
 
-### async_insert_deduplicate {#settings-async-insert-deduplicate}
+### async_insert_deduplicate {#async-insert-deduplicate}
 
 Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
 
@@ -1733,7 +1756,7 @@ Possible values:
 
 Default value: 1.
 
-By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_isnert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_insert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables, by default, only 10000 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-async-inserts), [replicated_deduplication_window_seconds_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-seconds-async-inserts)).
 We recommend enabling the [async_block_ids_cache](merge-tree-settings.md/#use-async-block-ids-cache) to increase the efficiency of deduplication.
 This function does not work for non-replicated tables.
@@ -1939,8 +1962,8 @@ Do not merge aggregation states from different servers for distributed query pro
 Possible values:
 
 - `0` — Disabled (final query processing is done on the initiator node).
-- `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
-- `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+- `1` - Do not merge aggregation states from different servers for distributed query processing (query completely processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+- `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completely on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 Default value: `0`
 
@@ -3196,17 +3219,6 @@ Possible values:
 
 Default value: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
-
-Possible values:
-
-- 0 — Working with geo data types is disabled.
-- 1 — Working with geo data types is enabled.
-
-Default value: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -3562,7 +3574,7 @@ Default value: `1`.
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
 
-## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+## optimize_use_projections {#optimize_use_projections}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
 
@@ -3575,7 +3587,7 @@ Default value: `1`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting).
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
 Possible values:
 
@@ -4110,7 +4122,7 @@ Enabled by default.
 
 ## use_hedged_requests {#use_hedged_requests}
 
-Enables hadged requests logic for remote queries. It allows to establish many connections with different replicas for query.
+Enables hedged requests logic for remote queries. It allows to establish many connections with different replicas for query.
 New connection is enabled in case existent connection(s) with replica(s) were not established within `hedged_connection_timeout`
 or no data was received within `receive_data_timeout`. Query uses the first connection which send non empty progress packet (or data packet, if `allow_changing_replica_until_first_data_packet`);
 other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.

@@ -433,6 +433,8 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
+                connected_zk_address = node.address.toString();
+
                 break;
             }
             catch (...)
@@ -448,6 +450,8 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
+        connected_zk_address = "";
+
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -1085,7 +1089,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-KeeperApiVersion ZooKeeper::getApiVersion()
+KeeperApiVersion ZooKeeper::getApiVersion() const
 {
     return keeper_api_version;
 }

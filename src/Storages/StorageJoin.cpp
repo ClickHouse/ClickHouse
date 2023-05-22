@@ -220,12 +220,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Names left_key_names_resorted;
     for (const auto & key_name : key_names)
     {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
+        const auto & renamed_key = analyzed_join->renamedRightColumnNameWithAlias(key_name);
         /// find position of renamed_key in key_names_right
         auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
         if (it == key_names_right.end())
             throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+                "Key '{}' not found in JOIN ON section. Join engine key{} '{}' have to be used",
+                key_name, key_names.size() > 1 ? "s" : "", fmt::join(key_names, ", "));
         const size_t key_position = std::distance(key_names_right.begin(), it);
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }
