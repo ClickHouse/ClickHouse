@@ -528,7 +528,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     }
 }
 
-bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
+bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 {
     assertInitialized();
     auto cache_lock = cache_guard.lock();
@@ -684,18 +684,22 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         if (!locked_key)
             continue; /// key could become invalid after we released the key lock above, just skip it.
 
-        for (const auto & candidate : deletion_info.candidates)
+        /// delete from vector in reverse order just for efficiency
+        auto & candidates = deletion_info.candidates;
+        while (!candidates.empty())
         {
+            auto & candidate = candidates.back();
             chassert(candidate->releasable());
 
-            auto segment = candidate->file_segment;
+            const auto * segment = candidate->file_segment.get();
             locked_key->removeFileSegment(segment->offset(), segment->lock());
             segment->getQueueIterator()->remove(cache_lock);
 
             if (query_context)
                 query_context->remove(current_key, segment->offset(), cache_lock);
+
+            candidates.pop_back();
         }
-        deletion_info.candidates.clear();
     }
 
     /// queue_iteratir is std::nullopt here if no space has been reserved yet, a file_segment_metadata
