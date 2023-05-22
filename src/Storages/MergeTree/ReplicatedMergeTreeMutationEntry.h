@@ -41,6 +41,9 @@ struct ReplicatedMergeTreeMutationEntry
     using BlockNumbersType = std::map<String, Int64>;
     BlockNumbersType block_numbers;
 
+    /// List of partitions that do not have relevant uncommitted blocks to mutate
+    mutable std::unordered_set<String> checked_partitions_cache;
+
     /// Mutation commands which will give to MUTATE_PART entries
     MutationCommands commands;
 
