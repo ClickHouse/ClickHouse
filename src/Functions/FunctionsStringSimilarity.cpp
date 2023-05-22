@@ -527,16 +527,6 @@ struct NameNgramSearchUTF8CaseInsensitive
     static constexpr auto name = "ngramSearchCaseInsensitiveUTF8";
 };
 
-struct NameNgramCategoryDistance
-{
-    static constexpr auto name = "ngramCategoryDistance";
-};
-
-struct NameNgramCategoryDistanceUTF8
-{
-    static constexpr auto name = "ngramCategoryDistanceUTF8";
-};
-
 using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, true>, NameNgramDistance>;
 using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
 using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, true>, NameNgramDistanceUTF8>;
@@ -546,9 +536,6 @@ using FunctionNgramSearch = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8
 using FunctionNgramSearchCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
 using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramSearchUTF8>;
 using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
-
-using FunctionNgramCategoryDistance = FunctionsStringCategorySimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramCategoryDistance>;
-using FunctionNgramCategoryDistanceUTF8 = FunctionsStringCategorySimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramCategoryDistanceUTF8>;
 
 REGISTER_FUNCTION(StringSimilarity)
 {
@@ -561,9 +548,6 @@ REGISTER_FUNCTION(StringSimilarity)
     factory.registerFunction<FunctionNgramSearchCaseInsensitive>();
     factory.registerFunction<FunctionNgramSearchUTF8>();
     factory.registerFunction<FunctionNgramSearchCaseInsensitiveUTF8>();
-
-    factory.registerFunction<FunctionNgramCategoryDistance>();
-    factory.registerFunction<FunctionNgramCategoryDistanceUTF8>();
 }
 
 }
