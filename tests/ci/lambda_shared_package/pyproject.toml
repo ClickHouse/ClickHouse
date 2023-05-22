@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lambda_shared"
+version = "0.0.1"
+dependencies = [
+  "requests < 2.30",
+]
+
+[tool.distutils.bdist_wheel]
+universal = true
