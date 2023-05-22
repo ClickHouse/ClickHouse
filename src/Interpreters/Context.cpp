@@ -1632,17 +1632,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     if (!res)
     {
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
-
-        /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
-        ///
-        ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
-        ///
-        auto new_hash = table_expression->getTreeHash();
-        if (hash != new_hash)
-        {
-            key = toString(new_hash.first) + '_' + toString(new_hash.second);
-            table_function_results[key] = res;
-        }
     }
 
     return res;
