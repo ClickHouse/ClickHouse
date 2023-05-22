@@ -85,6 +85,8 @@ struct KeeperConfigurationAndSettings
     String snapshot_storage_path;
     String state_file_path;
 
+    bool allow_external_updates;
+
     void dump(WriteBufferFromOwnString & buf) const;
     static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 

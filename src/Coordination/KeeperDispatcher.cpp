@@ -1,10 +1,15 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <libnuraft/async.hxx>
 
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include "Common/ThreadPool_fwd.h"
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -12,6 +17,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <cstddef>
 #include <future>
 #include <chrono>
 #include <filesystem>
@@ -48,6 +54,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
+    extern const int RAFT_ERROR;
 }
 
 
@@ -384,6 +391,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
     update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
+    add_to_cluster_thread = ThreadFromGlobalPool([this] { addToClusterThread(); });
+
+    auto join_cluster_endpoints = server->getJoinClusterEndpoints(config);
+    if (!join_cluster_endpoints.empty()) {
+        auto server_configuration = server->getServerRaftConfiguration(config);
+        join_cluster_thread = ThreadFromGlobalPool(
+            [this, server_configuration = std::move(server_configuration), cluster_endpoints = std::move(join_cluster_endpoints)]
+            { joinClusterThread(server_configuration, cluster_endpoints); });
+    }
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -423,6 +439,13 @@ void KeeperDispatcher::shutdown()
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
                 update_configuration_thread.join();
+
+            add_to_cluster_queue.finish();
+            if (add_to_cluster_thread.joinable())
+                add_to_cluster_thread.join();
+
+            if (join_cluster_thread.joinable())
+                join_cluster_thread.join();
         }
 
         KeeperStorage::RequestForSession request_for_session;
@@ -736,29 +759,172 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+void KeeperDispatcher::addToClusterThread()
+{
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            using namespace std::chrono_literals;
+            if (!server->checkInit())
+            {
+                LOG_INFO(log, "Server still not initialized, will not serve join requests until initialization finished");
+                std::this_thread::sleep_for(5000ms);
+                continue;
+            }
+
+            if (server->isRecovering())
+            {
+                LOG_INFO(log, "Server is recovering, will not serve join requests until recovery is finished");
+                std::this_thread::sleep_for(5000ms);
+                continue;
+            }
+
+            AddToClusterAction action;
+            if (!add_to_cluster_queue.pop(action))
+                break;
+
+            bool done = false;
+            while (!done)
+            {
+                if (server->isRecovering()) {
+                    LOG_INFO(log, "Server is recovering, will not apply add actioon until recovery is finished");
+                    std::this_thread::sleep_for(5000ms);
+                    continue;
+                }
+
+                if (shutdown_called)
+                    return;
+
+                server->applyAddServerToCluster(action);
+                done = true;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperDispatcher::joinClusterThread(
+    const KeeperServerConfigPtr & server_configuration, const std::vector<Poco::Net::SocketAddress> & cluster_endpoints)
+{
+    if (cluster_endpoints.empty()) {
+        return;
+    }
+
+    size_t tries_count = 0;
+    size_t max_tries_count = configuration_and_settings->coordination_settings->configuration_change_tries_count;
+    while (true) 
+    {
+        if (tries_count > max_tries_count) {
+            break;
+        }
+
+        if (shutdown_called) {
+            return;
+        }
+        using namespace std::chrono_literals;
+        if (!server->checkInit())
+        {
+            LOG_INFO(log, "Server still not initialized, will not send join_cluster requests until initialization finished");
+            std::this_thread::sleep_for(5000ms);
+            continue;
+        }
+
+        if (server->isRecovering())
+        {
+            LOG_INFO(log, "Server is recovering, will not send join_cluster requests until recovery is finished");
+            std::this_thread::sleep_for(5000ms);
+            continue;
+        }
+
+        for (const auto& endpoint : cluster_endpoints) {
+            try
+            {
+                Poco::Net::HTTPClientSession session(endpoint.host().toString(), endpoint.port());
+                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, "/join_cluster", Poco::Net::HTTPMessage::HTTP_1_1);
+                Poco::Net::HTTPResponse response;
+
+                Poco::JSON::Object request_body;
+                request_body.set("server_id", server_configuration->get_id());
+                request_body.set("server_keeper_endpoint", server_configuration->get_endpoint());
+
+                request.setContentType("application/json");
+                std::stringstream ss;
+                request_body.stringify(ss);
+                request.setContentLength(ss.str().size());
+
+                std::ostream& request_ostream = session.sendRequest(request);
+                request_body.stringify(request_ostream);
+
+                session.receiveResponse(response);
+
+                if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK) {
+                    LOG_INFO(
+                        log,
+                        "Successfully sent join_cluster request to server at {}, stopping sending requests.",
+                        endpoint.toString());
+                    return;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+        
+        ++tries_count;
+
+        LOG_INFO(
+            log,
+            "Request to join cluster was not accepted for the {} time, will sleep for {} ms and retry",
+            tries_count,
+            500 * tries_count);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500ms * (tries_count)));
+    }
+    throw Exception(ErrorCodes::RAFT_ERROR, "Request to join cluster was not accepted by any of the <join_cluster> endpoints");
+}
+
 bool KeeperDispatcher::isServerActive() const
 {
     return checkInit() && hasLeader() && !server->isRecovering();
 }
 
-void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
+void KeeperDispatcher::updateConfiguration(
+    const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros, bool initial_loading)
 {
-    auto diff = server->getConfigurationDiff(config);
-    if (diff.empty())
-        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
-    else if (diff.size() > 1)
-        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
-    else
-        LOG_DEBUG(log, "Configuration change size ({})", diff.size());
+    // if external updates are allowed, do not apply changes from config in runtime
+    if (initial_loading || !configuration_and_settings->allow_external_updates) {
+        auto diff = server->getConfigurationDiff(config);
+        if (diff.empty())
+            LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+        else if (diff.size() > 1)
+            LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
+        else
+            LOG_DEBUG(log, "Configuration change size ({})", diff.size());
 
-    for (auto & change : diff)
-    {
-        bool push_result = update_configuration_queue.push(change);
-        if (!push_result)
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+        for (auto & change : diff)
+        {
+            bool push_result = update_configuration_queue.push(change);
+            if (!push_result)
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+        }
+
+        snapshot_s3.updateS3Configuration(config, macros);
     }
+}
 
-    snapshot_s3.updateS3Configuration(config, macros);
+void KeeperDispatcher::addServerToCluster(const AddToClusterAction & request)
+{
+    bool push_result = add_to_cluster_queue.push(request);
+    if (!push_result)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push join_cluster request to queue");
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

@@ -124,14 +124,23 @@ public:
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
+    // get raft configuration for this server
+    KeeperServerConfigPtr getServerRaftConfiguration(const Poco::Util::AbstractConfiguration & config) const;
+
+    // get endpoints for join_cluster requests
+    std::vector<Poco::Net::SocketAddress> getJoinClusterEndpoints(const Poco::Util::AbstractConfiguration & config) const;
+
     /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & task);
 
-
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
+
+    /// Apply action of adding server to cluster. Actually call raft_instance->add_srv, even if is not leader.
+    /// Synchronously check for update result with retries.
+    void applyAddServerToCluster(const AddToClusterAction & task);
 
     uint64_t createSnapshot();
 

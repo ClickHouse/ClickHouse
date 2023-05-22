@@ -1,12 +1,14 @@
 #include <Server/HTTPHandlerFactory.h>
 
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Interpreters/Context.h>
 #include <Server/IServer.h>
 #include <Access/Credentials.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "JoinClusterHandler.h"
 #include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
@@ -153,6 +155,14 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+#if USE_NURAFT
+    auto keeper_dispatcher_ptr = server.context()->getGlobalContext()->getKeeperDispatcher();
+    auto join_cluster_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JoinClusterHandler>>(server, keeper_dispatcher_ptr);
+    join_cluster_handler->attachNonStrictPath("/join_cluster");
+    join_cluster_handler->allowPostAndGetParamsAndOptionsRequest();
+    factory.addHandler(join_cluster_handler);
+#endif
 }
 
 void addDefaultHandlersFactory(

@@ -1287,7 +1287,7 @@ try
             global_context->getProcessList().setMaxSelectQueriesAmount(server_settings_.max_concurrent_select_queries);
 
             if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+                global_context->updateKeeperConfiguration(*config, initial_loading);
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)

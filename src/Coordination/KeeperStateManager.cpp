@@ -211,6 +211,98 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
+/// this function contains a lot of sanity checks in config:
+/// 1. No duplicate endpoints
+/// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
+/// 3. Our endpoint not present in hostnames list
+std::vector<Poco::Net::SocketAddress> KeeperStateManager::parseJoinClusterEndpoints(const Poco::Util::AbstractConfiguration & config) const
+{
+    const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
+
+    std::vector<Poco::Net::SocketAddress> result;
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix + ".join_cluster", keys);
+
+    auto client_ports = getClientPorts(config);
+
+    /// Sometimes (especially in cloud envs) users can provide incorrect
+    /// configuration with duplicated raft endpoints.
+    std::unordered_set<std::string> check_duplicated_hostnames;
+
+    bool localhost_present = false;
+    std::string non_local_hostname;
+    size_t local_address_counter = 0;
+    for (const auto & server_key : keys)
+    {
+        if (!startsWith(server_key, "server"))
+            continue;
+
+        std::string full_prefix = config_prefix + ".join_cluster." + server_key;
+
+        if (getMultipleValuesFromConfig(config, full_prefix, "hostname").size() > 1
+            || getMultipleValuesFromConfig(config, full_prefix, "port").size() > 1)
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <hostname> or <port> specified for a single <server>");
+        }
+
+        std::string hostname = config.getString(full_prefix + ".hostname");
+        int port = config.getInt(full_prefix + ".port");
+
+        if (hostname_checks_enabled)
+        {
+            if (hostname == "localhost")
+            {
+                localhost_present = true;
+                local_address_counter++;
+            }
+            else if (isLocalhost(hostname))
+            {
+                local_address_counter++;
+            }
+            else
+            {
+                non_local_hostname = hostname;
+            }
+        }
+
+        auto endpoint = hostname + ":" + std::to_string(port);
+        if (check_duplicated_hostnames.contains(endpoint))
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Join cluster config contains duplicate endpoints: "
+                "endpoint {} has been already added.",
+                endpoint);
+        }
+
+        result.push_back(Poco::Net::SocketAddress(hostname, port));
+    }
+
+    if (hostname_checks_enabled)
+    {
+        if (localhost_present && !non_local_hostname.empty())
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Mixing 'localhost' and non-local hostnames ('{}') in raft_configuration is not allowed. "
+                "Different hosts can resolve 'localhost' to themselves so it's not allowed.",
+                non_local_hostname);
+        }
+
+        if (!non_local_hostname.empty() && local_address_counter > 1)
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+                "Such configuration is not allowed because single host can vote multiple times.",
+                local_address_counter,
+                non_local_hostname);
+        }
+    }
+
+    return result;
+}
+
 KeeperStateManager::KeeperStateManager(
     int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
     : my_server_id(server_id_)

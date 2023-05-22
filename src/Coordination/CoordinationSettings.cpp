@@ -169,6 +169,8 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
 
     ret->enable_ipv6 = config.getBool("keeper_server.enable_ipv6", true);
 
+    ret->allow_external_updates = config.getBool("keeper_server.allow_external_updates", false);
+
     if (config.has("keeper_server.tcp_port"))
     {
         ret->tcp_port = config.getInt("keeper_server.tcp_port");

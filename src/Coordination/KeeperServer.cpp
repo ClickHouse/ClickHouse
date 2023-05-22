@@ -747,6 +747,14 @@ ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::Abstrac
     return diff;
 }
 
+KeeperServerConfigPtr KeeperServer::getServerRaftConfiguration(const Poco::Util::AbstractConfiguration & config) const {
+    auto configuration = state_manager->parseServersConfiguration(config, false /* allow_without_us */);
+    return configuration.config;
+}
+
+std::vector<Poco::Net::SocketAddress> KeeperServer::getJoinClusterEndpoints(const Poco::Util::AbstractConfiguration & config) const {
+    return state_manager->parseJoinClusterEndpoints(config);
+}
 void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 {
     std::lock_guard lock{server_write_mutex};
@@ -901,6 +909,51 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
     else
         LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
     return true;
+}
+
+void KeeperServer::applyAddServerToCluster(const AddToClusterAction & task)
+{
+    std::lock_guard lock{server_write_mutex};
+    if (is_recovering)
+        return;
+
+    size_t sleep_ms = 500;
+
+    LOG_INFO(log, "Will try to add server with id {} to cluster", task.server->get_id());
+    bool added = false;
+    for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
+    {
+        if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
+        {
+            LOG_INFO(log, "Server with id {} was successfully added", task.server->get_id());
+            added = true;
+            break;
+        }
+        
+        if (!isLeader() && !coordination_settings->auto_forwarding) {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can't forward request to add server (id {}) to the leader because of auto_forwarding settings",
+                task.server->get_id());
+        }
+
+        auto result = raft_instance->add_srv(*task.server);
+        if (!result->get_accepted())
+            LOG_INFO(
+                log,
+                "Request to add server {} was not accepted for the {} time, will sleep for {} ms and retry",
+                task.server->get_id(),
+                i + 1,
+                sleep_ms * (i + 1));
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+    }
+    if (!added)
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Request to add server (id {}) was not accepted by RAFT after all {} retries",
+            task.server->get_id(),
+            coordination_settings->configuration_change_tries_count);
 }
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const

@@ -849,7 +849,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config, bool initial_loading);
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);

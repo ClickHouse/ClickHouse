@@ -32,6 +32,7 @@ private:
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
+    using AddToClusterQueue = ConcurrentBoundedQueue<AddToClusterAction>;
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
@@ -40,6 +41,9 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
+
+    /// More than 1k join requests is definitely an error.
+    AddToClusterQueue add_to_cluster_queue{1000};
 
     std::atomic<bool> shutdown_called{false};
 
@@ -66,6 +70,10 @@ private:
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
+    /// Apply or wait for join_cluster requests
+    ThreadFromGlobalPool add_to_cluster_thread;
+    /// Send join_cluster requests, if needed
+    ThreadFromGlobalPool join_cluster_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -91,6 +99,11 @@ private:
     void snapshotThread();
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
+    /// Thread apply join_cluster requests
+    void addToClusterThread();
+    /// Thread send join_cluster requests to join cluster
+    void
+    joinClusterThread(const KeeperServerConfigPtr & server_configuration, const std::vector<Poco::Net::SocketAddress> & cluster_endpoints);
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
@@ -133,7 +146,10 @@ public:
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     /// 'macros' are used to substitute macros in endpoint of disks
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros, bool initial_loading);
+
+    /// Add new join_cluster request to add_to_cluster_queue. Keeper Dispatcher processes asynchronously.
+    void addServerToCluster(const AddToClusterAction & request);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
