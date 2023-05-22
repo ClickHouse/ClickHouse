@@ -103,7 +103,11 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ```
 
 This query copies the data partition from `table1` to `table2`.
-Note that data will be deleted neither from `table1` nor from `table2`.
+
+Note that:
+
+- Data will be deleted neither from `table1` nor from `table2`.
+- `table1` may be a temporary table.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -117,7 +121,12 @@ For the query to run successfully, the following conditions must be met:
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`.
+
+Note that:
+
+- Data won’t be deleted from `table1`.
+- `table1` may be a temporary table.
 
 For the query to run successfully, the following conditions must be met:
 

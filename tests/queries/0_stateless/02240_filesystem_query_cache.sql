@@ -9,8 +9,8 @@ SET filesystem_cache_max_download_size=128;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_4', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false;
+SYSTEM DROP FILESYSTEM CACHE;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
-
 SELECT  * FROM test FORMAT Null;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
 SYSTEM DROP FILESYSTEM CACHE;
