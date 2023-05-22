@@ -92,4 +92,4 @@ private:
     const size_t max_elements = 0;
 };
 
-};
+}
