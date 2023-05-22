@@ -50,7 +50,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStorage.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperAsynchronousMetrics.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/TinyContext.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/pathUtils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SessionExpiryQueue.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SummingStateMachine.cpp
@@ -157,9 +156,9 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/GraphiteWriter.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Daemon/GitHash.generated.cpp
 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Context/Context.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Context/Settings.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Context/ThreadStatusExt.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Standalone/Context.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Standalone/Settings.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Standalone/ThreadStatusExt.cpp
 
         Keeper.cpp
         clickhouse-keeper.cpp

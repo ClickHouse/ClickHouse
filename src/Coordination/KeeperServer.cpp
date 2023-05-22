@@ -122,39 +122,22 @@ KeeperServer::KeeperServer(
 
     keeper_context->initialize(config);
 
-    //if (!fs::exists(keeper_context->snapshot_storage_path))
-    //    fs::create_directories(keeper_context->snapshot_storage_path);
-    auto snapshots_disk = std::make_shared<DiskLocal>("Keeper-snapshots", "", 0);
-
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        snapshots_disk,
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
         commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
-    //auto state_path = fs::path(keeper_context->state_file_path).parent_path().generic_string();
-    //auto state_file_name = fs::path(configuration_and_settings_->state_file_path).filename().generic_string();
-
-    //if (!fs::exists(state_path))
-    //    fs::create_directories(state_path);
-    auto state_disk = std::make_shared<DiskLocal>("Keeper-state", "", 0);
-
-    //if (!fs::exists(configuration_and_settings_->log_storage_path))
-    //    fs::create_directories(configuration_and_settings_->log_storage_path);
-    auto logs_disk = std::make_shared<DiskLocal>("Keeper-logs", "", 0);
-
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
         "keeper_server",
-        logs_disk,
-        state_disk,
         "state",
         config,
-        coordination_settings);
+        coordination_settings,
+        keeper_context);
 }
 
 /**

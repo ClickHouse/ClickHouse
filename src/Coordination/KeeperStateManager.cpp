@@ -212,12 +212,14 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(
-    int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
     : my_server_id(server_id_)
     , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(std::make_shared<DiskLocal>("Keeper-logs", logs_path, 0), LogFileSettings{.force_sync =false, .compress_logs = false, .rotate_interval = 5000}))
-    , server_state_file_name(fs::path(state_file_path).filename().generic_string())
+    , log_store(nuraft::cs_new<KeeperLogStore>(
+          LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
+          keeper_context_))
+    , server_state_file_name("state")
+    , keeper_context(keeper_context_)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
@@ -230,17 +232,15 @@ KeeperStateManager::KeeperStateManager(
 KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
-    DiskPtr log_disk_,
-    DiskPtr state_disk_,
     const std::string & server_state_file_name_,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings)
+    const CoordinationSettingsPtr & coordination_settings,
+    KeeperContextPtr keeper_context_)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-          log_disk_,
           LogFileSettings
           {
             .force_sync = coordination_settings->force_sync,
@@ -248,9 +248,10 @@ KeeperStateManager::KeeperStateManager(
             .rotate_interval = coordination_settings->rotate_log_storage_interval,
             .max_size = coordination_settings->max_log_file_size,
             .overallocate_size = coordination_settings->log_file_overallocate_size
-          }))
-    , disk(state_disk_)
+          },
+          keeper_context_))
     , server_state_file_name(server_state_file_name_)
+    , keeper_context(keeper_context_)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
 }
@@ -299,6 +300,11 @@ const String & KeeperStateManager::getOldServerStatePath()
     return old_path;
 }
 
+DiskPtr KeeperStateManager::getStateFileDisk() const
+{
+    return keeper_context->getStateFileDisk();
+}
+
 namespace
 {
 enum ServerStateVersion : uint8_t
@@ -313,6 +319,8 @@ constexpr auto current_server_state_version = ServerStateVersion::V1;
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
     const auto & old_path = getOldServerStatePath();
+
+    auto disk = getStateFileDisk();
 
     if (disk->exists(server_state_file_name))
         disk->moveFile(server_state_file_name, old_path);
@@ -338,7 +346,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 {
     const auto & old_path = getOldServerStatePath();
 
-    const auto try_read_file = [this](const auto & path) -> nuraft::ptr<nuraft::srv_state>
+    auto disk = getStateFileDisk();
+
+    const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
         try
         {

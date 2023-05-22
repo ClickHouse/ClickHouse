@@ -38,6 +38,9 @@ struct ContextSharedPart : boost::noncopyable
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
 
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+
     ServerSettings server_settings;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
@@ -127,6 +130,11 @@ void Context::setPath(const String & path)
 MultiVersion<Macros>::Version Context::getMacros() const
 {
     return shared->macros.get();
+}
+
+void Context::setMacros(std::unique_ptr<Macros> && macros)
+{
+    shared->macros.set(std::move(macros));
 }
 
 BackgroundSchedulePool & Context::getSchedulePool() const
@@ -254,6 +262,56 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 ReadSettings Context::getReadSettings() const
 {
     return ReadSettings{};
+}
+
+void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
+{
+    const auto & config_ref = getConfigRef();
+
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+
+    if (shared->keeper_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
+
+    if (config_ref.has("keeper_server"))
+    {
+        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
+        shared->keeper_dispatcher->initialize(config_ref, true, start_async, getMacros());
+    }
+}
+
+std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
+
+    return shared->keeper_dispatcher;
+}
+
+std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    return shared->keeper_dispatcher;
+}
+
+void Context::shutdownKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (shared->keeper_dispatcher)
+    {
+        shared->keeper_dispatcher->shutdown();
+        shared->keeper_dispatcher.reset();
+    }
+}
+
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config_)
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        return;
+
+    shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
 }
 
 }

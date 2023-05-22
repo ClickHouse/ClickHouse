@@ -99,16 +99,6 @@ class KeeperSnapshotManager
 {
 public:
     KeeperSnapshotManager(
-        DiskPtr disk_,
-        size_t snapshots_to_keep_,
-        const KeeperContextPtr & keeper_context_,
-        bool compress_snapshots_zstd_ = true,
-        const std::string & superdigest_ = "",
-        size_t storage_tick_time_ = 500);
-
-    /// For gtest
-    KeeperSnapshotManager(
-        const std::string & snapshots_path_,
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
         bool compress_snapshots_zstd_ = true,
@@ -157,7 +147,7 @@ public:
 
             try
             {
-                if (disk->exists(path))
+                if (getDisk()->exists(path))
                     return path;
             }
             catch (...)
@@ -170,11 +160,12 @@ public:
 private:
     void removeOutdatedSnapshotsIfNeeded();
 
+    DiskPtr getDisk() const;
+
     /// Checks first 4 buffer bytes to became sure that snapshot compressed with
     /// ZSTD codec.
     static bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer);
 
-    DiskPtr disk;
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)

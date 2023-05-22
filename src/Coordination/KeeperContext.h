@@ -31,13 +31,19 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+
+    DiskPtr getLogDisk() const;
+    DiskPtr getSnapshotsDisk() const;
+    DiskPtr getStateFileDisk() const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
 
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
-    std::string getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config);
-    std::string getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config);
+    Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
+    Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
+
+    DiskPtr getDisk(const Storage & storage) const;
 
     Phase server_state{Phase::INIT};
 
@@ -46,9 +52,9 @@ private:
 
     std::shared_ptr<DiskSelector> disk_selector;
 
-    Storage log_storage_path;
-    Storage snapshot_storage_path;
-    Storage state_file_path;
+    Storage log_storage;
+    Storage snapshot_storage;
+    Storage state_file_storage;
 
     bool standalone_keeper;
 };

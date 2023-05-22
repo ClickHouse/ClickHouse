@@ -108,8 +108,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 }
 
 KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
-    TinyContextPtr tiny_context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), tiny_context(std::move(tiny_context_))
+    ContextPtr context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), context(std::move(context_))
 {
 }
 
@@ -117,7 +117,7 @@ void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 {
 #if USE_NURAFT
     {
-        auto keeper_dispatcher = tiny_context->tryGetKeeperDispatcher();
+        auto keeper_dispatcher = context->tryGetKeeperDispatcher();
         if (keeper_dispatcher)
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }

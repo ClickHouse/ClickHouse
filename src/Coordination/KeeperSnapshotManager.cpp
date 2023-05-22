@@ -508,36 +508,18 @@ KeeperStorageSnapshot::~KeeperStorageSnapshot()
 }
 
 KeeperSnapshotManager::KeeperSnapshotManager(
-    const std::string & snapshots_path_,
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
     bool compress_snapshots_zstd_,
     const std::string & superdigest_,
     size_t storage_tick_time_)
-    : KeeperSnapshotManager(
-        std::make_shared<DiskLocal>("Keeper-snapshots", snapshots_path_, 0),
-        snapshots_to_keep_,
-        keeper_context_,
-        compress_snapshots_zstd_,
-        superdigest_,
-        storage_tick_time_)
-{
-}
-
-KeeperSnapshotManager::KeeperSnapshotManager(
-    DiskPtr disk_,
-    size_t snapshots_to_keep_,
-    const KeeperContextPtr & keeper_context_,
-    bool compress_snapshots_zstd_,
-    const std::string & superdigest_,
-    size_t storage_tick_time_)
-    : disk(disk_)
-    , snapshots_to_keep(snapshots_to_keep_)
+    : snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
+    auto disk = getDisk();
     for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
     {
         const auto & name = it->name();
@@ -566,6 +548,7 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
+    auto disk = getDisk();
     auto plain_buf = disk->writeFile(tmp_snapshot_file_name);
     copyData(reader, *plain_buf);
     plain_buf->sync();
@@ -589,7 +572,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
         }
         catch (const DB::Exception &)
         {
-            disk->removeFile(latest_itr->second);
+            getDisk()->removeFile(latest_itr->second);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -602,7 +585,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
 {
     const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = disk->readFile(snapshot_path);
+    auto reader = getDisk()->readFile(snapshot_path);
     copyData(*reader, writer);
     return writer.getBuffer();
 }
@@ -664,6 +647,11 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
     return deserializeSnapshotFromBuffer(buffer);
 }
 
+DiskPtr KeeperSnapshotManager::getDisk() const
+{
+    return keeper_context->getSnapshotsDisk();
+}
+
 void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
@@ -675,7 +663,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    disk->removeFile(itr->second);
+    getDisk()->removeFile(itr->second);
     existing_snapshots.erase(itr);
 }
 
@@ -685,7 +673,7 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
-    auto writer = disk->writeFile(tmp_snapshot_file_name);
+    auto writer = getDisk()->writeFile(tmp_snapshot_file_name);
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
         compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
@@ -700,7 +688,7 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
 
     try
     {
-        disk->moveFile(tmp_snapshot_file_name, snapshot_file_name);
+        getDisk()->moveFile(tmp_snapshot_file_name, snapshot_file_name);
     }
     catch (fs::filesystem_error & e)
     {

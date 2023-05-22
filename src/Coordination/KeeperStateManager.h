@@ -39,19 +39,17 @@ public:
     KeeperStateManager(
         int server_id_,
         const std::string & config_prefix_,
-        DiskPtr logs_disk_,
-        DiskPtr state_disk_,
-        const std::string & state_file_path,
+        const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings);
+        const CoordinationSettingsPtr & coordination_settings,
+        KeeperContextPtr keeper_context_);
 
     /// Constructor for tests
     KeeperStateManager(
         int server_id_,
         const std::string & host,
         int port,
-        const std::string & logs_path,
-        const std::string & state_file_path);
+        KeeperContextPtr keeper_context_);
 
     void loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep);
 
@@ -114,6 +112,8 @@ public:
 private:
     const String & getOldServerStatePath();
 
+    DiskPtr getStateFileDisk() const;
+
     /// Wrapper struct for Keeper cluster config. We parse this
     /// info from XML files.
     struct KeeperConfigurationWrapper
@@ -137,8 +137,9 @@ private:
 
     nuraft::ptr<KeeperLogStore> log_store;
 
-    DiskPtr disk;
     const String server_state_file_name;
+
+    KeeperContextPtr keeper_context;
 
     Poco::Logger * logger;
 
