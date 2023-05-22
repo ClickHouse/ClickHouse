@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <fstream>
 #include <vector>
+#include <memory>
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "base/defines.h"
 #include "base/types.h"
@@ -37,7 +38,9 @@ namespace DB
 
 struct NgramTextClassificationImpl
 {
-    using ResultType = Float64;
+    using ResultType = String;
+    static constexpr Float64 zero_frequency = 1e-06;
+    
     template <typename ModelMap>
     static Float64 naiveBayes(
         const ModelMap & text, // text is normalized
@@ -65,10 +68,10 @@ struct NgramTextClassificationImpl
             const auto it = model.find(word); 
             if (it == model.end())
             {
-                result += stat * log(1 / cnt_words_in_model);
+                result += stat * log(zero_frequency);
             } else
             {
-                result += stat * log(it->stat / cnt_words_in_model);
+                result += stat * log(stat / cnt_words_in_model);
             }
         }
         return result;
@@ -94,16 +97,20 @@ struct NgramTextClassificationImpl
             map.clear();
             std::ifstream in(filename);
             in >> name >> n;
-            char buffer[n + 1] = {0};
+            // String buffer(n + 1, '\0');
+            char buffer[n + 1];
+            for (size_t i = 0; i < n + 1; ++i) {
+                buffer[i] = '\0';
+            }
             int count = 0;
             while (!in.eof()) {
-                in.read(&buffer, n);
+                in.read(buffer, n);
                 in >> count;
                 map[StringSlice(buffer, n)] = count;
             }
             in.close();
         }
-        Float64 score(const NgramModel<ModelMap> &text_model) {
+        Float64 scoreText(const ModelMap &text_model) const {
             return naiveBayes(text_model, map);
         }
         void learn(const String &name_, size_t n_, const String &text) { // загружаем из строки модель
@@ -142,13 +149,42 @@ struct NgramTextClassificationImpl
         String getName() const {
             return name;
         }
-        int getN() const {
+        size_t getN() const {
             return n;
         }
     private:
         size_t n;
         String name;
         ModelMap map;
+
+        Float64 naiveBayes(
+                const ModelMap & text, // text is normalized
+                const ModelMap & model) const { // model is not normalized 
+            int cnt_words_in_model = 0;
+
+            for (const auto &[word, stat] : model) {
+                cnt_words_in_model += stat;
+            }
+
+            for (const auto &[word, stat] : text) {
+                if (model.find(word) == model.end()) {
+                    ++cnt_words_in_model;
+                }
+            }
+
+            Float64 result = 0;
+            for (const auto &[word, stat] : text) {
+                const auto it = model.find(word); 
+                if (it == model.end()) {
+                    result += stat * log(1 / cnt_words_in_model);
+                } else {
+                    result += stat * log(zero_frequency);
+                }
+            }
+            return result;
+        }
+
+
     };
 
     template<class ModelMap>
@@ -160,12 +196,12 @@ struct NgramTextClassificationImpl
             load(directory);
         }
 
-        String classify(const String &text) {
+        String classify(const String &text) const {
             ModelMap text_map = buildModel<ModelMap>(text, n);
             Float64 best_score = 0.;
             String result;
             for (const auto &model : models) {
-                Float64 local_result = model.score(text_map);
+                Float64 local_result = model.scoreText(text_map);
                 if (local_result > best_score) {
                     best_score = local_result;
                     result = model.getName();
@@ -185,9 +221,6 @@ struct NgramTextClassificationImpl
             }
             return result;
         }
-        /*
-        TODO: Score, ...
-        */
     private:
         std::vector<NgramModel<ModelMap>> models;
         std::string name;
@@ -197,7 +230,7 @@ struct NgramTextClassificationImpl
             for (auto const& dir_entry : std::filesystem::directory_iterator{path}) {
                 models.emplace_back(dir_entry.path());
             }
-            if (models.emptu()) {
+            if (models.empty()) {
                 // BOOM
             }
             n = models[0].getN();
@@ -232,7 +265,6 @@ struct NgramTextClassificationImpl
                 precalced_pn *= p;
             }
         }
-
         void slide(char old_c, char new_c) {
             value -= precalced_pn * static_cast<size_t>(old_c);
             value *= p;
@@ -246,15 +278,23 @@ struct NgramTextClassificationImpl
         }
     };
 
+    class CustomHashFunction {
+    public:
+        size_t operator()(const StringSlice& p) const
+        {
+            return p.value + p.length;
+        }
+    };
+
     template <typename ModelMap>
-    std::unordered_map<size_t, int> static buildModel(const String &text, size_t n) {
+   ModelMap static buildModel(const String &text, size_t n) {
         // depends on custom_Hash
         StringSlice ss(text, n);
-        std::unordered_map<size_t, int> map;
-        ++map[ss.get()];
+        std::unordered_map<StringSlice, int, CustomHashFunction> map;
+        ++map[ss];
         for (size_t index = n; index < text.size(); ++index) {
             ss.slide(text[index - n], text[index]);
-            ++map[ss.get()];
+            ++map[ss];
         }
         return map;
     }
@@ -264,6 +304,27 @@ struct NgramTextClassificationImpl
         // depends on buildModel
         ModelMap text_model = buildModel<ModelMap>(text, model.getN());
         return naiveBayes(text_model, model.getMap());
+    }
+
+    // path will be "~/ClickHouse/src/Storages/NgramModels/[slice-Name]-[N]/"
+    static void constant(std::string data, const String &slice_name, String &res) {
+        Slice<std::unordered_map<StringSlice, int, CustomHashFunction> > slice("~/ClickHouse/src/Storages/NgramModels/" + slice_name);
+        res = slice.classify(data);
+    }
+
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets &offsets, const String &slice_name, ColumnString::Chars &res_data, ColumnString::Offsets &res_offsets) {
+        Slice<std::unordered_map<StringSlice, int, CustomHashFunction> > slice("~/ClickHouse/src/Storages/NgramModels/" + slice_name);
+        size_t prev_offset = 0;
+        for (size_t i = 0; i < offsets.size(); ++i) {
+            const UInt8 * haystack = &data[prev_offset];
+            const String &result_value = slice.classify(reinterpret_cast<const char *>(haystack));
+            res_data.resize(prev_offset + result_value.size() + 1);
+            prev_offset = offsets[i];
+            memcpy(&res_data[prev_offset], result_value.data(), result_value.size());
+            res_data[prev_offset + result_value.size()] = '\0';
+            prev_offset += result_value.size() + 1;
+            res_offsets[i] = prev_offset;
+        }
     }
     
 };

@@ -54,26 +54,52 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Must be String.",
+                arguments[0]->getName(), getName());
 
-        if (!isString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+        return arguments[0];
     }
 
     ColumnPtr executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
+        std::cout << "\nExecute Implementation started\n";
+
         using ResultType = typename Impl::ResultType;
-        // throw Exception("Not Implemented", ErrorCodes::SUPPORT_IS_DISABLED);
 
-        std::cout << "aaa\n";
+        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & column_needle = arguments[1].column;
 
+        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
+        const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
+
+        if (col_haystack_const && col_needle_const) {
+            // нужно вызывать имплементацию, когда надо проклассифицировать только одно слово одним срезом
+            const String &text = col_needle_const->getValue<String>();
+            const String &class_name = col_haystack_const->getValue<String>();
+            ResultType res{};
+            Impl::constant(text, class_name, res);
+            return result_type->createColumnConst(col_haystack_const->size(), toField(res));
+        }
+
+        // в противном случае у нас классификация целого столбца (то есть вектора), и надо смотреть от этого
         // auto col_res = ColumnVector<ResultType>::create();
-        // return col_res;
+        auto col_res = ColumnString::create();
+        // typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+        // vec_res.resize(column_haystack->size());
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        ResultType res = 1.0;
-        return result_type->createColumnConst(1, toField(res));
+        const auto &chars = col_haystack_vector->getChars();
+        const auto &offsets = col_haystack_vector->getOffsets();
+        const String &class_name = col_haystack_const->getValue<String>();
+
+
+        // vec_res.resize(column_haystack->size());
+        // auto col_res = ColumnString::create();
+
+
+        Impl::vector(chars, offsets, class_name, col_res->getChars(), col_res->getOffsets());
+        return col_res;
     }
 
 };
