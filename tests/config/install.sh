@@ -108,10 +108,10 @@ ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
-ln -sf $SRC_PATH/offensive-ngrams.txt $DEST_SERVER_PATH/
-ln -sf $SRC_PATH/non-offensive-ngrams.txt $DEST_SERVER_PATH/
-ln -sf $SRC_PATH/offensive-ngrams-utf8.txt $DEST_SERVER_PATH/
-ln -sf $SRC_PATH/non-offensive-ngrams-utf8.txt $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/offensive-ngrams.txt $DEST_SERVER_PATH/config.d
+ln -sf $SRC_PATH/non-offensive-ngrams.txt $DEST_SERVER_PATH/config.d
+ln -sf $SRC_PATH/offensive-ngrams-utf8.txt $DEST_SERVER_PATH/config.d
+ln -sf $SRC_PATH/non-offensive-ngrams-utf8.txt $DEST_SERVER_PATH/config.d
 
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \
