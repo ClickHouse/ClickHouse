@@ -7,7 +7,6 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
