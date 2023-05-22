@@ -208,10 +208,9 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
         chassert(key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY);
     }
 
-    /// Not we are at a case:
-    /// key_state == KeyMetadata::KeyState::REMOVED
-    /// and KeyNotFoundPolicy == CREATE_EMPTY
-    /// Retry.
+    /// Now we are at the case when the key was removed (key_state == KeyMetadata::KeyState::REMOVED)
+    /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
+    /// Retry
     return lockKeyMetadata(key, key_not_found_policy);
 }
 
@@ -241,13 +240,6 @@ void CacheMetadata::doCleanup()
 {
     auto lock = guard.lock();
 
-    /// Let's mention this case.
-    /// This metadata cleanup is delayed so what is we marked key as deleted and
-    /// put it to deletion queue, but then the same key was added to cache before
-    /// we actually performed this delayed removal?
-    /// In this case it will work fine because on each attempt to add any key to cache
-    /// we perform this delayed removal.
-
     FileCacheKey cleanup_key;
     while (cleanup_queue->tryPop(cleanup_key))
     {
@@ -268,19 +260,37 @@ void CacheMetadata::doCleanup()
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
+        const fs::path key_directory = getPathInLocalCache(cleanup_key);
+        const fs::path key_prefix_directory = key_directory.parent_path();
+
         try
         {
-            const fs::path key_directory = getPathInLocalCache(cleanup_key);
             if (fs::exists(key_directory))
                 fs::remove_all(key_directory);
-
-            const fs::path key_prefix_directory = key_directory.parent_path();
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+            continue;
+        }
+
+        try
+        {
+            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+                fs::remove_all(key_prefix_directory);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Key prefix directory can become non-empty just now, it is expected.
+            if (e.code() == std::errc::directory_not_empty)
+                continue;
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
             chassert(false);
         }
     }
@@ -299,7 +309,7 @@ LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
 
 LockedKey::~LockedKey()
 {
-    if (!key_metadata->empty())
+    if (!key_metadata->empty() || getKeyState() != KeyMetadata::KeyState::ACTIVE)
         return;
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
@@ -344,13 +354,18 @@ void LockedKey::removeAllReleasable()
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
-    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", getKey(), offset);
-
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
+
+    LOG_DEBUG(
+        log, "Remove from cache. Key: {}, offset: {}, size: {}",
+        getKey(), offset, file_segment->reserved_size);
+
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->annul();
 

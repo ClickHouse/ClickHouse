@@ -3,15 +3,14 @@
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/AsyncReadCounters.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -25,16 +24,18 @@
 #include "config.h"
 
 #include <boost/container/flat_set.hpp>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 
 namespace Poco::Net { class IPAddress; }
-namespace zkutil { class ZooKeeper; }
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 struct OvercommitTracker;
 
@@ -829,6 +830,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    /// return Auxiliary Zookeeper map
+    std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
@@ -1099,16 +1102,7 @@ public:
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
-    enum class FilesystemReaderType
-    {
-        SYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_REMOTE_FS_READER,
-    };
-
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-
-    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
