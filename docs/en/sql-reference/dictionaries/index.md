@@ -267,16 +267,14 @@ or
 LAYOUT(HASHED())
 ```
 
+If `shards` greater then 1 (default is `1`) the dictionary will load data in parallel, useful if you have huge amount of elements in one dictionary.
+
 Configuration example:
 
 ``` xml
 <layout>
   <hashed>
-    <!-- If shards greater then 1 (default is `1`) the dictionary will load
-         data in parallel, useful if you have huge amount of elements in one
-         dictionary. -->
     <shards>10</shards>
-
     <!-- Size of the backlog for blocks in parallel queue.
 
          Since the bottleneck in parallel loading is rehash, and so to avoid
@@ -286,14 +284,6 @@ Configuration example:
          10000 is good balance between memory and speed.
          Even for 10e10 elements and can handle all the load without starvation. -->
     <shard_load_queue_backlog>10000</shard_load_queue_backlog>
-
-    <!-- Maximum load factor of the hash table, with greater values, the memory
-         is utilized more efficiently (less memory is wasted) but read/performance
-         may deteriorate.
-
-         Valid values: [0.5, 0.99]
-         Default: 0.5 -->
-    <max_load_factor>0.5</max_load_factor>
   </hashed>
 </layout>
 ```
@@ -301,7 +291,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### sparse_hashed
@@ -314,18 +304,14 @@ Configuration example:
 
 ``` xml
 <layout>
-  <sparse_hashed>
-    <!-- <shards>1</shards> -->
-    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
-    <!-- <max_load_factor>0.5</max_load_factor> -->
-  </sparse_hashed>
+  <sparse_hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+LAYOUT(SPARSE_HASHED())
 ```
 
 It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
@@ -339,9 +325,8 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_hashed>
-    <!-- <shards>1</shards> -->
+    <shards>1</shards>
     <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
-    <!-- <max_load_factor>0.5</max_load_factor> -->
   </complex_key_hashed>
 </layout>
 ```
@@ -349,7 +334,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### complex_key_sparse_hashed
@@ -361,9 +346,7 @@ Configuration example:
 ``` xml
 <layout>
   <complex_key_sparse_hashed>
-    <!-- <shards>1</shards> -->
-    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
-    <!-- <max_load_factor>0.5</max_load_factor> -->
+    <shards>1</shards>
   </complex_key_sparse_hashed>
 </layout>
 ```
@@ -371,7 +354,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### hashed_array
