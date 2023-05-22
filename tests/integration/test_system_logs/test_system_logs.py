@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config_order_by.xml"],
+    main_configs=["configs/system_logs_order_by.xml"],
     stay_alive=True,
 )
 
