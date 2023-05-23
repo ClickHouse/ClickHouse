@@ -58,6 +58,9 @@ public:
 
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
+    ContextPtr getContext() const { return context; }
+    PreparedSets::SubqueriesForSets detachSubqueries() { return std::move(subqueries_for_sets); }
+
 private:
     PreparedSets::SubqueriesForSets subqueries_for_sets;
     ContextPtr context;

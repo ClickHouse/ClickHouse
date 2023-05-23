@@ -189,9 +189,9 @@ public:
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
-        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const KeyCondition & key_condition,
+        const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
         size_t num_streams,

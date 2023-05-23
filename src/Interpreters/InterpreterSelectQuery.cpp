@@ -3088,12 +3088,17 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    auto step = std::make_unique<DelayedCreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            prepared_sets->detachSubqueries(context),
-            context);
+    auto subqueries = prepared_sets->detachSubqueries(context);
 
-    query_plan.addStep(std::move(step));
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+                query_plan.getCurrentDataStream(),
+                std::move(subqueries),
+                context);
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 
