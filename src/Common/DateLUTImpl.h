@@ -877,10 +877,11 @@ public:
         }
         else
         {
+            const auto day_of_week = toDayOfWeek(v);
             if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-                return (toDayOfWeek(v) != 7) ? DayNum(saturateMinus(v, toDayOfWeek(v))) : toDayNum(v);
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
             else
-                return (toDayOfWeek(v) != 7) ? ExtendedDayNum(v - toDayOfWeek(v)) : toDayNum(v);
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
         }
     }
 
