@@ -8,12 +8,9 @@ Lambda function to:
 
 import argparse
 import sys
-import json
-import time
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
@@ -23,6 +20,11 @@ from lambda_shared import (
     RunnerDescription,
     RunnerDescriptions,
     list_runners,
+)
+from lambda_shared.token import (
+    get_cached_access_token,
+    get_key_and_app_from_aws,
+    get_access_token_by_key_app,
 )
 
 UNIVERSAL_LABEL = "universal"
@@ -139,50 +141,8 @@ def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
     return lost_instances
 
 
-def get_key_and_app_from_aws() -> Tuple[str, int]:
-    secret_name = "clickhouse_github_secret_key"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-    )
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
-
-
 def handler(event, context):
-    private_key, app_id = get_key_and_app_from_aws()
-    main(private_key, app_id, True, True)
-
-
-def get_installation_id(jwt_token: str) -> int:
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get("https://api.github.com/app/installations", headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    for installation in data:
-        if installation["account"]["login"] == "ClickHouse":
-            installation_id = installation["id"]
-            break
-
-    return installation_id  # type: ignore
-
-
-def get_access_token(jwt_token: str, installation_id: int) -> str:
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["token"]  # type: ignore
+    main(get_cached_access_token(), True, True)
 
 
 def group_runners_by_tag(
@@ -273,20 +233,10 @@ def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
 
 
 def main(
-    github_secret_key: str,
-    github_app_id: int,
+    access_token: str,
     push_to_cloudwatch: bool,
     delete_offline_runners: bool,
 ) -> None:
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": github_app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    access_token = get_access_token(encoded_jwt, installation_id)
     gh_runners = list_runners(access_token)
     grouped_runners = group_runners_by_tag(gh_runners)
     for group, group_runners in grouped_runners.items():
@@ -354,4 +304,6 @@ if __name__ == "__main__":
         print("Attempt to get key and id from AWS secret manager")
         private_key, args.app_id = get_key_and_app_from_aws()
 
-    main(private_key, args.app_id, args.push_to_cloudwatch, args.delete_offline)
+    token = get_access_token_by_key_app(private_key, args.app_id)
+
+    main(token, args.push_to_cloudwatch, args.delete_offline)
