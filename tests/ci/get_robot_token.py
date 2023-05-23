@@ -2,6 +2,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
+
 import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
