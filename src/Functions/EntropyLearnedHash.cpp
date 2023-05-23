@@ -296,6 +296,7 @@ public:
         std::function<uint64_t(const char * s, size_t len)> hash_function;
         const auto arg_count = arguments.size();
 
+        // Choosing arbitrary hash functions:
         if (arg_count == 2)
             hash_function = CityHash_v1_0_2::CityHash64;
         else
@@ -320,12 +321,21 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Hash function {} is not supported", hash_function_name);
         }
 
-        const IColumn * id_col = arguments[1].column.get();
-        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
-        const String id = id_col_const->getValue<String>();
+        const IColumn * id_or_bitmask_col = arguments[1].column.get();
+        const ColumnConst * id_or_bitmask_col_const = checkAndGetColumn<ColumnConst>(id_or_bitmask_col);
+        const String id_or_bitmask = id_or_bitmask_col_const->getValue<String>();
 
-        const auto & id_manager = IdManager::instance();
-        const auto & partial_key_positions = id_manager.getPartialKeyPositionsForId(user_name, id);
+        PartialKeyPositions partial_key_positions;
+        // If id_or_bitmask == '!', it is bitmask from call trainEntropyLearnedHash('column')
+        if (!id_or_bitmask.empty() && id_or_bitmask[0] != '!')
+        {
+            const auto & id_manager = IdManager::instance();
+            partial_key_positions = id_manager.getPartialKeyPositionsForId(user_name, id_or_bitmask);
+        }
+        else
+            for (size_t i = 1; i < id_or_bitmask.size(); ++i)
+                if (id_or_bitmask[i] == '1')
+                    partial_key_positions.push_back(i - 1);
 
         const auto * data_col = arguments[0].column.get();
         if (const auto * col_data_string = checkAndGetColumn<ColumnString>(data_col))
