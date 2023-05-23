@@ -15,7 +15,7 @@ nproc=$(($(nproc) + 2)) # increase parallelism
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 
 mkdir -p "$BUILD_DIRECTORY" && cd "$BUILD_DIRECTORY"
-cmake "$SOURCE_DIRECTORY" -DCMAKE_CXX_COMPILER="/usr/bin/clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="/usr/bin/clang-${LLVM_VERSION}" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EMBEDDED_COMPILER=0 "${CMAKE_FLAGS[@]}"
+cmake "$SOURCE_DIRECTORY" -DCMAKE_CXX_COMPILER="/usr/bin/clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="/usr/bin/clang-${LLVM_VERSION}" -DENABLE_WOBOQ_CODEBROWSER=ON "${CMAKE_FLAGS[@]}"
 mkdir -p "$HTML_RESULT_DIRECTORY"
 echo 'Filter out too noisy "Error: filename" lines and keep them in full codebrowser_generator.log'
 /woboq_codebrowser/generator/codebrowser_generator -b "$BUILD_DIRECTORY" -a \
