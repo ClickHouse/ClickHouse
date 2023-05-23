@@ -81,7 +81,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     {
         /// Gather tasks to load before this table
         LoadTaskPtrs load_dependency_tasks;
-        for (StorageID dependency_id : all_loading_dependencies.getDependencies(table_id))
+        for (const StorageID & dependency_id : all_loading_dependencies.getDependencies(table_id))
             load_dependency_tasks.push_back(load_table[dependency_id.uuid]);
 
         // Make load table task
