@@ -2,13 +2,10 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
-import os
-import hvac
 import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
 
-from env_helper import VAULT_URL, VAULT_TOKEN, VAULT_PATH, VAULT_MOUNT_POINT
 
 @dataclass
 class Token:
@@ -18,15 +15,9 @@ class Token:
 
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
-    if VAULT_URL:
-        if not client:
-            client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
-        parameter = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"][name]
-    else:
-        if not client:
-            client = boto3.client("ssm", region_name="us-east-1")
-        parameter = client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
-    return parameter
+    if not client:
+        client = boto3.client("ssm", region_name="us-east-1")
+    return client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
 
 
 ROBOT_TOKEN = None  # type: Optional[Token]
@@ -36,11 +27,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     global ROBOT_TOKEN
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
-    client = None
-    if VAULT_URL:
-        client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
-    else:
-        client = boto3.client("ssm", region_name="us-east-1")
+    client = boto3.client("ssm", region_name="us-east-1")
     parameters = client.describe_parameters(
         ParameterFilters=[
             {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
