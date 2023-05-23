@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -11,8 +12,6 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 
 /// Implementation of entropy-learned hashing: https://doi.org/10.1145/3514221.3517894
 /// If you change something in this file, please don't deviate too much from the pseudocode in the paper!
@@ -177,28 +176,24 @@ public:
     explicit FunctionTrainEntropyLearnedHash(const String & user_name_) : IFunction(), user_name(user_name_) { }
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"data", &isString<IDataType>, nullptr, "String"}, {"id", &isString<IDataType>, nullptr, "String"}};
+        FunctionArgumentDescriptors mandatory_args{{"data", &isString<IDataType>, nullptr, "String"}};
+        FunctionArgumentDescriptors optional_args{{"id", &isString<IDataType>, nullptr, "String"}};
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const IColumn * id_col = arguments[1].column.get();
-        const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
-        const String id = id_col_const->getValue<String>();
-
         const auto * data_col = arguments[0].column.get();
         if (const ColumnString * col_data_string = checkAndGetColumn<ColumnString>(data_col))
         {
@@ -213,20 +208,36 @@ public:
 
             // chooseBytes returns sorted vector
             PartialKeyPositions partial_key_positions = chooseBytes(training_data);
-            auto & id_manager = IdManager::instance();
-            id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
 
-            // making a return value:
+            if (arguments.size() == 2)
+            {
+                const IColumn * id_col = arguments[1].column.get();
+                const ColumnConst * id_col_const = checkAndGetColumn<ColumnConst>(id_col);
+                const String id = id_col_const->getValue<String>();
+
+                auto & id_manager = IdManager::instance();
+                id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
+            }
+
+            // Making a return value:
             auto col_string_to = ColumnString::create();
 
             auto & data = col_string_to->getChars();
             auto & offsets = col_string_to->getOffsets();
+
+            if (arguments.size() == 1)
+            {
+                // If trainEntropyLearnedHash('column') called, return a serialized bitmask with the special symbol '!' in the beginning
+                data.push_back('!');
+            }
             if (!partial_key_positions.empty())
-                data.reserve(*partial_key_positions.rbegin() + 2);
+                data.reserve(data.size() + *partial_key_positions.rbegin() + 2);
 
             size_t cur_position = 0;
-            for (auto position : partial_key_positions) {
-                while (cur_position < position) {
+            for (auto position : partial_key_positions)
+            {
+                while (cur_position < position)
+                {
                     data.push_back('0');
                     ++cur_position;
                 }
