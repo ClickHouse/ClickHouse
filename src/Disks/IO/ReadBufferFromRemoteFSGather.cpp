@@ -5,6 +5,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Common/logger_useful.h>
+#include <IO/SwapHelper.h>
 #include <iostream>
 #include <base/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -46,7 +47,6 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     }
 
     current_object = object;
-    total_bytes_read_from_current_file = 0;
     const auto & object_path = object.remote_path;
 
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
@@ -84,7 +84,7 @@ void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
         .source_file_path = current_object.remote_path,
         .file_segment_range = { 0, current_object.bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
-        .file_segment_size = total_bytes_read_from_current_file,
+        .file_segment_size = current_object.bytes_size,
         .read_from_cache_attempted = false,
     };
     cache_log->add(elem);
@@ -176,7 +176,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
-    swap(*current_buf);
+    SwapHelper swap(*this, *current_buf);
 
     bool result = false;
 
@@ -187,7 +187,6 @@ bool ReadBufferFromRemoteFSGather::readImpl()
      */
     if (bytes_to_ignore)
     {
-        total_bytes_read_from_current_file += bytes_to_ignore;
         current_buf->ignore(bytes_to_ignore);
         result = current_buf->hasPendingData();
         file_offset_of_buffer_end += bytes_to_ignore;
@@ -207,14 +206,11 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         file_offset_of_buffer_end += current_buf->available();
     }
 
-    swap(*current_buf);
-
     /// Required for non-async reads.
     if (result)
     {
-        assert(available());
-        nextimpl_working_buffer_offset = offset();
-        total_bytes_read_from_current_file += available();
+        assert(current_buf->available());
+        nextimpl_working_buffer_offset = current_buf->offset();
     }
 
     return result;
@@ -225,8 +221,16 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
     if (position == read_until_position)
         return;
 
+    reset();
     read_until_position = position;
+}
+
+void ReadBufferFromRemoteFSGather::reset()
+{
+    current_object = {};
+    current_buf_idx = {};
     current_buf.reset();
+    bytes_to_ignore = 0;
 }
 
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
@@ -234,8 +238,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only seeking with SEEK_SET is allowed");
 
+    reset();
     file_offset_of_buffer_end = offset;
-    current_buf.reset();
     return file_offset_of_buffer_end;
 }
 
