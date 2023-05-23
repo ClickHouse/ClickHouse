@@ -1,3 +1,2 @@
 ../lambda_shared_package
-PyJWT
-cryptography<38
+../lambda_shared_package[token]

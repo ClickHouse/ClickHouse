@@ -9,5 +9,15 @@ dependencies = [
   "requests < 2.30",
 ]
 
+[project.optional-dependencies]
+token = [
+  "PyJWT",
+  "cryptography<38",
+]
+dev = [
+  "boto3",
+  "lambda_shared[token]",
+]
+
 [tool.distutils.bdist_wheel]
 universal = true
