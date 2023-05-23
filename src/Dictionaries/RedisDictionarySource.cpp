@@ -105,21 +105,6 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
-    static String storageTypeToKeyType(RedisStorageType type)
-    {
-        switch (type)
-        {
-            case RedisStorageType::SIMPLE:
-                return "string";
-            case RedisStorageType::HASH_MAP:
-                return "hash";
-            default:
-                return "none";
-        }
-
-        UNREACHABLE();
-    }
-
     QueryPipeline RedisDictionarySource::loadAll()
     {
         auto connection = getRedisConnection(pool, configuration);
@@ -142,33 +127,7 @@ namespace DB
 
         if (configuration.storage_type == RedisStorageType::HASH_MAP)
         {
-            RedisArray hkeys;
-            for (const auto & key : keys)
-            {
-                RedisCommand command_for_secondary_keys("HKEYS");
-                command_for_secondary_keys.addRedisType(key);
-
-                auto secondary_keys = connection->client->execute<RedisArray>(command_for_secondary_keys);
-
-                RedisArray primary_with_secondary;
-                primary_with_secondary.addRedisType(key);
-                for (const auto & secondary_key : secondary_keys)
-                {
-                    primary_with_secondary.addRedisType(secondary_key);
-                    /// Do not store more than max_block_size values for one request.
-                    if (primary_with_secondary.size() == REDIS_MAX_BLOCK_SIZE + 1)
-                    {
-                        hkeys.add(primary_with_secondary);
-                        primary_with_secondary.clear();
-                        primary_with_secondary.addRedisType(key);
-                    }
-                }
-
-                if (primary_with_secondary.size() > 1)
-                    hkeys.add(primary_with_secondary);
-            }
-
-            keys = hkeys;
+            keys = *getRedisHashMapKeys(connection, keys);
         }
 
         return QueryPipeline(std::make_shared<RedisSource>(

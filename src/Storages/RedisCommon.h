@@ -24,8 +24,23 @@ enum class RedisStorageType
     UNKNOWN
 };
 
-String toString(RedisStorageType storage_type);
-RedisStorageType toRedisStorageType(const String & storage_type);
+enum class RedisColumnType
+{
+    /// Redis key
+    KEY,
+    /// Redis map field
+    FIELD,
+    /// Redis value
+    VALUE
+};
+
+using RedisColumnTypes = std::vector<RedisColumnType>;
+
+extern RedisColumnTypes REDIS_HASH_MAP_COLUMN_TYPES;
+extern RedisColumnTypes REDIS_SIMPLE_COLUMN_TYPES;
+
+String storageTypeToKeyType(RedisStorageType storage_type);
+RedisStorageType keyTypeToStorageType(const String & key_type);
 
 struct RedisConfiguration
 {
@@ -34,10 +49,13 @@ struct RedisConfiguration
     uint32_t db_index;
     String password;
     RedisStorageType storage_type;
+    /// column name of redis key
+    String key;// TODO remove
     uint32_t pool_size;
 };
 
 using RedisArray = Poco::Redis::Array;
+using RedisArrayPtr = std::shared_ptr<RedisArray>;
 using RedisCommand = Poco::Redis::Command;
 using RedisBulkString = Poco::Redis::BulkString;
 
@@ -56,6 +74,10 @@ struct RedisConnection
 
 using RedisConnectionPtr = std::unique_ptr<RedisConnection>;
 
-RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguration & configuration) ;
+RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguration & configuration);
+
+///get all redis hash key array
+///    eg: keys -> [key1, key2] and get [[key1, field1, field2], [key2, field1, field2]]
+RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisArray & keys);
 
 }

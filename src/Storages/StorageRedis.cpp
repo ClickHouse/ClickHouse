@@ -2,6 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/KVStorageUtils.h>
 
 #include <unordered_set>
 #include <Core/Settings.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/parseAddress.h>
 #include <Common/Exception.h>
@@ -22,7 +24,31 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INVALID_REDIS_STORAGE_TYPE;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+    RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column)
+    {
+        String redis_col_key = all_columns.at(0);
+        if (column == redis_col_key)
+            return RedisColumnType::KEY;
+
+        if (storage_type == RedisStorageType::HASH_MAP)
+        {
+            String redis_col_field = all_columns.at(1);
+            if (column == redis_col_field)
+                return RedisColumnType::FIELD;
+            else
+                return RedisColumnType::VALUE;
+        }
+        else
+        {
+            return RedisColumnType::VALUE;
+        }
+    }
 }
 
 StorageRedis::StorageRedis(
@@ -34,41 +60,120 @@ StorageRedis::StorageRedis(
     : IStorage(table_id_)
     , table_id(table_id_)
     , configuration(configuration_)
-    , columns(columns_)
-    , constraints(constraints_)
-    , comment(comment_)
+    , log(&Poco::Logger::get("StorageRedis"))
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 Pipe StorageRedis::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
+    LOG_INFO(log, "num_streams {}", num_streams);// TODO delete
     auto connection = getRedisConnection(pool, configuration);
 
     storage_snapshot->check(column_names);
 
     Block sample_block;
+    RedisColumnTypes redis_types;
+    auto all_columns = storage_snapshot->metadata->getColumns().getNamesOfPhysical();
+
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
+        redis_types.push_back(getRedisColumnType(configuration.storage_type, all_columns, column_name));
+        LOG_INFO(log, "Request column: {}, Redis type: {}", column_data.name, *redis_types.crbegin()); // TODO delete
     }
 
-    RedisArray keys;
-    RedisCommand command_for_keys("KEYS");
-    /// generate keys by table name prefix
-    command_for_keys << table_id.getTableName() + ":" + toString(configuration.storage_type) + ":*";
+    FieldVectorPtr fields;
+    bool all_scan = false;
 
-    /// Get only keys for specified storage type.
-    auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
-    return Pipe(std::make_shared<RedisSource>(std::move(connection), all_keys, configuration.storage_type, sample_block, max_block_size));
+    String primary_key = all_columns.at(0);
+    auto primary_key_data_type = sample_block.getByName(primary_key).type;
+
+    std::tie(fields, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info, context);
+
+    /// TODO hash_map hgetall
+    if (all_scan)
+    {
+        RedisCommand command_for_keys("KEYS");
+        /// generate keys by table name prefix
+        command_for_keys << table_id.getTableName() + ":" + toString(configuration.storage_type) + ":*";
+
+        auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
+
+        if (all_keys.size() == 0)
+            return {};
+
+        Pipes pipes;
+
+        size_t num_keys = all_keys.size();
+        size_t num_threads = std::min<size_t>(num_streams, all_keys.size());
+
+        assert(num_keys <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            RedisArray keys;
+            for (size_t pos=begin; pos<std::min(end, num_keys); pos++)
+                keys.add(all_keys.get<RedisBulkString>(pos));
+
+            if (configuration.storage_type == RedisStorageType::HASH_MAP)
+            {
+                keys = *getRedisHashMapKeys(connection, keys);
+            }
+
+            /// TODO reduce keys copy
+            pipes.emplace_back(std::make_shared<RedisSource>(
+                std::move(connection), keys, configuration.storage_type, sample_block, redis_types, max_block_size));
+        }
+        return Pipe::unitePipes(std::move(pipes));
+    }
+    else
+    {
+        if (fields->empty())
+            return {};
+
+        Pipes pipes;
+
+        size_t num_keys = fields->size();
+        size_t num_threads = std::min<size_t>(num_streams, fields->size());
+
+        assert(num_keys <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            RedisArray keys;
+            for (size_t pos=begin; pos<std::min(end, num_keys); pos++)
+                keys.add(fields->at(pos).get<String>());
+
+            if (configuration.storage_type == RedisStorageType::HASH_MAP)
+            {
+                keys = *getRedisHashMapKeys(connection, keys);
+            }
+
+            pipes.emplace_back(std::make_shared<RedisSource>(
+                std::move(connection), keys, configuration.storage_type, sample_block, redis_types, max_block_size));
+        }
+        return Pipe::unitePipes(std::move(pipes));
+    }
 }
 
 
@@ -88,15 +193,15 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
     {
         validateNamedCollection(
             *named_collection,
-            ValidateKeysMultiset<RedisEqualKeysSet>{"host", "port", "hostname", "password", "db_index", "storage_type"},
+            ValidateKeysMultiset<RedisEqualKeysSet>{"host", "port", "hostname", "password", "db_index", "storage_type", "pool_size"},
             {});
 
         configuration.host = named_collection->getAny<String>({"host", "hostname"});
         configuration.port = static_cast<uint32_t>(named_collection->get<UInt64>("port"));
         configuration.password = named_collection->get<String>("password");
         configuration.db_index = static_cast<uint32_t>(named_collection->get<UInt64>({"db_index"}));
-        configuration.storage_type = toRedisStorageType(named_collection->getOrDefault<String>("storage_type", ""));
-        configuration.pool_size = 16; /// TODO
+        configuration.storage_type = keyTypeToStorageType(named_collection->getOrDefault<String>("storage_type", ""));
+        configuration.pool_size = static_cast<uint32_t>(named_collection->get<UInt64>("pool_size"));
     }
     else
     {
@@ -110,9 +215,12 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
         configuration.port = parsed_host_port.second;
         configuration.db_index = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[1], "db_index"));
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
-        configuration.storage_type = toRedisStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
-        configuration.pool_size = 16; /// TODO
+        configuration.storage_type = keyTypeToStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
+        configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[4], "pool_size"));
     }
+
+    if (configuration.storage_type == RedisStorageType::UNKNOWN)
+        throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Invalid Redis storage type");
 
     context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
     return configuration;

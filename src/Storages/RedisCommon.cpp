@@ -11,6 +11,9 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+RedisColumnTypes REDIS_HASH_MAP_COLUMN_TYPES = {RedisColumnType::KEY, RedisColumnType::FIELD, RedisColumnType::VALUE};
+RedisColumnTypes REDIS_SIMPLE_COLUMN_TYPES = {RedisColumnType::KEY, RedisColumnType::VALUE};
+
 RedisConnection::RedisConnection(RedisPoolPtr pool_, RedisClientPtr client_)
     : pool(std::move(pool_)), client(std::move(client_))
 {
@@ -21,26 +24,27 @@ RedisConnection::~RedisConnection()
     pool->returnObject(std::move(client));
 }
 
-String toString(RedisStorageType storage_type)
+String storageTypeToKeyType(RedisStorageType storage_type)
 {
-    static const std::unordered_map<RedisStorageType, String> type_to_str_map
-        = {{RedisStorageType::SIMPLE, "simple"}, {RedisStorageType::HASH_MAP, "hash_map"}};
-
-    auto iter = type_to_str_map.find(storage_type);
-    return iter->second;
+    switch (storage_type)
+    {
+        case RedisStorageType::SIMPLE:
+            return "string";
+        case RedisStorageType::HASH_MAP:
+            return "hash";
+        default:
+            return "none";
+    }
 }
 
-RedisStorageType toRedisStorageType(const String & storage_type)
+RedisStorageType keyTypeToStorageType(const String & key_type)
 {
-    static const std::unordered_map<std::string, RedisStorageType> str_to_type_map
-        = {{"simple", RedisStorageType::SIMPLE}, {"hash", RedisStorageType::HASH_MAP}};
-
-    auto iter = str_to_type_map.find(storage_type);
-    if (iter == str_to_type_map.end())
-    {
-        throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "invalid redis storage type: {}", storage_type);
-    }
-    return iter->second;
+    if (key_type == "string")
+        return RedisStorageType::SIMPLE;
+    else if (key_type == "hash")
+        return RedisStorageType::HASH_MAP;
+    else
+        return RedisStorageType::UNKNOWN;
 }
 
 RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguration & configuration)
@@ -93,6 +97,38 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
     }
 
     return std::make_unique<RedisConnection>(pool, std::move(client));
+}
+
+
+RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisArray & keys)
+{
+    RedisArrayPtr hkeys = std::make_shared<RedisArray>();
+    for (const auto & key : keys)
+    {
+        RedisCommand command_for_secondary_keys("HKEYS");
+        command_for_secondary_keys.addRedisType(key);
+
+        auto secondary_keys = connection->client->execute<RedisArray>(command_for_secondary_keys);
+
+        RedisArray primary_with_secondary;
+        primary_with_secondary.addRedisType(key);
+        for (const auto & secondary_key : secondary_keys)
+        {
+            primary_with_secondary.addRedisType(secondary_key);
+            /// Do not store more than max_block_size values for one request.
+            if (primary_with_secondary.size() == REDIS_MAX_BLOCK_SIZE + 1)
+            {
+                hkeys->add(primary_with_secondary);
+                primary_with_secondary.clear();
+                primary_with_secondary.addRedisType(key);
+            }
+        }
+
+        if (primary_with_secondary.size() > 1)
+            hkeys->add(primary_with_secondary);
+    }
+
+    return hkeys;
 }
 
 }
