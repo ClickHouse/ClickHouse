@@ -20,8 +20,8 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           ls -1 *_test.py
-          echo $VAULT_PATH
-          echo $VAULT_URL          
+          echo ${{ env.VAULT_PATH }}
+          echo ${{ env.VAULT_URL }}
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
