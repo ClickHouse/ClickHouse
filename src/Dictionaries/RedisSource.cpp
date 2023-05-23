@@ -1,15 +1,12 @@
 #include "RedisSource.h"
 
-#include <string>
 #include <vector>
-
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include "DictionaryStructure.h"
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB

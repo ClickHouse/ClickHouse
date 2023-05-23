@@ -78,7 +78,8 @@ Pipe StorageRedis::read(
     {
         RedisCommand command_for_keys("KEYS");
         /// generate keys by table name prefix
-        command_for_keys << table_id.getTableName() + ":" + storageTypeToKeyType(configuration.storage_type) + ":*";
+//        command_for_keys << table_id.getTableName() + ":" + storageTypeToKeyType(configuration.storage_type) + ":*";
+        command_for_keys << "*";
 
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
 
@@ -90,6 +91,7 @@ Pipe StorageRedis::read(
         size_t num_keys = all_keys.size();
         size_t num_threads = std::min<size_t>(num_streams, all_keys.size());
 
+        num_threads = std::min<size_t>(num_threads, configuration.pool_size);
         assert(num_keys <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
@@ -106,9 +108,12 @@ Pipe StorageRedis::read(
                 keys = *getRedisHashMapKeys(connection, keys);
             }
 
+            delete connection.release();
+
             /// TODO reduce keys copy
             pipes.emplace_back(std::make_shared<RedisSource>(
-                std::move(connection), keys, configuration.storage_type, sample_block, redis_types, max_block_size));
+                getRedisConnection(pool, configuration), keys,
+                configuration.storage_type, sample_block, redis_types, max_block_size));
         }
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -122,6 +127,7 @@ Pipe StorageRedis::read(
         size_t num_keys = fields->size();
         size_t num_threads = std::min<size_t>(num_streams, fields->size());
 
+        num_threads = std::min<size_t>(num_threads, configuration.pool_size);
         assert(num_keys <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
@@ -138,8 +144,11 @@ Pipe StorageRedis::read(
                 keys = *getRedisHashMapKeys(connection, keys);
             }
 
+            delete connection.release();
+
             pipes.emplace_back(std::make_shared<RedisSource>(
-                std::move(connection), keys, configuration.storage_type, sample_block, redis_types, max_block_size));
+                getRedisConnection(pool, configuration), keys,
+                configuration.storage_type, sample_block, redis_types, max_block_size));
         }
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -151,9 +160,10 @@ SinkToStoragePtr StorageRedis::write(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr /*context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is unsupported for StorageRedis");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is unsupported for StorageRedis");
 }
 
+/// TODO make "password", "db_index", "storage_type", "pool_size" optional
 RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     RedisConfiguration configuration;
@@ -202,6 +212,8 @@ void registerStorageRedis(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto configuration = StorageRedis::getConfiguration(args.engine_args, args.getLocalContext());
+
+            checkRedisTableStructure(args.columns, configuration);
 
             return std::make_shared<StorageRedis>(
                 args.table_id,
