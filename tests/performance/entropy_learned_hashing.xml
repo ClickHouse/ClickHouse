@@ -1,15 +1,22 @@
 <test>
     <create_query>
+		DROP TABLE IF EXISTS tbl_ELP_benchmark
         CREATE TABLE tbl_ELP_benchmark
         (
             x String
         ) ENGINE = Memory
     </create_query>
 
-    <fill_query>INSERT INTO tbl_ELP_benchmark FROM INFILE 'example_database.csv' FORMAT CSV</fill_query>
+    <fill_query>
+		INSERT INTO tbl_ELP_benchmark SELECT randomString(50) FROM numbers(1000000)
+		SELECT trainEntropyLearnedHash(x, 'id_performance_test') FROM tbl_ELP_benchmark
+	</fill_query>
+
+	<query>
+		SELECT cityHash64(x, 'id_performance_test') FROM tbl_ELP_benchmark
+	</query>
 
     <query>
-		SELECT trainEntropyLearnedHash(x, 'id_performance_test') FROM tbl_ELP_benchmark
 		SELECT entropyLearnedHash(x, 'id_performance_test') FROM tbl_ELP_benchmark
 	</query>
 
