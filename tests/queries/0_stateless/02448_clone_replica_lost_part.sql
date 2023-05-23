@@ -144,6 +144,7 @@ select sleep(2) format Null; -- increases probability of reproducing the issue
 -- rmt1 will mimic rmt2, but will not be able to fetch parts for a while
 system stop replicated sends rmt2;
 attach table rmt1;
+system sync replica rmt1;
 -- rmt1 should not show the value (200) from dropped part
 select throwIf(n = 200) from rmt1 format Null;
 select 11, arraySort(groupArray(n)) from rmt2;
