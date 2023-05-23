@@ -64,6 +64,8 @@ private:
 
     void appendUncachedReadInfo();
 
+    void reset();
+
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
@@ -74,7 +76,6 @@ private:
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
     size_t bytes_to_ignore = 0;
-    size_t total_bytes_read_from_current_file = 0;
 
     StoredObject current_object;
     size_t current_buf_idx = 0;
