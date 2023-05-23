@@ -5,8 +5,8 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
-  # - workflow_dispatch
-  - push
+  - workflow_dispatch
+  # - push
 
 jobs:
   PythonUnitTests:
