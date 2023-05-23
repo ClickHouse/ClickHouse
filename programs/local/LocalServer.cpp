@@ -819,9 +819,9 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
-        if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-') && arg == "--multiquery")
+        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
         {
-            /** Transforms from '--multiquery <SQL>' into '--multiquery -q <SQL>' */
+            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
             ++arg_num;
             arg = argv[arg_num];
             addMultiquery(arg, common_arguments);

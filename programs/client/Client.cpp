@@ -1381,9 +1381,9 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
-            else if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-') && arg == "--multiquery")
+            else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
             {
-                /** Transforms from '--multiquery <SQL>' into '--multiquery -q <SQL>' */
+                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
                 ++arg_num;
                 arg = argv[arg_num];
                 addMultiquery(arg, common_arguments);
