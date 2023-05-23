@@ -50,7 +50,7 @@ public:
         bool return_all_columns_ = false,
         bool return_mutated_rows_ = false);
 
-    /// Special case for MergeTree
+    /// Special case for *MergeTree
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
@@ -123,7 +123,7 @@ public:
     private:
         StoragePtr storage;
 
-        /// Special case for MergeTree.
+        /// Special case for *MergeTree.
         MergeTreeData * data = nullptr;
         MergeTreeData::DataPartPtr part;
     };

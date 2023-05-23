@@ -528,7 +528,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     }
 }
 
-bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
+bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 {
     assertInitialized();
     auto cache_lock = cache_guard.lock();
@@ -573,33 +573,31 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     else
         queue_size += 1;
 
-    size_t removed_size = 0;
-
-    class EvictionCandidates final : public std::vector<FileSegmentMetadataPtr>
+    struct EvictionCandidates
     {
-    public:
         explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
-
-        KeyMetadata & getMetadata() { return *key_metadata; }
 
         void add(FileSegmentMetadataPtr candidate)
         {
             candidate->removal_candidate = true;
-            push_back(candidate);
+            candidates.push_back(candidate);
         }
 
         ~EvictionCandidates()
         {
-            for (const auto & candidate : *this)
+            /// If failed to reserve space, we don't delete the candidates but drop the flag instead
+            /// so the segments can be used again
+            for (const auto & candidate : candidates)
                 candidate->removal_candidate = false;
         }
 
-    private:
         KeyMetadataPtr key_metadata;
+        std::vector<FileSegmentMetadataPtr> candidates;
     };
 
     std::unordered_map<Key, EvictionCandidates> to_delete;
 
+    size_t removed_size = 0;
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
@@ -655,8 +653,18 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         /// max_size == 0 means unlimited cache size,
         /// max_element_size means unlimited number of cache elements.
-        return (main_priority->getSizeLimit() != 0 && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
+        const bool is_overflow = (main_priority->getSizeLimit() != 0
+                                  && main_priority->getSize(cache_lock) + size - removed_size > main_priority->getSizeLimit())
             || (main_priority->getElementsLimit() != 0 && queue_size > main_priority->getElementsLimit());
+
+        LOG_TEST(
+            log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            is_overflow, size, removed_size,
+            main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
+            main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
+            file_segment.key(), file_segment.offset());
+
+        return is_overflow;
     };
 
     main_priority->iterate(
@@ -672,22 +680,25 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
     for (auto & [current_key, deletion_info] : to_delete)
     {
-        auto locked_key = deletion_info.getMetadata().tryLock();
+        auto locked_key = deletion_info.key_metadata->tryLock();
         if (!locked_key)
             continue; /// key could become invalid after we released the key lock above, just skip it.
 
-        for (auto it = deletion_info.begin(); it != deletion_info.end();)
+        /// delete from vector in reverse order just for efficiency
+        auto & candidates = deletion_info.candidates;
+        while (!candidates.empty())
         {
-            chassert((*it)->releasable());
+            auto & candidate = candidates.back();
+            chassert(candidate->releasable());
 
-            auto segment = (*it)->file_segment;
+            const auto * segment = candidate->file_segment.get();
             locked_key->removeFileSegment(segment->offset(), segment->lock());
             segment->getQueueIterator()->remove(cache_lock);
 
             if (query_context)
                 query_context->remove(current_key, segment->offset(), cache_lock);
 
-            it = deletion_info.erase(it);
+            candidates.pop_back();
         }
     }
 
