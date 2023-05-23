@@ -9,7 +9,6 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 
@@ -83,7 +82,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -93,11 +91,9 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
-    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
+    return std::make_unique<WriteBufferFromHDFS>(
         object.remote_path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), object.remote_path);
 }
 
 
@@ -155,11 +151,6 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     out->finalize();
 }
 
-
-void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr context)
-{
-    applyRemoteThrottlingSettings(context);
-}
 
 std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
 {
