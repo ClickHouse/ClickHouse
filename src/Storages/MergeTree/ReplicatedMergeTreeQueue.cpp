@@ -955,13 +955,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     const String & partition_id = pair.first;
                     Int64 block_num = pair.second;
                     mutations_by_partition[partition_id].emplace(block_num, &mutation);
-                    LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
+                LOG_TRACE(log, "Adding mutation {} for {} partitions (data versions: {})",
+                          entry->znode_name, entry->block_numbers.size(), entry->getBlockNumbersForLogs());
 
                 /// Initialize `mutation.parts_to_do`. We cannot use only current_parts + virtual_parts here so we
                 /// traverse all the queue and build correct state of parts_to_do.
                 auto queue_representation = getQueueRepresentation(queue, format_version);
-                mutation.parts_to_do = getPartNamesToMutate(*entry, virtual_parts, queue_representation, format_version);
+                mutation.parts_to_do = getPartNamesToMutate(*entry, current_parts, queue_representation, format_version);
 
                 if (mutation.parts_to_do.size() == 0)
                     some_mutations_are_probably_done = true;
@@ -1801,7 +1802,7 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
-    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids) const
 {
     /// NOTE: If the corresponding mutation is not found, the error is logged (and not thrown as an exception)
     /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
@@ -1840,6 +1841,9 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
     {
+        /// FIXME uncomment this assertion after relesing 23.5 (currently it fails in Upgrade check)
+        /// chassert(mutation_pointer < it->second->entry->znode_name);
+        mutation_ids.push_back(it->second->entry->znode_name);
         const auto & commands_from_entry = it->second->entry->commands;
         commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
     }
@@ -2600,7 +2604,7 @@ void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
 {
     std::lock_guard state_lock(state_mutex);
     for (const auto & part_name : current_parts.getParts())
-        removeCoveredPartsFromMutations(part_name, /*remove_part = */ true, /*remove_covered_parts = */ true);
+        removeCoveredPartsFromMutations(part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
 }
 
 }
