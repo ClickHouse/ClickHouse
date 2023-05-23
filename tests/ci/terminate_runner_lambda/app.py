@@ -4,13 +4,14 @@ import argparse
 import json
 import sys
 import time
-from collections import namedtuple
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import boto3  # type: ignore
 import requests  # type: ignore
 import jwt
+
+from lambda_shared import RunnerDescriptions, list_runners
 
 
 def get_key_and_app_from_aws() -> Tuple[str, int]:
@@ -116,58 +117,6 @@ def get_cached_instances() -> dict:
     }
     cached_instances.updating = False
     return cached_instances.value
-
-
-RunnerDescription = namedtuple(
-    "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
-)
-RunnerDescriptions = List[RunnerDescription]
-
-
-def list_runners(access_token: str) -> RunnerDescriptions:
-    headers = {
-        "Authorization": f"token {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    per_page = 100
-    response = requests.get(
-        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    total_runners = data["total_count"]
-    print("Expected total runners", total_runners)
-    runners = data["runners"]
-
-    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
-    total_pages = (total_runners - 1) // per_page + 1
-
-    print("Total pages", total_pages)
-    for i in range(2, total_pages + 1):
-        response = requests.get(
-            "https://api.github.com/orgs/ClickHouse/actions/runners"
-            f"?page={i}&per_page={per_page}",
-            headers=headers,
-        )
-        response.raise_for_status()
-        data = response.json()
-        runners += data["runners"]
-
-    print("Total runners", len(runners))
-    result = []
-    for runner in runners:
-        tags = [tag["name"] for tag in runner["labels"]]
-        desc = RunnerDescription(
-            id=runner["id"],
-            name=runner["name"],
-            tags=tags,
-            offline=runner["status"] == "offline",
-            busy=runner["busy"],
-        )
-        result.append(desc)
-
-    return result
 
 
 def how_many_instances_to_kill(event_data: dict) -> Dict[str, int]:
