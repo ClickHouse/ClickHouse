@@ -17,7 +17,7 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
-      - name: List test files in ci
+      - name: List test files in ci directory
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           ls -1 *_test.py          
