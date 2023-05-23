@@ -40,38 +40,6 @@ namespace ErrorCodes
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
-namespace
-{
-    void tryAttachTable(
-        ContextMutablePtr context,
-        const ASTCreateQuery & query,
-        DatabaseOrdinary & database,
-        const String & database_name,
-        const String & metadata_path,
-        bool force_restore)
-    {
-        try
-        {
-            auto [table_name, table] = createTableFromAST(
-                query,
-                database_name,
-                database.getTableDataPath(query),
-                context,
-                force_restore);
-
-            database.attachTable(context, table_name, table, database.getTableDataPath(query));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(
-                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.getTable()) + " from metadata file " + metadata_path
-                + " from query " + serializeAST(query));
-            throw;
-        }
-    }
-}
-
-
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
@@ -167,15 +135,26 @@ void DatabaseOrdinary::loadTableFromMetadata(
     LoadingStrictnessLevel mode)
 {
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
-    const auto & create_query = ast->as<const ASTCreateQuery &>();
+    const auto & query = ast->as<const ASTCreateQuery &>();
 
-    tryAttachTable(
-        local_context,
-        create_query,
-        *this,
-        name.database,
-        file_path,
-        LoadingStrictnessLevel::FORCE_RESTORE <= mode);
+    try
+    {
+        auto [table_name, table] = createTableFromAST(
+            query,
+            name.database,
+            getTableDataPath(query),
+            local_context,
+            LoadingStrictnessLevel::FORCE_RESTORE <= mode);
+
+        attachTable(local_context, table_name, table, getTableDataPath(query));
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+            + " from query " + serializeAST(query));
+        throw;
+    }
 }
 
 LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
