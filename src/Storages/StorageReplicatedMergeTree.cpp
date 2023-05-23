@@ -3393,10 +3393,13 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     }
 
 
+    Float32 new_sleep_ms = merge_selecting_sleep_ms;
     if (result == AttemptStatus::EntryCreated || result == AttemptStatus::NeedRetry)
-        merge_selecting_sleep_ms = static_cast<UInt64>(merge_selecting_sleep_ms / storage_settings_ptr->merge_selecting_sleep_slowdown_factor);
+        new_sleep_ms /= storage_settings_ptr->merge_selecting_sleep_slowdown_factor;
     else if (result == AttemptStatus::CannotSelect)
-        merge_selecting_sleep_ms = static_cast<UInt64>(merge_selecting_sleep_ms * storage_settings_ptr->merge_selecting_sleep_slowdown_factor);
+        new_sleep_ms *= storage_settings_ptr->merge_selecting_sleep_slowdown_factor;
+    new_sleep_ms *= std::uniform_real_distribution<Float32>(1.f, 1.1f)(thread_local_rng);
+    merge_selecting_sleep_ms = static_cast<UInt64>(new_sleep_ms);
 
     if (merge_selecting_sleep_ms < storage_settings_ptr->merge_selecting_sleep_ms)
         merge_selecting_sleep_ms = storage_settings_ptr->merge_selecting_sleep_ms;
