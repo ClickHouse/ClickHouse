@@ -171,6 +171,33 @@ static void mergeAttributes(Element & config_element, Element & with_element)
     with_element_attributes->release();
 }
 
+void ConfigProcessor::encryptRecursive(Poco::XML::Node * config_root)
+{
+    for (Node * node = config_root->firstChild(); node;)
+    {
+        if (node->nodeType() == Node::ELEMENT_NODE)
+        {
+            // NamedNodeMapPtr attributes = node->attributes();
+            Element & element = dynamic_cast<Element &>(*node);
+            if (element.hasAttribute("enc_codec"))
+            {
+                LOG_DEBUG(log, "Encrypted node {} value '{}'.", node->nodeName(),  element.getNodeValue());
+                // for (Node * child_node = node->firstChild(); child_node;)
+                // {
+                //     LOG_DEBUG(log, "   Child node {} value '{}'.", child_node->nodeName(),  child_node->getNodeValue());
+                //     child_node = child_node->nextSibling();
+                // }
+                Node * child_node = node->firstChild();
+                child_node->setNodeValue("encrypted_" + child_node->getNodeValue() + "_encrypted");
+            }
+        }
+
+        encryptRecursive(node);
+
+        node = node->nextSibling();
+    }
+}
+
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
     const NodeListPtr with_nodes = with_root->childNodes();
@@ -698,6 +725,13 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
+}
+
+void ConfigProcessor::encryptConfig(LoadedConfig & loaded_config)
+{
+    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+    encryptRecursive(config_root);
+    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
 }
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)

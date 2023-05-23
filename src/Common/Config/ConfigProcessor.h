@@ -92,6 +92,9 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
+    /// Encrypt nodes in config with specified encryption attributes
+    void encryptConfig(LoadedConfig & loaded_config);
+
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
@@ -123,6 +126,8 @@ private:
     Poco::XML::DOMParser dom_parser;
 
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
+
+    void encryptRecursive(Poco::XML::Node * config_root);
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 

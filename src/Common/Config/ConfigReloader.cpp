@@ -130,6 +130,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             return;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
+        config_processor.encryptConfig(loaded_config);
 
         /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:
