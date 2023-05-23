@@ -901,6 +901,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// Stages might be empty when we materialize skip indices or projections which don't add any
+    /// column dependencies.
+    if (stages.empty())
+        stages.emplace_back(context);
+
     is_prepared = true;
     prepareMutationStages(stages, dry_run);
 }
