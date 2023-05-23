@@ -1054,7 +1054,7 @@ Default value: 10, 300, 300.
 
 Timeout in milliseconds for receiving Hello packet from replicas during handshake.
 
-Default value: 300000.
+Default value: 10000.
 
 ## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
