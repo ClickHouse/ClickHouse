@@ -3,25 +3,25 @@ from helpers.cluster import ClickHouseCluster
 from pathlib import Path
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__, name="dict")
-node = cluster.add_instance(
-    'node',
-    with_foundationdb=True,
-    stay_alive=True
-)
-
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+@pytest.fixture(scope="module")
+def started_cluster(request):
     try:
-        cluster.start(destroy_dirs=True)
-
+        cluster = ClickHouseCluster(__file__, name = "dict")
+        node = cluster.add_instance(
+            'node',
+            main_configs=["configs/foundationdb.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
+        cluster.start()
         yield cluster
 
     finally:
         cluster.shutdown()
 
-def test_dict_basic_ddl():
+def test_dict_basic_ddl(started_cluster):
     dict_name = "test_dict_basic_ddl"
+    node = started_cluster.instances["node"]
     node.query(dedent(f"""\
         CREATE DICTIONARY {dict_name} 
         (   

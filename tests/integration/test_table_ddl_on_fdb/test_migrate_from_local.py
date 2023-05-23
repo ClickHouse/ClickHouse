@@ -4,29 +4,27 @@ from helpers.cluster import ClickHouseCluster
 from pathlib import Path
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__, name="migrate")
-node = cluster.add_instance(
-    'node',
-    with_foundationdb=True,
-    stay_alive=True
-)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+@pytest.fixture(scope="module")
+def started_cluster(request):
     try:
+        cluster = ClickHouseCluster(__file__, name="migrate")
+        node1 = cluster.add_instance(
+            'node',
+            with_foundationdb=True,
+            stay_alive=True
+        )
         cluster.start(destroy_dirs=True)
-
         yield cluster
 
     finally:
         cluster.shutdown()
 
 
-def test_migrate_from_local():
+def test_migrate_from_local(started_cluster):
     db_name = "test_migrate"
     tb_name = "test_migrate"
     tb_detached_name = "test_detached_permanently"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name} 

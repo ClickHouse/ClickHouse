@@ -3,25 +3,25 @@ from helpers.cluster import ClickHouseCluster
 from pathlib import Path
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    'node',
-    main_configs=["configs/foundationdb.xml", "configs/named_collections.xml"],
-    with_foundationdb=True,
-    stay_alive=True
-)
 
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+@pytest.fixture(scope="module")
+def started_cluster(request):
     try:
-        cluster.start(destroy_dirs=True)
+        cluster = ClickHouseCluster(__file__)
+        node = cluster.add_instance(
+            'node',
+            main_configs=["configs/foundationdb.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
+        cluster.start()
         yield cluster
 
     finally:
         cluster.shutdown()
 
-
-def test_basic_ddl_operations():
+def test_basic_ddl_operations(started_cluster):
+    node = started_cluster.instances["node"]
     assert node.query("SELECT count() FROM system.databases WHERE name = 'default'").strip() == "1"
 
     db_name = "test_basic_ddl_ops"
@@ -31,24 +31,27 @@ def test_basic_ddl_operations():
     node.query(f"RENAME DATABASE {db_name} to {db_name}2")
     node.query(f"DROP DATABASE {db_name}2")
 
-def test_create_unsupport_database():
+def test_create_unsupport_database(started_cluster):
+    node = started_cluster.instances["node"]
     db_name = "test_create_unsupport_database"
     assert "Unsupported database engine" in node.query_and_get_error(f"CREATE DATABASE {db_name} ENGINE = Atomic")
     assert "Unknown database engine" in node.query_and_get_error(f"CREATE DATABASE {db_name} ENGINE = AAtomic")
 
-def test_attach_not_exists_database():
+def test_attach_not_exists_database(started_cluster):
+    node = started_cluster.instances["node"]
     db_name = "test_attach_not_exists_database"
     assert "Cannot find database" in node.query_and_get_error(f"ATTACH DATABASE {db_name}")
 
-def test_should_not_overwrite_detached_database():
+def test_should_not_overwrite_detached_database(started_cluster):
+    node = started_cluster.instances["node"]
     db_name = "test_overwrite_detached"
     node.query(f"CREATE DATABASE {db_name}")
     node.query(f"DETACH DATABASE {db_name}")
     assert "exists" in node.query_and_get_error(f"CREATE DATABASE {db_name}")
 
-def test_database_should_be_persisted():
+def test_database_should_be_persisted(started_cluster):
     db_name = "test_presist"
-
+    node = started_cluster.instances["node"]
     node.query(dedent(f"""\
         CREATE DATABASE {db_name}
         COMMENT 'comment'
@@ -61,15 +64,16 @@ def test_database_should_be_persisted():
         "COMMENT \\'comment\\'\n"
     assert node.query(f"SELECT uuid FROM system.databases WHERE name = '{db_name}'") == uuid
 
-def test_show_create_database():
+def test_show_create_database(started_cluster):
     db_name = "test_show_create"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name};")
     assert node.query(f"SHOW CREATE DATABASE {db_name}") == f"CREATE DATABASE {db_name}\\nENGINE = OnFDB\n"
 
-def test_rename_should_be_persisted():
+def test_rename_should_be_persisted(started_cluster):
     db_name = "test/presist_rename"
     db_name_new = "test/presist_rename_new"
-
+    node = started_cluster.instances["node"]
     node.query(dedent(f"""\
         CREATE DATABASE `{db_name}`;
         RENAME DATABASE `{db_name}` TO `{db_name_new}`
@@ -81,9 +85,9 @@ def test_rename_should_be_persisted():
     assert node.query(f"SELECT count() FROM system.databases WHERE name = '{db_name}'").strip() == "0"
     assert node.query(f"SELECT count() FROM system.databases WHERE name = '{db_name_new}'").strip() == "1"
 
-def test_drop_should_be_persisted():
+def test_drop_should_be_persisted(started_cluster):
     db_name = "test_presist_drop"
-
+    node = started_cluster.instances["node"]
     node.query(dedent(f"""\
         CREATE DATABASE {db_name};
         DROP DATABASE {db_name};
@@ -93,10 +97,10 @@ def test_drop_should_be_persisted():
 
     assert node.query(f"SELECT count() FROM system.databases WHERE name = '{db_name}'").strip() == "0"
 
-def test_rename_database_with_tables():
+def test_rename_database_with_tables(started_cluster):
     db_name = "test_rename_database_with_tables"
     db_name2 = "test_rename_database_with_tables2"
-
+    node = started_cluster.instances["node"]
     node.query(dedent(f"""\
         CREATE DATABASE {db_name};
         CREATE TABLE {db_name}.b (a int) ENGINE MergeTree() ORDER BY a;

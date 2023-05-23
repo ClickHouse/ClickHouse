@@ -3,26 +3,26 @@ from helpers.cluster import ClickHouseCluster
 from pathlib import Path
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__, name="view")
-node = cluster.add_instance(
-    'node',
-    with_foundationdb=True,
-    stay_alive=True
-)
-
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+@pytest.fixture(scope="module")
+def started_cluster(request):
     try:
-        cluster.start(destroy_dirs=True)
-
+        cluster = ClickHouseCluster(__file__, name = "view")
+        node = cluster.add_instance(
+            'node',
+            main_configs=["configs/foundationdb.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
+        cluster.start()
         yield cluster
 
     finally:
         cluster.shutdown()
 
-def test_view_basic_ddl():
+def test_view_basic_ddl(started_cluster):
     db_name = "test_basic_view_ops"
     tb_name = "test_basic_view_ops_tb_name"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -67,9 +67,10 @@ def test_view_basic_ddl():
         SETTINGS allow_experimental_live_view=True
     """) )
     
-def test_show_create_view():
+def test_show_create_view(started_cluster):
     db_name = "test_show_create_view"
     tb_name = "test_show_create_view_tb_name"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -91,9 +92,10 @@ def test_show_create_view():
     """))
     assert node.query(f"SHOW CREATE VIEW {db_name}.{view_name}") == f"CREATE VIEW {db_name}.{view_name}\\n(\\n    `n` UInt64,\\n    `m` UInt64\\n) AS\\nSELECT *\\nFROM {db_name}.{tb_name}\n"
     
-def test_create_view_should_be_persisted():
+def test_create_view_should_be_persisted(started_cluster):
     db_name = "test_create_view_should_be_persisted"
     tb_name = "test_create_view_should_be_persisted_tb_name"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -118,9 +120,10 @@ def test_create_view_should_be_persisted():
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{view_name}'").strip() == "1"
 
 
-def test_drop_view_should_be_persisted():
+def test_drop_view_should_be_persisted(started_cluster):
     db_name = "test_drop_view_should_be_persisted"
     tb_name = "test_drop_view_should_be_persisted_tb_name"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}

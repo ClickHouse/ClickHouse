@@ -3,25 +3,26 @@ from helpers.cluster import ClickHouseCluster
 from pathlib import Path
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    'node',
-    with_foundationdb=True,
-    stay_alive=True
-)
-
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+@pytest.fixture(scope="module")
+def started_cluster(request):
     try:
-        cluster.start(destroy_dirs=True)
+        cluster = ClickHouseCluster(__file__)
+        node = cluster.add_instance(
+            'node',
+            main_configs=["configs/foundationdb.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
+        cluster.start()
         yield cluster
 
     finally:
         cluster.shutdown()
 
-def test_basic_ddl_operations():
+def test_basic_ddl_operations(started_cluster):
     db_name = "test_basic_ddl_ops"
     tb_name = "test_basic_ddl_ops"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -41,9 +42,10 @@ def test_basic_ddl_operations():
     node.query(f"RENAME TABLE {db_name}.{tb_name} TO {db_name}.{tb_name}2")
     node.query(f"DROP TABLE {db_name}.{tb_name}2")
 
-def test_detached_table_flag_should_be_persisted():
+def test_detached_table_flag_should_be_persisted(started_cluster):
     db_name = "test_detached_table_flag"
     tb_name = "test_detached_table_flag"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -64,9 +66,10 @@ def test_detached_table_flag_should_be_persisted():
     node.query(f"ATTACH TABLE {db_name}.{tb_name}")
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{tb_name}'").strip() == "1"
 
-def test_create_dropped_table():
+def test_create_dropped_table(started_cluster):
     db_name = "test_create_dropped_table"
     tb_name = "test_create_dropped_table"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -99,9 +102,10 @@ def test_create_dropped_table():
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{tb_name}'").strip() == "1"
 
 
-def test_drop_same_table():
+def test_drop_same_table(started_cluster):
     db_name = "test_drop_same_table"
     tb_name = "test_drop_same_table"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -129,9 +133,10 @@ def test_drop_same_table():
     """) )
     node.query(f"DROP TABLE {db_name}.{tb_name}")
 
-def test_rename_should_be_persisted():
+def test_rename_should_be_persisted(started_cluster):
     db_name = "test_persist_rename"
     tb_name = "test_persist_rename"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
 
     node.query(dedent(f"""\
@@ -153,9 +158,10 @@ def test_rename_should_be_persisted():
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{tb_name}'").strip() == "0"
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{tb_name}2'").strip() == "1"
 
-def test_alter_should_be_persisted():
+def test_alter_should_be_persisted(started_cluster):
     db_name = "test_persist_alter"
     tb_name = "test_persist_alter"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
 
     node.query(dedent(f"""\
@@ -176,9 +182,10 @@ def test_alter_should_be_persisted():
 
     assert node.query(f"SHOW CREATE TABLE {db_name}.{tb_name}") == f"CREATE TABLE test_persist_alter.test_persist_alter\\n(\\n    `Added1` UInt32,\\n    `n` UInt64,\\n    `m` UInt64\\n)\\nENGINE = MergeTree\\nPRIMARY KEY n\\nORDER BY n\\nSETTINGS index_granularity = 8192\n"
 
-def test_drop_should_be_persisted():
+def test_drop_should_be_persisted(started_cluster):
     db_name = "test_persist_drop"
     tb_name = "test_persist_drop"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
 
     node.query(dedent(f"""\
@@ -199,9 +206,10 @@ def test_drop_should_be_persisted():
 
     assert node.query(f"SELECT count() FROM system.tables WHERE database = '{db_name}' and name = '{tb_name}'").strip() == "0"
 
-def test_show_create_table():
+def test_show_create_table(started_cluster):
     db_name = "test_show_create"
     tb_name = "test_show_create"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
@@ -217,24 +225,27 @@ def test_show_create_table():
 
     assert node.query(f"SHOW CREATE TABLE {db_name}.{tb_name}") == f"CREATE TABLE test_show_create.test_show_create\\n(\\n    `n` UInt64,\\n    `m` UInt64\\n)\\nENGINE = MergeTree\\nPRIMARY KEY n\\nORDER BY n\\nSETTINGS index_granularity = 8192\n"
 
-def test_detach_not_exists_table():
+def test_detach_not_exists_table(started_cluster):
     db_name = "test_detach_not_exists_table"
     tb_name = "test_detach_not_exists_table"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
 
 
     assert f"Table {db_name}.{tb_name} doesn't exist" in node.query_and_get_error(f"DETACH TABLE {db_name}.{tb_name}")
 
-def test_attach_not_exists_table():
+def test_attach_not_exists_table(started_cluster):
     db_name = "test_attach_not_exists_table"
     tb_name = "test_attach_not_exists_table"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
 
     assert f"Table `{tb_name}` doesn't exist" in node.query_and_get_error(f"ATTACH TABLE {db_name}.{tb_name}")
 
-def test_exchange_ddl():
+def test_exchange_ddl(started_cluster):
     db_name = "test_exchange_ddl"
     tb_name = "test_exchange_ddl"
+    node = started_cluster.instances["node"]
     node.query(f"CREATE DATABASE {db_name}")
     node.query(dedent(f"""\
         CREATE TABLE {db_name}.{tb_name}
