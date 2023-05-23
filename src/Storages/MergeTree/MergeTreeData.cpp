@@ -5820,11 +5820,10 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         ActiveDataPartSet active_parts(format_version);
 
         auto detached_parts = getDetachedParts();
-        auto new_end_it = std::remove_if(detached_parts.begin(), detached_parts.end(), [&partition_id](const DetachedPartInfo & part_info)
+        std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & part_info)
         {
             return !part_info.valid_name || !part_info.prefix.empty() || part_info.partition_id != partition_id;
         });
-        detached_parts.resize(std::distance(detached_parts.begin(), new_end_it));
 
         for (const auto & part_info : detached_parts)
         {
@@ -7330,8 +7329,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         copy_instead_of_hardlink,
         files_to_copy_instead_of_hardlinks);
 
-    LOG_DEBUG(log, "Clone {} part {} to {}{}",
-              src_flushed_tmp_part ? "flushed" : "",
+    LOG_DEBUG(log, "Clone{} part {} to {}{}",
+              src_flushed_tmp_part ? " flushed" : "",
               src_part_storage->getFullPath(),
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
@@ -7420,8 +7419,14 @@ Strings MergeTreeData::getDataPaths() const
 }
 
 
-void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const
+void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
 {
+    if (!data_part)
+        return;
+
+    if (data_part->isProjectionPart())
+        data_part = data_part->getParentPart()->shared_from_this();
+
     if (data_part->getDataPartStorage().isBroken())
     {
         auto parts = getDataPartsForInternalUsage();
@@ -7433,7 +7438,7 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part && data_part->getState() == MergeTreeDataPartState::Active)
+    else if (data_part->getState() == MergeTreeDataPartState::Active)
         broken_part_callback(data_part->name);
     else
         LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());

@@ -111,6 +111,26 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
+
+        String address = impl->getConnectedAddress();
+
+        size_t colon_pos = address.find(':');
+        connected_zk_host = address.substr(0, colon_pos);
+        connected_zk_port = address.substr(colon_pos + 1);
+
+        connected_zk_index = 0;
+
+        if (args.hosts.size() > 1)
+        {
+            for (size_t i = 0; i < args.hosts.size(); i++)
+            {
+                if (args.hosts[i] == address)
+                {
+                    connected_zk_index = i;
+                    break;
+                }
+            }
+        }
     }
     else if (args.implementation == "testkeeper")
     {
