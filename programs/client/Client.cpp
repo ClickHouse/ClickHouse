@@ -706,6 +706,25 @@ bool Client::processWithFuzzing(const String & full_query)
         return true;
     }
 
+    const auto & settings = global_context->getSettingsRef();
+    const Dialect & dialect = settings.dialect;
+    String old_dialect = dialect == DB::Dialect::kusto ? "kusto" : "clickhouse";
+    if (auto q = orig_ast->as<ASTSetQuery>())
+    {
+        auto setDialect = q->changes.tryGet("dialect");
+        if (setDialect)
+        {
+            old_dialect =  setDialect->get<String>();
+        }
+    }
+
+    //setting dialect to clickhouse during query fuzzing, restore dialect to original value after fuzzing
+    SettingChange new_setting("dialect", "clickhouse");
+    SCOPE_EXIT_SAFE({
+            global_context->setSetting("dialect", old_dialect);
+    });
+    global_context->applySettingChange(new_setting);
+
     // Don't repeat:
     // - INSERT -- Because the tables may grow too big.
     // - CREATE -- Because first we run the unmodified query, it will succeed,
@@ -807,8 +826,8 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
-            if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
-                return *res;
+                if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
+                    return *res;
         }
         catch (...)
         {
