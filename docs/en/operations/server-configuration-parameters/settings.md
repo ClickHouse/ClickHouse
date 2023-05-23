@@ -281,7 +281,7 @@ Default: 1000
 Limit on total number of concurrent insert queries. Zero means Unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged. Zero means unlimited.
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -474,7 +474,7 @@ In this section, you should specify the disk name with the type `cache`.
 In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
 
 :::note
-- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
 :::
 
 **Example**
