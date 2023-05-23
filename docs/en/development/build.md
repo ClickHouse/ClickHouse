@@ -22,7 +22,7 @@ The minimum recommended Ubuntu version for development is 22.04 LTS.
 ### Install Prerequisites {#install-prerequisites}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk
+sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ### Install and Use the Clang compiler
