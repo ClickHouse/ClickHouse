@@ -7,8 +7,12 @@
 namespace DB
 {
 /* Implements storage in the Redis.
- * Use ENGINE = Redis(host:port, db_index, password, storage_type);
+ * Use ENGINE = Redis(host:port, db_index, password, storage_type, conn_pool_size);
  * Read only.
+ *
+ * Note If storage_type is
+ *      simple: there should be 2 columns and the first one is key in Redis, the second one is value.
+ *      hash_map: there should be 3 columns and the first one is key in Redis and the second is the field of Redis Map.
  */
 class StorageRedis : public IStorage
 {
@@ -42,10 +46,7 @@ private:
     StorageID table_id;
     RedisConfiguration configuration;
 
-    ColumnsDescription columns;
-    ConstraintsDescription constraints;
-
-    String comment;
+    Poco::Logger * log;
     RedisPoolPtr pool;
 };
 

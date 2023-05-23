@@ -49,10 +49,10 @@ ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr contex
             structure = "key String, value String";
             break;
         case RedisStorageType::HASH_MAP:
-            structure = "key String, field, String, value String";
+            structure = "key String, field String, value String";
             break;
         case RedisStorageType::UNKNOWN:
-            throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "invalid redis storage type.");
+            throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Invalid Redis storage type.");
     }
     return parseColumnsListFromString(structure, context);
 }
@@ -65,12 +65,12 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() != 4)
+    if (args.size() != 5)
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function 'Redis' requires from 4 parameters: "
-            "redis('host:port', db_index, 'password', 'storage_type')");
+            "Table function 'Redis' requires from 5 parameters: "
+            "redis('host:port', db_index, 'password', 'storage_type', 'pool_size')");
     }
     configuration = StorageRedis::getConfiguration(args, context);
 }
