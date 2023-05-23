@@ -11,7 +11,8 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include "../../contrib/libfarmhash/farmhash.h"
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 
 /// Implementation of entropy-learned hashing: https://doi.org/10.1145/3514221.3517894
 /// If you change something in this file, please don't deviate too much from the pseudocode in the paper!
@@ -215,30 +216,28 @@ public:
             auto & id_manager = IdManager::instance();
             id_manager.setPartialKeyPositionsForId(user_name, id, partial_key_positions);
 
-            auto col_to = ColumnString::create();
-            auto & data = col_to->getChars();
-            auto & offsets = col_to->getOffsets();
+            // making a return value:
+            auto col_string_to = ColumnString::create();
 
-            data.resize(col_data_string->byteSize());
-            offsets.reserve(num_rows);
+            auto & data = col_string_to->getChars();
+            auto & offsets = col_string_to->getOffsets();
+            if (!partial_key_positions.empty())
+                data.reserve(*partial_key_positions.rbegin() + 2);
 
-            size_t current_offset = 0;
-            for (size_t i = 0; i < num_rows; ++i)
-            {
-                size_t current_size = col_data_string->getDataAt(i).size;
-                std::fill(data.begin() + current_offset, data.begin() + (current_offset + current_size), '0');
-                data[current_offset + current_size + 1] = 0;
-                for (const auto partial_key_position : partial_key_positions)
-                {
-                    if (partial_key_position >= current_size)
-                        break;
-                    data[current_offset + partial_key_position] = '1';
+            size_t cur_position = 0;
+            for (auto position : partial_key_positions) {
+                while (cur_position < position) {
+                    data.push_back('0');
+                    ++cur_position;
                 }
-                current_offset += current_size + 1;
-                offsets.push_back(current_offset);
+                data.push_back('1');
+                ++cur_position;
             }
+            data.push_back(0);
 
-            return col_to;
+            offsets.push_back(data.size());
+
+            return ColumnConst::create(std::move(col_string_to), num_rows);
         }
         else
             throw Exception(
