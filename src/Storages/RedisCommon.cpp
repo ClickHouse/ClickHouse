@@ -109,6 +109,8 @@ RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisAr
         command_for_secondary_keys.addRedisType(key);
 
         auto secondary_keys = connection->client->execute<RedisArray>(command_for_secondary_keys);
+        if (secondary_keys.isNull())
+            continue;
 
         RedisArray primary_with_secondary;
         primary_with_secondary.addRedisType(key);
@@ -129,6 +131,26 @@ RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisAr
     }
 
     return hkeys;
+}
+
+RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column)
+{
+    String redis_col_key = all_columns.at(0);
+    if (column == redis_col_key)
+        return RedisColumnType::KEY;
+
+    if (storage_type == RedisStorageType::HASH_MAP)
+    {
+        String redis_col_field = all_columns.at(1);
+        if (column == redis_col_field)
+            return RedisColumnType::FIELD;
+        else
+            return RedisColumnType::VALUE;
+    }
+    else
+    {
+        return RedisColumnType::VALUE;
+    }
 }
 
 }

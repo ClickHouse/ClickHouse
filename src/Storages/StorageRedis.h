@@ -11,8 +11,8 @@ namespace DB
  * Read only.
  *
  * Note If storage_type is
- *      simple: there should be 2 columns and the first one is key in Redis, the second one is value.
- *      hash_map: there should be 3 columns and the first one is key in Redis and the second is the field of Redis Map.
+ *      SIMPLE: there should be 2 columns and the first one is key in Redis, the second one is value.
+ *      HASH_MAP: there should be 3 columns and the first one is key in Redis and the second is the field of Redis Map.
  */
 class StorageRedis : public IStorage
 {

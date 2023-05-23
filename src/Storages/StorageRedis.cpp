@@ -5,15 +5,11 @@
 #include <Storages/KVStorageUtils.h>
 
 #include <unordered_set>
-#include <Core/Settings.h>
-#include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/parseAddress.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
@@ -26,29 +22,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INVALID_REDIS_STORAGE_TYPE;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-    RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column)
-    {
-        String redis_col_key = all_columns.at(0);
-        if (column == redis_col_key)
-            return RedisColumnType::KEY;
-
-        if (storage_type == RedisStorageType::HASH_MAP)
-        {
-            String redis_col_field = all_columns.at(1);
-            if (column == redis_col_field)
-                return RedisColumnType::FIELD;
-            else
-                return RedisColumnType::VALUE;
-        }
-        else
-        {
-            return RedisColumnType::VALUE;
-        }
-    }
 }
 
 StorageRedis::StorageRedis(
@@ -79,9 +52,7 @@ Pipe StorageRedis::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    LOG_INFO(log, "num_streams {}", num_streams);// TODO delete
     auto connection = getRedisConnection(pool, configuration);
-
     storage_snapshot->check(column_names);
 
     Block sample_block;
@@ -93,7 +64,6 @@ Pipe StorageRedis::read(
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
         redis_types.push_back(getRedisColumnType(configuration.storage_type, all_columns, column_name));
-        LOG_INFO(log, "Request column: {}, Redis type: {}", column_data.name, *redis_types.crbegin()); // TODO delete
     }
 
     FieldVectorPtr fields;
@@ -104,16 +74,15 @@ Pipe StorageRedis::read(
 
     std::tie(fields, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info, context);
 
-    /// TODO hash_map hgetall
     if (all_scan)
     {
         RedisCommand command_for_keys("KEYS");
         /// generate keys by table name prefix
-        command_for_keys << table_id.getTableName() + ":" + toString(configuration.storage_type) + ":*";
+        command_for_keys << table_id.getTableName() + ":" + storageTypeToKeyType(configuration.storage_type) + ":*";
 
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
 
-        if (all_keys.size() == 0)
+        if (all_keys.isNull() || all_keys.size() == 0)
             return {};
 
         Pipes pipes;

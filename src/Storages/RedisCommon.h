@@ -6,6 +6,7 @@
 
 #include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ enum class RedisColumnType
 {
     /// Redis key
     KEY,
-    /// Redis map field
+    /// Redis hash field
     FIELD,
     /// Redis value
     VALUE
@@ -80,4 +81,8 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
 ///    eg: keys -> [key1, key2] and get [[key1, field1, field2], [key2, field1, field2]]
 RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisArray & keys);
 
+/// Get RedisColumnType of a column, If storage_type is
+///     SIMPLE: all_columns must have 2 iterm and the first one is Redis key the second one is value
+///     HASH_MAP: all_columns must have 2 iterm and the first one is Redis key the second is field, the third is value.
+RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column);
 }
