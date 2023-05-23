@@ -280,7 +280,7 @@ MULTIPOLYGON(((4.36661 50.8434,4.36623 50.8408,4.34496 50.8333,4.33807 50.8487,4
 
 ## polygonPerimeterSpherical
 
-Calculates
+Calculates the perimeter of the polygon.
 
 ### Example
 
@@ -346,7 +346,7 @@ Float64
 
 ## polygonPerimeterCartesian
 
-Calculates
+Calculates the perimeter of a polygon.
 
 ### Example
 
