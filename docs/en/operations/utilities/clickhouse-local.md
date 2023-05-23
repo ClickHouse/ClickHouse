@@ -188,6 +188,7 @@ Arguments:
 - `-N`, `--table` — table name where to put output data, `table` by default.
 - `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
+- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--stacktrace` — whether to dump debug output in case of exception.
 - `--echo` — print query before execution.
 - `--verbose` — more details on query execution.
