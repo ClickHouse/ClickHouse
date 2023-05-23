@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -24,6 +25,14 @@ class FunctionSpace : public IFunction
 {
 private:
     static constexpr auto space = ' ';
+
+    /// Safety threshold against DoS.
+    static inline void checkRepeatTime(UInt64 repeat_time)
+    {
+        static constexpr UInt64 max_repeat_times = 1'000'000;
+        if (repeat_time > max_repeat_times)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", repeat_time, max_repeat_times);
+    }
 
 public:
     static constexpr auto name = "space";
@@ -59,6 +68,8 @@ public:
 
         if (times < 1)
             times = 0;
+
+        checkRepeatTime(times);
 
         res_offsets.resize(col_times->size());
         res_chars.resize(col_times->size() * (times + 1));
@@ -100,6 +111,8 @@ public:
 
             if (times < 1)
                 times = 0;
+
+            checkRepeatTime(times);
 
             if (res_chars.size() + times + 1 >= res_chars.capacity())
                 res_chars.resize(2 * res_chars.capacity());
