@@ -22,6 +22,7 @@ jobs:
           ls -1 *_test.py
           echo ${{ env.VAULT_PATH }}
           echo ${{ env.VAULT_URL }}
+          echo ${{ env.MY_VARIABLE }}
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
