@@ -452,6 +452,8 @@ Possible values:
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
+ Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
+
 - hash
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
@@ -1383,6 +1385,12 @@ Possible values:
 
 Default value: `default`.
 
+## allow_experimental_parallel_reading_from_replicas
+
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+
+Default value: `false`.
+
 ## compile_expressions {#compile-expressions}
 
 Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
@@ -1714,7 +1722,7 @@ Default value: `100000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
-The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
 
 Possible values:
 
@@ -1745,7 +1753,7 @@ Possible values:
 
 Default value: `0`.
 
-### async_insert_deduplicate {#settings-async-insert-deduplicate}
+### async_insert_deduplicate {#async-insert-deduplicate}
 
 Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
 
@@ -3216,17 +3224,6 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
-
-Possible values:
-
-- 0 — Working with geo data types is disabled.
-- 1 — Working with geo data types is enabled.
 
 Default value: `0`.
 
