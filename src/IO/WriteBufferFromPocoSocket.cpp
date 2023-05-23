@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
-#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -107,13 +106,6 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-#ifndef NDEBUG
-    if (!finalized)
-    {
-        LOG_ERROR(&Poco::Logger::get("WriteBufferFromPocoSocket"), "WriteBufferFromPocoSocket is not finalized in destructor. It's a bug");
-        std::terminate();
-    }
-#else
     try
     {
         finalize();
@@ -122,7 +114,6 @@ WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-#endif
 }
 
 }
