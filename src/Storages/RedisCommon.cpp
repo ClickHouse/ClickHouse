@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_REDIS_STORAGE_TYPE;
+    extern const int INVALID_REDIS_TABLE_STRUCTURE;
     extern const int INTERNAL_REDIS_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
@@ -151,6 +152,18 @@ RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & 
     {
         return RedisColumnType::VALUE;
     }
+}
+
+void checkRedisTableStructure(const ColumnsDescription & columns, const RedisConfiguration & configuration)
+{
+    /// TODO check data type
+    if (configuration.storage_type == RedisStorageType::HASH_MAP && columns.size() != 3)
+        throw Exception(ErrorCodes::INVALID_REDIS_TABLE_STRUCTURE,
+                        "Redis hash table must have 3 columns, but found {}", columns.size());
+
+    if (configuration.storage_type == RedisStorageType::SIMPLE && columns.size() != 2)
+        throw Exception(ErrorCodes::INVALID_REDIS_TABLE_STRUCTURE,
+                        "Redis string table must have 2 columns, but found {}", columns.size());
 }
 
 }

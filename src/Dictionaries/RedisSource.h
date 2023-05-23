@@ -7,7 +7,6 @@
 #include <Poco/Redis/Array.h>
 #include <Poco/Redis/Type.h>
 #include <Storages/RedisCommon.h>
-#include "RedisDictionarySource.h"
 
 
 namespace DB

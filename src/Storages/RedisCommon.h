@@ -7,6 +7,7 @@
 #include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
 #include <Core/Names.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -50,8 +51,6 @@ struct RedisConfiguration
     uint32_t db_index;
     String password;
     RedisStorageType storage_type;
-    /// column name of redis key
-    String key;// TODO remove
     uint32_t pool_size;
 };
 
@@ -85,4 +84,8 @@ RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisAr
 ///     SIMPLE: all_columns must have 2 iterm and the first one is Redis key the second one is value
 ///     HASH_MAP: all_columns must have 2 iterm and the first one is Redis key the second is field, the third is value.
 RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column);
+
+/// checking Redis table/table-function when creating
+void checkRedisTableStructure(const ColumnsDescription & columns, const RedisConfiguration & configuration);
+
 }

@@ -1,7 +1,6 @@
 #include <TableFunctions/TableFunctionRedis.h>
 
 #include <Common/Exception.h>
-#include <IO/WriteBuffer.h>
 
 #include <Interpreters/Context.h>
 
@@ -29,8 +28,10 @@ StoragePtr TableFunctionRedis::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
+    checkRedisTableStructure(columns, *configuration);
+
     auto storage = std::make_shared<StorageRedis>(
-        StorageID(toString(configuration->db_index), table_name), // TODO
+        StorageID(toString(configuration->db_index), table_name),
         *configuration,
         columns,
         ConstraintsDescription(),
@@ -39,6 +40,7 @@ StoragePtr TableFunctionRedis::executeImpl(
     return storage;
 }
 
+/// TODO support user customized table structure
 ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context) const
 {
     /// generate table structure by storage type.
