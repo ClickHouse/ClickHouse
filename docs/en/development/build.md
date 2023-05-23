@@ -46,6 +46,11 @@ As of April 2023, any version of Clang >= 15 will work.
 GCC as a compiler is not supported
 To build with a specific Clang version:
 
+:::tip
+This is optional, if you are following along and just now installed Clang then check
+to see what version you have installed before setting this environment variable.
+:::
+
 ``` bash
 export CC=clang-16
 export CXX=clang++-16
