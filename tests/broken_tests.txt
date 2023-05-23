@@ -59,7 +59,6 @@
 01615_random_one_shard_insertion
 01624_soft_constraints
 01651_bugs_from_15889
-01655_plan_optimizations
 01656_test_query_log_factories_info
 01681_bloom_filter_nullable_column
 01700_system_zookeeper_path_in
@@ -101,7 +100,6 @@
 02354_annoy
 02366_union_decimal_conversion
 02375_rocksdb_with_filters
-02377_optimize_sorting_by_input_stream_properties_explain
 02382_join_and_filtering_set
 02402_merge_engine_with_view
 02404_memory_bound_merging
