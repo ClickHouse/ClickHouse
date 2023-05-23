@@ -307,6 +307,32 @@ def test_table_function(started_cluster):
     conn.close()
 
 
+def test_schema_inference(started_cluster):
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, "inference_table")
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "CREATE TABLE clickhouse.inference_table (id INT PRIMARY KEY, data BINARY(16) NOT NULL)"
+        )
+
+    parameters = "'mysql57:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
+
+    node1.query(
+        f"CREATE TABLE mysql_schema_inference_engine ENGINE=MySQL({parameters})"
+    )
+    node1.query(f"CREATE TABLE mysql_schema_inference_function AS mysql({parameters})")
+
+    expected = "id\tInt32\t\t\t\t\t\ndata\tFixedString(16)\t\t\t\t\t\n"
+    assert node1.query("DESCRIBE TABLE mysql_schema_inference_engine") == expected
+    assert node1.query("DESCRIBE TABLE mysql_schema_inference_function") == expected
+
+    node1.query("DROP TABLE mysql_schema_inference_engine")
+    node1.query("DROP TABLE mysql_schema_inference_function")
+
+    drop_mysql_table(conn, "inference_table")
+
+
 def test_binary_type(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     drop_mysql_table(conn, "binary_type")
@@ -329,6 +355,7 @@ def test_binary_type(started_cluster):
         node1.query("SELECT * FROM {}".format(table_function))
         == "42\tclickhouse\\0\\0\\0\\0\\0\\0\n"
     )
+    drop_mysql_table(conn, "binary_type")
 
 
 def test_enum_type(started_cluster):
