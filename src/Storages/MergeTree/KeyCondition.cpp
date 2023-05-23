@@ -1056,6 +1056,9 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                     }
                 }
 
+                /// If there's no function at all
+                if (!out_column)
+                    out_column = const_values;
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
                 out_type = const_type;
@@ -1199,7 +1202,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = removeLowCardinality(out_type)->createColumnConst(1, out_value);
 
     ColumnPtr out_column;
 

@@ -419,7 +419,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
-    
+
     bool transformConstColumnWithValidFunctions(
         ContextPtr context,
         const String & expr_name,
@@ -436,7 +436,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type);
-    
+
     bool canConstantsBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
