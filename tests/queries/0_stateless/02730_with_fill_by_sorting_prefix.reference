@@ -110,7 +110,7 @@ select * from ts order by sensor_id, timestamp with fill from 6 step 1 interpola
 3	7	1
 5	1	1
 5	3	1
--- -- without FROM
+-- without FROM
 select * from ts order by sensor_id, timestamp with fill to 10 step 1 interpolate (value as 9999);
 1	10	1
 1	12	1
