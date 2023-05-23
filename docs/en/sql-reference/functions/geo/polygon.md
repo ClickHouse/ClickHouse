@@ -55,7 +55,7 @@ Polygon
 
 ## polygonsWithinSpherical
 
-Returns true or false 
+Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html
 
 ### Example
 
@@ -74,7 +74,7 @@ UInt8, 0 for false, 1 for true
 
 ## polygonsDistanceSpherical
 
-Calculates 
+Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise. 
 
 ### Example
 
@@ -137,7 +137,7 @@ UInt8, 0 for false, 1 for true
 
 ## polygonsSymDifferenceSpherical
 
-Calculates
+Calculates the spatial set theoretic symmetric difference (XOR) between two polygons
 
 ### Example
 
@@ -153,7 +153,7 @@ SELECT
 
 ## polygonsSymDifferenceCartesian
 
-Calculates
+The same as `polygonsSymDifferenceSpherical`, but the coordinates are in the Cartesian coordinate system; which is more close to the model of the real Earth.
 
 ### Example
 
@@ -169,7 +169,7 @@ SELECT
 
 ## polygonsIntersectionSpherical
 
-Calculates
+Calculates the intersection (AND) between polygons, coordinates are spherical.
 
 ### Example
 
@@ -206,7 +206,9 @@ UInt8, 0 for false, 1 for true
 
 ## polygonConvexHullCartesian
 
-Calculates
+Calculates a convex hull. [Reference](https://www.boost.org/doc/libs/1_61_0/libs/geometry/doc/html/geometry/reference/algorithms/convex_hull.html)
+
+Coordinates are in Cartesian coordinate system.
 
 ### Example
 
@@ -222,7 +224,7 @@ SELECT
 
 ## polygonAreaSpherical
 
-Calculates
+Calculates the surface area of a polygon.
 
 ### Example
 
@@ -236,9 +238,11 @@ SELECT
 
 ### Returned value
 
+MultiPolygon
+
 ## polygonsUnionSpherical
 
-Calculates
+Calculates a union (OR).
 
 ### Example
 
@@ -343,3 +347,4 @@ SELECT
 
 ### Returned value
 
+For more information on geometry systems, see this [presentation](https://archive.fosdem.org/2020/schedule/event/working_with_spatial_trajectories_in_boost_geometry/attachments/slides/3988/export/events/attachments/working_with_spatial_trajectories_in_boost_geometry/slides/3988/FOSDEM20_vissarion.pdf) about the Boost library, which is what ClickHouse uses.
