@@ -48,8 +48,6 @@ struct ObjectMetadata
     std::optional<ObjectAttributes> attributes;
 };
 
-using FinalizeCallback = std::function<void(size_t bytes_count)>;
-
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
@@ -119,7 +117,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 

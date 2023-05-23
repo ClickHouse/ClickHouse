@@ -529,6 +529,7 @@ public:
                     client,
                     bucket,
                     file_name,
+                    DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
                     std::nullopt,
                     getAsyncPolicy().getScheduler());

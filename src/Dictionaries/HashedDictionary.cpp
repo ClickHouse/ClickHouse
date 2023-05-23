@@ -1170,7 +1170,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
         float max_load_factor = static_cast<float>(config.getDouble(config_prefix + dictionary_layout_prefix + ".max_load_factor", 0.5));
-        if (max_load_factor < 0.5 || max_load_factor > 0.99)
+        if (max_load_factor < 0.5f || max_load_factor > 0.99f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: max_load_factor parameter should be within [0.5, 0.99], got {}", full_name, max_load_factor);
 
         HashedDictionaryConfiguration configuration{
