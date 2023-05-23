@@ -361,6 +361,10 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         receiveException()->rethrow();
     else
     {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
