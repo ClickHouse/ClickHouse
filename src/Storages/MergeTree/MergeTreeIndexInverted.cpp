@@ -655,7 +655,12 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
+    //std::cerr << "==== Finding set for MergeTreeConditionInverted\n";
+
     auto future_set = rhs.tryGetPreparedSet();
+
+    //std::cerr << "==== Set for MergeTreeConditionInverted" << bool(future_set) << std::endl;
+
     if (future_set && !future_set->isReady())
         future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
 

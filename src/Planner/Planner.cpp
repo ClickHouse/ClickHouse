@@ -1468,12 +1468,17 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
     {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()),
-            planner_context->getQueryContext());
+        auto subqueries = planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext());
 
-        query_plan.addStep(std::move(step));
+        if (!subqueries.empty())
+        {
+            auto step = std::make_unique<DelayedCreatingSetsStep>(
+                query_plan.getCurrentDataStream(),
+                std::move(subqueries),
+                planner_context->getQueryContext());
+
+            query_plan.addStep(std::move(step));
+        }
 
         //addCreatingSetsStep(query_plan, planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()), planner_context->getQueryContext());
         //addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);

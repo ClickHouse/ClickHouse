@@ -24,6 +24,35 @@ struct MergeTreeDataSelectSamplingData
     ActionsDAGPtr filter_expression;
 };
 
+struct UsefulSkipIndexes
+{
+    struct DataSkippingIndexAndCondition
+    {
+        MergeTreeIndexPtr index;
+        MergeTreeIndexConditionPtr condition;
+
+        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+            : index(index_), condition(condition_)
+        {
+        }
+    };
+
+    struct MergedDataSkippingIndexAndCondition
+    {
+        std::vector<MergeTreeIndexPtr> indices;
+        MergeTreeIndexMergedConditionPtr condition;
+
+        void addIndex(const MergeTreeIndexPtr & index)
+        {
+            indices.push_back(index);
+            condition->addIndex(indices.back());
+        }
+    };
+
+    std::vector<DataSkippingIndexAndCondition> useful_indices;
+    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
+};
+
 struct MergeTreeDataSelectAnalysisResult;
 using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
@@ -132,6 +161,13 @@ public:
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
+    struct Indexes
+    {
+        KeyCondition key_condition;
+        UsefulSkipIndexes skip_indexes;
+        bool use_skip_indexes;
+    };
+
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         const PrewhereInfoPtr & prewhere_info,
@@ -146,7 +182,7 @@ public:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log,
-        std::optional<KeyCondition> & key_condition);
+        std::optional<Indexes> & indexes);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 
@@ -159,8 +195,6 @@ public:
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
-
-    static bool isFinal(const SelectQueryInfo & query_info);
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
@@ -193,7 +227,7 @@ private:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log,
-        std::optional<KeyCondition> & key_condition);
+        std::optional<Indexes> & indexes);
 
     int getSortDirection() const
     {
@@ -233,7 +267,7 @@ private:
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
-    mutable std::optional<KeyCondition> key_condition;
+    mutable std::optional<Indexes> indexes;
 
     Poco::Logger * log;
     UInt64 selected_parts = 0;

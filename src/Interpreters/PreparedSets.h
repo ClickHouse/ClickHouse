@@ -86,42 +86,18 @@ public:
     bool isFilled() const override { return true; }
     SetPtr get() const override { return set; }
 
-    SetPtr buildOrderedSetInplace(const ContextPtr & context) override
-    {
-        const auto & settings = context->getSettingsRef();
-        auto size_limits = getSizeLimitsForSet(settings, true);
-        fill(size_limits, settings.transform_null_in, true);
-        return set;
-    }
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context) override
-    {
-        const auto & settings = context->getSettingsRef();
-        auto size_limits = getSizeLimitsForSet(settings, false);
-        fill(size_limits, settings.transform_null_in, false);
-        return nullptr;
-    }
+    std::unique_ptr<QueryPlan> build(const ContextPtr & context) override;
 
-    void buildForTuple(SizeLimits size_limits, bool transform_null_in)
-    {
-        fill(size_limits, transform_null_in, false);
-    }
+    void buildForTuple(SizeLimits size_limits, bool transform_null_in);
 
 private:
     Block block;
 
     SetPtr set;
 
-    void fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set)
-    {
-        if (set)
-            return;
-
-        set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
-        set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-        set->insertFromBlock(block.getColumnsWithTypeAndName());
-        set->finishInsert();
-    }
+    void fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set);
 };
 
 /// Information on how to build set for the [GLOBAL] IN section.

@@ -298,11 +298,29 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
+        auto hash = ast_node->getTreeHash();
+        auto key = PreparedSetKey::forSubquery(hash);
+
+        // std::cerr << ".........Getting from AST \n" << ast_node->dumpTree() << std::endl
+        //   << key.toString() << std::endl;
+
+        for (const auto & [k, v] : prepared_sets->getSets())
+        {
+            // std::cerr << "........... " << k.toString() << std::endl;
+            if (k.ast_hash == hash)
+                return v;
+        }
+
+        //return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
     }
     else if (dag_node)
     {
+
+        // std::cerr << "...........Getting from DAG\n";
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        // std::cerr << ".......... node_without_alias : " << node_without_alias->result_name
+        //   << ' ' << node_without_alias->result_type->getName()
+        //   << ' ' << (node_without_alias->column ? node_without_alias->column->getName() : "") << std::endl;
         return tryGetSetFromDAGNode(node_without_alias);
     }
 

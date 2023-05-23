@@ -264,5 +264,7 @@ struct SelectQueryInfo
     {
         return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
     }
+
+    bool isFinal() const;
 };
 }
