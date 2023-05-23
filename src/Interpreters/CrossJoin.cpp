@@ -27,7 +27,7 @@ CrossJoin::CrossJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_
     : table_join(table_join_)
     , right_sample_block(right_sample_block_)
     , context(context_)
-    , tempData(new TemporaryDataOnDisk(context_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin))
+    , tempData(std::make_unique<TemporaryDataOnDisk>(context_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin))
     , blockStream(tempData->createStream(right_sample_block))
     , log(&Poco::Logger::get("CrossJoin"))
 {
