@@ -943,6 +943,19 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+static std::set<std::string_view> date_time_parsing_functions = {
+    "toDate",
+    "toDate32",
+    "toDateTime",
+    "toDateTime64",
+    "ParseDateTimeBestEffort",
+    "ParseDateTimeBestEffortUS",
+    "ParseDateTime32BestEffort",
+    "ParseDateTime64BestEffort",
+    "parseDateTime",
+    "parseDateTimeInJodaSyntax",
+};
+
 /** The key functional expression constraint may be inferred from a plain column in the expression.
   * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
   * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
@@ -1026,10 +1039,23 @@ bool KeyCondition::transformConstantWithValidFunctions(
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
+                    const auto & func_name = func->function_base->getName();
+                    auto func_base = func->function_base;
+                    if (date_time_parsing_functions.contains(func_name))
+                    {
+                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
+                        ColumnsWithTypeAndName arguments;
+                        int i = 0;
+                        for (const auto & type : func->function_base->getArgumentTypes())
+                            arguments.push_back({nullptr, type, fmt::format("_{}", i++)});
+
+                        func_base = func_or_null->build(arguments);
+                    }
+
                     if (func->children.size() == 1)
                     {
                         std::tie(const_value, const_type)
-                            = applyFunctionForFieldOfUnknownType(func->function_base, const_type, const_value);
+                            = applyFunctionForFieldOfUnknownType(func_base, const_type, const_value);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1040,7 +1066,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context),
                                 left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
@@ -1048,10 +1074,13 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context),
                                 const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }
+
+                    if (const_value.isNull())
+                        return false;
                 }
 
                 out_key_column_num = it->second;
