@@ -19,7 +19,8 @@ jobs:
       - name: List test files in ci directory
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          ls -1 *_test.py          
+          ls -1 *_test.py
+          echo $VAULT_PATH          
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

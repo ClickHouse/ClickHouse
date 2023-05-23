@@ -127,7 +127,7 @@ def create_runner_vm(username, fyre_apikey, custom_uuid, ssh_public_key_path, cp
                             sys.exit(1)  # Exit the program with an error status
                     else:
                         print("No request information found in the response.")
-                        sys.exit(1)  # Exit the program with an error status                            
+                        sys.exit(1)  # Exit the program with an error status
                 else:
                     print("Error occurred during the curl command execution.")
                     print("Command output:", response_text)
@@ -270,7 +270,7 @@ def ssh_vm_user_install_dependencies(new_user, hostname, repo_owner, repo_name, 
             'sudo usermod -aG docker runner',
             # install python
             'sudo apt install -y python3',
-            'sudo pip install pygithub requests urllib3 unidiff dohq-artifactory boto3',
+            'sudo pip install pygithub requests urllib3 unidiff dohq-artifactory boto3 hvac',
         ]
 
         # Execute the commands
