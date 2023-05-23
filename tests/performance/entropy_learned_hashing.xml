@@ -1,0 +1,17 @@
+<test>
+    <create_query>
+        CREATE TABLE tbl_ELP_benchmark
+        (
+            x String
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>INSERT INTO tbl_ELP_benchmark FROM INFILE 'example_database.csv' FORMAT CSV</fill_query>
+
+    <query>
+		SELECT trainEntropyLearnedHash(x, 'id_performance_test') FROM tbl_ELP_benchmark
+		SELECT entropyLearnedHash(x, 'id_performance_test') FROM tbl_ELP_benchmark
+	</query>
+
+    <drop_query>DROP TABLE tbl_ELP_benchmark</drop_query>
+</test>
