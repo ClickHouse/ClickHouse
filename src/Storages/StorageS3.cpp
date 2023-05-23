@@ -775,6 +775,7 @@ public:
                 configuration_.client,
                 bucket,
                 key,
+                DBMS_DEFAULT_BUFFER_SIZE,
                 configuration_.request_settings,
                 std::nullopt,
                 threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelWrite"),
