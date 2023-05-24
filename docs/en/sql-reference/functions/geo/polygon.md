@@ -257,6 +257,8 @@ SELECT round(polygonAreaSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455
 
 ### Input parameters
 
+Polygon
+
 ### Returned value
 
 Float
@@ -276,7 +278,11 @@ MULTIPOLYGON(((4.36661 50.8434,4.36623 50.8408,4.34496 50.8333,4.33807 50.8487,4
 
 ### Input parameters
 
+Polygons
+
 ### Returned value
+
+MultiPolygon
 
 ## polygonPerimeterSpherical
 
@@ -338,7 +344,7 @@ SELECT polygonAreaCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 
 ### Input parameters
 
-One polygon
+Polygon
 
 ### Returned value
 
@@ -359,7 +365,7 @@ SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 
 ### Input parameters
 
-One polygon
+Polygon
 
 ### Returned value
 
