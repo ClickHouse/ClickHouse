@@ -131,6 +131,8 @@ public:
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
+    static bool isQueryWithFinal(const SelectQueryInfo & info, ASTSelectQuery & query);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,

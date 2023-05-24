@@ -471,11 +471,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     /// Try to execute query without parallel replicas if we find that there is a FINAL modifier there.
-    bool is_query_with_final = false;
-    if (query_info.table_expression_modifiers)
-        is_query_with_final = query_info.table_expression_modifiers->hasFinal();
-    else if (query_info.query)
-        is_query_with_final = query_info.query->as<ASTSelectQuery &>().final();
+    bool is_query_with_final = isQueryWithFinal(query_info, getSelectQuery());
+
+    std::cout << "Is query with FINAL modifier " << is_query_with_final << std::endl;
 
     if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
     {
@@ -3140,5 +3138,15 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
+
+bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info, ASTSelectQuery & query)
+{
+    bool result = query.final();
+    if (info.table_expression_modifiers)
+        result |= info.table_expression_modifiers->hasFinal();
+
+    return result;
+}
+
 
 }

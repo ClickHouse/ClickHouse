@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1314,7 +1315,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
         auto reader_settings = getMergeTreeReaderSettings(context, query_info);
 
         bool use_skip_indexes = settings.use_skip_indexes;
-        bool final = isFinal(query_info);
+        bool final = InterpreterSelectQuery::isQueryWithFinal(query_info, query_info.query->as<ASTSelectQuery &>());
 
         if (final && !settings.use_skip_indexes_if_final)
             use_skip_indexes = false;
@@ -1377,7 +1378,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (direction != 1 && isFinal(query_info))
+    if (direction != 1 && isQueryWithFinal())
         return false;
 
     auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
@@ -1500,11 +1501,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 
 bool ReadFromMergeTree::isQueryWithFinal() const
 {
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->hasFinal();
-    else
-        return select.final();
+    return InterpreterSelectQuery::isQueryWithFinal(query_info, query_info.query->as<ASTSelectQuery &>());
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const
@@ -1522,7 +1519,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
 {
-    bool final = isQueryWithFinal();
+    const bool final = isQueryWithFinal();
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     Names column_names_to_read = result.column_names_to_read;
@@ -1539,8 +1536,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
     if (final)
     {
-        if (is_parallel_reading_from_replicas)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+        chassert(!is_parallel_reading_from_replicas);
 
         if (output_each_partition_through_separate_port)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
@@ -1946,15 +1942,6 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 
         map.add("Indexes", std::move(indexes_array));
     }
-}
-
-bool ReadFromMergeTree::isFinal(const SelectQueryInfo & query_info)
-{
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->hasFinal();
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    return select.final();
 }
 
 bool MergeTreeDataSelectAnalysisResult::error() const
