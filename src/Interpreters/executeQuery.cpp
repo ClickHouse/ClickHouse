@@ -73,6 +73,7 @@
 
 #include <memory>
 #include <random>
+#include <string_view>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
@@ -380,22 +381,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            char input[end - begin];
-            memcpy(input, begin, sizeof(input));
-            char new_begin[max_query_size];
-            memset(new_begin, 0, sizeof(new_begin));
-            int res = to_sql(input, new_begin);
+            char * sql_query = new char[max_query_size];
+            memset(sql_query, 0, max_query_size);
+            int res = to_sql(begin, sql_query);
             if (res == -1) {
-                throw;
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
-            begin = new_begin;
-            end = new_begin;
-            while (*end) {
-                ++end;
+            size_t idx = 0;
+            char * sql_query_end = sql_query;
+            while (idx < max_query_size && *sql_query_end) {
+                ++sql_query_end;
+                ++idx;
             }
-
-            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ParserQuery parser(sql_query_end, settings.allow_settings_after_format_in_insert);
+            ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
+            free(sql_query);
         }
         else
         {
