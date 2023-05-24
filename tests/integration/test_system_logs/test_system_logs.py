@@ -31,6 +31,7 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -39,18 +40,27 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_system_logs_order_by_expr(start_cluster):
     node1.query("SET log_query_threads = 1")
     node1.query("SELECT count() FROM system.tables")
     node1.query("SYSTEM FLUSH LOGS")
 
     # Check 'sorting_key' of system.query_log.
-    assert node1.query("SELECT sorting_key FROM system.tables WHERE database='system' and name='query_log'")
+    assert (
+        node1.query(
+            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_log'"
+        )
         == "event_date, event_time, initial_query_id\n"
+    )
 
     # Check 'sorting_key' of  system.query_thread_log.
-    assert node1.query("SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'")
+    assert (
+        node1.query(
+            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'"
+        )
         == "event_date, event_time, query_id\n"
+    )
 
 
 def test_system_logs_engine_expr(start_cluster):
@@ -60,7 +70,9 @@ def test_system_logs_engine_expr(start_cluster):
 
     # Check 'engine_full' of system.query_log.
     expected_result = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = 'policy2', ttl_only_drop_parts = 1"
-    assert expected_result in node2.query("SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'")
+    assert expected_result in node2.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
 
 
 def test_system_logs_settings_expr(start_cluster):
@@ -70,4 +82,6 @@ def test_system_logs_settings_expr(start_cluster):
 
     # Check 'engine_full' of system.query_log.
     expected_result = "MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time, initial_query_id) TTL event_date + toIntervalDay(30) SETTINGS storage_policy = 'policy1', storage_policy = 'policy2', ttl_only_drop_parts = 1"
-    assert expected_result in node3.query("SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'")
+    assert expected_result in node3.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
