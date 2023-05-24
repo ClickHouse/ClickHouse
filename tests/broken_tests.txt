@@ -137,3 +137,5 @@
 01600_parts_types_metrics_long
 01287_max_execution_speed
 02703_row_policy_for_database
+02721_url_cluster
+02534_s3_cluster_insert_select_schema_inference

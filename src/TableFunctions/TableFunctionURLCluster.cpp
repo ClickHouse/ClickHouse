@@ -1,61 +1,54 @@
-#include "config.h"
-
-#if USE_HDFS
-
-#include <TableFunctions/TableFunctionHDFSCluster.h>
+#include <TableFunctions/TableFunctionURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <Storages/HDFS/StorageHDFSCluster.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include "registerTableFunctions.h"
-
-#include <memory>
-
 
 namespace DB
 {
 
-StoragePtr TableFunctionHDFSCluster::getStorage(
+StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        /// On worker node this uri won't contains globs
-        storage = std::make_shared<StorageHDFS>(
+        //On worker node this uri won't contain globs
+        storage = std::make_shared<StorageURL>(
             filename,
             StorageID(getDatabaseName(), table_name),
             format,
+            std::nullopt /*format settings*/,
             columns,
             ConstraintsDescription{},
             String{},
             context,
             compression_method,
-            /*distributed_processing=*/true,
-            nullptr);
+            configuration.headers,
+            configuration.http_method,
+            nullptr,
+            /*distributed_processing=*/ true);
     }
     else
     {
-        storage = std::make_shared<StorageHDFSCluster>(
+        storage = std::make_shared<StorageURLCluster>(
             context,
             cluster_name,
             filename,
-            StorageID(getDatabaseName(), table_name),
             format,
-            columns,
-            ConstraintsDescription{},
             compression_method,
+            StorageID(getDatabaseName(), table_name),
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            configuration,
             structure != "auto");
     }
     return storage;
 }
 
-void registerTableFunctionHDFSCluster(TableFunctionFactory & factory)
+void registerTableFunctionURLCluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionHDFSCluster>();
+    factory.registerFunction<TableFunctionURLCluster>();
 }
 
 }
-
-#endif
