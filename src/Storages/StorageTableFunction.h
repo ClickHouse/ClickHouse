@@ -142,7 +142,7 @@ public:
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
         }
-        return storage->write(query, metadata_snapshot, context);
+        return storage->writeImpl(query, metadata_snapshot, context)[0];
     }
 
     void renameInMemory(const StorageID & new_table_id) override

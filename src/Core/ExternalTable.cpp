@@ -164,7 +164,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto sink = storage->writeImpl(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext())[0];
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

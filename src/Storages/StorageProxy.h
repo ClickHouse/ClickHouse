@@ -70,7 +70,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
-        return getNested()->write(query, metadata_snapshot, context);
+        return getNested()->writeImpl(query, metadata_snapshot, context)[0];
     }
 
     void drop() override { getNested()->drop(); }

@@ -1,39 +1,32 @@
 #pragma once
-#include <Storages/StorageNull.h>
-#include <Processors/ISource.h>
 #include <Common/logger_useful.h>
-
+#include <Processors/ISource.h>
 
 namespace DB
 {
 
-class NullStreamSource : public ISource
+class StorageNullSource : public ISource
 {
 public:
-    NullStreamSource(Block header, 
-        std::shared_ptr<StorageNull> storage_, UInt64 subscriber_id_) 
-        : ISource(std::move(header)), 
-        storage(std::move(storage_)), 
-        subscriber_id(subscriber_id_) {}
+    StorageNullSource(Block header, std::weak_ptr<Subscriber> subscriber_) 
+        : ISource(std::move(header)), subscriber(subscriber_) {}
 
-    String getName() const override { return "NullStreamSource"; }
+    String getName() const override { return "StorageNullSource"; }
 
     void onCancel() override
     {
-        if (!storage->subscribers || !storage->subscribers->contains(subscriber_id)) {
+        if (subscriber.expired()) {
             return;
         }
-
-        if (storage->shutdown_called)
-            return;
-            
-        std::lock_guard lock(storage->mutex);
-        storage->condition.notify_all();
+        auto subs = subscriber.lock();
+        std::lock_guard lock(subs->mutex);
+        subs->condition.notify_all();
     }
 
 protected:
     Chunk generate() override { 
-        if (!storage->subscribers || !storage->subscribers->contains(subscriber_id)) {
+        LOG_FATAL(&Poco::Logger::root(), " {}", "generddte");
+        if (subscriber.expired()) {
             return Chunk();
         }
 
@@ -47,13 +40,17 @@ protected:
 
         if (!blocks)
         {
-            std::lock_guard lock(storage->mutex);
-            blocks = (*storage->subscribers)[subscriber_id];
+            LOG_FATAL(&Poco::Logger::root(), " {}", "if (vv!blocks)");
+            auto subs = subscriber.lock();
+            if (!subs->blocks) {
+            }
+            std::lock_guard lock(subs->mutex);
+            blocks = subs->blocks;
             it = blocks->begin();
             end = blocks->end();
         }
 
-        if (isCancelled() || storage->shutdown_called)
+        if (isCancelled())
         {
             return Block();
         }
@@ -61,15 +58,17 @@ protected:
         if (it == end)
         {
             {
-                std::unique_lock lock(storage->mutex);
-                if (blocks.get() != (*storage->subscribers)[subscriber_id].get())
+                auto subs = subscriber.lock();
+                std::unique_lock lock(subs->mutex);
+                if (blocks.get() != (subs->blocks).get())
                 {
-                    blocks = (*storage->subscribers)[subscriber_id];
+                    blocks = subs->blocks;
                     it = blocks->begin();
                     end = blocks->end();
                 }
                 else
                 {
+                    LOG_FATAL(&Poco::Logger::root(), " {}", "2bb");
                     if (!end_of_blocks)
                     {
                         end_of_blocks = true;
@@ -77,11 +76,12 @@ protected:
                     }
                     while (true)
                     {
+                        LOG_FATAL(&Poco::Logger::root(), " {}", "whilbbe (true)");
                         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
 
-                        bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
+                        bool signaled = std::cv_status::no_timeout == subs->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
-                        if (isCancelled() || storage->shutdown_called)
+                        if (isCancelled())
                         {
                             return Block();
                         }
@@ -112,14 +112,13 @@ protected:
         return res;
     }
 private:
-    std::shared_ptr<StorageNull> storage;
+    std::weak_ptr<Subscriber> subscriber;
     UInt64 last_event_timestamp_usec;
     UInt64 heartbeat_interval_usec = 15000000;
     BlocksPtr blocks;
     Blocks::iterator it;
     Blocks::iterator end;
     bool end_of_blocks = false;
-    UInt64 subscriber_id;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Processors/Sources/Subscriber.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -19,8 +20,8 @@ class StorageNull final : public IStorage
 {
 friend class NullSource;
 friend class NullSinkToStorage;
-friend class NullStreamSink;
-friend class NullStreamSource;
+friend class StorageNullSink;
+friend class StorageNullSource;
 
 public:
     StorageNull(
@@ -32,13 +33,7 @@ public:
         storage_metadata.setConstraints(constraints_);
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
-
-        subscribers = std::make_shared<std::map<UInt64, BlocksPtr>>();
     }
-    ~StorageNull() override;
-    void drop() override;
-    void shutdown() override;
-    UInt64 getNextSubscriberId() { return subscribers_count.fetch_add(1, std::memory_order_relaxed); }
 
     std::string getName() const override { return "Null"; }
 
@@ -68,13 +63,8 @@ public:
     {
         return {0};
     }
-private:
-    std::atomic<bool> shutdown_called = false;
-    std::mutex mutex;
-    std::condition_variable condition;
-    bool is_stream_{false};
-    std::shared_ptr<std::map<UInt64, BlocksPtr>> subscribers;
-    std::atomic<UInt64> subscribers_count = {0};
+// private:
+//     std::shared_ptr<std::vector<std::shared_ptr<Subscriber>>> subscribers;
 };
 
 }

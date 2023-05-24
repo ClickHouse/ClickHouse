@@ -7,51 +7,14 @@
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/NullStreamSource.h>
+#include <Processors/Sources/StorageNullSource.h>
 #include <IO/WriteHelpers.h>
-
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
-
-class NullStreamSink : public SinkToStorage
-{
-public:
-    NullStreamSink(StorageNull & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
-    {}
-    
-    using SinkToStorage::SinkToStorage;
-
-    std::string getName() const override { return "NullStreamSink"; }
-
-    void consume(Chunk chunk) override
-    {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
-        storage_snapshot->metadata->check(block, true);
-
-        new_blocks.emplace_back(block);
-    }
-
-    void onFinish() override
-    {
-        std::lock_guard lock(storage.mutex);
-
-        for (auto it = storage.subscribers->begin(); it != storage.subscribers->end(); ++it) {
-            (*storage.subscribers)[it->first] = std::make_shared<Blocks>();
-            (*storage.subscribers)[it->first]->insert((*storage.subscribers)[it->first]->end(), new_blocks.begin(), new_blocks.end());
-        }
-        storage.condition.notify_all();
-    }
-private:
-    Blocks new_blocks;
-    StorageNull & storage;
-    StorageSnapshotPtr storage_snapshot;
-};
 
 namespace ErrorCodes
 {
@@ -60,54 +23,22 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-void StorageNull::shutdown()
-{
-    shutdown_called = true;
-}
-
-
-StorageNull::~StorageNull()
-{
-    shutdown();
-}
-
-void StorageNull::drop()
-{
-    std::lock_guard lock(mutex);
-    condition.notify_all();
-}
-
 Pipe StorageNull::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processing_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    Block block = storage_snapshot->getSampleBlockForColumns(column_names);
-    UInt64 subs_cnt = getNextSubscriberId();
-    auto & select = query_info.query->as<ASTSelectQuery &>();
-
-    if (select.is_stream) {
-        Blocks new_blocks;
-        new_blocks.emplace_back(block);
-        (*subscribers)[subs_cnt] = std::make_shared<Blocks>();
-        (*subscribers)[subs_cnt]->insert((*subscribers)[subs_cnt]->end(), new_blocks.begin(), new_blocks.end());
-        condition.notify_all();
-        return Pipe(
-                std::make_shared<NullStreamSource>(
-                block,
-                std::static_pointer_cast<StorageNull>(shared_from_this()), subs_cnt));
-    }
     return Pipe(
-            std::make_shared<NullSource>(block));
+            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 }
 
-SinkToStoragePtr StorageNull::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageNull::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<NullStreamSink>(*this, metadata_snapshot, context);
+    return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
 }
 
 void registerStorageNull(StorageFactory & factory)

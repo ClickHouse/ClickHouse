@@ -17,7 +17,8 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-
+#include <Processors/Sources/Subscriber.h>
+#include <Processors/Sources/StreamSource.h>
 #include <optional>
 #include <compare>
 
@@ -93,6 +94,8 @@ using IndexSize = ColumnSize;
   */
 class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
 {
+friend class StreamSource;
+friend class StreamSink;
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
@@ -329,6 +332,11 @@ public:
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
+    
+    virtual void addNewSubscriber(std::shared_ptr<Subscriber> subscriber) {
+        std::lock_guard lock(mutex);
+        subscribers->push_back(subscriber);
+    }
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
@@ -364,6 +372,11 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    virtual SinkToStoragePtr write(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/);
+
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
@@ -386,13 +399,10 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual SinkToStoragePtr write(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
-    }
+    virtual std::vector<SinkToStoragePtr> writeImpl(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context);
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
@@ -657,6 +667,8 @@ private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
     mutable std::timed_mutex alter_lock;
+    std::shared_ptr<std::vector<std::shared_ptr<Subscriber>>> subscribers = std::make_shared<std::vector<std::shared_ptr<Subscriber>>>();
+    std::mutex mutex;
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).

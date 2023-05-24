@@ -50,7 +50,7 @@ void CreatingSetsTransform::startSubquery()
 
     if (subquery.table)
         /// TODO: make via port
-        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
+        table_out = QueryPipeline(subquery.table->writeImpl({}, subquery.table->getInMemoryMetadataPtr(), getContext())[0]);
 
     done_with_set = !subquery.set;
     done_with_table = !subquery.table;

@@ -3,7 +3,7 @@
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 #include <optional>
-
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
@@ -212,8 +212,10 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "read");
     if (local_context->canUseParallelReplicasOnInitiator())
     {
+        LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "first if");
         auto table_id = getStorageID();
 
         const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
@@ -239,6 +241,7 @@ void StorageMergeTree::read(
     }
     else
     {
+        LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "else");
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
             local_context, max_block_size, num_streams,

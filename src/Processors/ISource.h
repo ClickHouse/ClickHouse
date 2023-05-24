@@ -8,6 +8,7 @@ namespace DB
 
 class ISource : public IProcessor
 {
+friend class StreamSource;
 private:
     ReadProgressCounters read_progress;
     bool read_progress_was_set = false;

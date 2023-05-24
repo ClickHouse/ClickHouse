@@ -14,10 +14,56 @@
 #include <Storages/AlterCommands.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
-
+#include <Processors/Sources/StreamSource.h>
+#include <Processors/Sources/NullSource.h>
+#include <Common/logger_useful.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
+
+class StreamSink : public SinkToStorage
+{
+public:
+    StreamSink(const StorageMetadataPtr & metadata_snapshot_, StoragePtr storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
+    {}
+    
+    using SinkToStorage::SinkToStorage;
+
+    std::string getName() const override { return "StreamSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        new_blocks.emplace_back(block);
+    }
+
+    void onFinish() override
+    {
+        for (auto it = storage->subscribers->begin(); it != storage->subscribers->end();)
+        {
+            if (it->use_count() <= 1)
+            {
+                std::lock_guard lock(storage->mutex);
+                it = storage->subscribers->erase(it);
+                continue;
+            }
+            std::lock_guard lock((*it)->mutex);
+            (*it)->blocks = std::make_shared<Blocks>();
+            (*it)->blocks->insert((*it)->blocks->end(), new_blocks.begin(), new_blocks.end());
+            (*it)->condition.notify_all();
+            ++it;
+        }
+    }
+private:
+    Blocks new_blocks;
+    StoragePtr storage;
+};
+
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
@@ -122,6 +168,23 @@ Pipe IStorage::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
 }
 
+SinkToStoragePtr IStorage::write(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    ContextPtr /*context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
+}
+
+std::vector<SinkToStoragePtr> IStorage::writeImpl(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context)
+{
+    auto sink = write(query, metadata_snapshot, context);
+    return {sink, std::make_shared<StreamSink>(metadata_snapshot, std::static_pointer_cast<IStorage>(shared_from_this()))};
+}
+
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -132,8 +195,18 @@ void IStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    Pipes pipes;
+    auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    auto subscriber = std::make_shared<Subscriber>(std::make_shared<Blocks>());
+    std::weak_ptr<Subscriber> subs_ptr = subscriber;
+    if (select.is_stream) {
+        addNewSubscriber(subscriber);
+        pipes.emplace_back(std::make_shared<StreamSource>(storage_snapshot->getSampleBlockForColumns(column_names), subs_ptr));
+    }    
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+    pipes.emplace_back(std::move(pipe));
+    readFromPipe(query_plan, Pipe::unitePipes(std::move(pipes)), column_names, storage_snapshot, query_info, context, getName());
 }
 
 void IStorage::readFromPipe(

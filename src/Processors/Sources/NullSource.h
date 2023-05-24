@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/ISource.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,7 +12,9 @@ public:
     String getName() const override { return "NullSource"; }
 
 protected:
-    Chunk generate() override { return Chunk(); }
+    Chunk generate() override { 
+        LOG_FATAL(&Poco::Logger::root(), "NullSource: '{}'.", "generate");
+        return Chunk(); }
 };
 
 }

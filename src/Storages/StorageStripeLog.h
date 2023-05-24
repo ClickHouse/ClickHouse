@@ -35,6 +35,10 @@ public:
         const String & comment,
         bool attach,
         ContextMutablePtr context_);
+        
+    // void storageForStreaming() override {
+    //     IStorage::storageForStreaming();
+    // }
 
     ~StorageStripeLog() override;
 
