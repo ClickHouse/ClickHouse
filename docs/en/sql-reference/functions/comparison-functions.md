@@ -20,7 +20,7 @@ Strings are compared byte-by-byte. Note that this may lead to unexpected results
 
 A string S1 which has another string S2 as prefix is considered longer than S2.
 
-## equals
+## equals, `=`, `==` operators
 
 **Syntax**
 
@@ -32,7 +32,7 @@ Alias:
 - `a = b` (operator)
 - `a == b` (operator)
 
-## notEquals
+## notEquals, `!=`, `<>` operators
 
 **Syntax**
 
@@ -44,7 +44,7 @@ Alias:
 - `a != b` (operator)
 - `a <> b` (operator)
 
-## less
+## less, `<` operator
 
 **Syntax**
 
@@ -55,7 +55,7 @@ less(a, b)
 Alias:
 - `a < b` (operator)
 
-## greater
+## greater, `>` operator
 
 **Syntax**
 
@@ -66,7 +66,7 @@ greater(a, b)
 Alias:
 - `a > b` (operator)
 
-## lessOrEquals
+## lessOrEquals, `<=` operator
 
 **Syntax**
 
