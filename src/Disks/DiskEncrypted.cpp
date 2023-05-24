@@ -203,18 +203,19 @@ private:
 };
 
 DiskEncrypted::DiskEncrypted(
-    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
-    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_))
+    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_)
+    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), use_fake_transaction_)
 {
 }
 
-DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_)
     : IDisk(name_)
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(use_fake_transaction_)
 {
     delegate->createDirectories(disk_path);
 }
@@ -416,7 +417,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
+        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map, config.getBool(config_prefix + ".use_fake_transaction", true));
         disk->startup(context, skip_access_check);
         return disk;
     };
