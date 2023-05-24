@@ -43,6 +43,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
+    PreparedSetsPtr prepared_sets,
     size_t shard_num,
     size_t shard_count,
     size_t replica_num,
@@ -98,7 +99,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     }
     else
     {
-        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
+        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options, prepared_sets);
         interpreter.buildQueryPlan(*query_plan);
     }
 

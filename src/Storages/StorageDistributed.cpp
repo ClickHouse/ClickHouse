@@ -1098,7 +1098,8 @@ void StorageDistributed::read(
             header,
             snapshot_data.objects_by_shard,
             storage_snapshot,
-            processed_stage);
+            processed_stage,
+            query_info.prepared_sets);
 
     auto settings = local_context->getSettingsRef();
 

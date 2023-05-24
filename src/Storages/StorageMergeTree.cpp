@@ -231,7 +231,8 @@ void StorageMergeTree::read(
                 header,
                 {},
                 storage_snapshot,
-                processed_stage);
+                processed_stage,
+                query_info.prepared_sets);
 
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,

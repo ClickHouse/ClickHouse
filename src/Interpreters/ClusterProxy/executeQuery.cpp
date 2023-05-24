@@ -226,6 +226,7 @@ void executeQuery(
             std::move(remote_shards),
             header,
             processed_stage,
+            stream_factory.prepared_sets,
             main_table,
             table_func_ptr,
             new_context,
