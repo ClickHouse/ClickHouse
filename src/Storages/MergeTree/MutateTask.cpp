@@ -152,7 +152,8 @@ static void splitAndModifyMutationCommands(
                     /// But we don't know for sure what happened.
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
-                    if (table_metadata_version <= part_metadata_version)
+                    /// StorageMergeTree does not have metadata version
+                    if (table_metadata_version <= part_metadata_version && part->storage.supportsReplication())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
