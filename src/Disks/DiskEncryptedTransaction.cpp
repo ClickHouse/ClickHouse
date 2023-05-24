@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DATA_ENCRYPTION_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
