@@ -129,7 +129,6 @@ website/package-lock.json
 /.ccls-cache
 
 # clangd cache
-/.clangd
 /.cache
 
 /compile_commands.json

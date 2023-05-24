@@ -281,7 +281,7 @@ def _format_header(
 
 def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
     ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
+    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout", "NOT_FAILED")
 
     if colortheme is None:
         colortheme = ReportColorTheme.default
@@ -348,8 +348,8 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            is_fail = test_result.status in ("FAIL", "FLAKY")
-            if is_fail and test_result.raw_logs is not None:
+            has_error = test_result.status in ("FAIL", "FLAKY", "NOT_FAILED")
+            if has_error and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"
             colspan += 1
@@ -357,7 +357,7 @@ def create_test_html_report(
 
             # Allow to quickly scroll to the first failure.
             fail_id = ""
-            if is_fail:
+            if has_error:
                 num_fails = num_fails + 1
                 fail_id = f'id="fail{num_fails}" '
 
@@ -370,6 +370,7 @@ def create_test_html_report(
                 colspan += 1
 
             if test_result.log_urls is not None:
+                has_log_urls = True
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
