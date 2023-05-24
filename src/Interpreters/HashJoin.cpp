@@ -211,8 +211,9 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
         JoinCommon::removeColumnNullability(column);
 }
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
-    : table_join(table_join_)
+HashJoin::HashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
+    : context(context_)
+    , table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
     , any_take_last_row(any_take_last_row_)
@@ -719,6 +720,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
+    if (context->getSettings().use_shrink_to_fit_in_hash_join) {
+        block_to_save = block_to_save.shrinkToFit();
+    }
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -1742,8 +1746,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
-
-    block = block.shrinkToFit();
 }
 
 HashJoin::~HashJoin()

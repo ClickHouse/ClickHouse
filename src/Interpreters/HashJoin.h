@@ -7,6 +7,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
@@ -146,7 +147,7 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     ~HashJoin() override;
 
@@ -371,6 +372,7 @@ private:
 
     friend class JoinSource;
 
+    ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     const JoinKind kind;
     const JoinStrictness strictness;

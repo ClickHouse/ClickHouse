@@ -561,6 +561,7 @@ class IColumn;
     M(Bool, insert_null_as_default, true, "Insert DEFAULT values instead of NULL in INSERT SELECT (UNION ALL)", 0) \
     M(Bool, describe_extend_object_types, false, "Deduce concrete type of columns of type Object in DESCRIBE query", 0) \
     M(Bool, describe_include_subcolumns, false, "If true, subcolumns of all table columns will be included into result of DESCRIBE query", 0) \
+    M(Bool, use_shrink_to_fit_in_hash_join, true, "Unconditionally apply shrinkToFit to all blocks in HashJoin output", 0) \
     \
     M(Bool, use_query_cache, false, "Enable the query cache", 0) \
     M(Bool, enable_writes_to_query_cache, true, "Enable storing results of SELECT queries in the query cache", 0) \

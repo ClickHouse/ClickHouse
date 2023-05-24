@@ -54,7 +54,8 @@ StorageJoin::StorageJoin(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool overwrite_,
-    bool persistent_)
+    bool persistent_,
+    ContextPtr context)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
@@ -69,7 +70,7 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(context, table_join, getRightSampleBlock(), overwrite);
     restore();
 }
 
@@ -109,7 +110,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(context, table_join, getRightSampleBlock(), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -133,7 +134,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
-    auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    auto new_data = std::make_shared<HashJoin>(context, table_join, getRightSampleBlock(), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -236,7 +237,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(context, analyzed_join, getRightSampleBlock());
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
@@ -420,7 +421,8 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             args.comment,
             join_any_take_last_row,
-            persistent);
+            persistent,
+            args.getContext());
     };
 
     factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

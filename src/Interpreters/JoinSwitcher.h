@@ -16,7 +16,7 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+    JoinSwitcher(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
@@ -77,6 +77,7 @@ public:
     }
 
 private:
+    ContextPtr context;
     JoinPtr join;
     SizeLimits limits;
     bool switched;

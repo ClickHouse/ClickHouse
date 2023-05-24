@@ -1105,7 +1105,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+        return std::make_shared<HashJoin>(context, analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
@@ -1127,8 +1127,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
 
         if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+            return std::make_shared<JoinSwitcher>(context, analyzed_join, right_sample_block);
+        return std::make_shared<HashJoin>(context, analyzed_join, right_sample_block);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
