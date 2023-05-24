@@ -136,8 +136,12 @@ def test_merge_with_ttl_timeout(started_cluster):
             )
         )
 
-    assert_eq_with_retry(node1, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n")
-    assert_eq_with_retry(node2, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n")
+    assert_eq_with_retry(
+        node1, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
+    )
+    assert_eq_with_retry(
+        node2, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
+    )
 
 
 def test_ttl_many_columns(started_cluster):
