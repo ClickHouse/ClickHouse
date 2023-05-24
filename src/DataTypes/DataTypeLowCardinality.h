@@ -22,6 +22,8 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
+    const char * getMySQLName() const override { return "text"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     MutableColumnPtr createColumn() const override;

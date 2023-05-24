@@ -36,6 +36,7 @@ public:
     static constexpr auto family_name = "DateTime";
 
     const char * getFamilyName() const override { return family_name; }
+    const char * getMySQLName() const override { return "datetime"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 

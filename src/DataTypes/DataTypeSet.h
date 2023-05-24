@@ -15,6 +15,8 @@ class DataTypeSet final : public IDataTypeDummy
 public:
     static constexpr bool is_parametric = true;
     const char * getFamilyName() const override { return "Set"; }
+    const char * getMySQLName() const override { return "text"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::Set; }
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
     bool isParametric() const override { return true; }

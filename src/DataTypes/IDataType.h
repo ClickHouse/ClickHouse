@@ -71,10 +71,19 @@ public:
           return doGetName();
     }
 
+    /// MySQL equivalent Name of data type (examples: UInt64, Array(String)).
+    String getMySQLTypeName() const
+    {
+        if (custom_name)
+            return custom_name->getName();
+        else
+            return doGetMySQLName();
+    }
     DataTypePtr getPtr() const { return shared_from_this(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+    virtual const char * getMySQLName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
@@ -126,6 +135,7 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
+    virtual String doGetMySQLName() const { return getMySQLName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
 public:

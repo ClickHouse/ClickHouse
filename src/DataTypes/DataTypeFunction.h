@@ -24,6 +24,7 @@ public:
 
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Function"; }
+    const char * getMySQLName() const override { return "text"; }
     TypeIndex getTypeId() const override { return TypeIndex::Function; }
 
     const DataTypes & getArgumentTypes() const
