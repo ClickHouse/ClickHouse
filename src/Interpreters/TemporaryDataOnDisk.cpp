@@ -203,33 +203,26 @@ struct TemporaryFileStream::OutputWriter
     bool finalized = false;
 };
 
-struct TemporaryFileStream::InputReader
+TemporaryFileStream::InputReader::InputReader(const String & path, const Block & header_)
+    : in_file_buf(path)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
 {
-    InputReader(const String & path, const Block & header_)
-        : in_file_buf(path)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
-    {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
-    }
+    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
+}
 
-    explicit InputReader(const String & path)
-        : in_file_buf(path)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
-    {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading from {}", path);
-    }
+TemporaryFileStream::InputReader::InputReader(const String & path)
+    : in_file_buf(path)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
+{
+    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading from {}", path);
+}
 
-    Block read()
-    {
-        return in_reader.read();
-    }
-
-    ReadBufferFromFile in_file_buf;
-    CompressedReadBuffer in_compressed_buf;
-    NativeReader in_reader;
-};
+Block TemporaryFileStream::InputReader::read()
+{
+    return in_reader.read();
+}
 
 TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
     : parent(parent_)
@@ -322,6 +315,12 @@ void TemporaryFileStream::resetReading() {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
     in_reader.reset();
     in_reader = std::make_unique<InputReader>(getPath(), header);
+}
+
+std::unique_ptr<TemporaryFileStream::InputReader> TemporaryFileStream::getReader() const {
+    if (!isWriteFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
+    return std::make_unique<InputReader>(getPath(), header);
 }
 
 void TemporaryFileStream::updateAllocAndCheck()

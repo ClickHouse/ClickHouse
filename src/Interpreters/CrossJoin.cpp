@@ -27,8 +27,8 @@ CrossJoin::CrossJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_
     : table_join(table_join_)
     , right_sample_block(right_sample_block_)
     , context(context_)
-    , tempData(std::make_unique<TemporaryDataOnDisk>(context_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin))
-    , blockStream(tempData->createStream(right_sample_block))
+    , temp_data(std::make_unique<TemporaryDataOnDisk>(context_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin))
+    , block_stream(temp_data->createStream(right_sample_block))
     , log(&Poco::Logger::get("CrossJoin"))
 {
 }
@@ -46,7 +46,8 @@ bool CrossJoin::addJoinedBlock(const Block & block, bool check_limits)
     right_rows += block.rows();
     right_bytes += block.bytes();
 
-    if (right_bytes > context->getSettings().cross_join_in_memory_limit) {
+    auto max_bytes_in_join = context->getSettings().cross_join_in_memory_limit;
+    if (right_bytes > max_bytes_in_join && max_bytes_in_join != 0) {
         LOG_DEBUG(log, "Moving blocks to disk...");
         moveBlocksToDisk();
     }
@@ -67,14 +68,17 @@ struct NotProcessedCrossJoin : public ExtraBlock
 
 void CrossJoin::joinBlock(Block &block, std::shared_ptr<ExtraBlock> &not_processed)
 {
-    LOG_DEBUG(log, "joinBlock");
+    join_block_count_in_progress.fetch_add(1);
+    LOG_DEBUG(log, "joinBlock, {} in progress now...", join_block_count_in_progress.load());
     size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
     size_t start_left_row = 0;
     size_t start_right_block = 0;
-    if (!blockStream.isWriteFinished() && right_blocks_count)
+    if (!block_stream.isWriteFinished() && right_blocks_count)
     {
-        blockStream.finishWriting();
+        std::lock_guard lock(finish_writing);
+        block_stream.finishWriting();
     }
+
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
@@ -131,16 +135,20 @@ void CrossJoin::joinBlock(Block &block, std::shared_ptr<ExtraBlock> &not_process
         };
 
         Block block_right;
+
+        std::unique_ptr<TemporaryFileStream::InputReader> block_stream_reader;
+        if (block_stream.isWriteFinished())
+        {
+            block_stream_reader = block_stream.getReader();
+        }
         do
         {
-            block_right = blockStream.read(false);
+            block_right = block_stream_reader->read();
             if (block_right)
             {
                 process_right_block(block_right);
             }
         } while (block_right);
-
-        blockStream.resetReading();
 
         for (const Block & block_right_in_memory : right_blocks)
         {
@@ -162,6 +170,7 @@ void CrossJoin::joinBlock(Block &block, std::shared_ptr<ExtraBlock> &not_process
         block.insert(src_column);
 
     block = block.cloneWithColumns(std::move(dst_columns));
+    join_block_count_in_progress.fetch_sub(1);
 }
 
 const TableJoin & CrossJoin::getTableJoin() const
@@ -199,7 +208,7 @@ void CrossJoin::moveBlocksToDisk() {
     right_bytes = 0;
     right_rows = 0;
     for (const auto & block : right_blocks) {
-        blockStream.write(block);
+        block_stream.write(block);
     }
     right_blocks.clear();
 }

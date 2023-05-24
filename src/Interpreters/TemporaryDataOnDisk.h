@@ -6,6 +6,8 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Formats/NativeReader.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache.h>
 
@@ -26,6 +28,8 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
+
+class CompressedReadBuffer;
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -120,6 +124,16 @@ private:
 class TemporaryFileStream : boost::noncopyable
 {
 public:
+    struct OutputWriter;
+    struct InputReader
+    {
+        InputReader(const String & path, const Block & header_);
+        explicit InputReader(const String & path);
+        Block read();
+        ReadBufferFromFile in_file_buf;
+        CompressedReadBuffer in_compressed_buf;
+        NativeReader in_reader;
+    };
     struct Stat
     {
         /// Statistics for file
@@ -140,6 +154,8 @@ public:
 
     Block read(bool finalize_earlier = true);
     void resetReading();
+
+    std::unique_ptr<InputReader> getReader() const;
 
     String getPath() const;
 
@@ -166,10 +182,7 @@ private:
 
     Stat stat;
 
-    struct OutputWriter;
     std::unique_ptr<OutputWriter> out_writer;
-
-    struct InputReader;
     std::unique_ptr<InputReader> in_reader;
 };
 
