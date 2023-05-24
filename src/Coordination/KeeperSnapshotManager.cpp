@@ -676,7 +676,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
 
 DiskPtr KeeperSnapshotManager::getDisk() const
 {
-    return keeper_context->getSnapshotsDisk();
+    return keeper_context->getSnapshotDisk();
 }
 
 void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
