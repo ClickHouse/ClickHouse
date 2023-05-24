@@ -5,6 +5,8 @@
 #if USE_HDFS
 
 #include <TableFunctions/ITableFunctionFileLike.h>
+#include <TableFunctions/TableFunctionHDFS.h>
+#include <TableFunctions/ITableFunctionCluster.h>
 
 
 namespace DB
@@ -20,13 +22,23 @@ class Context;
  * On worker node it asks initiator about next task to process, processes it.
  * This is repeated until the tasks are finished.
  */
-class TableFunctionHDFSCluster : public ITableFunctionFileLike
+class TableFunctionHDFSCluster : public ITableFunctionCluster<TableFunctionHDFS>
 {
 public:
     static constexpr auto name = "hdfsCluster";
-    std::string getName() const override
+    static constexpr auto signature = " - cluster_name, uri\n"
+                                      " - cluster_name, uri, format\n"
+                                      " - cluster_name, uri, format, structure\n"
+                                      " - cluster_name, uri, format, structure, compression_method\n";
+
+    String getName() const override
     {
         return name;
+    }
+
+    String getSignature() const override
+    {
+        return signature;
     }
 
 protected:
@@ -35,13 +47,6 @@ protected:
         const std::string & table_name, const String & compression_method_) const override;
 
     const char * getStorageTypeName() const override { return "HDFSCluster"; }
-
-    AccessType getSourceAccessType() const override { return AccessType::HDFS; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr) const override;
-    void parseArguments(const ASTPtr &, ContextPtr) override;
-
-    String cluster_name;
 };
 
 }
