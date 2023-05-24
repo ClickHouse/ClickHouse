@@ -1743,7 +1743,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
 
-    block.shrinkToFit();
+    block = block.shrinkToFit();
 }
 
 HashJoin::~HashJoin()

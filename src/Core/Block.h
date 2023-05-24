@@ -152,15 +152,7 @@ public:
     Block sortColumns() const;
 
     /** See IColumn::shrinkToFit() */
-    void shrinkToFit()
-    {
-        for (auto & elem : data)
-        {
-            auto mutate_column = IColumn::mutate(std::move(elem.column));
-            mutate_column->shrinkToFit();
-            elem.column = std::move(mutate_column);
-        }
-    }
+    Block shrinkToFit() const;
 
     void clear();
     void swap(Block & other) noexcept;
