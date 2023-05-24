@@ -1041,15 +1041,17 @@ def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
 
     node.query("SYSTEM FLUSH LOGS")
 
-    result = node.query(
-        "SELECT memory_usage"
+    memory_usage, wait_inflight = node.query(
+        "SELECT memory_usage, ProfileEvents['WriteBufferFromS3WaitInflightLimitMicroseconds']"
         " FROM system.query_log"
         f" WHERE query_id='{query_id}'"
         "   AND type!='QueryStart'"
-    )
+    ).split()
 
-    assert int(result) < 1.1 * memory
-    assert int(result) > 0.9 * memory
+    assert int(memory_usage) < 1.1 * memory
+    assert int(memory_usage) > 0.9 * memory
+
+    assert int(wait_inflight) > 10 * 1000 * 1000
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 
