@@ -267,7 +267,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/ClickHouse/vectorscan.git
+	url = https://github.com/VectorCamp/vectorscan.git
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
