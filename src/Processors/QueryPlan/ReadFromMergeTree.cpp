@@ -290,7 +290,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         .callback = read_task_callback.value(),
         .count_participating_replicas = client_info.count_participating_replicas,
         .number_of_current_replica = client_info.number_of_current_replica,
-        .colums_to_read = required_columns
+        .columns_to_read = required_columns
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -669,10 +669,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     /// Let's split ranges to avoid reading much data.
     auto split_ranges
-        = [rows_granularity = data_settings->index_granularity, max_block_size = max_block_size](const auto & ranges, int direction)
+        = [rows_granularity = data_settings->index_granularity, my_max_block_size = max_block_size](const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
-        const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         size_t marks_in_range = 1;
 
         if (direction == 1)
@@ -734,7 +734,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             .callback = read_task_callback.value(),
             .count_participating_replicas = client_info.count_participating_replicas,
             .number_of_current_replica = client_info.number_of_current_replica,
-            .colums_to_read = column_names
+            .columns_to_read = column_names
         };
 
         auto min_marks_for_concurrent_read = info.min_marks_for_concurrent_read;

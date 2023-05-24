@@ -237,6 +237,8 @@ public:
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
 
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
+
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
 
@@ -521,9 +523,11 @@ public:
 
     void setServerCompletelyStarted();
 
-private:
-    friend class EphemeralNodeHolder;
+    String getConnectedZooKeeperHost() const { return connected_zk_host; }
+    String getConnectedZooKeeperPort() const { return connected_zk_port; }
+    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
 
+private:
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
@@ -585,6 +589,10 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
+
+    String connected_zk_host;
+    String connected_zk_port;
+    size_t connected_zk_index;
 
     std::mutex mutex;
 

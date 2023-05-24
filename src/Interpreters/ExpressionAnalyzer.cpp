@@ -595,7 +595,6 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -616,7 +615,6 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -639,7 +637,6 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        true /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -661,7 +658,6 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
         no_makeset_for_subqueries,
         false /* no_makeset */,
         false /*only_consts */,
-        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
