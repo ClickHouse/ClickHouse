@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <string_view>
 #include <unordered_map>
 #include <Functions/FunctionsStringSimilarity.h>
@@ -56,29 +57,56 @@ namespace DB
 {
 
 
+/// map_size for ngram difference.
+static constexpr size_t map_size = 1u << 16;
 
-template <typename Map, class CodePoint, size_t N, bool UTF8, bool case_insensitive>
+/// If the haystack size is bigger than this, behaviour is unspecified for this function.
+static constexpr size_t max_string_size = 1u << 15;
+
+/// Default padding to read safely.
+static constexpr size_t default_padding = 16;
+
+/// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
+
+/** map_size of this fits mostly in L2 cache all the time.
+    * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
+    * integer array.
+    */
+using NgramCount = UInt16;
+
+
+template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
 class NaiveBayes {
+public:
+    void learn(const std::string &text) {
+        std::unique_ptr<NgramCount[]> map(new NgramCount[map_size]);
+        dispatchSearcher(calculateNeedleStats, text.data(), text.size(), map.get());
+        map_normalized = std::shared_ptr<Float64[]>(new Float64[map_size]);
+        if (text.size() < N) {
+            // BOOM
+        }
+        Float64 total = static_cast<Float64>(text.size()) - static_cast<Float64>(N);
+        for (size_t index = 0; index < map_size; ++index) {
+            map_normalized[index] = log(map[index] / total);
+        }
+    }
 
-    using ResultType = Float32;
+    std::shared_ptr<Float64[]> getmap() {
+        return map_normalized;
+    }
 
-    /// map_size for ngram difference.
-    static constexpr size_t map_size = 1u << 16;
+    Float64 score(std::unique_ptr<Float64[]> text_map_normalized) const {
+        Float64 result = 0.;
+        for (size_t index = 0; index < map_size; ++index) {
+            result += text_map_normalized[index] * map_normalized[index];
+        }
+        return result;
+    }
+private:
 
-    /// If the haystack size is bigger than this, behaviour is unspecified for this function.
-    static constexpr size_t max_string_size = 1u << 15;
-
-    /// Default padding to read safely.
-    static constexpr size_t default_padding = 16;
-
-    /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
-    /** map_size of this fits mostly in L2 cache all the time.
-      * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
-      * integer array.
-      */
-    using NgramCount = UInt16;
+    std::shared_ptr<Float64[]> map_normalized;
 
     static ALWAYS_INLINE UInt16 calculateASCIIHash(const CodePoint * code_points)
     {
@@ -277,7 +305,34 @@ class NaiveBayes {
         else
             return callback(std::forward<Args>(args)..., readUTF8CodePoints, calculateUTF8Hash);
     }
-    
+};
+
+
+// template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
+
+template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
+class Slice {
+public:
+    void fit(const std::unordered_map<String, String> &slice) {
+        models.clear();
+        models.reserve(slice.size());
+        for (const auto &[slice_name, slice_text] : slice) {
+            models[slice_name].learn(slice_text);
+        }
+    }
+    std::unordered_map<String, Float64> score(const String &text) {
+        NaiveBayes<CodePoint, N, UTF8, case_insensitive> text_model;
+        text_model.learn(text);
+        std::shared_ptr<Float64[]> text_map = text_model.getmap();
+        std::unordered_map<String, Float64> result;
+        result.reserve(models.size());
+        for (const auto &[name, model] : models) {
+            result[name] = model.score(text_map);
+        }
+        return result;
+    }
+private:
+    std::unordered_map<String, NaiveBayes<CodePoint, N, UTF8, case_insensitive>> models;
 };
 
 
