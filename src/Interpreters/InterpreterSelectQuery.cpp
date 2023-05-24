@@ -93,6 +93,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -546,7 +547,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
+    {
+
+        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), "table name: {}", table_id.getTableName());
+
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    }
+    else
+    {
+        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), "no storage");
+    }
+
+
 
     StorageView * view = nullptr;
     if (storage)
@@ -832,7 +844,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
+    if (table_id && got_storage_from_query /* && !joined_tables.isLeftTableFunction() */)
     {
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already

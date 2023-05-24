@@ -43,6 +43,8 @@
 #include <base/range.h>
 #include <algorithm>
 
+#include <Common/logger_useful.h>
+
 
 namespace
 {
@@ -515,6 +517,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             }
         }
 
+        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::initializePipeline"), "table name: {}", storage->getStorageID().getTableName());
+
         auto source_pipeline = createSources(
             nested_storage_snaphsot,
             modified_query_info,
@@ -574,6 +578,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
+
+
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
             get_column_options.withSubcolumns();
@@ -594,6 +600,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
+        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
+        new_analyzer_res.has_explicit_columns = false;
+
+        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
     }
     else
     {
@@ -656,8 +666,9 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
-        if (!view || allow_experimental_analyzer)
+        if (/* !view || */ allow_experimental_analyzer)
         {
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "direct storage->read");
             storage->read(plan,
                 real_column_names,
                 storage_snapshot,
@@ -666,6 +677,24 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 processed_stage,
                 max_block_size,
                 UInt32(streams_num));
+        }
+        else if (!view)
+        {
+            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+            /// The most intuitive way is to use InterpreterSelectQuery.
+
+            /// Intercept the settings
+            modified_context->setSetting("max_threads", streams_num);
+            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+            modified_context->setSetting("max_block_size", max_block_size);
+
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "creating InterpreterSelectQuery 1.0");
+            InterpreterSelectQuery interpreter(modified_query_info.query,
+                modified_context,
+                storage,
+                storage->getInMemoryMetadataPtr(), // view->getInMemoryMetadataPtr(),
+                SelectQueryOptions(/* processed_stage*/));
+            interpreter.buildQueryPlan(plan);
         }
         else
         {
@@ -677,6 +706,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
             modified_context->setSetting("max_block_size", max_block_size);
 
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "creating InterpreterSelectQuery 1.5");
             InterpreterSelectQuery interpreter(modified_query_info.query,
                 modified_context,
                 storage,
@@ -719,6 +749,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             modified_select.replaceDatabaseAndTable(database_name, table_name);
             /// TODO: Find a way to support projections for StorageMerge
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "creating InterpreterSelectQuery 2");
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections()};
