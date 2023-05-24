@@ -347,10 +347,7 @@ public:
 private:
     String wrappedPath(const String & path) const
     {
-        // if path starts_with disk_path -> got already wrapped path
-        if (!disk_path.empty() && path.starts_with(disk_path))
-            return path;
-        return disk_path + path;
+        return DiskEncryptedTransaction::wrappedPath(disk_path, path);
     }
 
     DiskPtr delegate;
