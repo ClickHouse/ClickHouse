@@ -41,7 +41,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
-    off_t file_size;
+    off_t file_size = 0;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
