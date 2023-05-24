@@ -18,7 +18,7 @@ jobs:
           clear-repository: true
       - name: Print environment variables
         run: |
-          echo "VAULT_URL: ${{ env.VAULT_URL }}"
+          echo ${{ env.VAULT_URL }}
           echo "VAULT_PATH: ${{ env.VAULT_PATH }}"
           echo "VAULT_MOUNT_POINT: ${{ env.VAULT_MOUNT_POINT }}"
       - name: Python unit tests
