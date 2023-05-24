@@ -1,10 +1,10 @@
 ---
 slug: /en/operations/query-cache
 sidebar_position: 65
-sidebar_label: Query Cache [experimental]
+sidebar_label: Query Cache
 ---
 
-# Query Cache [experimental]
+# Query Cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
@@ -29,21 +29,10 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::note
-The query cache is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query
-processing) where wrong results are returned.
-:::
-
 ## Configuration Settings and Usage
 
-As long as the result cache is experimental it must be activated using the following configuration setting:
-
-```sql
-SET allow_experimental_query_cache = true;
-```
-
-Afterwards, setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries
-of the current session should utilize the query cache. For example, the first execution of query
+Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
+current session should utilize the query cache. For example, the first execution of query
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)

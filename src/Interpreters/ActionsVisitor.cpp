@@ -535,7 +535,6 @@ ActionsMatcher::Data::Data(
     bool no_subqueries_,
     bool no_makeset_,
     bool only_consts_,
-    bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
     bool build_expression_with_window_functions_,
     bool is_create_parameterized_view_)
@@ -547,7 +546,6 @@ ActionsMatcher::Data::Data(
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
-    , create_source_for_in(create_source_for_in_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
@@ -1000,7 +998,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
-            /*create_source_for_in*/ false,
             data.aggregation_keys_info);
 
         NamesWithAliases args;
@@ -1219,11 +1216,22 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
+                /// Use getUniqueName() to allow multiple use of query parameter in the query:
+                ///
+                ///     CREATE VIEW view AS
+                ///     SELECT *
+                ///     FROM system.one
+                ///     WHERE dummy = {k1:Int}+1 OR dummy = {k1:Int}+2
+                ///                    ^^                    ^^
+                ///
+                /// NOTE: query in the VIEW will not be modified this is needed
+                /// only during analysis for CREATE VIEW to avoid duplicated
+                /// column names.
+                ColumnWithTypeAndName column(data_type, data.getUniqueName("__" + query_parameter->getColumnName()));
                 data.addColumn(column);
 
                 argument_types.push_back(data_type);
-                argument_names.push_back(query_parameter->name);
+                argument_names.push_back(column.name);
             }
             else
             {
@@ -1432,7 +1440,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (data.create_source_for_in && !subquery_for_set.hasSource())
+        if (!subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
             subquery_for_set.createSource(*interpreter);
