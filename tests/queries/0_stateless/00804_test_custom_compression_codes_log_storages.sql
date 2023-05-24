@@ -1,5 +1,6 @@
 SET send_logs_level = 'fatal';
 SET allow_suspicious_codecs = 1;
+SET enable_qpl_deflate = 1;
 
 -- copy-paste for storage log
 
@@ -11,18 +12,20 @@ CREATE TABLE compression_codec_log(
     ddd Date CODEC(NONE),
     somenum Float64 CODEC(ZSTD(2)),
     somestr FixedString(3) CODEC(LZ4HC(7)),
-    othernum Int64 CODEC(Delta)
+    othernum Int64 CODEC(Delta),
+    qplstr String CODEC(DEFLATE_QPL),
+    qplnum UInt32 CODEC(DEFLATE_QPL),
 ) ENGINE = Log();
 
 SHOW CREATE TABLE compression_codec_log;
 
-INSERT INTO compression_codec_log VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5);
-INSERT INTO compression_codec_log VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6);
-INSERT INTO compression_codec_log VALUES(3, '!', toDate('2018-12-16'), 3.3, 'ccc', 7);
+INSERT INTO compression_codec_log VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5, 'qpl11', 11);
+INSERT INTO compression_codec_log VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6,'qpl22', 22);
+INSERT INTO compression_codec_log VALUES(3, '!', toDate('2018-12-16'), 3.3, 'ccc', 7, 'qpl33', 33);
 
 SELECT * FROM compression_codec_log ORDER BY id;
 
-INSERT INTO compression_codec_log VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd', 8);
+INSERT INTO compression_codec_log VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd', 8, 'qpl44', 44);
 
 DETACH TABLE compression_codec_log;
 ATTACH TABLE compression_codec_log;
@@ -34,10 +37,10 @@ DROP TABLE IF EXISTS compression_codec_log;
 DROP TABLE IF EXISTS compression_codec_multiple_log;
 
 CREATE TABLE compression_codec_multiple_log (
-    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4)),
-    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
-    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
-    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
+    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4), DEFLATE_QPL),
+    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8), DEFLATE_QPL),
+    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC, DEFLATE_QPL),
+    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD, DEFLATE_QPL)
 ) ENGINE = Log();
 
 SHOW CREATE TABLE compression_codec_multiple_log;
@@ -69,18 +72,20 @@ CREATE TABLE compression_codec_tiny_log(
     ddd Date CODEC(NONE),
     somenum Float64 CODEC(ZSTD(2)),
     somestr FixedString(3) CODEC(LZ4HC(7)),
-    othernum Int64 CODEC(Delta)
+    othernum Int64 CODEC(Delta),
+    qplstr String CODEC(DEFLATE_QPL),
+    qplnum UInt32 CODEC(DEFLATE_QPL),
 ) ENGINE = TinyLog();
 
 SHOW CREATE TABLE compression_codec_tiny_log;
 
-INSERT INTO compression_codec_tiny_log VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5);
-INSERT INTO compression_codec_tiny_log VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6);
-INSERT INTO compression_codec_tiny_log VALUES(3, '!', toDate('2018-12-16'), 3.3, 'ccc', 7);
+INSERT INTO compression_codec_tiny_log VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5, 'qpl11', 11);
+INSERT INTO compression_codec_tiny_log VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6, 'qpl22', 22);
+INSERT INTO compression_codec_tiny_log VALUES(3, '!', toDate('2018-12-16'), 3.3, 'ccc', 7, 'qpl33', 33);
 
 SELECT * FROM compression_codec_tiny_log ORDER BY id;
 
-INSERT INTO compression_codec_tiny_log VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd', 8);
+INSERT INTO compression_codec_tiny_log VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd', 8, 'qpl44', 44);
 
 DETACH TABLE compression_codec_tiny_log;
 ATTACH TABLE compression_codec_tiny_log;
@@ -92,10 +97,10 @@ DROP TABLE IF EXISTS compression_codec_tiny_log;
 DROP TABLE IF EXISTS compression_codec_multiple_tiny_log;
 
 CREATE TABLE compression_codec_multiple_tiny_log (
-    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4)),
-    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
-    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
-    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
+    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4), DEFLATE_QPL),
+    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8), DEFLATE_QPL),
+    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC, DEFLATE_QPL),
+    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD, DEFLATE_QPL)
 ) ENGINE = TinyLog();
 
 SHOW CREATE TABLE compression_codec_multiple_tiny_log;
