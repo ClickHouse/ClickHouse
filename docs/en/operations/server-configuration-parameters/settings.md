@@ -203,7 +203,7 @@ Default: 15
 
 ## dns_max_consecutive_failures
 
-Max server connections.
+Max connection failures before dropping host from ClickHouse DNS cache
 
 Type: UInt32
 
