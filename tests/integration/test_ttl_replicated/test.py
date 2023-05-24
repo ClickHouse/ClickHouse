@@ -68,7 +68,7 @@ def test_ttl_columns(started_cluster):
                 CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_columns', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0, , max_merge_selecting_sleep_ms=6000;
+                SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0, max_merge_selecting_sleep_ms=6000;
             """.format(
                 replica=node.name
             )
