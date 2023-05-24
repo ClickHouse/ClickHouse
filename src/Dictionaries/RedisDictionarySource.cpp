@@ -17,9 +17,7 @@ namespace DB
     {
         extern const int UNSUPPORTED_METHOD;
         extern const int INVALID_CONFIG_PARAMETER;
-        extern const int INTERNAL_REDIS_ERROR;
         extern const int LOGICAL_ERROR;
-        extern const int TIMEOUT_EXCEEDED;
     }
 
     static RedisStorageType parseStorageType(const String & storage_type_str)
