@@ -322,6 +322,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     const Settings & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
+    std::cout << "Anime: " << output_stream->header.dumpStructure() << std::endl;
+
     size_t all_replicas_count = current_settings.max_parallel_replicas;
     if (all_replicas_count > cluster->getShardsInfo().size())
     {
@@ -393,6 +395,8 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
 
     assert(stage != QueryProcessingStage::Complete);
     assert(output_stream);
+
+    std::cout << "Anime: " << output_stream->header.dumpStructure() << std::endl;
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage,

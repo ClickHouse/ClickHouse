@@ -4314,7 +4314,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas
+    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
         && !settings_.use_hedged_requests)
         return READ_TASKS;
 

@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 /** ClickHouse query planner.
@@ -1185,15 +1186,24 @@ void Planner::buildPlanForQueryNode()
     const auto & settings = query_context->getSettingsRef();
 
     if (planner_context->getTableExpressionNodeToData().size() > 1
-        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
     {
-        LOG_WARNING(
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        {
+                    LOG_WARNING(
             &Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
 
-        auto & mutable_context = planner_context->getMutableQueryContext();
-        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
-        mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+        }
+        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Joins are not supported with parallel replicas");
+        }
     }
+
+    /// TODO: Also disable parallel replicas in case of FINAL
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
