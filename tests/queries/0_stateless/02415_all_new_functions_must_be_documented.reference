@@ -813,7 +813,6 @@ toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
-toStartOfWeek
 toStartOfYear
 toString
 toStringCutToZero
