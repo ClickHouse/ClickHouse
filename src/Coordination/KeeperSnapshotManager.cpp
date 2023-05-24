@@ -720,7 +720,6 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
 
     try
     {
-        std::cout << "Removing file " << tmp_snapshot_file_name << std::endl;
         disk->removeFile(tmp_snapshot_file_name);
     }
     catch (fs::filesystem_error & e)

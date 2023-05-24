@@ -24,63 +24,66 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CORRUPTED_DATA;
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
-    void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr description, DiskPtr disk_to, const std::string & path_to)
-    {
-        disk_from->copyFile(description->path, *disk_to, path_to, {});
-        disk_from->removeFile(description->path);
-        description->path = path_to;
-        description->disk = disk_to;
-    }
 
-    constexpr auto DEFAULT_PREFIX = "changelog";
+void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr description, DiskPtr disk_to, const std::string & path_to)
+{
+    disk_from->copyFile(description->path, *disk_to, path_to, {});
+    disk_from->removeFile(description->path);
+    description->path = path_to;
+    description->disk = disk_to;
+}
 
-    inline std::string
-    formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
-    {
-        return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
-    }
+constexpr auto DEFAULT_PREFIX = "changelog";
 
-    ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path)
-    {
-        // we can have .bin.zstd so we cannot use std::filesystem stem and extension
-        std::string filename_with_extension = path.filename();
-        std::string_view filename_with_extension_view = filename_with_extension;
+inline std::string
+formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
+{
+    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
+}
 
-        auto first_dot = filename_with_extension.find('.');
-        if (first_dot == std::string::npos)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
+ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path)
+{
+    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
+    std::string filename_with_extension = path.filename();
+    std::string_view filename_with_extension_view = filename_with_extension;
 
-        Strings filename_parts;
-        boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
-        if (filename_parts.size() < 3)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
+    auto first_dot = filename_with_extension.find('.');
+    if (first_dot == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
 
-        auto result = std::make_shared<ChangelogFileDescription>();
-        result->prefix = filename_parts[0];
-        result->from_log_index = parse<uint64_t>(filename_parts[1]);
-        result->to_log_index = parse<uint64_t>(filename_parts[2]);
-        result->extension = std::string(filename_with_extension.substr(first_dot + 1));
-        result->path = path.generic_string();
-        return result;
-    }
+    Strings filename_parts;
+    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
+    if (filename_parts.size() < 3)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
 
-    Checksum computeRecordChecksum(const ChangelogRecord & record)
-    {
-        SipHash hash;
-        hash.update(record.header.version);
-        hash.update(record.header.index);
-        hash.update(record.header.term);
-        hash.update(record.header.value_type);
-        hash.update(record.header.blob_size);
-        if (record.header.blob_size != 0)
-            hash.update(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
-        return hash.get64();
-    }
+    auto result = std::make_shared<ChangelogFileDescription>();
+    result->prefix = filename_parts[0];
+    result->from_log_index = parse<uint64_t>(filename_parts[1]);
+    result->to_log_index = parse<uint64_t>(filename_parts[2]);
+    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
+    result->path = path.generic_string();
+    return result;
+}
+
+Checksum computeRecordChecksum(const ChangelogRecord & record)
+{
+    SipHash hash;
+    hash.update(record.header.version);
+    hash.update(record.header.index);
+    hash.update(record.header.term);
+    hash.update(record.header.value_type);
+    hash.update(record.header.blob_size);
+    if (record.header.blob_size != 0)
+        hash.update(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+    return hash.get64();
+}
 
 }
 
@@ -571,6 +574,19 @@ Changelog::Changelog(Poco::Logger * log_, LogFileSettings log_file_settings, Kee
     , append_completion_queue(std::numeric_limits<size_t>::max())
     , keeper_context(std::move(keeper_context_))
 {
+    if (auto current_log_disk = getCurrentLogDisk();
+        log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(current_log_disk.get()) == nullptr)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "force_sync is set to true for logs but disk '{}' cannot satisfy such guarantee because it's not of type DiskLocal.\n"
+            "If you want to use force_sync and same disk for all logs, please set keeper_server.log_storage_disk to a local disk.\n"
+            "If you want to use force_sync and different disk only for old logs, please set 'keeper_server.log_storage_disk' to any "
+            "supported disk and 'keeper_server.current_log_storage_disk' to a local disk.\n"
+            "Otherwise, disable force_sync",
+            current_log_disk->getName());
+    }
+
     /// Load all files on changelog disks
 
     const auto load_from_disk = [&](const auto & disk)
@@ -589,6 +605,12 @@ Changelog::Changelog(Poco::Logger * log_, LogFileSettings log_file_settings, Kee
                 LOG_WARNING(log, "Found duplicate entries for {}, will use the entry from {}", changelog_it->second->path, disk->getName());
         }
     };
+
+    /// Load all files from old disks
+    for (const auto & disk : keeper_context->getOldLogDisks())
+    {
+        load_from_disk(disk);
+    }
 
     auto disk = getDisk();
     load_from_disk(disk);
@@ -738,7 +760,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         assert(existing_changelogs.find(last_log_read_result->log_start_index) != existing_changelogs.end());
         assert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
 
-        /// Continue to write into incomplete existing log if it doesn't finish with error
+        /// Continue to write into incomplete existing log if it didn't finish with error
         const auto & description = existing_changelogs[last_log_read_result->log_start_index];
 
         if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
@@ -755,7 +777,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     }
     else if (last_log_read_result.has_value())
     {
-        /// check if we need to move it to another disk
+        /// check if we need to move completed log to another disk
         auto current_log_disk = getCurrentLogDisk();
         auto disk = getDisk();
 
@@ -767,6 +789,24 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
         current_writer->rotate(max_log_id + 1);
+
+    /// Move files to correct disks
+    auto latest_start_index = current_writer->getStartIndex();
+    auto current_log_disk = getCurrentLogDisk();
+    auto disk = getDisk();
+    for (const auto & [start_index, description] : existing_changelogs)
+    {
+        /// latest log should already be on current_log_disk
+        if (start_index == latest_start_index)
+        {
+            chassert(description->disk == current_log_disk);
+            continue;
+        }
+
+        if (description->disk != disk)
+            moveFileBetweenDisks(description->disk, description, disk, description->path);
+    }
+
 
     initialized = true;
 }
