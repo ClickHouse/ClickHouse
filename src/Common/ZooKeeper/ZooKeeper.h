@@ -650,7 +650,8 @@ public:
             return;
         try
         {
-            zookeeper.tryRemove(path);
+            if (!zookeeper.expired())
+                zookeeper.tryRemove(path);
         }
         catch (...)
         {
