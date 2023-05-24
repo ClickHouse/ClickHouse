@@ -34,7 +34,7 @@ Poco::Timestamp DB::ExternalLoaderFDBDictionaryConfigRepository::getUpdateTime(c
 }
 
 /// Load dictionary metadata from fdb by dictionary name.
-DB::LoadablesConfigurationPtr DB::ExternalLoaderFDBDictionaryConfigRepository::load(const std::string & dict_name)
+DB::LoadablesConfigurationPtr DB::ExternalLoaderFDBDictionaryConfigRepository::load(const std::string & dictionary_name)
 {
-    return fdb_dictionary_repositories->getOneDictConfig(dict_name);
+    return fdb_dictionary_repositories->getOneDictConfig(dictionary_name);
 }
