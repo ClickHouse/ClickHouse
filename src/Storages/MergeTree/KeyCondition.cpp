@@ -1041,7 +1041,8 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
                     const auto & func_name = func->function_base->getName();
                     auto func_base = func->function_base;
-                    if (date_time_parsing_functions.contains(func_name))
+                    const auto & arg_types = func_base->getArgumentTypes();
+                    if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
                     {
                         auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
                         ColumnsWithTypeAndName arguments;
