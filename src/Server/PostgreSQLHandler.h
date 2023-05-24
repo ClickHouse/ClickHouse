@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include "config.h"
+#include <Common/config.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/logger_useful.h>
 #include "IServer.h"
 
 #if USE_SSL

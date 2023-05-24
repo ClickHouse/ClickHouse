@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/example-datasets/amplab-benchmark
 sidebar_position: 19
 sidebar_label: AMPLab Big Data Benchmark
 ---
@@ -124,3 +123,5 @@ GROUP BY sourceIP
 ORDER BY totalRevenue DESC
 LIMIT 1
 ```
+
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

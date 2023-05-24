@@ -42,8 +42,7 @@ public:
     {
         if (!offset())
             return;
-
-        auto bytes_in_buffer = offset();
+        bytes += offset();
 
         try
         {
@@ -55,11 +54,9 @@ public:
               * so that later (for example, when the stack was expanded) there was no second attempt to write data.
               */
             pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
             throw;
         }
 
-        bytes += bytes_in_buffer;
         pos = working_buffer.begin();
     }
 
@@ -155,7 +152,7 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl() { throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer."); }
+    virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); }
 };
 
 

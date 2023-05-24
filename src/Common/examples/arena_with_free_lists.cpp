@@ -13,8 +13,6 @@
 #include <array>
 #include <sys/resource.h>
 #include <base/bit_cast.h>
-#include <Common/randomSeed.h>
-#include <pcg_random.hpp>
 
 #include <base/StringRef.h>
 #include <base/arraySize.h>
@@ -176,13 +174,13 @@ struct Dictionary
         {
             case AttributeUnderlyingTypeTest::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
             case AttributeUnderlyingTypeTest::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingTypeTest::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = static_cast<UInt32>(value.get<UInt64>()); break;
+            case AttributeUnderlyingTypeTest::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
             case AttributeUnderlyingTypeTest::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
             case AttributeUnderlyingTypeTest::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
             case AttributeUnderlyingTypeTest::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingTypeTest::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = static_cast<Int32>(value.get<Int64>()); break;
+            case AttributeUnderlyingTypeTest::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
             case AttributeUnderlyingTypeTest::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingTypeTest::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = static_cast<Float32>(value.get<Float64>()); break;
+            case AttributeUnderlyingTypeTest::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
             case AttributeUnderlyingTypeTest::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
             case AttributeUnderlyingTypeTest::String:
             {
@@ -220,7 +218,6 @@ int main(int argc, char ** argv)
     }
 
     std::cerr << std::fixed << std::setprecision(2);
-    pcg64 rng(randomSeed());
 
     size_t n = parse<size_t>(argv[1]);
     std::vector<std::string> data;
@@ -270,7 +267,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Insert info arena. Bytes: " << arena.allocatedBytes()
+            << "Insert info arena. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << sum_strings_size / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -284,8 +281,8 @@ int main(int argc, char ** argv)
         size_t bytes = 0;
         for (size_t i = 0, size = data.size(); i < size; ++i)
         {
-            size_t index_from = rng() % size;
-            size_t index_to = rng() % size;
+            size_t index_from = lrand48() % size;
+            size_t index_to = lrand48() % size;
 
             arena.free(const_cast<char *>(refs[index_to].data), refs[index_to].size);
             const auto & s = data[index_from];
@@ -298,7 +295,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Randomly remove and insert elements. Bytes: " << arena.allocatedBytes()
+            << "Randomly remove and insert elements. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -321,8 +318,8 @@ int main(int argc, char ** argv)
         size_t bytes = 0;
         for (size_t i = 0, size = data.size(); i < size; ++i)
         {
-            size_t index_from = rng() % size;
-            size_t index_to = rng() % cache_size;
+            size_t index_from = lrand48() % size;
+            size_t index_to = lrand48() % cache_size;
 
             dictionary.setAttributeValue(attr, index_to, data[index_from]);
 
@@ -331,7 +328,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Filling cache. Bytes: " << arena.allocatedBytes()
+            << "Filling cache. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"

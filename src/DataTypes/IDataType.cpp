@@ -68,12 +68,12 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 
 DataTypePtr IDataType::promoteNumericType() const
 {
-    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", getName());
+    throw Exception("Data type " + getName() + " can't be promoted.", ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED);
 }
 
 size_t IDataType::getSizeOfValueInMemory() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
+    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
 void IDataType::forEachSubcolumn(
@@ -84,25 +84,23 @@ void IDataType::forEachSubcolumn(
     {
         for (size_t i = 0; i < subpath.size(); ++i)
         {
-            size_t prefix_len = i + 1;
-            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
+            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, i + 1))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, i + 1);
+                auto subdata = ISerialization::createFromPath(subpath, i);
                 callback(subpath, name, subdata);
             }
             subpath[i].visited = true;
         }
     };
 
-    ISerialization::EnumerateStreamsSettings settings;
-    settings.position_independent_encoding = false;
-    data.serialization->enumerateStreams(settings, callback_with_data, data);
+    SubstreamPath path;
+    data.serialization->enumerateStreams(path, callback_with_data, data);
 }
 
 template <typename Ptr>
 Ptr IDataType::getForSubcolumn(
-    std::string_view subcolumn_name,
+    const String & subcolumn_name,
     const SubstreamData & data,
     Ptr SubstreamData::*member,
     bool throw_if_null) const
@@ -120,38 +118,33 @@ Ptr IDataType::getForSubcolumn(
     return res;
 }
 
-bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
+DataTypePtr IDataType::tryGetSubcolumnType(const String & subcolumn_name) const
 {
-    return tryGetSubcolumnType(subcolumn_name) != nullptr;
-}
-
-DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
-{
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    SubstreamData data = { getDefaultSerialization(), getPtr(), nullptr, nullptr };
     return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, false);
 }
 
-DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
+DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    SubstreamData data = { getDefaultSerialization(), getPtr(), nullptr, nullptr };
     return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, true);
 }
 
-ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
+ColumnPtr IDataType::tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
+    SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
     return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, false);
 }
 
-ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
+ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
+    SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
     return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, true);
 }
 
-SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const
 {
-    auto data = SubstreamData(serialization);
+    SubstreamData data = { serialization, nullptr, nullptr, nullptr };
     return getForSubcolumn<SerializationPtr>(subcolumn_name, data, &SubstreamData::serialization, true);
 }
 
@@ -161,7 +154,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, { getDefaultSerialization(), nullptr, nullptr, nullptr });
     return res;
 }
 

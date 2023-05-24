@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HIVE
 #include <TableFunctions/ITableFunction.h>

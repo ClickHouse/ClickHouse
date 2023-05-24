@@ -1,5 +1,3 @@
--- Tags: no-random-merge-tree-settings
-
 DROP TABLE IF EXISTS set_array;
 
 CREATE TABLE set_array

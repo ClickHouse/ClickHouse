@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantileexact
 sidebar_position: 202
 ---
 

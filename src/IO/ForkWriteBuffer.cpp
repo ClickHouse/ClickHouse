@@ -14,7 +14,7 @@ ForkWriteBuffer::ForkWriteBuffer(WriteBufferPtrs && sources_)
 {
     if (sources.empty())
     {
-        throw Exception(ErrorCodes::CANNOT_CREATE_IO_BUFFER, "Expected non-zero number of buffers for `ForkWriteBuffer`");
+        throw Exception("Expected non-zero number of buffers for `ForkWriteBuffer`", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
     }
     set(sources.front()->buffer().begin(), sources.front()->buffer().size());
 }

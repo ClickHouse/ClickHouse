@@ -5,15 +5,13 @@ FROM ubuntu:20.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-# 15.0.2
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
 
 RUN apt-get update \
     && apt-get install \
         apt-transport-https \
         apt-utils \
         ca-certificates \
-        curl \
         dnsutils \
         gnupg \
         iputils-ping \
@@ -25,15 +23,9 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
     && apt-get clean
-
-# Install cmake 3.20+ for rust support
-# Used https://askubuntu.com/a/1157132 as reference
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | \
-        gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
-    echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list
 
 # initial packages
 RUN apt-get update \
@@ -44,6 +36,7 @@ RUN apt-get update \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         cmake \
+        curl \
         fakeroot \
         gdb \
         git \
@@ -52,7 +45,6 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
-        libclang-${LLVM_VERSION}-dev \
         moreutils \
         nasm \
         ninja-build \
@@ -65,11 +57,6 @@ RUN apt-get update \
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
-# for external_symbolizer_path
-RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
-# FIXME: workaround for "The imported target "merge-fdata" references the file" error
-# https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
-RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG CCACHE_VERSION=4.6.1
 RUN mkdir /tmp/ccache \

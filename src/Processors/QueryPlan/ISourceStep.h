@@ -15,6 +15,10 @@ public:
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     void describePipeline(FormatSettings & settings) const override;
+
+protected:
+    /// We collect processors got after pipeline transformation.
+    Processors processors;
 };
 
 }

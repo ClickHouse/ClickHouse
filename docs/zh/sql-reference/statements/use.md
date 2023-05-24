@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/use
 sidebar_position: 53
 sidebar_label: USE
 ---

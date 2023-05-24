@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
@@ -83,7 +84,7 @@ public:
                 case CANCELLED: return "CANCELLED";
             }
 
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown EntryState: {}", DB::toString<int>(value));
+            throw Exception("Unknown EntryState: " + DB::toString<int>(value), ErrorCodes::LOGICAL_ERROR);
         }
 
         static EntryState::Value fromString(String in)
@@ -99,7 +100,7 @@ public:
             else if (in == "REMOVE_UUID_PIN") return REMOVE_UUID_PIN;
             else if (in == "DONE") return DONE;
             else if (in == "CANCELLED") return CANCELLED;
-            else throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state: {}", in);
+            else throw Exception("Unknown state: " + in, ErrorCodes::LOGICAL_ERROR);
         }
     };
 

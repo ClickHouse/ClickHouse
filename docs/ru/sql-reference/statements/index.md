@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/
 sidebar_label: "Выражения"
 sidebar_position: 31
 ---

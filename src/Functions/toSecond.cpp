@@ -12,9 +12,10 @@ using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSeco
 REGISTER_FUNCTION(ToSecond)
 {
     factory.registerFunction<FunctionToSecond>();
-
     /// MysQL compatibility alias.
-    factory.registerAlias("SECOND", "toSecond", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToSecond>("SECOND", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

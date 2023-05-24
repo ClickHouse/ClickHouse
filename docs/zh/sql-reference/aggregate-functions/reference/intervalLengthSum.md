@@ -1,0 +1,1 @@
+../../../../en/sql-reference/aggregate-functions/reference/intervalLengthSum.md

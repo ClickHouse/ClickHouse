@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/operations/
 title: Вопросы о производительности серверов и кластеров ClickHouse
 toc_hidden_folder: true
 sidebar_position: 3

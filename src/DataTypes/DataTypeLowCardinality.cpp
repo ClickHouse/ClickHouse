@@ -35,9 +35,8 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
 
     if (!inner_type->canBeInsideLowCardinality())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}",
-                        dictionary_type->getName());
+        throw Exception("DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got "
+                        + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 namespace
@@ -55,7 +54,7 @@ namespace
         }
 
         template <typename T>
-        void operator()(TypeList<T>)
+        void operator()(Id<T>)
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
                 column = creator(static_cast<ColumnVector<T> *>(nullptr));
@@ -85,10 +84,6 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     else if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
-    else if (which.isIPv4())
-        return creator(static_cast<ColumnVector<IPv4> *>(nullptr));
-    else if (which.isIPv6())
-        return creator(static_cast<ColumnVector<IPv6> *>(nullptr));
     else if (which.isInterval())
         return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
     else if (which.isInt() || which.isUInt() || which.isFloat())
@@ -97,13 +92,13 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
 
         if (!column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
+            throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
 
         return column;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary type for DataTypeLowCardinality: {}",
-                    type->getName());
+    throw Exception("Unexpected dictionary type for DataTypeLowCardinality: " + type->getName(),
+                    ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -157,8 +152,8 @@ SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "LowCardinality data type family must have single argument - type of elements");
+        throw Exception("LowCardinality data type family must have single argument - type of elements",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
 }

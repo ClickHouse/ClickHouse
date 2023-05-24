@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/
 sidebar_label: CREATE
 sidebar_position: 34
 ---
@@ -18,3 +17,4 @@ sidebar_position: 34
 -   [ROW POLICY](../../../sql-reference/statements/create/row-policy.md)
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
+

@@ -7,18 +7,12 @@ namespace DB
 {
 enum class SelectUnionMode
 {
-    UNION_DEFAULT,
-    UNION_ALL,
-    UNION_DISTINCT,
-    EXCEPT_DEFAULT,
-    EXCEPT_ALL,
-    EXCEPT_DISTINCT,
-    INTERSECT_DEFAULT,
-    INTERSECT_ALL,
-    INTERSECT_DISTINCT
+    Unspecified,
+    ALL,
+    DISTINCT,
+    EXCEPT,
+    INTERSECT
 };
-
-const char * toString(SelectUnionMode mode);
 
 using SelectUnionModes = std::vector<SelectUnionMode>;
 using SelectUnionModesSet = std::unordered_set<SelectUnionMode>;

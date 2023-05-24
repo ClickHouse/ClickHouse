@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/third-party/
 sidebar_label: "Сторонние интерфейсы"
 sidebar_position: 24
 ---

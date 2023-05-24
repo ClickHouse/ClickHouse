@@ -12,7 +12,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check_log
 {
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
-set allow_experimental_analyzer = 1;
 system flush logs;
 
 -- Show queries sorted by start time.
@@ -49,16 +48,21 @@ select count(*) "'"'"total spans"'"'",
     ;
 
 -- Also check that the initial query span in ClickHouse has proper parent span.
--- the first span should be child of input trace context
--- the 2nd span should be the 'query' span
 select count(*) "'"'"initial query spans with proper parent"'"'"
-    from system.opentelemetry_span_log
+    from
+        (select *, attribute_name, attribute_value
+            from system.opentelemetry_span_log
+                array join mapKeys(attribute) as attribute_name,
+                     mapValues(attribute) as attribute_value) o
+        join system.query_log on query_id = o.attribute_value
     where
         trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+        and current_database = currentDatabase()
         and operation_name = 'query'
-        and parent_span_id in (
-           select span_id from system.opentelemetry_span_log where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
-        )
+        and parent_span_id = reinterpretAsUInt64(unhex('73'))
+        and o.attribute_name = 'clickhouse.query_id'
+        and is_initial_query
+        and type = 'QueryFinish'
     ;
 
 -- Check that the tracestate header was propagated. It must have exactly the
@@ -77,7 +81,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
 
 # Generate some random trace id so that the prevous runs of the test do not interfere.
 echo "===http==="
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4())))) settings allow_experimental_analyzer = 1")
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
 # Check that the HTTP traceparent is read, and then passed through `remote`
 # table function. We expect 4 queries -- one initial, one SELECT and two
@@ -87,7 +91,7 @@ ${CLICKHOUSE_CURL} \
     --header "traceparent: 00-$trace_id-0000000000000073-01" \
     --header "tracestate: some custom state" "$CLICKHOUSE_URL" \
     --get \
-    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings allow_experimental_analyzer = 1 format Null"
+    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) format Null"
 
 check_log
 
@@ -132,6 +136,7 @@ ${CLICKHOUSE_CLIENT} -q "
     select if(2 <= count() and count() <= 18, 'OK', 'Fail')
     from system.opentelemetry_span_log
     where operation_name = 'query'
+        and parent_span_id = 0  -- only account for the initial queries
         and attribute['clickhouse.query_id'] like '$query_id-%'
     ;
 "

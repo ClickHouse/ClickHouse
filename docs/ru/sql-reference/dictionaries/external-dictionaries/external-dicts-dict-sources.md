@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources
 sidebar_position: 43
 sidebar_label: "Источники внешних словарей"
 ---

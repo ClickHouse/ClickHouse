@@ -10,7 +10,7 @@ class MergeTreeDataPartWriterInMemory : public IMergeTreeDataPartWriter
 {
 public:
     MergeTreeDataPartWriterInMemory(
-        const MutableDataPartInMemoryPtr & part_,
+        const DataPartInMemoryPtr & part_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeWriterSettings & settings_);
@@ -24,7 +24,7 @@ public:
 private:
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block);
 
-    MutableDataPartInMemoryPtr part_in_memory;
+    DataPartInMemoryPtr part_in_memory;
 };
 
 }

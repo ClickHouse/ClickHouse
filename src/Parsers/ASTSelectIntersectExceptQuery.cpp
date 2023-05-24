@@ -27,7 +27,7 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
         if (it != children.begin())
         {
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << fromOperator(final_operator)
+                          << (final_operator == Operator::INTERSECT ? "INTERSECT" : "EXCEPT")
                           << (settings.hilite ? hilite_none : "")
                           << settings.nl_or_ws;
         }
@@ -53,20 +53,4 @@ ASTs ASTSelectIntersectExceptQuery::getListOfSelects() const
     return selects;
 }
 
-const char * ASTSelectIntersectExceptQuery::fromOperator(Operator op)
-{
-    switch (op)
-    {
-        case Operator::EXCEPT_ALL:
-            return "EXCEPT ALL";
-        case Operator::EXCEPT_DISTINCT:
-            return "EXCEPT DISTINCT";
-        case Operator::INTERSECT_ALL:
-            return "INTERSECT ALL";
-        case Operator::INTERSECT_DISTINCT:
-            return "INTERSECT DISTINCT";
-        default:
-            return "";
-    }
-}
 }

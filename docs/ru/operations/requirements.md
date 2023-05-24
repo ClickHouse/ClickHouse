@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/requirements
 sidebar_position: 44
 sidebar_label: "Требования"
 ---

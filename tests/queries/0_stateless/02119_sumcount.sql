@@ -22,9 +22,6 @@ SELECT toTypeName(sumCount(v)), sumCount(v) FROM
     )
     ORDER BY v
 );
-
-SET allow_suspicious_low_cardinality_types=1;
-
 SELECT toTypeName(sumCount(v)), sumCount(v) FROM
 (
     SELECT v FROM

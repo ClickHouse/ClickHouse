@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/url
 sidebar_position: 41
 sidebar_label: url
 ---
@@ -13,7 +12,7 @@ sidebar_label: url
 **Синтаксис**
 
 ``` sql
-url(URL [,format] [,structure])
+url(URL, format, structure)
 ```
 
 **Параметры**
@@ -46,12 +45,3 @@ SELECT * FROM test_table;
 
 Шаблоны в фигурных скобках `{ }` используются, чтобы сгенерировать список шардов или указать альтернативные адреса на случай отказа. Поддерживаемые типы шаблонов и примеры смотрите в описании функции [remote](remote.md#globs-in-addresses).
 Символ `|` внутри шаблонов используется, чтобы задать адреса, если предыдущие оказались недоступны. Эти адреса перебираются в том же порядке, в котором они указаны в шаблоне. Количество адресов, которые могут быть сгенерированы, ограничено настройкой [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements).
-
-## Виртуальные столбцы
-
--   `_path` — Путь до `URL`.
--   `_file` — Имя ресурса `URL`.
-
-**Смотрите также**
-
--   [Виртуальные столбцы](index.md#table_engines-virtual_columns)

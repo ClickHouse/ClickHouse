@@ -9,7 +9,6 @@ namespace DB
 {
 
 class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class ThreadStatus;
 
 /// Proxy class which counts number of written block, rows, bytes
@@ -30,7 +29,7 @@ public:
         progress_callback = callback;
     }
 
-    void setProcessListElement(QueryStatusPtr elem)
+    void setProcessListElement(QueryStatus * elem)
     {
         process_elem = elem;
     }
@@ -51,7 +50,7 @@ public:
 protected:
     Progress progress;
     ProgressCallback progress_callback;
-    QueryStatusPtr process_elem;
+    QueryStatus * process_elem = nullptr;
     ThreadStatus * thread_status = nullptr;
 
     /// Quota is used to limit amount of written bytes.

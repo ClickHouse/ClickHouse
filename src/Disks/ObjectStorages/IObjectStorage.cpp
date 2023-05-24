@@ -1,6 +1,5 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
@@ -12,27 +11,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
-void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
+AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
-}
-void IObjectStorage::getDirectoryContents(const std::string &,
-    RelativePathsWithSize &,
-    std::vector<std::string> &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+    constexpr size_t pool_size = 50;
+    constexpr size_t queue_size = 1000000;
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
+    return reader;
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-    return context->getThreadPoolWriter();
+    constexpr size_t pool_size = 100;
+    constexpr size_t queue_size = 1000000;
+    static ThreadPool writer(pool_size, pool_size, queue_size);
+    return writer;
 }
 
 void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -50,40 +44,32 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     out->finalize();
 }
 
-const std::string & IObjectStorage::getCacheName() const
+const std::string & IObjectStorage::getCacheBasePath() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
+}
+
+void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
+{
+    std::unique_lock lock{throttlers_mutex};
+    remote_read_throttler = context->getRemoteReadThrottler();
+    remote_write_throttler = context->getRemoteWriteThrottler();
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
+    std::unique_lock lock{throttlers_mutex};
     ReadSettings settings{read_settings};
-    settings.for_object_storage = true;
+    settings.remote_throttler = remote_read_throttler;
     return settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
+    std::unique_lock lock{throttlers_mutex};
     WriteSettings settings{write_settings};
-    settings.for_object_storage = true;
+    settings.remote_throttler = remote_write_throttler;
     return settings;
-}
-
-std::string IObjectStorage::generateBlobNameForPath(const std::string & /* path */)
-{
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    return fmt::format("{}/{}",
-        getRandomASCIIString(key_name_prefix_size),
-        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 }

@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/operations/multi-region-replication
 title: ClickHouse支持多区域复制吗?
 toc_hidden: true
 sidebar_position: 30

@@ -1,6 +1,3 @@
-# See linux/toolchain-x86_64.cmake for details about multiple load of toolchain file.
-include_guard(GLOBAL)
-
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set (CMAKE_SYSTEM_NAME "Linux")

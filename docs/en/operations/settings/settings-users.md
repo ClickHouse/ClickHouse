@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
 ---
@@ -9,7 +8,7 @@ sidebar_label: User Settings
 The `users` section of the `user.xml` configuration file contains user settings.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
 :::
 
 Structure of the `users` section:
@@ -35,13 +34,9 @@ Structure of the `users` section:
             <database_name>
                 <table_name>
                     <filter>expression</filter>
-                </table_name>
+                <table_name>
             </database_name>
         </databases>
-        
-        <grants>
-            <query>GRANT SELECT ON system.*</query>
-        </grants>
     </user_name>
     <!-- Other users settings -->
 </users>
@@ -51,13 +46,13 @@ Structure of the `users` section:
 
 Password can be specified in plaintext or in SHA256 (hex format).
 
-- To assign a password in plaintext (**not recommended**), place it in a `password` element.
+-   To assign a password in plaintext (**not recommended**), place it in a `password` element.
 
     For example, `<password>qwerty</password>`. The password can be left blank.
 
 <a id="password_sha256_hex"></a>
 
-- To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
+-   To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
 
     For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
 
@@ -69,7 +64,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 <a id="password_double_sha1_hex"></a>
 
-- For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
+-   For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
 
     For example, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
 
@@ -81,36 +76,14 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../../guides/sre/user-management/index.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../../operations/access-rights.md#access-control) for the user.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — Enabled.
+-   0 — Disabled.
+-   1 — Enabled.
 
 Default value: 0.
-
-### grants {#grants-user-setting}
-
-This setting allows to grant any rights to selected user.
-Each element of the list should be `GRANT` query without any grantees specified.
-
-Example:
-
-```xml
-<user1>
-    <grants>
-        <query>GRANT SHOW ON *.*</query>
-        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
-        <query>GRANT SELECT ON system.*</query>
-    </grants>
-</user1>
-```
-
-This setting can't be specified at the same time with
-`dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
-and `allow_databases` settings.
-
 
 ### user_name/networks {#user-namenetworks}
 
@@ -118,17 +91,17 @@ List of networks from which the user can connect to the ClickHouse server.
 
 Each element of the list can have one of the following forms:
 
-- `<ip>` — IP address or network mask.
+-   `<ip>` — IP address or network mask.
 
     Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
 
-- `<host>` — Hostname.
+-   `<host>` — Hostname.
 
     Example: `example01.host.ru`.
 
     To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
 
-- `<host_regexp>` — Regular expression for hostnames.
+-   `<host_regexp>` — Regular expression for hostnames.
 
     Example, `^example\d\d-\d\d-\d\.host\.ru$`
 
@@ -144,7 +117,7 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
-:::note
+:::warning
 It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 :::
 
@@ -187,3 +160,5 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+
+[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

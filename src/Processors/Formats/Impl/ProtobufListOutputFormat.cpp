@@ -13,9 +13,10 @@ namespace DB
 ProtobufListOutputFormat::ProtobufListOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
+    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & schema_info_,
     bool defaults_for_nullable_google_wrappers_)
-    : IRowOutputFormat(header_, out_)
+    : IRowOutputFormat(header_, out_, params_)
     , writer(std::make_unique<ProtobufWriter>(out))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
@@ -41,21 +42,18 @@ void ProtobufListOutputFormat::finalizeImpl()
     serializer->finalizeWrite();
 }
 
-void ProtobufListOutputFormat::resetFormatterImpl()
-{
-    serializer->reset();
-}
-
 void registerOutputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "ProtobufList",
         [](WriteBuffer & buf,
            const Block & header,
+           const RowOutputFormatParams & params,
            const FormatSettings & settings)
         {
             return std::make_shared<ProtobufListOutputFormat>(
-                buf, header, FormatSchemaInfo(settings, "Protobuf", true),
+                buf, header, params,
+                FormatSchemaInfo(settings, "Protobuf", true),
                 settings.protobuf.output_nullables_with_google_wrappers);
         });
 }

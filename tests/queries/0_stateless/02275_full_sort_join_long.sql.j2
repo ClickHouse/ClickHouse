@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
+-- Tags: long
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -22,19 +22,12 @@ INSERT INTO t2
     FROM numbers_mt({{ rtable_size }})
 ;
 
-
-{% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
-
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}1M{% else %}0{% endif %}';
-
-SELECT '-- {{ join_algorithm }} --';
-SET join_algorithm = '{{ join_algorithm }}';
+SET join_algorithm = 'full_sorting_merge';
 
 {% for kind in ['ALL', 'ANY'] -%}
-{% for block_size in [10240, 32001, 65536] %}
+{% for block_size in [32001, 65505, 65536, range(32001, 65536) | random] %}
 
 SET max_block_size = {{ block_size }};
-
 
 SELECT '{{ kind }} INNER';
 SELECT sum(t1.key), sum(t2.key), count(), countIf(t1.key != 0), countIf(t2.key != 0) FROM t1
@@ -54,10 +47,5 @@ SELECT sum(t1.key), sum(t2.key), count(), countIf(t1.key != 0), countIf(t2.key !
 ON t1.key == t2.key
 ;
 
-
 {% endfor -%}
-{% endfor -%}
-
-SET max_bytes_in_join = 0;
-
 {% endfor -%}

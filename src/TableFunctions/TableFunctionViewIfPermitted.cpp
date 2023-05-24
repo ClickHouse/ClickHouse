@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -27,11 +26,6 @@ namespace ErrorCodes
 const ASTSelectWithUnionQuery & TableFunctionViewIfPermitted::getSelectQuery() const
 {
     return *create.select;
-}
-
-std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
-{
-    return {0};
 }
 
 void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -85,15 +79,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
-        {
-            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
-        }
-        else
-        {
-            /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-            sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-        }
+        /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
     }
     catch (Exception & e)
     {
@@ -120,7 +107,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>();
 }
 
 }

@@ -1,12 +1,9 @@
 ---
-slug: /en/operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
-title: "Usage Recommendations"
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
-<SelfManaged />
+# Usage Recommendations
 
 ## CPU Scaling Governor
 
@@ -51,13 +48,9 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). 
+For Linux, software RAID is better (with `mdadm`). We do not recommend using LVM.
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
-
-LVM by itself (without RAID or `mdadm`) is ok, but making RAID with it or combining it with `mdadm` is a less explored option, and there will be more chances for mistakes
-(selecting wrong chunk size; misalignment of chunks; choosing a wrong raid type; forgetting to cleanup disks). If you are confident
-in using LVM, there is nothing against using it.
 
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
 When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
@@ -74,22 +67,19 @@ Never set the block size too small or too large.
 You can use RAID-0 on SSD.
 Regardless of RAID use, always use replication for data security.
 
-Enable NCQ with a long queue. For HDD, choose the mq-deadline or CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
+Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
 Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
+Ext4 is the most reliable option. Set the mount options `noatime`.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
 Most other file systems should also work fine.
-
-FAT-32 and exFAT are not supported due to lack of hard links.
 
 Do not use compressed filesystems, because ClickHouse does compression on its own and better.
 It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
-
-While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -130,7 +120,7 @@ Otherwise you may get `Illegal instruction` crashes when hypervisor is run on ol
 
 ## ClickHouse Keeper and ZooKeeper {#zookeeper}
 
-ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](../guides/sre/keeper/index.md)
+ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](clickhouse-keeper.md)
 
 If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
@@ -138,7 +128,7 @@ You should never use manually written scripts to transfer data between different
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
-You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate.
+You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate. 
 For production environments we suggest to use separate servers for ClickHouse and ZooKeeper/Keeper, or place ClickHouse files and Keeper files on to separate disks. Because ZooKeeper/Keeper are very sensitive for disk latency and ClickHouse may utilize all available system resources.
 
 You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
@@ -193,12 +183,10 @@ preAllocSize=131072
 # especially if there are a lot of clients. To prevent ZooKeeper from running
 # out of memory due to queued requests, ZooKeeper will throttle clients so that
 # there is no more than globalOutstandingLimit outstanding requests in the
-# system. The default limit is 1000.
-# globalOutstandingLimit=1000
-
-# ZooKeeper logs transactions to a transaction log. After snapCount transactions
-# are written to a log file a snapshot is started and a new transaction log file
-# is started. The default snapCount is 100000.
+# system. The default limit is 1,000.ZooKeeper logs transactions to a
+# transaction log. After snapCount transactions are written to a log file a
+# snapshot is started and a new transaction log file is started. The default
+# snapCount is 10,000.
 snapCount=3000000
 
 # If this option is defined, requests will be will logged to a trace file named
@@ -290,7 +278,3 @@ end script
 If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
 [Original article](https://clickhouse.com/docs/en/operations/tips/)
-
-## Related Content
-
-- [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

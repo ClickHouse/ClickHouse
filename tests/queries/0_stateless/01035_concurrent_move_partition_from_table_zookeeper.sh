@@ -70,8 +70,8 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
 wait
 
-echo "DROP TABLE src SYNC" | ${CLICKHOUSE_CLIENT}
-echo "DROP TABLE dst SYNC" | ${CLICKHOUSE_CLIENT}
+echo "DROP TABLE src NO DELAY" | ${CLICKHOUSE_CLIENT}
+echo "DROP TABLE dst NO DELAY" | ${CLICKHOUSE_CLIENT}
 sleep 5
 
 # Check for deadlocks

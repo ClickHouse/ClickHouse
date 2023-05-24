@@ -9,11 +9,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-ConcatSeekableReadBuffer::BufferInfo::BufferInfo(BufferInfo && src) noexcept
-    : in(std::exchange(src.in, nullptr)), own_in(std::exchange(src.own_in, false)), size(std::exchange(src.size, 0))
-{
-}
-
 ConcatSeekableReadBuffer::BufferInfo::~BufferInfo()
 {
     if (own_in)
@@ -104,12 +99,12 @@ off_t ConcatSeekableReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_position = current_position + off;
     else
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence");
+        throw Exception("ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (new_position < 0)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
+        throw Exception("SEEK_SET underflow: off = " + std::to_string(off), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     if (static_cast<UInt64>(new_position) > total_size)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
+        throw Exception("SEEK_CUR shift out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(new_position) == total_size)
     {

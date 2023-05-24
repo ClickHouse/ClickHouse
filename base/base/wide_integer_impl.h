@@ -155,13 +155,13 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
         std::is_floating_point_v<Arithmetic>,
         Arithmetic,
         std::conditional_t<
-            sizeof(Arithmetic) * 8 < Bits,
+            sizeof(Arithmetic) < Bits * sizeof(long),
             wide::integer<Bits, Signed>,
             std::conditional_t<
-                Bits < sizeof(Arithmetic) * 8,
+                Bits * sizeof(long) < sizeof(Arithmetic),
                 Arithmetic,
                 std::conditional_t<
-                    Bits == sizeof(Arithmetic) * 8 && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
+                    Bits * sizeof(long) == sizeof(Arithmetic) && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
                     Arithmetic,
                     wide::integer<Bits, Signed>>>>>;
 };
@@ -187,20 +187,8 @@ struct integer<Bits, Signed>::_impl
     static_assert(Bits % base_bits == 0);
 
     /// Simple iteration in both directions
-    static constexpr unsigned little(unsigned idx)
-    {
-        if constexpr (std::endian::native == std::endian::little)
-            return idx;
-        else
-            return item_count - 1 - idx;
-    }
-    static constexpr unsigned big(unsigned idx)
-    {
-        if constexpr (std::endian::native == std::endian::little)
-            return item_count - 1 - idx;
-        else
-            return idx;
-    }
+    static constexpr unsigned little(unsigned idx) { return idx; }
+    static constexpr unsigned big(unsigned idx) { return item_count - 1 - idx; }
     static constexpr unsigned any(unsigned idx) { return idx; }
 
     template <class T>
@@ -239,8 +227,6 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
-        /// NOTE: this can be called with DB::Decimal, and in this case, result
-        /// will be wrong
         if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
@@ -252,20 +238,20 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        self.items[little(0)] = _impl::to_Integral(rhs);
+        self.items[0] = _impl::to_Integral(rhs);
 
         if constexpr (std::is_signed_v<Integral>)
         {
             if (rhs < 0)
             {
-                for (unsigned i = 1; i < item_count; ++i)
-                    self.items[little(i)] = -1;
+                for (size_t i = 1; i < item_count; ++i)
+                    self.items[i] = -1;
                 return;
             }
         }
 
-        for (unsigned i = 1; i < item_count; ++i)
-            self.items[little(i)] = 0;
+        for (size_t i = 1; i < item_count; ++i)
+            self.items[i] = 0;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -314,14 +300,7 @@ struct integer<Bits, Signed>::_impl
 
         const T alpha = t / static_cast<T>(max_int);
 
-        /** Here we have to use strict comparison.
-          * The max_int is 2^64 - 1.
-          * When casted to floating point type, it will be rounded to the closest representable number,
-          * which is 2^64.
-          * But 2^64 is not representable in uint64_t,
-          * so the maximum representable number will be strictly less.
-          */
-        if (alpha < static_cast<T>(max_int))
+        if (alpha <= static_cast<T>(max_int))
             self = static_cast<uint64_t>(alpha);
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, static_cast<double>(alpha));
@@ -367,7 +346,7 @@ struct integer<Bits, Signed>::_impl
         constexpr const unsigned to_copy = min_bits / base_bits;
 
         for (unsigned i = 0; i < to_copy; ++i)
-            self.items[little(i)] = rhs.items[integer<Bits2, Signed2>::_impl::little(i)];
+            self.items[i] = rhs.items[i];
 
         if constexpr (Bits > Bits2)
         {
@@ -376,13 +355,13 @@ struct integer<Bits, Signed>::_impl
                 if (rhs < 0)
                 {
                     for (unsigned i = to_copy; i < item_count; ++i)
-                        self.items[little(i)] = -1;
+                        self.items[i] = -1;
                     return;
                 }
             }
 
             for (unsigned i = to_copy; i < item_count; ++i)
-                self.items[little(i)] = 0;
+                self.items[i] = 0;
         }
     }
 
@@ -473,8 +452,8 @@ private:
         {
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
-                if (little(0) == idx)
-                    return static_cast<base_type>(x);
+                if (0 == idx)
+                    return x;
             }
             else if (idx * sizeof(base_type) < sizeof(T))
                 return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
@@ -494,7 +473,7 @@ private:
 
         for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type rhs_item = get_item(rhs, little(i));
+            base_type rhs_item = get_item(rhs, i);
             base_type & res_item = res.items[little(i)];
 
             underflows[i] = res_item < rhs_item;
@@ -527,7 +506,7 @@ private:
 
         for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type rhs_item = get_item(rhs, little(i));
+            base_type rhs_item = get_item(rhs, i);
             base_type & res_item = res.items[little(i)];
 
             res_item += rhs_item;
@@ -599,12 +578,12 @@ private:
         else if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
-            CompilerUInt128 a = (CompilerUInt128(lhs.items[little(1)]) << 64) + lhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
-            res.items[little(1)] = c >> 64;
+            res.items[0] = c;
+            res.items[1] = c >> 64;
             return res;
         }
         else
@@ -616,7 +595,7 @@ private:
 #endif
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(rhs, little(i));
+                base_type rhs_item = get_item(rhs, i);
                 unsigned pos = i * base_bits;
 
                 while (rhs_item)
@@ -739,10 +718,9 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, big(i));
+                base_type rhs_item = get_item(rhs, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] > rhs_item;
@@ -765,10 +743,9 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, big(i));
+                base_type rhs_item = get_item(rhs, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] < rhs_item;
@@ -788,10 +765,9 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, any(i));
+                base_type rhs_item = get_item(rhs, any(i));
 
                 if (lhs.items[any(i)] != rhs_item)
                     return false;
@@ -814,7 +790,7 @@ public:
             integer<Bits, Signed> res;
 
             for (unsigned i = 0; i < item_count; ++i)
-                res.items[little(i)] = lhs.items[little(i)] | get_item(rhs, little(i));
+                res.items[little(i)] = lhs.items[little(i)] | get_item(rhs, i);
             return res;
         }
         else
@@ -832,7 +808,7 @@ public:
             integer<Bits, Signed> res;
 
             for (unsigned i = 0; i < item_count; ++i)
-                res.items[little(i)] = lhs.items[little(i)] & get_item(rhs, little(i));
+                res.items[little(i)] = lhs.items[little(i)] & get_item(rhs, i);
             return res;
         }
         else
@@ -867,17 +843,17 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            CompilerUInt128 a = (CompilerUInt128(numerator.items[little(1)]) << 64) + numerator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-            CompilerUInt128 b = (CompilerUInt128(denominator.items[little(1)]) << 64) + denominator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
-            res.items[little(1)] = c >> 64;
+            res.items[0] = c;
+            res.items[1] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[little(0)] = remainder;
-            numerator.items[little(1)] = remainder >> 64;
+            numerator.items[0] = remainder;
+            numerator.items[1] = remainder >> 64;
 
             return res;
         }
@@ -1061,15 +1037,15 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
     else
     {
         auto it = il.begin();
-        for (unsigned i = 0; i < _impl::item_count; ++i)
+        for (size_t i = 0; i < _impl::item_count; ++i)
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[i] = *it;
                 ++it;
             }
             else
-                items[_impl::little(i)] = 0;
+                items[i] = 0;
         }
     }
 }
@@ -1230,7 +1206,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[_impl::little(i)]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
 
     return res;
 }
@@ -1249,7 +1225,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     for (unsigned i = 0; i < _impl::item_count; ++i)
     {
         long double t = res;
-        res *= static_cast<long double>(std::numeric_limits<base_type>::max());
+        res *= std::numeric_limits<base_type>::max();
         res += t;
         res += tmp.items[_impl::big(i)];
     }
@@ -1263,13 +1239,13 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    return static_cast<double>(static_cast<long double>(*this));
+    return static_cast<long double>(*this);
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    return static_cast<float>(static_cast<long double>(*this));
+    return static_cast<long double>(*this);
 }
 
 // Unary operators

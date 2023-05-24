@@ -219,7 +219,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -345,7 +345,7 @@ struct Checker
 ;
 
 
-#if !defined(USE_MUSL)
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -366,10 +366,10 @@ void checkHarmfulEnvironmentVariables(char ** argv)
     bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
-        if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
+        if (const char * value = getenv(var); value && value[0])
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
-            if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
+            if (setenv(var, "", true))
             {
                 fmt::print(stderr, "Cannot override {} environment variable", var);
                 _exit(1);
@@ -402,37 +402,6 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 }
 
 
-/// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
-/// We don't use it. But it can be used by some libraries for implementation of "plugins".
-/// We absolutely discourage the ancient technique of loading
-/// 3rd-party uncontrolled dangerous libraries into the process address space,
-/// because it is insane.
-
-#if !defined(USE_MUSL)
-extern "C"
-{
-    void * dlopen(const char *, int)
-    {
-        return nullptr;
-    }
-
-    void * dlmopen(long, const char *, int) // NOLINT
-    {
-        return nullptr;
-    }
-
-    int dlclose(void *)
-    {
-        return 0;
-    }
-
-    const char * dlerror()
-    {
-        return "ClickHouse does not allow dynamic library loading";
-    }
-}
-#endif
-
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -453,10 +422,9 @@ int main(int argc_, char ** argv_)
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
-    /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
-#if !defined(USE_MUSL)
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 

@@ -225,7 +225,7 @@ def main():
     args = parse_args()
     logging.info("Going to process PR #%s in repo %s", args.pr, args.repo)
     token = args.token or get_best_robot_token()
-    gh = GitHub(token)
+    gh = GitHub(token, per_page=100)
     repo = gh.get_repo(args.repo)
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710

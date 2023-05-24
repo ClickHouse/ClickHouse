@@ -50,7 +50,6 @@ struct SelectQueryOptions
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
-    bool is_create_parameterized_view = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -75,13 +74,6 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         ++out.subquery_depth;
         out.is_subquery = true;
-        return out;
-    }
-
-    SelectQueryOptions createParameterizedView() const
-    {
-        SelectQueryOptions out = *this;
-        out.is_create_parameterized_view = true;
         return out;
     }
 

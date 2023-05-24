@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Core/Types.h>

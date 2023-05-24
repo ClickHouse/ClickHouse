@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/replacingmergetree
 sidebar_position: 40
 sidebar_label:  ReplacingMergeTree
 ---
@@ -20,17 +19,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
+) ENGINE = ReplacingMergeTree([ver])
 [PARTITION BY expr]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[SETTINGS name=value, clean_deleted_rows=value, ...]
+[SETTINGS name=value, ...]
 ```
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
 
-:::note
+:::warning
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
@@ -40,67 +39,10 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
-When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
+    When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-   - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
-   - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
-
-Example: 
-
-```sql
--- without ver - the last inserted 'wins'
-CREATE TABLE myFirstReplacingMT
-(
-    `key` Int64,
-    `someCol` String,
-    `eventTime` DateTime
-)
-ENGINE = ReplacingMergeTree
-ORDER BY key;
-
-INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
-INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
-
-SELECT * FROM myFirstReplacingMT FINAL;
-
-┌─key─┬─someCol─┬───────────eventTime─┐
-│   1 │ second  │ 2020-01-01 00:00:00 │
-└─────┴─────────┴─────────────────────┘
-
-
--- with ver - the row with the biggest ver 'wins'
-CREATE TABLE mySecondReplacingMT
-(
-    `key` Int64,
-    `someCol` String,
-    `eventTime` DateTime
-)
-ENGINE = ReplacingMergeTree(eventTime)
-ORDER BY key;
-
-INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
-INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
-
-SELECT * FROM mySecondReplacingMT FINAL;
-
-┌─key─┬─someCol─┬───────────eventTime─┐
-│   1 │ first   │ 2020-01-01 01:01:01 │
-└─────┴─────────┴─────────────────────┘
-```
-
-### is_deleted
-
-`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
-
-  Column data type — `UInt8`.
-
-:::note
-`is_deleted` can only be enabled when `ver` is used.
-
-The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
-
-No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
-:::
+    -   The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+    -   With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
 ## Query clauses
 
@@ -110,7 +52,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+:::warning
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -125,6 +67,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
-- `ver` - column with the version. Optional parameter. For a description, see the text above.
+-   `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
