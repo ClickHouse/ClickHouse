@@ -35,6 +35,8 @@ public:
 
 private:
     void consume(Chunk) override;
+    void appendToAccumulatedChunk(Chunk chunk);
+    void write(Chunk chunk, size_t row_group_size);
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
@@ -42,6 +44,8 @@ private:
 
     std::unique_ptr<parquet::arrow::FileWriter> file_writer;
     std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
+
+    Chunk accumulated_chunk;
 };
 
 }

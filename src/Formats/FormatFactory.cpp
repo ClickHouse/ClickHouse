@@ -110,7 +110,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
-    format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
     format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
@@ -121,6 +122,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
+    format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -734,6 +736,14 @@ void FormatFactory::markFormatSupportsSubcolumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
+{
+    auto & target = dict[name].prefers_large_blocks;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
+    target = true;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
 {
     const auto & target = getCreators(name);
@@ -792,6 +802,20 @@ bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) co
 bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
+{
+    if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+        return false;
+
+    return true;
 }
 
 void FormatFactory::checkFormatName(const String & name) const

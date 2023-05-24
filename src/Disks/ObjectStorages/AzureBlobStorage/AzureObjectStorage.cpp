@@ -10,6 +10,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
 
@@ -86,6 +87,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 {
     ReadSettings disk_read_settings = patchSettings(read_settings);
     auto settings_ptr = settings.get();
+    auto global_context = Context::getGlobalContextInstance();
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
@@ -104,12 +106,16 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
     auto reader_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         objects,
-        disk_read_settings);
+        disk_read_settings,
+        global_context->getFilesystemCacheLog());
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+            reader, disk_read_settings, std::move(reader_impl),
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
     }
     else
     {
@@ -123,7 +129,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes>,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -132,14 +137,12 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
-    auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
+    return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         settings.get()->max_single_part_upload_size,
         buf_size,
         patchSettings(write_settings));
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.remote_path);
 }
 
 void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
@@ -276,7 +279,6 @@ void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguratio
 {
     auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
     settings.set(std::move(new_settings));
-    applyRemoteThrottlingSettings(context);
     /// We don't update client
 }
 

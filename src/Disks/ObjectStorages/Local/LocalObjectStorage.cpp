@@ -7,7 +7,6 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -51,6 +50,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     std::optional<size_t> file_size) const
 {
     auto modified_settings = patchSettings(read_settings);
+    auto global_context = Context::getGlobalContextInstance();
     auto read_buffer_creator =
         [=] (const std::string & file_path, size_t /* read_until_position */)
         -> std::unique_ptr<ReadBufferFromFileBase>
@@ -59,14 +59,18 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     };
 
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator), objects, modified_settings);
+        std::move(read_buffer_creator), objects, modified_settings,
+        global_context->getFilesystemCacheLog());
 
     /// We use `remove_fs_method` (not `local_fs_method`) because we are about to use
     /// AsynchronousReadIndirectBufferFromRemoteFS which works by the remote_fs_* settings.
     if (modified_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, modified_settings, std::move(impl));
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+            reader, modified_settings, std::move(impl),
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
     }
     else
     {
@@ -119,7 +123,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> /* attributes */,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
@@ -127,9 +130,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
     LOG_TEST(log, "Write object: {}", object.remote_path);
-    auto impl = std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(
-        std::move(impl), std::move(finalize_callback), object.remote_path);
+    return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)

@@ -26,15 +26,6 @@ void IObjectStorage::getDirectoryContents(const std::string &,
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
 }
 
-IAsynchronousReader & IObjectStorage::getThreadPoolReader()
-{
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-}
-
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
@@ -64,27 +55,16 @@ const std::string & IObjectStorage::getCacheName() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
 }
 
-void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
-{
-    std::unique_lock lock{throttlers_mutex};
-    remote_read_throttler = context->getRemoteReadThrottler();
-    remote_write_throttler = context->getRemoteWriteThrottler();
-}
-
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    std::unique_lock lock{throttlers_mutex};
     ReadSettings settings{read_settings};
-    settings.remote_throttler = remote_read_throttler;
     settings.for_object_storage = true;
     return settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    std::unique_lock lock{throttlers_mutex};
     WriteSettings settings{write_settings};
-    settings.remote_throttler = remote_write_throttler;
     settings.for_object_storage = true;
     return settings;
 }

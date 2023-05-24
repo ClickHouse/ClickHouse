@@ -9,10 +9,10 @@
 #include <IO/WriteHelpers.h>
 
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/getThreadPoolReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -179,12 +179,20 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
              read_until_position);
      };
 
-    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), StoredObjects{object}, read_settings);
+    auto global_context = Context::getGlobalContextInstance();
+    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
+        StoredObjects{object},
+        read_settings,
+        global_context->getFilesystemCacheLog());
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = IObjectStorage::getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+            reader, read_settings, std::move(web_impl),
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
     }
     else
     {
@@ -202,7 +210,6 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     const StoredObject & /* object */,
     WriteMode /* mode */,
     std::optional<ObjectAttributes> /* attributes */,
-    FinalizeCallback && /* finalize_callback */,
     size_t /* buf_size */,
     const WriteSettings & /* write_settings */)
 {

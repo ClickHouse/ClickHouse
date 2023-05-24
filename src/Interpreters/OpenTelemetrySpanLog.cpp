@@ -1,19 +1,14 @@
-#include "OpenTelemetrySpanLog.h"
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Interpreters/Context.h>
-
-#include <base/hex.h>
-#include <Common/CurrentThread.h>
-#include <Core/Field.h>
 
 
 namespace DB
@@ -32,11 +27,13 @@ NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
         }
     );
 
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     return {
         {"trace_id", std::make_shared<DataTypeUUID>()},
         {"span_id", std::make_shared<DataTypeUInt64>()},
         {"parent_span_id", std::make_shared<DataTypeUInt64>()},
-        {"operation_name", std::make_shared<DataTypeString>()},
+        {"operation_name", low_cardinality_string},
         {"kind", std::move(span_kind_type)},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
@@ -51,15 +48,17 @@ NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
         {"start_time_us", std::make_shared<DataTypeUInt64>()},
         {"finish_time_us", std::make_shared<DataTypeUInt64>()},
         {"finish_date", std::make_shared<DataTypeDate>()},
-        {"attribute", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>())},
     };
 }
 
 NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     return
     {
-        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"},
+        {"attribute.names", std::make_shared<DataTypeArray>(low_cardinality_string), "mapKeys(attribute)"},
         {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapValues(attribute)"}
     };
 }
@@ -83,4 +82,3 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 }
-

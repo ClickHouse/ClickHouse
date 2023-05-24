@@ -8,6 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -582,6 +583,18 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::ENABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::enableFailPoint(query.fail_point_name);
+            break;
+        }
+        case Type::DISABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableFailPoint(query.fail_point_name);
+            break;
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -800,7 +813,6 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
         return false;
 
     ReplicatedTableStatus status;
-    auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
@@ -809,13 +821,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
-    /// This check prevents only from accidental drop of some other replica.
-    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", query.replica);
-
-    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
+    storage_replicated->dropReplica(status.zookeeper_path, query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
@@ -1177,6 +1183,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
         case Type::UNKNOWN:
         case Type::END: break;
     }
