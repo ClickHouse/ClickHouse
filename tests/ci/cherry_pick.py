@@ -548,6 +548,7 @@ def parse_args():
     )
     parser.add_argument(
         "--from-repo",
+        default="ClickHouse/ClickHouse",
         help="if set, the commits will be taken from this repo, but PRs will be created in the main repo",
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
