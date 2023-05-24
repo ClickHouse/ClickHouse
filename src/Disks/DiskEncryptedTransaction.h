@@ -20,7 +20,6 @@ struct DiskEncryptedSettings
 };
 
 
-
 class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
