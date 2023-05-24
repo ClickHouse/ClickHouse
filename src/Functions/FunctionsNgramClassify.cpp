@@ -17,9 +17,13 @@
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "base/defines.h"
 #include "base/types.h"
+#include "Common/setThreadName.h"
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
+#include <filesystem>
+
+namespace fs = std::filesystem; 
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -51,7 +55,7 @@
 */
 
 
-static const String model_path = "~/ClickHouse/opt/Storages/NgramModels/";
+static const String model_path = "~/ClickHouse/opt/NgramModels/";
 
 namespace DB
 {
@@ -333,6 +337,64 @@ public:
     }
 private:
     std::unordered_map<String, NaiveBayes<CodePoint, N, UTF8, case_insensitive>> models;
+};
+
+
+template<class Section>
+class NgramStorage {
+public:
+
+
+    explicit NgramStorage() 
+    {
+        reload();
+        t_reload = ThreadFromGlobalPool([this] { reloadPeriodically(); });
+    }
+
+
+    ~NgramStorage() 
+    {
+        destroy.set();
+        t_reload.join();
+    }
+
+
+    [[noreturn]] void reload() {
+        for (const auto &entry : fs::directory_iterator(model_path)) {
+            if (!entry.is_directory()) {
+                // BOOM
+            }
+            const String &section_name = entry.path().filename().string();
+            std::unordered_map<String, String> section_models;
+            for (const auto &model: fs::directory_iterator(entry.path())) {
+                const String &model_name = model.path().filename().string();
+                // here we need to load model
+                if (!model.is_regular_file()) {
+                    // BOOM
+                }
+                std::ifstream file(model.path().string(), std::ios_base::in);
+                std::string str{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+                file.close();
+                section_models[model_name] = str;
+            }
+            map[section_name].fit(section_models);
+        }
+    }
+
+    [[noreturn]] void reloadPeriodically()
+    {
+        setThreadName("Ngram Storage Reload");
+
+        while (true)
+        {
+            destroy.tryWait(cur_reload_period * 1000);
+            reload();
+        }
+    }
+    static constexpr Int64 cur_reload_period = 100;
+    Poco::Event destroy;
+    std::unordered_map<String, Section> map;
+    ThreadFromGlobalPool t_reload;
 };
 
 
