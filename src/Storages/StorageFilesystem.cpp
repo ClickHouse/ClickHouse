@@ -1,7 +1,13 @@
 #include <chrono>
 #include <filesystem>
+#include <base/types.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageFilesystem.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 namespace fs = std::filesystem;
 
@@ -9,7 +15,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 String fileTypeToString(fs::file_type type)
@@ -69,69 +77,23 @@ String permissionsToString(fs::perms perms)
     return result;
 }
 
-template <typename T>
-class ConcurrentQueue
-{
-public:
-    bool pull(T * res)
-    {
-        std::unique_lock lock(mtx);
-        if (queue.empty())
-        {
-            if (++curr >= max_streams)
-            {
-                closed = true;
-                lock.unlock();
-                cv.notify_all();
-                return false;
-            }
-            cv.wait(lock, [this]() { return !queue.empty() || closed; });
-            --curr;
-        }
-        if (closed)
-        {
-            return false;
-        }
-        *res = std::move(queue.front());
-        queue.pop();
-        return true;
-    }
-
-    void push(T value)
-    {
-        std::unique_lock lock(mtx);
-        queue.push(std::move(value));
-        lock.unlock();
-        cv.notify_all();
-    }
-
-    explicit ConcurrentQueue(int max_streams_) : max_streams(max_streams_) { }
-
-private:
-    const int max_streams;
-    std::atomic_int curr = 0;
-    bool closed = false;
-    std::condition_variable cv;
-    std::queue<T> queue;
-
-    std::mutex mtx;
-};
-
 class StorageFilesystemSource final : public ISource
 {
 public:
     struct PathInfo
     {
-        ConcurrentQueue<fs::directory_entry> queue;
-
+        ConcurrentBoundedQueue<fs::directory_entry> queue;
+        const String user_files_absolute_path_string;
+        const bool need_check;
         fs::recursive_directory_iterator directory_iterator;
-        std::mutex mutex;
-        const String path;
         std::atomic_uint32_t rows = 1;
 
-        PathInfo(String path_, int max_streams) : queue(max_streams), directory_iterator(path_), path(path_)
+        PathInfo(size_t num_streams, String user_files_absolute_path_string_, bool need_check_)
+            : queue(num_streams * 1000000L)
+            , user_files_absolute_path_string(user_files_absolute_path_string_)
+            , need_check(need_check_)
+            , directory_iterator(user_files_absolute_path_string)
         {
-            queue.push(fs::directory_entry(path));
         }
     };
     using PathInfoPtr = std::shared_ptr<PathInfo>;
@@ -140,6 +102,7 @@ public:
 
     Chunk generate() override
     {
+        size_t current_block_size = 0;
         std::unordered_map<String, MutableColumnPtr> columns_map;
         auto names_and_types_in_use = storage_snapshot->getSampleBlockForColumns(columns_in_use).getNamesAndTypesList();
         for (const auto & [name, type] : names_and_types_in_use)
@@ -147,20 +110,38 @@ public:
             columns_map[name] = type->createColumn();
         }
 
+
         fs::directory_entry file;
-        while (path_info->queue.pull(&file))
+        while (current_block_size++ < max_block_size && path_info->queue.tryPop(file))
         {
+            LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processing path {} remaining queue size {} ",
+                file.path().string(), path_info->queue.size());
+
             std::error_code ec;
+
             if (file.is_directory(ec) && !file.is_symlink(ec) && ec.value() == 0)
             {
-                for (auto & child : fs::directory_iterator(file, ec))
+                for (const auto & child : fs::directory_iterator(file, ec))
                 {
-                    if (path_info->rows++ >= this->max_block_size)
+                    fs::path file_path(child);
+                    /// Do not use fs::canonical or fs::weakly_canonical.
+                    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+                    file_path = fs::absolute(file_path).lexically_normal();
+
+                    if (path_info->need_check && file_path.string().find(path_info->user_files_absolute_path_string) != 0)
                     {
-                        break;
+                        LOG_DEBUG(&Poco::Logger::get("StorageFilesystem"), "Path {} is not inside user_files {}",
+                            file_path.string(),path_info->user_files_absolute_path_string);
                     }
-                    path_info->queue.push(std::move(child));
+                    if(!path_info->queue.push(child))
+                        LOG_WARNING(&Poco::Logger::get("StorageFilesystem"), "Too many files to process, skipping some from {}",
+                            file.path().string());
                 }
+            }
+            else
+            {
+                LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Not looking at children of path {}, is_dir {}, is_sym {}, ec {}",
+                    file.path().string(), file.is_directory(), file.is_symlink(), ec.value());
             }
             ec.clear();
 
@@ -223,6 +204,8 @@ public:
             {
                 columns_map["name"]->insert(file.path().filename().string());
             }
+            LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processed path {} columns_map. {} ", file.path().string(),
+                columns_map.empty() ? -1 : columns_map.begin()->second->size() );
         }
 
         auto num_rows = columns_map.begin() != columns_map.end() ? columns_map.begin()->second->size() : 0;
@@ -282,15 +265,32 @@ Pipe StorageFilesystem::read(
     ContextPtr,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    unsigned int num_streams)
+    size_t num_streams)
 {
     auto this_ptr = std::static_pointer_cast<StorageFilesystem>(shared_from_this());
-    if (!fs::exists(path))
+
+    auto path_info = std::make_shared<StorageFilesystemSource::PathInfo>(num_streams, user_files_absolute_path_string, !local_mode);
+
+    fs::path file_path(path);
+    if (file_path.is_relative())
+        file_path = fs::path(path_info->user_files_absolute_path_string) / file_path;
+    /// Do not use fs::canonical or fs::weakly_canonical.
+    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+    file_path = fs::absolute(file_path).lexically_normal();
+
+
+    if (path_info->need_check && file_path.string().find(path_info->user_files_absolute_path_string) != 0)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Path {} is not inside user_files {}",
+            file_path.string(), path_info->user_files_absolute_path_string);
+
+    if (!fs::exists(file_path))
     {
-        throw Exception("Directory " + path + " doesn't exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory {} doesn't exist", file_path.string());
     }
 
-    auto path_info = std::make_shared<StorageFilesystemSource::PathInfo>(path, num_streams);
+    if (!path_info->queue.push(fs::directory_entry(file_path)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
+
     Pipes pipes;
     for (unsigned i = 0; i < num_streams; ++i)
     {
@@ -299,16 +299,20 @@ Pipe StorageFilesystem::read(
     auto pipe = Pipe::unitePipes(std::move(pipes));
     return pipe;
 }
+
 StorageFilesystem::StorageFilesystem(
     const StorageID & table_id_,
-    ColumnsDescription columns_description_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
+    bool local_mode_,
     String path_,
-    ConstraintsDescription constraints_,
-    const String & comment)
-    : IStorage(table_id_), path(path_)
+    String user_files_absolute_path_string_
+    )
+    : IStorage(table_id_), local_mode(local_mode_), path(path_), user_files_absolute_path_string(user_files_absolute_path_string_)
 {
     StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns_description_);
+    metadata.setColumns(columns_);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
     setInMemoryMetadata(metadata);
@@ -320,5 +324,33 @@ Strings StorageFilesystem::getDataPaths() const
 NamesAndTypesList StorageFilesystem::getVirtuals() const
 {
     return {};
+}
+
+
+void registerStorageFilesystem(StorageFactory & factory)
+{
+    factory.registerStorage("Filesystem", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (engine_args.size() != 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage Filesystem requires one argument: path.");
+
+        String path;
+
+        const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
+        if (!ast_literal.value.isNull())
+            path = checkAndGetLiteralArgument<String>(ast_literal, "path");
+
+        String user_files_absolute_path_string = fs::canonical(fs::path(args.getContext()->getUserFilesPath()).string());
+        bool local_mode = args.getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+
+        return std::make_shared<StorageFilesystem>(args.table_id, args.columns, args.constraints, args.comment, local_mode, path,
+            user_files_absolute_path_string);
+    },
+    {
+            .source_access_type = AccessType::FILESYSTEM,
+    });
 }
 }

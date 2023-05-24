@@ -14,10 +14,12 @@ public:
 
     StorageFilesystem(
         const StorageID & table_id_,
-        ColumnsDescription columns_description_,
+        const ColumnsDescription & columns_description_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool local_mode_,
         String path_,
-        ConstraintsDescription constraints_,
-        const String & comment);
+        String user_files_absolute_path_string_);
 
     Pipe read(
         const Names & column_names,
@@ -26,9 +28,9 @@ public:
         ContextPtr /* context */,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return false; }
 
     Strings getDataPaths() const override;
 
@@ -38,6 +40,8 @@ protected:
     friend class StorageFilesystemSource;
 
 private:
+    bool local_mode;
     String path;
+    String user_files_absolute_path_string;
 };
 }

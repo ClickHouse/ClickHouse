@@ -30,7 +30,8 @@ protected:
 
 private:
     const char * getStorageTypeName() const override { return "Directory"; }
-    ColumnsDescription structure{
+
+    ColumnsDescription structure {
         {{"type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
          {"symlink", DataTypeFactory::instance().get("Bool")},
          {"path", std::make_shared<DataTypeString>()},
