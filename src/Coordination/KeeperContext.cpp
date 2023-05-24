@@ -3,6 +3,7 @@
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -26,6 +27,14 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
         current_log_storage = config.getString("keeper_server.current_log_storage_disk");
     else
         current_log_storage = log_storage;
+
+    Poco::Util::AbstractConfiguration::Keys old_log_disk_name_keys;
+    config.keys("keeper_server", old_log_disk_name_keys);
+    for (const auto & key : old_log_disk_name_keys)
+    {
+        if (key.starts_with("old_log_storage_disk"))
+            old_log_disk_names.push_back(config.getString("keeper_server." + key));
+    }
 
     snapshot_storage = getSnapshotsPathFromConfig(config);
 
@@ -69,6 +78,17 @@ DiskPtr KeeperContext::getDisk(const Storage & storage) const
 DiskPtr KeeperContext::getLogDisk() const
 {
     return getDisk(log_storage);
+}
+
+std::vector<DiskPtr> KeeperContext::getOldLogDisks() const
+{
+    std::vector<DiskPtr> old_log_disks;
+    old_log_disks.reserve(old_log_disk_names.size());
+
+    for (const auto & disk_name : old_log_disk_names)
+        old_log_disks.push_back(disk_selector->get(disk_name));
+
+    return old_log_disks;
 }
 
 DiskPtr KeeperContext::getCurrentLogDisk() const
