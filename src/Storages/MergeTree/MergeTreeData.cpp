@@ -1967,7 +1967,7 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, 0));
+        }, Priority{}));
     }
 
     /// Wait for every scheduled task
