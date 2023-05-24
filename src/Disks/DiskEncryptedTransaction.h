@@ -19,9 +19,19 @@ struct DiskEncryptedSettings
     FileEncryption::Algorithm current_algorithm;
 };
 
+
+
 class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
+    static String wrappedPath(const String disk_path, const String & path)
+    {
+        // if path starts_with disk_path -> got already wrapped path
+        if (!disk_path.empty() && path.starts_with(disk_path))
+            return path;
+        return disk_path + path;
+    }
+
     DiskEncryptedTransaction(DiskTransactionPtr delegate_transaction_, const std::string & disk_path_, DiskEncryptedSettings current_settings_, IDisk * delegate_disk_)
         : delegate_transaction(delegate_transaction_)
         , disk_path(disk_path_)
@@ -229,12 +239,10 @@ public:
 
 
 private:
+
     String wrappedPath(const String & path) const
     {
-        // if path starts_with disk_path -> got already wrapped path
-        if (!disk_path.empty() && path.starts_with(disk_path))
-            return path;
-        return disk_path + path;
+        return wrappedPath(disk_path, path);
     }
 
     DiskTransactionPtr delegate_transaction;
