@@ -137,4 +137,3 @@
 01600_parts_types_metrics_long
 01287_max_execution_speed
 02703_row_policy_for_database
-02732_rename_after_processing
