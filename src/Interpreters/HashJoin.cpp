@@ -761,9 +761,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
-    if (context->getSettings().use_shrink_to_fit_in_hash_join) {
+    if (context->getSettings().use_shrink_to_fit_in_hash_join)
         block_to_save = block_to_save.shrinkToFit();
-    }
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
