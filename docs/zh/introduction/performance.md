@@ -1,5 +1,4 @@
 ---
-slug: /zh/introduction/performance
 sidebar_position: 3
 sidebar_label: ClickHouse性能
 ---
@@ -27,3 +26,5 @@ sidebar_label: ClickHouse性能
 ## 数据的写入性能 {#shu-ju-de-xie-ru-xing-neng}
 
 我们建议每次写入不少于1000行的批量写入，或每秒不超过一个写入请求。当使用tab-separated格式将一份数据写入到MergeTree表中时，写入速度大约为50到200MB/s。如果您写入的数据每行为1Kb，那么写入的速度为50，000到200，000行每秒。如果您的行更小，那么写入速度将更高。为了提高写入性能，您可以使用多个INSERT进行并行写入，这将带来线性的性能提升。
+
+[来源文章](https://clickhouse.com/docs/en/introduction/performance/) <!--hide-->

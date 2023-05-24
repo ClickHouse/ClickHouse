@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_BZIP2
 #    include <IO/Bzip2WriteBuffer.h>
@@ -58,7 +58,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 
     bz->stream.next_in = working_buffer.begin();
-    bz->stream.avail_in = static_cast<unsigned>(offset());
+    bz->stream.avail_in = offset();
 
     try
     {
@@ -66,7 +66,7 @@ void Bzip2WriteBuffer::nextImpl()
         {
             out->nextIfAtEnd();
             bz->stream.next_out = out->position();
-            bz->stream.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
+            bz->stream.avail_out = out->buffer().end() - out->position();
 
             int ret = BZ2_bzCompress(&bz->stream, BZ_RUN);
 
@@ -95,7 +95,7 @@ void Bzip2WriteBuffer::finalizeBefore()
 
     out->nextIfAtEnd();
     bz->stream.next_out = out->position();
-    bz->stream.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
+    bz->stream.avail_out = out->buffer().end() - out->position();
 
     int ret = BZ2_bzCompress(&bz->stream, BZ_FINISH);
 

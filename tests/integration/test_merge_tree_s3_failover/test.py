@@ -85,11 +85,11 @@ def cluster():
 def drop_table(cluster):
     yield
     node = cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS s3_failover_test SYNC")
+    node.query("DROP TABLE IF EXISTS s3_failover_test NO DELAY")
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 6  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
+FILES_PER_PART_BASE = 5  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
 FILES_PER_PART_WIDE = (
     FILES_PER_PART_BASE + 1 + 1 + 3 * 2
 )  # Primary index, MinMax, Mark and data file for column(s)
@@ -182,7 +182,7 @@ def test_move_failover(cluster):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
+        TTL dt + INTERVAL 3 SECOND TO VOLUME 'external'
         SETTINGS storage_policy='s3_cold'
         """
     )
@@ -191,7 +191,7 @@ def test_move_failover(cluster):
     fail_request(cluster, 1)
 
     node.query(
-        "INSERT INTO s3_failover_test VALUES (now() - 1, 0, 'data'), (now() - 1, 1, 'data')"
+        "INSERT INTO s3_failover_test VALUES (now() - 2, 0, 'data'), (now() - 2, 1, 'data')"
     )
 
     # Wait for part move to S3.
@@ -270,29 +270,3 @@ def test_throttle_retry(cluster):
         )
         == "42\n"
     )
-
-
-# Check that loading of parts is retried.
-def test_retry_loading_parts(cluster):
-    node = cluster.instances["node"]
-
-    node.query(
-        """
-        CREATE TABLE s3_retry_loading_parts (
-            id Int64
-        ) ENGINE=MergeTree()
-        ORDER BY id
-        SETTINGS storage_policy='s3_no_retries'
-        """
-    )
-
-    node.query("INSERT INTO s3_retry_loading_parts VALUES (42)")
-    node.query("DETACH TABLE s3_retry_loading_parts")
-
-    fail_request(cluster, 5)
-    node.query("ATTACH TABLE s3_retry_loading_parts")
-
-    assert node.contains_in_log(
-        "Failed to load data part all_1_1_0 at try 0 with retryable error"
-    )
-    assert node.query("SELECT * FROM s3_retry_loading_parts") == "42\n"

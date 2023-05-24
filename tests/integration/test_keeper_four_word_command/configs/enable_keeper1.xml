@@ -1,7 +1,5 @@
-<clickhouse>
+<yandex>
     <keeper_server>
-        <use_cluster>false</use_cluster>
-
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
@@ -35,10 +33,10 @@
                 <id>3</id>
                 <hostname>node3</hostname>
                 <port>9234</port>
-                <can_become_leader>true</can_become_leader>
+                <can_become_leader>false</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>1</priority>
             </server>
         </raft_configuration>
     </keeper_server>
-</clickhouse>
+</yandex>

@@ -14,7 +14,7 @@ CREATE TABLE set_idx
     INDEX idx (i32) TYPE set(2) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 6, index_granularity_bytes = '10Mi';"
+SETTINGS index_granularity = 6;"
 
 $CLICKHOUSE_CLIENT --query="
 INSERT INTO set_idx

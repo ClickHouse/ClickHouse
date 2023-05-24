@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/avgweighted
 sidebar_position: 107
 ---
 
@@ -43,3 +42,4 @@ FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 │                      8 │
 └────────────────────────┘
 ```
+

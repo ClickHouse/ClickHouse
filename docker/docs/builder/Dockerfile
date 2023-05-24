@@ -1,3 +1,4 @@
+# rebuild in #36968
 # docker build -t clickhouse/docs-builder .
 # nodejs 17 prefers ipv6 and is broken in our environment
 FROM node:16-alpine
@@ -20,3 +21,5 @@ RUN yarn config set registry https://registry.npmjs.org \
 COPY run.sh /run.sh
 
 ENTRYPOINT ["/run.sh"]
+
+CMD ["yarn", "build"]

@@ -11,8 +11,7 @@ CREATE TABLE video_log
 )
 ENGINE = MergeTree
 PARTITION BY toDate(datetime)
-ORDER BY (user_id, device_id)
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY (user_id, device_id);
 
 DROP TABLE IF EXISTS rng;
 
@@ -58,8 +57,7 @@ CREATE TABLE video_log_result
 )
 ENGINE = MergeTree
 PARTITION BY toDate(hour)
-ORDER BY sum_bytes
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY sum_bytes;
 
 INSERT INTO video_log_result SELECT
     toStartOfHour(datetime) AS hour,

@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/entropy
 sidebar_position: 302
 ---
 

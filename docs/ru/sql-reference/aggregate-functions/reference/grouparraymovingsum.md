@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/grouparraymovingsum
 sidebar_position: 113
 ---
 
@@ -75,3 +74,4 @@ FROM t
 │ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
+

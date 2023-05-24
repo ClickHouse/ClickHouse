@@ -1,6 +1,3 @@
----
-slug: /ru/operations/utilities/odbc-bridge
----
 # clickhouse-odbc-bridge
 
 Simple HTTP-server which works like a proxy for ODBC driver. The main motivation

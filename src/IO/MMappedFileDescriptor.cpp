@@ -33,7 +33,7 @@ static size_t getFileSize(int fd)
     off_t file_size = stat_res.st_size;
 
     if (file_size < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MMappedFileDescriptor: fstat returned negative file size");
+        throw Exception("MMappedFileDescriptor: fstat returned negative file size", ErrorCodes::LOGICAL_ERROR);
 
     return file_size;
 }
@@ -77,7 +77,7 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_)
     size_t file_size = getFileSize(fd_);
 
     if (offset > static_cast<size_t>(file_size))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MMappedFileDescriptor: requested offset is greater than file size");
+        throw Exception("MMappedFileDescriptor: requested offset is greater than file size", ErrorCodes::BAD_ARGUMENTS);
 
     set(fd_, offset_, file_size - offset);
 }

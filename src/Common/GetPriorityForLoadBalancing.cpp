@@ -16,7 +16,7 @@ std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc
         case LoadBalancing::NEAREST_HOSTNAME:
             if (hostname_differences.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_differences is not initialized");
-            get_priority = [this](size_t i) { return hostname_differences[i]; };
+            get_priority = [&](size_t i) { return hostname_differences[i]; };
             break;
         case LoadBalancing::IN_ORDER:
             get_priority = [](size_t i) { return i; };
@@ -36,7 +36,7 @@ std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc
              * last_used = 3 -> get_priority: 4 3 0 1 2
              * ...
              * */
-            get_priority = [this, pool_size](size_t i)
+            get_priority = [&](size_t i)
             {
                 ++i;
                 return i < last_used ? pool_size - i : i - last_used;

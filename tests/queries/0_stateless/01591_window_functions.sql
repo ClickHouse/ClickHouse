@@ -1,7 +1,5 @@
 -- Tags: long
 
-SET allow_experimental_analyzer = 1;
-
 -- { echo }
 
 -- just something basic

@@ -13,7 +13,7 @@ struct NameReplaceOne
     static constexpr auto name = "replaceOne";
 };
 
-using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<NameReplaceOne, ReplaceStringTraits::Replace::First>, NameReplaceOne>;
+using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<true>, NameReplaceOne>;
 
 }
 

@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Single column partition key ***'"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS single_col_partition_key"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE single_col_partition_key(x UInt32) ENGINE MergeTree ORDER BY x PARTITION BY intDiv(x, 10) SETTINGS index_granularity=4"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE single_col_partition_key(x UInt32) ENGINE MergeTree ORDER BY x PARTITION BY intDiv(x, 10)"
 
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO single_col_partition_key VALUES (1), (2), (3), (4), (11), (12), (20)"
 

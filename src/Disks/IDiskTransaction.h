@@ -30,8 +30,6 @@ public:
     /// If something fails rollback and throw exception.
     virtual void commit() = 0;
 
-    virtual void undo() = 0;
-
     virtual ~IDiskTransaction() = default;
 
     /// Create directory.
@@ -67,11 +65,6 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
-
-    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
-
-    /// Write a file using a custom function to write an object to the disk's object storage.
-    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const std::string & path) = 0;

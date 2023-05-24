@@ -1,12 +1,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToDateOrDate32.h>
+#include <Functions/FunctionDateOrDateTimeToSomething.h>
 
 
 namespace DB
 {
 
-using FunctionToMonday = FunctionDateOrDateTimeToDateOrDate32<ToMondayImpl>;
+using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate, ToMondayImpl>;
 
 REGISTER_FUNCTION(ToMonday)
 {

@@ -49,9 +49,7 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
         {"revision", std::make_shared<DataTypeUInt32>()},
 
         {"source_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"source_line", std::make_shared<DataTypeUInt64>()},
-
-        {"message_format_string", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"source_line", std::make_shared<DataTypeUInt64>()}
     };
 }
 
@@ -76,8 +74,6 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(source_file);
     columns[i++]->insert(source_line);
-
-    columns[i++]->insert(message_format_string);
 }
 
 TextLog::TextLog(ContextPtr context_, const String & database_name_,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Access/AuthenticationData.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 

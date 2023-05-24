@@ -28,16 +28,13 @@ public:
     bool operator() (Map &) const;
     bool operator() (Object &) const;
     bool operator() (UUID &) const;
-    bool operator() (IPv4 &) const;
-    bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
-    bool operator() (CustomType &) const;
     bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
-        x += rhs.get<DecimalField<T>>();
+        x += get<DecimalField<T>>(rhs);
         return x.getValue() != T(0);
     }
 
@@ -51,3 +48,4 @@ public:
 };
 
 }
+

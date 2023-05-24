@@ -33,20 +33,20 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
-        size_t num_streams,
+        unsigned num_streams,
         QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
-    QueryPlanStepPtr readFromParts(
+    QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
-        size_t num_streams,
+        unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
@@ -63,15 +63,8 @@ public:
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes,
         ContextPtr context,
-        size_t num_streams,
+        unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
-
-    static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const Settings & settings,
-        Poco::Logger * log);
 
 private:
     const MergeTreeData & data;
@@ -80,6 +73,13 @@ private:
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const Settings & settings,
+        Poco::Logger * log);
+
+    static MarkRanges markRangesFromPKRange(
+        const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings,
@@ -202,7 +202,7 @@ public:
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.
     static MergeTreeDataSelectSamplingData getSampling(
-        const SelectQueryInfo & select_query_info,
+        const ASTSelectQuery & select,
         NamesAndTypesList available_real_columns,
         const MergeTreeData::DataPartsVector & parts,
         KeyCondition & key_condition,

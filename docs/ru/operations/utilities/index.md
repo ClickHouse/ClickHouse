@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/utilities/
 sidebar_label: "Утилиты"
 sidebar_position: 56
 ---

@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/|utils/keeper-bench/example.yaml'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing|benchmark'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -59,7 +59,10 @@ declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
-
+declare -A EXTERN_ALLOWED_CHARS
+EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Z'
+EXTERN_ALLOWED_CHARS[ProfileEvents]='_A-Za-z'
+EXTERN_ALLOWED_CHARS[CurrentMetrics]='_A-Za-z'
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
     ProfileEvents::Event
@@ -67,7 +70,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
-    ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
     ProfileEvents::Type
     ProfileEvents::TypeEnum
@@ -79,37 +81,23 @@ EXTERN_TYPES_EXCLUDES=(
 
     CurrentMetrics::add
     CurrentMetrics::sub
-    CurrentMetrics::get
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
     CurrentMetrics::values
-    CurrentMetrics::Value
-
-    ErrorCodes::ErrorCode
-    ErrorCodes::getName
-    ErrorCodes::increment
-    ErrorCodes::end
-    ErrorCodes::values
-    ErrorCodes::values[i]
-    ErrorCodes::getErrorCodeByName
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
-    allowed_chars='[_A-Za-z]+'
+    allowed_chars=${EXTERN_ALLOWED_CHARS[$extern_type]}
 
     # Unused
     # NOTE: to fix automatically, replace echo with:
     # sed -i "/extern const $type_of_extern $val/d" $file
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
-        # and this matches with zkutil::CreateMode
-        grep -v 'src/Common/ZooKeeper/Types.h'
-    } | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern [$allowed_chars]+"
     } | while read file; do
-        grep -P "extern const $type_of_extern $allowed_chars;" $file | sed -r -e "s/^.*?extern const $type_of_extern ($allowed_chars);.*?$/\1/" | while read val; do
+        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sed -r -e "s/^.*?extern const $type_of_extern ([$allowed_chars]+);.*?$/\1/" | while read val; do
             if ! grep -q "$extern_type::$val" $file; then
                 # Excludes for SOFTWARE_EVENT/HARDWARE_EVENT/CACHE_EVENT in ThreadProfileEvents.cpp
                 if [[ ! $extern_type::$val =~ ProfileEvents::Perf.* ]]; then
@@ -121,13 +109,11 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Undefined
     # NOTE: to fix automatically, replace echo with:
-    # ( grep -q -F 'namespace $extern_type' $file && \
-    #   sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || \
-    #     awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
+    # ( grep -q -F 'namespace $extern_type' $file && sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
     } | while read file; do
-        grep -P "$extern_type::$allowed_chars" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::($allowed_chars).*?$/\1/" | while read val; do
+        grep -P "$extern_type::[$allowed_chars]+" $file | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
             if ! grep -q "extern const $type_of_extern $val" $file; then
                 if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
                     echo "$extern_type::$val is used in file $file but not defined"
@@ -138,9 +124,9 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Duplicates
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
     } | while read file; do
-        grep -P "extern const $type_of_extern $allowed_chars;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
+        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
     done
 done
 
@@ -167,7 +153,7 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
     grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
 
 # Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
-# NOTE: it is not that accurate, but at least something.
+# NOTE: it is not that accuate, but at least something.
 tests_with_query_log=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
@@ -178,17 +164,6 @@ for test_case in "${tests_with_query_log[@]}"; do
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
-
-# There shouldn't be large jumps between test numbers (since they should be consecutive)
-max_diff=$(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-          grep -oP '\d+\D+\K\d+' | sort -n -u | awk 's{print ($0-s) " diff " s " and " $0 }{s=$0}' | sort -n | tail -n 1
-)
-max_diff_value=( $(echo $max_diff) )
-if [[ $max_diff_value -ge 100 ]];
-then
-    echo "Too big of a difference between test numbers: $max_diff"
-fi
 
 # Queries to:
 tables_with_database_column=(
@@ -257,7 +232,7 @@ find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | 
 find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
 
 # There shouldn't be any docker compose files outside docker directory
-find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
+#find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
@@ -265,12 +240,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
 
 # Check for BOM
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -292,8 +267,6 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # DUMP()
-    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -307,7 +280,6 @@ std_cerr_cout_excludes=(
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
     src/Client/ClientBase.cpp
-    src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Bridge/IBridge.cpp
@@ -315,7 +287,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
+    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
         grep -vP $EXCLUDE_DIRS | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
@@ -346,22 +318,10 @@ expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
     pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-
-    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
-        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
-        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-    fi
-
-    # Otherwise expect_after/expect_before will not bail without stdin attached
-    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
-    pattern="-i \$any_spawn_id timeout"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-    pattern="-i \$any_spawn_id eof"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
 
 # Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
@@ -391,23 +351,3 @@ find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
-
-# Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
-
-# Require checking return value of close(),
-# since it can hide fd misuse and break other places.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
-
-# Check for existence of __init__.py files
-for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
-
-# A small typo can lead to debug code in release builds, see https://github.com/ClickHouse/ClickHouse/pull/47647
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -F '#ifdef NDEBUG' | xargs -I@FILE awk '/#ifdef NDEBUG/ { inside = 1; dirty = 1 } /#endif/ { if (inside && dirty) { print "File @FILE has suspicious #ifdef NDEBUG, possibly confused with #ifndef NDEBUG" }; inside = 0 } /#else/ { dirty = 0 }' @FILE
-
-# If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep --line-number -P '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep -P '.' && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."

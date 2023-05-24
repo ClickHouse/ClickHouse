@@ -15,5 +15,5 @@ bar	bar	1	2	String	Nullable(String)
 	\N	0	1	String	Nullable(String)
 foo	2	0	String
 bar	1	2	String
-	0	1	String
+test	0	1	String
 	0	1	String

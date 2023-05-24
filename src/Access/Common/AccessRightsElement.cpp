@@ -21,31 +21,24 @@ namespace
         result += ")";
     }
 
-    void formatONClause(const AccessRightsElement & element, String & result)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, String & result)
     {
         result += "ON ";
-        if (element.isGlobalWithParameter())
-        {
-            if (element.any_parameter)
-                result += "*";
-            else
-                result += backQuoteIfNeed(element.parameter);
-        }
-        else if (element.any_database)
+        if (any_database)
         {
             result += "*.*";
         }
         else
         {
-            if (!element.database.empty())
+            if (!database.empty())
             {
-                result += backQuoteIfNeed(element.database);
+                result += backQuoteIfNeed(database);
                 result += ".";
             }
-            if (element.any_table)
+            if (any_table)
                 result += "*";
             else
-                result += backQuoteIfNeed(element.table);
+                result += backQuoteIfNeed(table);
         }
     }
 
@@ -103,7 +96,7 @@ namespace
         String result;
         formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, result);
         result += " ";
-        formatONClause(element, result);
+        formatONClause(element.database, element.any_database, element.table, element.any_table, result);
         if (with_options)
             formatOptions(element.grant_option, element.is_partial_revoke, result);
         return result;
@@ -129,16 +122,14 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if (element.sameDatabaseAndTableAndParameter(next_element) && element.sameOptions(next_element))
-                {
+                if (element.sameDatabaseAndTable(next_element) && element.sameOptions(next_element))
                     next_element_uses_same_table_and_options = true;
-                }
             }
 
             if (!next_element_uses_same_table_and_options)
             {
                 part += " ";
-                formatONClause(element, part);
+                formatONClause(element.database, element.any_database, element.table, element.any_table, part);
                 if (with_options)
                     formatOptions(element.grant_option, element.is_partial_revoke, part);
                 if (result.empty())
@@ -173,7 +164,6 @@ AccessRightsElement::AccessRightsElement(
     , any_database(false)
     , any_table(false)
     , any_column(false)
-    , any_parameter(false)
 {
 }
 
@@ -198,15 +188,12 @@ AccessRightsElement::AccessRightsElement(
     , any_database(false)
     , any_table(false)
     , any_column(false)
-    , any_parameter(false)
 {
 }
 
 void AccessRightsElement::eraseNonGrantable()
 {
-    if (isGlobalWithParameter() && !any_parameter)
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-    else if (!any_column)
+    if (!any_column)
         access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
     else if (!any_table)
         access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
@@ -227,11 +214,6 @@ String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl
 
 
 bool AccessRightsElements::empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
-
-bool AccessRightsElements::sameDatabaseAndTableAndParameter() const
-{
-    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTableAndParameter(front()); });
-}
 
 bool AccessRightsElements::sameDatabaseAndTable() const
 {

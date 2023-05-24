@@ -21,15 +21,12 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
         if (std::is_integral_v<T>)
         {
             if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "{} data type family must not have more than one argument - display width", TypeName<T>);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than one argument - display width", TypeName<T>);
         }
         else
         {
             if (arguments->children.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "{} data type family must not have more than two arguments - total number "
-                                "of digits and number of digits following the decimal point", TypeName<T>);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", TypeName<T>);
         }
     }
     return std::make_shared<DataTypeNumber<T>>();

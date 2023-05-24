@@ -27,27 +27,25 @@ struct RepeatImpl
     {
         static constexpr UInt64 max_repeat_times = 1000000;
         if (repeat_time > max_repeat_times)
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}",
-                std::to_string(repeat_time), std::to_string(max_repeat_times));
+            throw Exception("Too many times to repeat (" + std::to_string(repeat_time) + "), maximum is: " + std::to_string(max_repeat_times),
+                ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 
     static inline void checkStringSize(UInt64 size)
     {
         static constexpr UInt64 max_string_size = 1 << 30;
         if (size > max_string_size)
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size ({}) in function repeat, maximum is: {}",
-                size, max_string_size);
+            throw Exception("Too large string size (" + std::to_string(size) + ") in function repeat, maximum is: " + std::to_string(max_string_size),
+                ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 
-    template <typename T>
     static void vectorStrConstRepeat(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        T repeat_time)
+        UInt64 repeat_time)
     {
-        repeat_time = repeat_time < 0 ? 0 : repeat_time;
         checkRepeatTime(repeat_time);
 
         UInt64 data_size = 0;
@@ -79,8 +77,7 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
-            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
+            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * col_num[i] + 1;
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -89,7 +86,7 @@ struct RepeatImpl
 
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i];
             checkRepeatTime(repeat_time);
             process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], repeat_time);
         }
@@ -97,19 +94,18 @@ struct RepeatImpl
 
     template <typename T>
     static void constStrVectorRepeat(
-        std::string_view copy_str,
+        const StringRef & copy_str,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         const PaddedPODArray<T> & col_num)
     {
         UInt64 data_size = 0;
         res_offsets.resize(col_num.size());
-        UInt64 str_size = copy_str.size();
+        UInt64 str_size = copy_str.size;
         UInt64 col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
-            size_t repeated_size = str_size * repeat_time + 1;
+            size_t repeated_size = str_size * col_num[i] + 1;
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -117,10 +113,10 @@ struct RepeatImpl
         res_data.resize(data_size);
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i];
             checkRepeatTime(repeat_time);
             process(
-                reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
+                reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data)),
                 res_data.data() + res_offsets[i - 1],
                 str_size + 1,
                 repeat_time);
@@ -172,8 +168,7 @@ class FunctionRepeat : public IFunction
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        return castTypeToEither<DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>(type, std::forward<F>(f));
+        return castTypeToEither<DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>(type, std::forward<F>(f));
     }
 
 public:
@@ -189,11 +184,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isUnsignedInteger(arguments[1]))
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arguments[0];
     }
 
@@ -209,15 +204,9 @@ public:
         {
             if (const ColumnConst * scale_column_num = checkAndGetColumn<ColumnConst>(numcolumn.get()))
             {
+                UInt64 repeat_time = scale_column_num->getValue<UInt64>();
                 auto col_res = ColumnString::create();
-                castType(arguments[1].type.get(), [&](const auto & type)
-                {
-                    using DataType = std::decay_t<decltype(type)>;
-                    using T = typename DataType::FieldType;
-                    T repeat_time = scale_column_num->getValue<T>();
-                    RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), repeat_time);
-                    return true;
-                });
+                RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), repeat_time);
                 return col_res;
             }
             else if (castType(arguments[1].type.get(), [&](const auto & type)
@@ -238,7 +227,7 @@ public:
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
-            std::string_view copy_str = col_const->getDataColumn().getDataAt(0).toView();
+            StringRef copy_str = col_const->getDataColumn().getDataAt(0);
 
             if (castType(arguments[1].type.get(), [&](const auto & type)
                 {
@@ -255,8 +244,9 @@ public:
             }
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-            arguments[0].column->getName(), getName());
+        throw Exception(
+            "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -264,7 +254,7 @@ public:
 
 REGISTER_FUNCTION(Repeat)
 {
-    factory.registerFunction<FunctionRepeat>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRepeat>(FunctionFactory::CaseInsensitive);
 }
 
 }

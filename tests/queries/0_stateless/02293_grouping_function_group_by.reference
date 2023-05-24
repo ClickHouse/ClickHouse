@@ -6,8 +6,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     number,
     number % 2
-ORDER BY number
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number;
 0	1
 1	1
 2	1
@@ -26,8 +25,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     number,
     number % 2
-ORDER BY number
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number;
 0	1	1
 1	1	1
 2	1	1
@@ -47,8 +45,7 @@ GROUP BY
     number % 2
     WITH ROLLUP
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	2
 0	3
@@ -77,8 +74,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     ROLLUP(number, number % 2)
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	2
 0	3
@@ -109,8 +105,7 @@ GROUP BY
     number % 2
     WITH CUBE
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	1
 0	1
@@ -141,8 +136,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     CUBE(number, number % 2)
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	1
 0	1
@@ -174,8 +168,7 @@ GROUP BY
     CUBE(number, number % 2)
 HAVING grouping(number) != 0
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	5
 0	6
 1	5
@@ -212,8 +205,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     CUBE(number, number % 2) WITH TOTALS
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	1
 0	1
@@ -255,8 +247,7 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     ROLLUP(number, number % 2) WITH TOTALS
 ORDER BY
-    number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+    number, gr;
 0	0
 0	2
 0	3

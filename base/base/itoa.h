@@ -33,41 +33,6 @@
 #include <base/extended_types.h>
 
 
-template <typename T>
-inline int digits10(T x)
-{
-    if (x < 10ULL)
-        return 1;
-    if (x < 100ULL)
-        return 2;
-    if (x < 1000ULL)
-        return 3;
-
-    if (x < 1000000000000ULL)
-    {
-        if (x < 100000000ULL)
-        {
-            if (x < 1000000ULL)
-            {
-                if (x < 10000ULL)
-                    return 4;
-                else
-                    return 5 + (x >= 100000ULL);
-            }
-
-            return 7 + (x >= 10000000ULL);
-        }
-
-        if (x < 10000000000ULL)
-            return 9 + (x >= 1000000000ULL);
-
-        return 11 + (x >= 100000000000ULL);
-    }
-
-    return 12 + digits10(x / 1000000000000ULL);
-}
-
-
 namespace impl
 {
 
@@ -126,10 +91,10 @@ template <size_t N>
 using DivisionBy10PowN = typename SelectType
 <
     N,
-    Division<uint8_t, false, 205U, 11>,                           /// divide by 10
-    Division<uint16_t, true, 41943U, 22>,                         /// divide by 100
-    Division<uint32_t, false, 3518437209U, 45>,                   /// divide by 10000
-    Division<uint64_t, false, 12379400392853802749ULL, 90>        /// divide by 100000000
+    Division<uint8_t, 0, 205U, 11>,                           /// divide by 10
+    Division<uint16_t, 1, 41943U, 22>,                        /// divide by 100
+    Division<uint32_t, 0, 3518437209U, 45>,                   /// divide by 10000
+    Division<uint64_t, 0, 12379400392853802749ULL, 90>        /// divide by 100000000
 >::Result;
 
 template <size_t N>
@@ -157,7 +122,7 @@ QuotientAndRemainder<N> static inline split(UnsignedOfSize<N> value)
     constexpr DivisionBy10PowN<N> division;
 
     UnsignedOfSize<N> quotient = (division.multiplier * (UnsignedOfSize<2 * N>(value) + division.add)) >> division.shift;
-    UnsignedOfSize<N / 2> remainder = static_cast<UnsignedOfSize<N / 2>>(value - quotient * pow10<UnsignedOfSize<N / 2>>(N));
+    UnsignedOfSize<N / 2> remainder = value - quotient * pow10<UnsignedOfSize<N / 2>>(N);
 
     return {quotient, remainder};
 }
@@ -347,6 +312,39 @@ namespace convert
     }
 }
 
+template <typename T>
+static inline int digits10(T x)
+{
+    if (x < 10ULL)
+        return 1;
+    if (x < 100ULL)
+        return 2;
+    if (x < 1000ULL)
+        return 3;
+
+    if (x < 1000000000000ULL)
+    {
+        if (x < 100000000ULL)
+        {
+            if (x < 1000000ULL)
+            {
+                if (x < 10000ULL)
+                    return 4;
+                else
+                    return 5 + (x >= 100000ULL);
+            }
+
+            return 7 + (x >= 10000000ULL);
+        }
+
+        if (x < 10000000000ULL)
+            return 9 + (x >= 1000000000ULL);
+
+        return 11 + (x >= 100000000000ULL);
+    }
+
+    return 12 + digits10(x / 1000000000000ULL);
+}
 
 template <typename T>
 static inline char * writeUIntText(T x, char * p)
@@ -354,7 +352,7 @@ static inline char * writeUIntText(T x, char * p)
     static_assert(is_unsigned_v<T>);
 
     int len = digits10(x);
-    auto * pp = p + len;
+    auto pp = p + len;
     while (x >= 100)
     {
         const auto i = x % 100;

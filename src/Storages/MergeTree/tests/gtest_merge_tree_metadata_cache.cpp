@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_ROCKSDB
 #include <gtest/gtest.h>

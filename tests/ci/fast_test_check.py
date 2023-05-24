@@ -6,8 +6,6 @@ import os
 import csv
 import sys
 import atexit
-from pathlib import Path
-from typing import List, Tuple
 
 from github import Github
 
@@ -17,8 +15,6 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    RerunHelper,
-    get_commit,
     post_commit_status,
     update_mergeable_check,
 )
@@ -26,7 +22,7 @@ from docker_pull_helper import get_image_with_version
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import TestResults, read_test_results
+from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -53,8 +49,8 @@ def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, i
     )
 
 
-def process_results(result_folder: str) -> Tuple[str, str, TestResults, List[str]]:
-    test_results = []  # type: TestResults
+def process_results(result_folder):
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of
@@ -78,23 +74,17 @@ def process_results(result_folder: str) -> Tuple[str, str, TestResults, List[str
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    try:
-        results_path = Path(result_folder) / "test_results.tsv"
-        test_results = read_test_results(results_path)
-        if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
-    except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+    results_path = os.path.join(result_folder, "test_results.tsv")
+    if os.path.exists(results_path):
+        with open(results_path, "r", encoding="utf-8") as results_file:
+            test_results = list(csv.reader(results_file, delimiter="\t"))
+    if len(test_results) == 0:
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 
 
-def main():
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -107,16 +97,12 @@ def main():
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
-    rerun_helper = RerunHelper(commit, NAME)
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        status = rerun_helper.get_finished_status()
-        if status is not None and status.state != "success":
-            sys.exit(1)
         sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
@@ -149,7 +135,7 @@ def main():
     if not os.path.exists(logs_path):
         os.makedirs(logs_path)
 
-    run_log_path = os.path.join(logs_path, "run.log")
+    run_log_path = os.path.join(logs_path, "runlog.log")
     with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -168,7 +154,7 @@ def main():
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
     )
     test_result_exists = "test_results.tsv" in test_output_files
-    test_results = []  # type: TestResults
+    test_results = []
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
         state = "failure"
@@ -197,9 +183,10 @@ def main():
         test_results,
         [run_log_path] + additional_logs,
         NAME,
+        True,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -218,7 +205,3 @@ def main():
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

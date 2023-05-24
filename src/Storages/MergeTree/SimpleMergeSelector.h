@@ -141,11 +141,6 @@ public:
         double heuristic_to_align_parts_max_absolute_difference_in_powers_of_two = 0.5;
         double heuristic_to_align_parts_max_score_adjustment = 0.75;
 
-        /** If it's not 0, all part ranges that have min_age larger than min_age_to_force_merge
-          * will be considered for merging
-          */
-        size_t min_age_to_force_merge = 0;
-
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
           */

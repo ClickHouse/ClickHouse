@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SNAPPY
 #include <cstring>
@@ -64,7 +64,7 @@ void SnappyWriteBuffer::finishImpl()
     bool success = snappy::Compress(uncompress_buffer.data(), uncompress_buffer.size(), &compress_buffer);
     if (!success)
     {
-        throw Exception(ErrorCodes::SNAPPY_COMPRESS_FAILED, "snappy compress failed: ");
+        throw Exception("snappy compress failed: ", ErrorCodes::SNAPPY_COMPRESS_FAILED);
     }
 
     char * in_data = compress_buffer.data();

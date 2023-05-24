@@ -1,1 +1,1 @@
-requests<2.30
+requests

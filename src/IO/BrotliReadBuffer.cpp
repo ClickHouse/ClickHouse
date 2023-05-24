@@ -1,9 +1,8 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_BROTLI
 #    include <brotli/decode.h>
 #    include "BrotliReadBuffer.h"
-#    include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -61,10 +60,7 @@ bool BrotliReadBuffer::nextImpl()
 
         if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
         {
-            throw Exception(
-                ErrorCodes::BROTLI_READ_FAILED,
-                "brotli decode error{}",
-                getExceptionEntryWithFileName(*in));
+            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
         }
 
         out_capacity = internal_buffer.size();
@@ -87,19 +83,13 @@ bool BrotliReadBuffer::nextImpl()
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BROTLI_READ_FAILED,
-                "brotli decode error{}",
-                getExceptionEntryWithFileName(*in));
+            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
         }
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
     {
-        throw Exception(
-            ErrorCodes::BROTLI_READ_FAILED,
-            "brotli decode error{}",
-            getExceptionEntryWithFileName(*in));
+        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
     }
 
     return true;

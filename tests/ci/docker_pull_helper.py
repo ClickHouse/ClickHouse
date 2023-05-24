@@ -6,11 +6,11 @@ import time
 import subprocess
 import logging
 
-from typing import List, Optional
+from typing import Optional
 
 
 class DockerImage:
-    def __init__(self, name: str, version: Optional[str] = None):
+    def __init__(self, name, version: Optional[str] = None):
         self.name = name
         if version is None:
             self.version = "latest"
@@ -22,11 +22,8 @@ class DockerImage:
 
 
 def get_images_with_versions(
-    reports_path: str,
-    required_images: List[str],
-    pull: bool = True,
-    version: Optional[str] = None,
-) -> List[DockerImage]:
+    reports_path, required_image, pull=True, version: Optional[str] = None
+):
     images_path = None
     for root, _, files in os.walk(reports_path):
         for f in files:
@@ -48,13 +45,12 @@ def get_images_with_versions(
         images = {}
 
     docker_images = []
-    for image_name in required_images:
+    for image_name in required_image:
         docker_image = DockerImage(image_name, version)
         if image_name in images:
             docker_image.version = images[image_name]
         docker_images.append(docker_image)
 
-    latest_error = Exception("predefined to avoid access before created")
     if pull:
         for docker_image in docker_images:
             for i in range(10):
@@ -79,8 +75,6 @@ def get_images_with_versions(
     return docker_images
 
 
-def get_image_with_version(
-    reports_path: str, image: str, pull: bool = True, version: Optional[str] = None
-) -> DockerImage:
+def get_image_with_version(reports_path, image, pull=True, version=None):
     logging.info("Looking for images file in %s", reports_path)
     return get_images_with_versions(reports_path, [image], pull, version=version)[0]

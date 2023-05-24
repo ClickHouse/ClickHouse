@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <base/arithmeticOverflow.h>
 #include "Columns/ColumnMap.h"
 #include "DataTypes/DataTypeMap.h"
 
@@ -61,20 +62,22 @@ private:
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
     {
         if (!(check_key_type->equals(*key_type)))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected same {} type for all keys in {}",
-                key_type->getName(), getName());
+            throw Exception(
+                "Expected same " + key_type->getName() + " type for all keys in " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         WhichDataType which_val(promoted_val_type);
         WhichDataType which_ch_val(check_val_type);
 
         if (which_ch_val.isFloat() != which_val.isFloat())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All value types in {} should be either or float or integer",
-                getName());
+            throw Exception(
+                "All value types in " + getName() + " should be either or float or integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!(check_val_type->equals(*promoted_val_type)))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All value types in {} should be promotable to {}, got {}",
-                getName(), promoted_val_type->getName(), check_val_type->getName());
+            throw Exception(
+                "All value types in " + getName() + " should be promotable to " + promoted_val_type->getName() + ", got "
+                    + check_val_type->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -89,23 +92,24 @@ private:
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two map tuples", getName());
+                throw Exception(getName() + " accepts at least two map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             auto elems = tup->getElements();
             if (elems.size() != 2)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
-                    getName());
+                throw Exception(
+                    "Each tuple in " + getName() + " arguments should consist of two arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             k = checkAndGetDataType<DataTypeArray>(elems[0].get());
             v = checkAndGetDataType<DataTypeArray>(elems[1].get());
 
             if (!k || !v)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
-                    getName());
+                throw Exception(
+                    "Each tuple in " + getName() + " arguments should consist of two arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto result_type = v->getNestedType();
             if (!result_type->canBePromoted())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
+                throw Exception(
+                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto promoted_val_type = result_type->promoteNumericType();
             if (!key_type)
@@ -130,12 +134,13 @@ private:
         {
             const auto * map = checkAndGetDataType<DataTypeMap>(arg.get());
             if (!map)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps", getName());
+                throw Exception(getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const auto & v = map->getValueType();
 
             if (!v->canBePromoted())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
+                throw Exception(
+                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto promoted_val_type = v->promoteNumericType();
             if (!key_type)
@@ -154,14 +159,14 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
+            throw Exception(getName() + " accepts at least two maps or map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
         else if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
+            throw Exception(getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     template <typename KeyType, typename ValType>
@@ -212,7 +217,8 @@ private:
                     len = arg.key_offsets[i] - offset;
 
                     if (arg.val_offsets[i] != arg.key_offsets[i])
-                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Key and value array should have same amount of elements");
+                        throw Exception(
+                            "Key and value array should have same amount of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
                 }
 
                 Field temp_val;
@@ -293,13 +299,10 @@ private:
                 return execute2<KeyType, UInt256>(row_count, args, res_type);
             case TypeIndex::Float64:
                 return execute2<KeyType, Float64>(row_count, args, res_type);
-            case TypeIndex::Decimal128:
-                return execute2<KeyType, Decimal128>(row_count, args, res_type);
-            case TypeIndex::Decimal256:
-                return execute2<KeyType, Decimal256>(row_count, args, res_type);
             default:
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} for values in arguments of function {}",
-                    res_value_type->getName(), getName());
+                throw Exception(
+                    "Illegal column type " + res_value_type->getName() + " for values in arguments of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -383,8 +386,9 @@ private:
                 }
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} in arguments of function {}",
-                    arguments[0].type->getName(), getName());
+                throw Exception(
+                    "Illegal column type " + arguments[0].type->getName() + " in arguments of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         // we can check const columns before any processing
@@ -393,7 +397,8 @@ private:
             if (arg.is_const)
             {
                 if (arg.val_offsets[0] != arg.key_offsets[0])
-                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Key and value array should have same amount of elements");
+                    throw Exception(
+                        "Key and value array should have same amount of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             }
         }
 
@@ -434,8 +439,9 @@ private:
             case TypeIndex::String:
                 return execute1<String>(row_count, res_type, res_value_type, args);
             default:
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} for keys in arguments of function {}",
-                    key_type->getName(), getName());
+                throw Exception(
+                    "Illegal column type " + key_type->getName() + " for keys in arguments of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 };

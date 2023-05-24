@@ -98,8 +98,6 @@ private:
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
-    void insertFromWithOwnership(const IColumn & from, size_t n);
-
 public:
     ~ColumnAggregateFunction() override;
 
@@ -140,7 +138,7 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
+        throw Exception("Method isDefaultAt is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StringRef getDataAt(size_t n) const override;
@@ -210,27 +208,22 @@ public:
 
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
+        throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool hasEqualValues() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnAggregateFunction");
+        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     double getRatioOfDefaultRows(double) const override
     {
-        return 0.0;
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return 0;
+        throw Exception("Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction");
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,

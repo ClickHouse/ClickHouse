@@ -120,14 +120,14 @@ namespace
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
-                    arguments.size());
+                    toString(arguments.size()));
 
             if (arguments.size() > 1)
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
-                    arguments.size());
+                    toString(arguments.size()));
 
             const IDataType & type = *arguments[0];
 

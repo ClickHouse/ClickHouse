@@ -3,7 +3,6 @@
 #include <cassert>
 #include <stdexcept> // for std::logic_error
 #include <string>
-#include <type_traits>
 #include <vector>
 #include <functional>
 #include <iosfwd>
@@ -56,9 +55,10 @@ struct StringRef
     bool empty() const { return size == 0; }
 
     std::string toString() const { return std::string(data, size); }
-    explicit operator std::string() const { return toString(); }
 
+    explicit operator std::string() const { return toString(); }
     std::string_view toView() const { return std::string_view(data, size); }
+
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
@@ -223,7 +223,7 @@ inline UInt64 shiftMix(UInt64 val)
     return val ^ (val >> 47);
 }
 
-inline UInt64 rotateByAtLeast1(UInt64 val, UInt8 shift)
+inline UInt64 rotateByAtLeast1(UInt64 val, int shift)
 {
     return (val >> shift) | (val << (64 - shift));
 }
@@ -245,7 +245,7 @@ inline size_t hashLessThan8(const char * data, size_t size)
         uint8_t b = data[size >> 1];
         uint8_t c = data[size - 1];
         uint32_t y = static_cast<uint32_t>(a) + (static_cast<uint32_t>(b) << 8);
-        uint32_t z = static_cast<uint32_t>(size) + (static_cast<uint32_t>(c) << 2);
+        uint32_t z = size + (static_cast<uint32_t>(c) << 2);
         return shiftMix(y * k2 ^ z * k3) * k2;
     }
 
@@ -258,7 +258,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
     {
         UInt64 a = unalignedLoad<UInt64>(data);
         UInt64 b = unalignedLoad<UInt64>(data + size - 8);
-        return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
+        return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
     }
 
     return hashLessThan8(data, size);
@@ -266,7 +266,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -276,22 +276,22 @@ struct CRC32Hash
 
         if (size < 8)
         {
-            return static_cast<unsigned>(hashLessThan8(x.data, x.size));
+            return hashLessThan8(x.data, x.size);
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1ULL;
 
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = CRC_INT(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = CRC_INT(res, word);
 
         return res;
     }
@@ -303,7 +303,7 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef /* x */) const
+    size_t operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }
@@ -325,17 +325,6 @@ namespace ZeroTraits
 {
     inline bool check(const StringRef & x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
-}
-
-namespace PackedZeroTraits
-{
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    { return 0 == p.key.size; }
-
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline void set(PackedPairNoInit<StringRef, Second> & p)
-    { p.key.size = 0; }
 }
 
 

@@ -7,10 +7,10 @@
 #include <filesystem>
 
 
-Int64 getCurrentProcessFDCount()
+int getCurrentProcessFDCount()
 {
     namespace fs = std::filesystem;
-    Int64 result = -1;
+    int result = -1;
 #if defined(OS_LINUX)  || defined(OS_DARWIN)
     using namespace DB;
 

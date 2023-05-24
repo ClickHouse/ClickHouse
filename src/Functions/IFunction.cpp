@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Core/Block.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -18,10 +17,13 @@
 #include <cstdlib>
 #include <memory>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
+#    pragma GCC diagnostic pop
 #endif
 
 
@@ -122,7 +124,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Argument at index {} for function {} must be constant",
-                arg_num,
+                toString(arg_num),
                 getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
@@ -321,7 +323,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
-            if (column_sparse && column_sparse->getNumberOfDefaultRows())
+            if (column_sparse && column_sparse->getNumberOfDefaults())
             {
                 sparse_column_position = i;
                 ++num_sparse_columns;
@@ -359,9 +361,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
                 return res->cloneResized(input_rows_count);
 
             /// If default of sparse column is changed after execution of function, convert to full column.
-            /// If there are any default in non-zero position after execution of function, convert to full column.
-            /// Currently there is no easy way to rebuild sparse column with new offsets.
-            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
+            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0))
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
@@ -388,8 +388,8 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
-            number_of_arguments,
-            expected_number_of_arguments);
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const

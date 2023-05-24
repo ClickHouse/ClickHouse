@@ -31,15 +31,13 @@ TimeoutSetter::~TimeoutSetter()
 {
     try
     {
-        bool connected = socket.impl()->initialized();
-        if (!connected)
-            return;
-
         socket.setSendTimeout(old_send_timeout);
         socket.setReceiveTimeout(old_receive_timeout);
     }
     catch (...)
     {
+        /// Sometimes caught on Mac OS X. This message can be safely ignored.
+        /// If you are developer using Mac, please debug this error message by yourself.
         tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
     }
 }

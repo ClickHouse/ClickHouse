@@ -12,7 +12,6 @@ $CLICKHOUSE_CLIENT -nm -q "
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
 
-SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 SET replication_alter_partitions_sync = 2;
 
 CREATE TABLE part_header_r1(x UInt32, y UInt32)

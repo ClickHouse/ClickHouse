@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/utilities/clickhouse-copier
 sidebar_position: 59
 sidebar_label: clickhouse-copier
 ---
@@ -8,7 +7,7 @@ sidebar_label: clickhouse-copier
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
-:::note    
+:::warning    
 To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
 :::
 
@@ -16,12 +15,12 @@ You can run multiple `clickhouse-copier` instances on different servers to perfo
 
 After starting, `clickhouse-copier`:
 
-- Connects to ClickHouse Keeper and receives:
+-   Connects to ClickHouse Keeper and receives:
 
-    - Copying jobs.
-    - The state of the copying jobs.
+    -   Copying jobs.
+    -   The state of the copying jobs.
 
-- It performs the jobs.
+-   It performs the jobs.
 
     Each running process chooses the “closest” shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
@@ -39,12 +38,12 @@ $ clickhouse-copier --daemon --config keeper.xml --task-path /task/path --base-d
 
 Parameters:
 
-- `daemon` — Starts `clickhouse-copier` in daemon mode.
-- `config` — The path to the `keeper.xml` file with the parameters for the connection to ClickHouse Keeper.
-- `task-path` — The path to the ClickHouse Keeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
-- `task-file` — Optional path to file with task configuration for initial upload to ClickHouse Keeper.
-- `task-upload-force` — Force upload `task-file` even if node already exists.
-- `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
+-   `daemon` — Starts `clickhouse-copier` in daemon mode.
+-   `config` — The path to the `keeper.xml` file with the parameters for the connection to ClickHouse Keeper.
+-   `task-path` — The path to the ClickHouse Keeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
+-   `task-file` — Optional path to file with task configuration for initial upload to ClickHouse Keeper.
+-   `task-upload-force` — Force upload `task-file` even if node already exists.
+-   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
 ## Format of keeper.xml {#format-of-zookeeper-xml}
 
@@ -185,3 +184,5 @@ Parameters:
 ```
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
+
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

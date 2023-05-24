@@ -1,5 +1,0 @@
-<clickhouse>
-    <merge_tree>
-      <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
-    </merge_tree>
-</clickhouse>

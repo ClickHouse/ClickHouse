@@ -1,6 +1,6 @@
 -- Tags: zookeeper
 
-DROP TABLE IF EXISTS default_table SYNC;
+DROP TABLE IF EXISTS default_table;
 
 CREATE TABLE default_table
 (
@@ -26,4 +26,4 @@ ALTER TABLE default_table MODIFY COLUMN enum_column Enum8('undefined' = 0, 'fox'
 
 SHOW CREATE TABLE default_table;
 
-DROP TABLE IF EXISTS default_table SYNC;
+DROP TABLE IF EXISTS default_table;

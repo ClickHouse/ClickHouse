@@ -24,7 +24,7 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     }
 
     out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    commands.writeText(out);
     out << "\n";
 
     out << "alter version: ";
@@ -93,19 +93,10 @@ std::shared_ptr<const IBackupEntry> ReplicatedMergeTreeMutationEntry::backup() c
     }
 
     out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    commands.writeText(out);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());
-}
-
-
-String ReplicatedMergeTreeMutationEntry::getBlockNumbersForLogs() const
-{
-    WriteBufferFromOwnString out;
-    for (const auto & kv : block_numbers)
-        out << kv.first << " = " << kv.second << "; ";
-    return out.str();
 }
 
 }

@@ -13,7 +13,7 @@ struct FixedClearableHashTableCell
     using mapped_type = VoidMapped;
     UInt32 version;
 
-    FixedClearableHashTableCell() {} /// NOLINT
+    FixedClearableHashTableCell() {} //-V730 /// NOLINT
     FixedClearableHashTableCell(const Key &, const State & state) : version(state.version) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT

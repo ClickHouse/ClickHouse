@@ -102,16 +102,5 @@
         </shard>
     </cluster_no_replicas>
 
-    <!-- Cluster with disabled distributed DDL queries -->
-    <cluster_disabled_ddl>
-        <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries>
-        <shard>
-            <replica>
-                <host>ch1</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-    </cluster_disabled_ddl>
-
 </remote_servers>
 </clickhouse>

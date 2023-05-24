@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/settings_profile_elements
----
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
 描述settings配置文件的内容:
@@ -29,3 +26,5 @@ slug: /zh/operations/system-tables/settings_profile_elements
 -    `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges))) — 只允许读查询的配置文件.
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — 此setting配置文件的父配置文件. 未设置则赋 `NULL`. 设置则将从其父配置文件继承所有设置的值和约束(`min`、`max`、`readonly`).
+
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/settings_profile_elements) <!--hide-->

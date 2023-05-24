@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include <Common/config.h>
 
 
 #if USE_HDFS
@@ -48,19 +48,9 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
-    {
-        data_source_description.type = DataSourceType::HDFS;
-        data_source_description.description = hdfs_root_path_;
-        data_source_description.is_cached = false;
-        data_source_description.is_encrypted = false;
-    }
+    {}
 
     std::string getName() const override { return "HDFSObjectStorage"; }
-
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return data_source_description;
-    }
 
     bool exists(const StoredObject & object) const override;
 
@@ -81,8 +71,11 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
+
+    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;
@@ -104,6 +97,11 @@ public:
 
     void startup() override;
 
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -123,8 +121,6 @@ private:
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
-
-    DataSourceDescription data_source_description;
 };
 
 }

@@ -20,10 +20,10 @@ bool hasJoin(const ASTSelectQuery & select);
 bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, ContextPtr context);
 
 Block getHeaderForProcessingStage(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage);
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage);
 
 }

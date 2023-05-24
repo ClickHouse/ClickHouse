@@ -34,20 +34,20 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
     if (!params.empty())
     {
         if (params.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one parameter or less.", name);
+            throw Exception("Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         UInt64 threshold_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (threshold_param > uniq_upto_max_threshold)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large parameter for aggregate function {}. Maximum: {}",
-                name, toString(uniq_upto_max_threshold));
+            throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(uniq_upto_max_threshold),
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         threshold = threshold_param;
     }
 
     if (argument_types.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for aggregate function {}", name);
+        throw Exception("Incorrect number of arguments for aggregate function " + name,
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 

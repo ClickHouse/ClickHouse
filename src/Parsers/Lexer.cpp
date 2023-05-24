@@ -1,5 +1,3 @@
-#include <cassert>
-#include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
@@ -41,38 +39,8 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
-}
-
-Token quotedHexOrBinString(const char *& pos, const char * const token_begin, const char * const end)
-{
-    constexpr char quote = '\'';
-
-    assert(pos[1] == quote);
-
-    bool hex = (*pos == 'x' || *pos == 'X');
-
-    pos += 2;
-
-    if (hex)
-    {
-        while (pos < end && isHexDigit(*pos))
-            ++pos;
-    }
-    else
-    {
-        pos = find_first_not_symbols<'0', '1'>(pos, end);
-    }
-
-    if (pos >= end || *pos != quote)
-    {
-        pos = end;
-        return Token(TokenType::ErrorSingleQuoteIsNotClosed, token_begin, end);
-    }
-
-    ++pos;
-    return Token(TokenType::StringLiteral, token_begin, pos);
 }
 
 }
@@ -136,71 +104,44 @@ Token Lexer::nextTokenImpl()
             if (prev_significant_token_type == TokenType::Dot)
             {
                 ++pos;
-                while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(false, false, pos, end)))
+                while (pos < end && isNumericASCII(*pos))
                     ++pos;
             }
             else
             {
-                bool start_of_block = false;
                 /// 0x, 0b
                 bool hex = false;
                 if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
                 {
-                    bool is_valid = false;
                     if (pos[1] == 'x' || pos[1] == 'X')
-                    {
-                        if (isHexDigit(pos[2]))
-                        {
-                            hex = true;
-                            is_valid = true; // hex
-                        }
-                    }
-                    else if (pos[2] == '0' || pos[2] == '1')
-                        is_valid = true; // bin
-                    if (is_valid)
-                    {
-                        pos += 2;
-                        start_of_block = true;
-                    }
-                    else
-                        ++pos; // consume the leading zero - could be an identifier
+                        hex = true;
+                    pos += 2;
                 }
                 else
                     ++pos;
 
-                while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || isNumberSeparator(start_of_block, hex, pos, end)))
-                {
+                while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                     ++pos;
-                    start_of_block = false;
-                }
 
                 /// decimal point
                 if (pos < end && *pos == '.')
                 {
-                    start_of_block = true;
                     ++pos;
-                    while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || isNumberSeparator(start_of_block, hex, pos, end)))
-                    {
+                    while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                         ++pos;
-                        start_of_block = false;
-                    }
                 }
 
                 /// exponentiation (base 10 or base 2)
                 if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
                 {
-                    start_of_block = true;
                     ++pos;
 
                     /// sign of exponent. It is always decimal.
                     if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                         ++pos;
 
-                    while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
-                    {
+                    while (pos < end && isNumericASCII(*pos))
                         ++pos;
-                        start_of_block = false;
-                    }
                 }
             }
 
@@ -259,29 +200,21 @@ Token Lexer::nextTokenImpl()
                     || prev_significant_token_type == TokenType::Number))
                 return Token(TokenType::Dot, token_begin, ++pos);
 
-            bool start_of_block = true;
             ++pos;
-            while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
-            {
+            while (pos < end && isNumericASCII(*pos))
                 ++pos;
-                start_of_block = false;
-            }
 
             /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
             {
-                start_of_block = true;
                 ++pos;
 
                 /// sign of exponent
                 if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                while (pos < end && (isNumericASCII(*pos) || isNumberSeparator(start_of_block, false, pos, end)))
-                {
+                while (pos < end && isNumericASCII(*pos))
                     ++pos;
-                    start_of_block = false;
-                }
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -405,7 +338,7 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
-            return Token(TokenType::PipeMark, token_begin, pos);
+            return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
         {
@@ -451,12 +384,6 @@ Token Lexer::nextTokenImpl()
                     return Token(TokenType::DollarSign, token_begin, ++pos);
                 }
             }
-
-            if (pos + 2 < end && pos[1] == '\'' && (*pos == 'x' || *pos == 'b' || *pos == 'X' || *pos == 'B'))
-            {
-                return quotedHexOrBinString(pos, token_begin, end);
-            }
-
             if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;
@@ -487,7 +414,7 @@ APPLY_FOR_TOKENS(M)
 #undef M
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

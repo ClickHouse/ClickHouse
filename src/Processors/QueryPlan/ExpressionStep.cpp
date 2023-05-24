@@ -15,6 +15,7 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const 
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = actions->isSortingPreserved(header, sort_description),
@@ -32,6 +33,8 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
+    /// Some columns may be removed by expression.
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -60,9 +63,22 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    String prefix(settings.offset, ' ');
+    bool first = true;
+
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    expression->describeActions(settings.out, prefix);
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
+
+    settings.out << prefix << "Positions:";
+    for (const auto & pos : expression->getResultPositions())
+        settings.out << ' ' << pos;
+    settings.out << '\n';
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -75,20 +91,6 @@ void ExpressionStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
-
-    if (!getDataStreamTraits().preserves_sorting)
-        return;
-
-    FindAliasForInputName alias_finder(actions_dag);
-    const auto & input_sort_description = getInputStreams().front().sort_description;
-    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
-    {
-        String alias;
-        const auto & original_column = input_sort_description[i].column_name;
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            output_stream->sort_description[i].column_name = alias_node->result_name;
-    }
 }
 
 }
