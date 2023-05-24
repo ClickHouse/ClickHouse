@@ -9,9 +9,7 @@
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <fstream>
@@ -39,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_TRUNCATE_FILE;
@@ -53,53 +50,6 @@ std::mutex DiskLocal::reservation_mutex;
 
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
-
-static void loadDiskLocalConfig(const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      String & path,
-                      UInt64 & keep_free_space_bytes)
-{
-    path = config.getString(config_prefix + ".path", "");
-    if (name == "default")
-    {
-        if (!path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>");
-        path = context->getPath();
-    }
-    else
-    {
-        if (path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can not be empty. Disk {}", name);
-        if (path.back() != '/')
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path must end with /. Disk {}", name);
-        if (path == context->getPath())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
-    }
-
-    bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
-
-    if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                        "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified");
-
-    keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
-
-    if (has_space_ratio)
-    {
-        auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
-        if (ratio < 0 || ratio > 1)
-            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'keep_free_space_ratio' have to be between 0 and 1");
-        String tmp_path = path;
-        if (tmp_path.empty())
-            tmp_path = context->getPath();
-
-        // Create tmp disk for getting total disk space.
-        keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
-    }
-}
 
 std::optional<size_t> fileSizeSafe(const fs::path & path)
 {
@@ -378,6 +328,18 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
         fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
+std::vector<String> DiskLocal::getBlobPath(const String & path) const
+{
+    auto fs_path = fs::path(disk_path) / path;
+    return {fs_path};
+}
+
+void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+{
+    auto fs_path = fs::path(disk_path) / path;
+    std::move(write_blob_function)({fs_path}, mode, {});
+}
+
 void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
@@ -505,15 +467,8 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
+    , data_source_description(getLocalDataSourceDescription(disk_path))
 {
-    data_source_description.type = DataSourceType::Local;
-
-    if (auto block_device_id = tryGetBlockDeviceId(disk_path); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
-    else
-        data_source_description.description = disk_path;
-    data_source_description.is_encrypted = false;
-    data_source_description.is_cached = false;
 }
 
 DiskLocal::DiskLocal(
@@ -527,6 +482,20 @@ DiskLocal::DiskLocal(
 DataSourceDescription DiskLocal::getDataSourceDescription() const
 {
     return data_source_description;
+}
+
+DataSourceDescription DiskLocal::getLocalDataSourceDescription(const String & path)
+{
+    DataSourceDescription res;
+    res.type = DataSourceType::Local;
+
+    if (auto block_device_id = tryGetBlockDeviceId(path); block_device_id.has_value())
+        res.description = *block_device_id;
+    else
+        res.description = path;
+    res.is_encrypted = false;
+    res.is_cached = false;
+    return res;
 }
 
 void DiskLocal::shutdown()
@@ -594,6 +563,7 @@ try
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
+        buf->finalize();
         buf->sync();
     }
     return true;
@@ -602,25 +572,6 @@ catch (...)
 {
     LOG_WARNING(logger, "Cannot achieve write over the disk directory: {}", disk_path);
     return false;
-}
-
-DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
-{
-    auto object_storage = std::make_shared<LocalObjectStorage>();
-    auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
-        /* metadata_storage */std::static_pointer_cast<DiskLocal>(shared_from_this()),
-        object_storage,
-        /* object_storage_root_path */getPath());
-
-    return std::make_shared<DiskObjectStorage>(
-        getName(),
-        disk_path,
-        "Local",
-        metadata_storage,
-        object_storage,
-        false,
-        /* threadpool_size */16
-    );
 }
 
 void DiskLocal::checkAccessImpl(const String & path)
@@ -748,13 +699,6 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
-}
-
-MetadataStoragePtr DiskLocal::getMetadataStorage()
-{
-    auto object_storage = std::make_shared<LocalObjectStorage>();
-    return std::make_shared<FakeMetadataStorageFromDisk>(
-        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)

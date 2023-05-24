@@ -1,3 +1,4 @@
+#include <exception>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -133,7 +134,11 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     for (auto & [description, subquery_for_set] : subqueries_for_sets)
     {
         if (!subquery_for_set.hasSource())
+        {
+            subquery_for_set.promise_to_fill_set.set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::LOGICAL_ERROR, "Subquery for set {} has no source", subquery_for_set.key)));
             continue;
+        }
 
         auto plan = subquery_for_set.detachSource();
 
