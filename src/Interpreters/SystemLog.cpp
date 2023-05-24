@@ -426,6 +426,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -476,30 +478,34 @@ void SystemLog<LogElement>::prepareTable()
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
-
-            ASTRenameQuery::Table from;
-            from.database = table_id.database_name;
-            from.table = table_id.table_name;
-
-            ASTRenameQuery::Table to;
-            to.database = table_id.database_name;
-            to.table = table_id.table_name + "_" + toString(suffix);
-
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-
-            rename->elements.emplace_back(elem);
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                },
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                }
+            };
 
             LOG_DEBUG(
                 log,
                 "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table),
+                backQuoteIfNeed(elem.to.getTable()),
                 old_create_query,
                 create_query);
 
+            rename->elements.emplace_back(std::move(elem));
+
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 

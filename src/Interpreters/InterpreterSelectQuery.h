@@ -184,6 +184,7 @@ private:
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
+    bool autoFinalOnQuery(ASTSelectQuery & select_query);
 
     enum class Modificator
     {
@@ -213,6 +214,9 @@ private:
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
+
+    /// For "per replica" filter when multiple replicas are used
+    FilterDAGInfoPtr parallel_replicas_custom_filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

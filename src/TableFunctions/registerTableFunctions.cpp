@@ -16,6 +16,7 @@ void registerTableFunctions()
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
+    registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
@@ -27,9 +28,15 @@ void registerTableFunctions()
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
-    registerTableFunctionHudi(factory);
-    registerTableFunctionDeltaLake(factory);
     registerTableFunctionOSS(factory);
+    registerTableFunctionGCS(factory);
+    registerTableFunctionHudi(factory);
+#if USE_PARQUET
+    registerTableFunctionDeltaLake(factory);
+#endif
+#if USE_AVRO
+    registerTableFunctionIceberg(factory);
+#endif
 
 #endif
 

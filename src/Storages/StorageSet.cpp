@@ -9,6 +9,8 @@
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>

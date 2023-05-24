@@ -18,31 +18,34 @@
 #define NetSSL_RejectCertificateHandler_INCLUDED
 
 
-#include "Poco/Net/NetSSL.h"
 #include "Poco/Net/InvalidCertificateHandler.h"
+#include "Poco/Net/NetSSL.h"
 
 
-namespace Poco {
-namespace Net {
-
-
-class NetSSL_API RejectCertificateHandler: public InvalidCertificateHandler
-	/// A RejectCertificateHandler is invoked whenever an error 
-	/// occurs verifying the certificate. It always rejects
-	/// the certificate.
+namespace Poco
 {
-public:
-	RejectCertificateHandler(bool handleErrorsOnServerSide);
-		/// Creates the RejectCertificateHandler
-
-	virtual ~RejectCertificateHandler();
-		/// Destroys the RejectCertificateHandler.
-
-	void onInvalidCertificate(const void* pSender, VerificationErrorArgs& errorCert);
-};
+namespace Net
+{
 
 
-} } // namespace Poco::Net
+    class NetSSL_API RejectCertificateHandler : public InvalidCertificateHandler
+    /// A RejectCertificateHandler is invoked whenever an error
+    /// occurs verifying the certificate. It always rejects
+    /// the certificate.
+    {
+    public:
+        RejectCertificateHandler(bool handleErrorsOnServerSide);
+        /// Creates the RejectCertificateHandler
+
+        virtual ~RejectCertificateHandler();
+        /// Destroys the RejectCertificateHandler.
+
+        void onInvalidCertificate(const void * pSender, VerificationErrorArgs & errorCert);
+    };
+
+
+}
+} // namespace Poco::Net
 
 
 #endif // NetSSL_RejectCertificateHandler_INCLUDED

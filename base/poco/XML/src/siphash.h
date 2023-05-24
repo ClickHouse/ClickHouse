@@ -99,7 +99,7 @@
 #define SIPHASH_H
 
 #include <stddef.h> /* size_t */
-#  include <stdint.h> /* uint64_t uint32_t uint8_t */
+#include <stdint.h> /* uint64_t uint32_t uint8_t */
 
 /*
  * Workaround to not require a C++11 compiler for using ULL suffix
@@ -110,167 +110,172 @@
 
 #define SIP_ROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
 
-#define SIP_U32TO8_LE(p, v)                                                    \
-  (p)[0] = (uint8_t)((v) >> 0);                                                \
-  (p)[1] = (uint8_t)((v) >> 8);                                                \
-  (p)[2] = (uint8_t)((v) >> 16);                                               \
-  (p)[3] = (uint8_t)((v) >> 24);
+#define SIP_U32TO8_LE(p, v) \
+    (p)[0] = (uint8_t)((v) >> 0); \
+    (p)[1] = (uint8_t)((v) >> 8); \
+    (p)[2] = (uint8_t)((v) >> 16); \
+    (p)[3] = (uint8_t)((v) >> 24);
 
-#define SIP_U64TO8_LE(p, v)                                                    \
-  SIP_U32TO8_LE((p) + 0, (uint32_t)((v) >> 0));                                \
-  SIP_U32TO8_LE((p) + 4, (uint32_t)((v) >> 32));
+#define SIP_U64TO8_LE(p, v) \
+    SIP_U32TO8_LE((p) + 0, (uint32_t)((v) >> 0)); \
+    SIP_U32TO8_LE((p) + 4, (uint32_t)((v) >> 32));
 
-#define SIP_U8TO64_LE(p)                                                       \
-  (((uint64_t)((p)[0]) << 0) | ((uint64_t)((p)[1]) << 8)                       \
-   | ((uint64_t)((p)[2]) << 16) | ((uint64_t)((p)[3]) << 24)                   \
-   | ((uint64_t)((p)[4]) << 32) | ((uint64_t)((p)[5]) << 40)                   \
-   | ((uint64_t)((p)[6]) << 48) | ((uint64_t)((p)[7]) << 56))
+#define SIP_U8TO64_LE(p) \
+    (((uint64_t)((p)[0]) << 0) | ((uint64_t)((p)[1]) << 8) | ((uint64_t)((p)[2]) << 16) | ((uint64_t)((p)[3]) << 24) \
+     | ((uint64_t)((p)[4]) << 32) | ((uint64_t)((p)[5]) << 40) | ((uint64_t)((p)[6]) << 48) | ((uint64_t)((p)[7]) << 56))
 
-#define SIPHASH_INITIALIZER                                                    \
-  { 0, 0, 0, 0, {0}, 0, 0 }
+#define SIPHASH_INITIALIZER \
+    { \
+        0, 0, 0, 0, {0}, 0, 0 \
+    }
 
-struct siphash {
-  uint64_t v0, v1, v2, v3;
+struct siphash
+{
+    uint64_t v0, v1, v2, v3;
 
-  unsigned char buf[8], *p;
-  uint64_t c;
+    unsigned char buf[8], *p;
+    uint64_t c;
 }; /* struct siphash */
 
 #define SIP_KEYLEN 16
 
-struct sipkey {
-  uint64_t k[2];
+struct sipkey
+{
+    uint64_t k[2];
 }; /* struct sipkey */
 
 #define sip_keyof(k) sip_tokey(&(struct sipkey){{0}}, (k))
 
-static struct sipkey *
-sip_tokey(struct sipkey *key, const void *src) {
-  key->k[0] = SIP_U8TO64_LE((const unsigned char *)src);
-  key->k[1] = SIP_U8TO64_LE((const unsigned char *)src + 8);
-  return key;
+static struct sipkey * sip_tokey(struct sipkey * key, const void * src)
+{
+    key->k[0] = SIP_U8TO64_LE((const unsigned char *)src);
+    key->k[1] = SIP_U8TO64_LE((const unsigned char *)src + 8);
+    return key;
 } /* sip_tokey() */
 
 #ifdef SIPHASH_TOBIN
 
-#  define sip_binof(v) sip_tobin((unsigned char[8]){0}, (v))
+#    define sip_binof(v) sip_tobin((unsigned char[8]){0}, (v))
 
-static void *
-sip_tobin(void *dst, uint64_t u64) {
-  SIP_U64TO8_LE((unsigned char *)dst, u64);
-  return dst;
+static void * sip_tobin(void * dst, uint64_t u64)
+{
+    SIP_U64TO8_LE((unsigned char *)dst, u64);
+    return dst;
 } /* sip_tobin() */
 
 #endif /* SIPHASH_TOBIN */
 
-static void
-sip_round(struct siphash *H, const int rounds) {
-  int i;
+static void sip_round(struct siphash * H, const int rounds)
+{
+    int i;
 
-  for (i = 0; i < rounds; i++) {
-    H->v0 += H->v1;
-    H->v1 = SIP_ROTL(H->v1, 13);
-    H->v1 ^= H->v0;
-    H->v0 = SIP_ROTL(H->v0, 32);
+    for (i = 0; i < rounds; i++)
+    {
+        H->v0 += H->v1;
+        H->v1 = SIP_ROTL(H->v1, 13);
+        H->v1 ^= H->v0;
+        H->v0 = SIP_ROTL(H->v0, 32);
 
-    H->v2 += H->v3;
-    H->v3 = SIP_ROTL(H->v3, 16);
-    H->v3 ^= H->v2;
+        H->v2 += H->v3;
+        H->v3 = SIP_ROTL(H->v3, 16);
+        H->v3 ^= H->v2;
 
-    H->v0 += H->v3;
-    H->v3 = SIP_ROTL(H->v3, 21);
-    H->v3 ^= H->v0;
+        H->v0 += H->v3;
+        H->v3 = SIP_ROTL(H->v3, 21);
+        H->v3 ^= H->v0;
 
-    H->v2 += H->v1;
-    H->v1 = SIP_ROTL(H->v1, 17);
-    H->v1 ^= H->v2;
-    H->v2 = SIP_ROTL(H->v2, 32);
-  }
+        H->v2 += H->v1;
+        H->v1 = SIP_ROTL(H->v1, 17);
+        H->v1 ^= H->v2;
+        H->v2 = SIP_ROTL(H->v2, 32);
+    }
 } /* sip_round() */
 
-static struct siphash *
-sip24_init(struct siphash *H, const struct sipkey *key) {
-  H->v0 = _SIP_ULL(0x736f6d65U, 0x70736575U) ^ key->k[0];
-  H->v1 = _SIP_ULL(0x646f7261U, 0x6e646f6dU) ^ key->k[1];
-  H->v2 = _SIP_ULL(0x6c796765U, 0x6e657261U) ^ key->k[0];
-  H->v3 = _SIP_ULL(0x74656462U, 0x79746573U) ^ key->k[1];
+static struct siphash * sip24_init(struct siphash * H, const struct sipkey * key)
+{
+    H->v0 = _SIP_ULL(0x736f6d65U, 0x70736575U) ^ key->k[0];
+    H->v1 = _SIP_ULL(0x646f7261U, 0x6e646f6dU) ^ key->k[1];
+    H->v2 = _SIP_ULL(0x6c796765U, 0x6e657261U) ^ key->k[0];
+    H->v3 = _SIP_ULL(0x74656462U, 0x79746573U) ^ key->k[1];
 
-  H->p = H->buf;
-  H->c = 0;
+    H->p = H->buf;
+    H->c = 0;
 
-  return H;
+    return H;
 } /* sip24_init() */
 
 #define sip_endof(a) (&(a)[sizeof(a) / sizeof *(a)])
 
-static struct siphash *
-sip24_update(struct siphash *H, const void *src, size_t len) {
-  const unsigned char *p = (const unsigned char *)src, *pe = p + len;
-  uint64_t m;
+static struct siphash * sip24_update(struct siphash * H, const void * src, size_t len)
+{
+    const unsigned char *p = (const unsigned char *)src, *pe = p + len;
+    uint64_t m;
 
-  do {
-    while (p < pe && H->p < sip_endof(H->buf))
-      *H->p++ = *p++;
+    do
+    {
+        while (p < pe && H->p < sip_endof(H->buf))
+            *H->p++ = *p++;
 
-    if (H->p < sip_endof(H->buf))
-      break;
+        if (H->p < sip_endof(H->buf))
+            break;
 
-    m = SIP_U8TO64_LE(H->buf);
-    H->v3 ^= m;
-    sip_round(H, 2);
-    H->v0 ^= m;
+        m = SIP_U8TO64_LE(H->buf);
+        H->v3 ^= m;
+        sip_round(H, 2);
+        H->v0 ^= m;
 
-    H->p = H->buf;
-    H->c += 8;
-  } while (p < pe);
+        H->p = H->buf;
+        H->c += 8;
+    } while (p < pe);
 
-  return H;
+    return H;
 } /* sip24_update() */
 
-static uint64_t
-sip24_final(struct siphash *H) {
-  const char left = (char)(H->p - H->buf);
-  uint64_t b = (H->c + left) << 56;
+static uint64_t sip24_final(struct siphash * H)
+{
+    const char left = (char)(H->p - H->buf);
+    uint64_t b = (H->c + left) << 56;
 
-  switch (left) {
-  case 7:
-    b |= (uint64_t)H->buf[6] << 48;
-    /* fall through */
-  case 6:
-    b |= (uint64_t)H->buf[5] << 40;
-    /* fall through */
-  case 5:
-    b |= (uint64_t)H->buf[4] << 32;
-    /* fall through */
-  case 4:
-    b |= (uint64_t)H->buf[3] << 24;
-    /* fall through */
-  case 3:
-    b |= (uint64_t)H->buf[2] << 16;
-    /* fall through */
-  case 2:
-    b |= (uint64_t)H->buf[1] << 8;
-    /* fall through */
-  case 1:
-    b |= (uint64_t)H->buf[0] << 0;
-    /* fall through */
-  case 0:
-    break;
-  }
+    switch (left)
+    {
+        case 7:
+            b |= (uint64_t)H->buf[6] << 48;
+            /* fall through */
+        case 6:
+            b |= (uint64_t)H->buf[5] << 40;
+            /* fall through */
+        case 5:
+            b |= (uint64_t)H->buf[4] << 32;
+            /* fall through */
+        case 4:
+            b |= (uint64_t)H->buf[3] << 24;
+            /* fall through */
+        case 3:
+            b |= (uint64_t)H->buf[2] << 16;
+            /* fall through */
+        case 2:
+            b |= (uint64_t)H->buf[1] << 8;
+            /* fall through */
+        case 1:
+            b |= (uint64_t)H->buf[0] << 0;
+            /* fall through */
+        case 0:
+            break;
+    }
 
-  H->v3 ^= b;
-  sip_round(H, 2);
-  H->v0 ^= b;
-  H->v2 ^= 0xff;
-  sip_round(H, 4);
+    H->v3 ^= b;
+    sip_round(H, 2);
+    H->v0 ^= b;
+    H->v2 ^= 0xff;
+    sip_round(H, 4);
 
-  return H->v0 ^ H->v1 ^ H->v2 ^ H->v3;
+    return H->v0 ^ H->v1 ^ H->v2 ^ H->v3;
 } /* sip24_final() */
 
-static uint64_t
-siphash24(const void *src, size_t len, const struct sipkey *key) {
-  struct siphash state = SIPHASH_INITIALIZER;
-  return sip24_final(sip24_update(sip24_init(&state, key), src, len));
+static uint64_t siphash24(const void * src, size_t len, const struct sipkey * key)
+{
+    struct siphash state = SIPHASH_INITIALIZER;
+    return sip24_final(sip24_update(sip24_init(&state, key), src, len));
 } /* siphash24() */
 
 /*
@@ -284,9 +289,9 @@ siphash24(const void *src, size_t len, const struct sipkey *key) {
  * ...
  * in = 00 01 02 ... 3e (63 bytes)
  */
-static int
-sip24_valid(void) {
-  /* clang-format off */
+static int sip24_valid(void)
+{
+    /* clang-format off */
   static const unsigned char vectors[64][8] = {
     { 0x31, 0x0e, 0x0e, 0xdd, 0x47, 0xdb, 0x6f, 0x72, },
     { 0xfd, 0x67, 0xdc, 0x93, 0xc5, 0x39, 0xf8, 0x74, },
@@ -353,39 +358,42 @@ sip24_valid(void) {
     { 0x57, 0x5f, 0xf2, 0x8e, 0x60, 0x38, 0x1b, 0xe5, },
     { 0x72, 0x45, 0x06, 0xeb, 0x4c, 0x32, 0x8a, 0x95, }
   };
-  /* clang-format on */
+    /* clang-format on */
 
-  unsigned char in[64];
-  struct sipkey k;
-  size_t i;
+    unsigned char in[64];
+    struct sipkey k;
+    size_t i;
 
-  sip_tokey(&k, "\000\001\002\003\004\005\006\007\010\011"
-                "\012\013\014\015\016\017");
+    sip_tokey(
+        &k,
+        "\000\001\002\003\004\005\006\007\010\011"
+        "\012\013\014\015\016\017");
 
-  for (i = 0; i < sizeof in; ++i) {
-    in[i] = (unsigned char)i;
+    for (i = 0; i < sizeof in; ++i)
+    {
+        in[i] = (unsigned char)i;
 
-    if (siphash24(in, i, &k) != SIP_U8TO64_LE(vectors[i]))
-      return 0;
-  }
+        if (siphash24(in, i, &k) != SIP_U8TO64_LE(vectors[i]))
+            return 0;
+    }
 
-  return 1;
+    return 1;
 } /* sip24_valid() */
 
 #ifdef SIPHASH_MAIN
 
-#  include <stdio.h>
+#    include <stdio.h>
 
-int
-main(void) {
-  const int ok = sip24_valid();
+int main(void)
+{
+    const int ok = sip24_valid();
 
-  if (ok)
-    puts("OK");
-  else
-    puts("FAIL");
+    if (ok)
+        puts("OK");
+    else
+        puts("FAIL");
 
-  return ! ok;
+    return !ok;
 } /* main() */
 
 #endif /* SIPHASH_MAIN */

@@ -163,7 +163,6 @@ unsigned AbstractConfiguration::getUInt(const std::string& key, unsigned default
 }
 
 
-#if defined(POCO_HAVE_INT64)
 
 
 Int64 AbstractConfiguration::getInt64(const std::string& key) const
@@ -214,7 +213,6 @@ UInt64 AbstractConfiguration::getUInt64(const std::string& key, UInt64 defaultVa
 }
 
 
-#endif // defined(POCO_HAVE_INT64)
 
 
 double AbstractConfiguration::getDouble(const std::string& key) const
@@ -283,7 +281,6 @@ void AbstractConfiguration::setUInt(const std::string& key, unsigned int value)
 }
 
 
-#if defined(POCO_HAVE_INT64)
 
 
 void AbstractConfiguration::setInt64(const std::string& key, Int64 value)
@@ -302,7 +299,6 @@ void AbstractConfiguration::setUInt64(const std::string& key, UInt64 value)
 }
 
 
-#endif // defined(POCO_HAVE_INT64)
 
 
 void AbstractConfiguration::setDouble(const std::string& key, double value)

@@ -186,6 +186,46 @@ public:
         delegate->removeSharedFileIfExists(wrapped_path, flag);
     }
 
+    Strings getBlobPath(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getBlobPath(wrapped_path);
+    }
+
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        delegate->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->readFile(wrapped_path, settings);
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->writeFile(wrapped_path, buf_size, mode, settings);
+    }
+
+    size_t getEncryptedFileSize(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getFileSize(wrapped_path);
+    }
+
+    size_t getEncryptedFileSize(size_t unencrypted_size) const override;
+
+    UInt128 getEncryptedFileIV(const String & path) const override;
+
+    static size_t convertFileSizeToEncryptedFileSize(size_t file_size);
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
     {
         auto wrapped_path = wrappedPath(path);
@@ -223,6 +263,11 @@ public:
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->getUniqueId(wrapped_path);
+    }
+
+    bool checkUniqueId(const String & id) const override
+    {
+        return delegate->checkUniqueId(id);
     }
 
     void onFreeze(const String & path) override
@@ -276,6 +321,12 @@ public:
         return delegate->getMetadataStorage();
     }
 
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
+
+    DiskPtr getDelegateDiskIfExists() const override
+    {
+        return delegate;
+    }
 
 private:
     String wrappedPath(const String & path) const

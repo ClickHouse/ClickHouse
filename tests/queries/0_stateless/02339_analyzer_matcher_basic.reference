@@ -38,6 +38,21 @@ id	UInt64
 value	String					
 0	Value
 Database and table qualified matchers
+--
+id	UInt64					
+value	String					
+0	Value
+--
+id	UInt64					
+0
+--
+id	UInt64					
+value	String					
+0	Value
+--
+id	UInt64					
+value	String					
+0	Value
 APPLY transformer
 --
 toString(id)	String					
@@ -74,20 +89,20 @@ toString(value)	String
 Value
 REPLACE transformer
 --
-5	UInt8					
+id	UInt8					
 value	String					
 5	Value
 --
-5	UInt8					
+id	UInt8					
 value	String					
 5	Value
 --
-5	UInt8					
-6	UInt8					
+id	UInt8					
+value	UInt8					
 5	6
 --
-5	UInt8					
-6	UInt8					
+id	UInt8					
+value	UInt8					
 5	6
 Combine EXCEPT, REPLACE, APPLY transformers
 --

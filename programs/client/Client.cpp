@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 
@@ -134,29 +135,34 @@ void Client::parseConnectionsCredentials()
     if (hosts_and_ports.size() >= 2)
         return;
 
-    String host;
-    std::optional<UInt16> port;
+    std::optional<String> host;
     if (hosts_and_ports.empty())
     {
-        host = config().getString("host", "localhost");
-        if (config().has("port"))
-            port = config().getInt("port");
+        if (config().has("host"))
+            host = config().getString("host");
     }
     else
     {
         host = hosts_and_ports.front().host;
-        port = hosts_and_ports.front().port;
     }
+
+    String connection;
+    if (config().has("connection"))
+        connection = config().getString("connection");
+    else
+        connection = host.value_or("localhost");
 
     Strings keys;
     config().keys("connections_credentials", keys);
-    for (const auto & connection : keys)
+    bool connection_found = false;
+    for (const auto & key : keys)
     {
-        const String & prefix = "connections_credentials." + connection;
+        const String & prefix = "connections_credentials." + key;
 
         const String & connection_name = config().getString(prefix + ".name", "");
-        if (connection_name != host)
+        if (connection_name != connection)
             continue;
+        connection_found = true;
 
         String connection_hostname;
         if (config().has(prefix + ".hostname"))
@@ -164,14 +170,9 @@ void Client::parseConnectionsCredentials()
         else
             connection_hostname = connection_name;
 
-        /// Set "host" unconditionally (since it is used as a "name"), while
-        /// other options only if they are not set yet (config.xml/cli
-        /// options).
-        config().setString("host", connection_hostname);
-        if (!hosts_and_ports.empty())
-            hosts_and_ports.front().host = connection_hostname;
-
-        if (config().has(prefix + ".port") && !port.has_value())
+        if (hosts_and_ports.empty())
+            config().setString("host", connection_hostname);
+        if (config().has(prefix + ".port") && hosts_and_ports.empty())
             config().setInt("port", config().getInt(prefix + ".port"));
         if (config().has(prefix + ".secure") && !config().has("secure"))
             config().setBool("secure", config().getBool(prefix + ".secure"));
@@ -189,6 +190,9 @@ void Client::parseConnectionsCredentials()
             config().setString("history_file", history_file);
         }
     }
+
+    if (config().has("connection") && !connection_found)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No such connection '{}' in connections_credentials", connection);
 }
 
 /// Make query to get all server warnings
@@ -273,11 +277,11 @@ void Client::initialize(Poco::Util::Application & self)
       */
 
     const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
-    if (env_user)
+    if (env_user && !config().has("user"))
         config().setString("user", env_user);
 
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
-    if (env_password)
+    if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
     parseConnectionsCredentials();
@@ -323,7 +327,21 @@ try
         showClientVersion();
     }
 
-    connect();
+    try
+    {
+        connect();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED ||
+            config().has("password") ||
+            config().getBool("ask-password", false) ||
+            !is_interactive)
+            throw;
+
+        config().setBool("ask-password", true);
+        connect();
+    }
 
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
@@ -844,7 +862,8 @@ bool Client::processWithFuzzing(const String & full_query)
                 const auto * tmp_pos = text_2.c_str();
                 const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
                     false /* allow_multi_statements */);
-                const auto text_3 = ast_3->formatForErrorMessage();
+                const auto text_3 = ast_3 ? ast_3->formatForErrorMessage() : "";
+
                 if (text_3 != text_2)
                 {
                     fmt::print(stderr, "Found error: The query formatting is broken.\n");
@@ -859,7 +878,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
                     fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
                     fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
-                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3->dumpTree());
+                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3 ? ast_3->dumpTree() : "");
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
@@ -955,6 +974,7 @@ void Client::addOptions(OptionsDescription & options_description)
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
+        ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -1095,6 +1115,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
+    if (options.count("connection"))
+        config().setString("connection", options["connection"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("secure"))
@@ -1159,7 +1181,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 void Client::processConfig()
 {
     /// Batch mode is enabled if one of the following is true:
-    /// - -e (--query) command line option is present.
+    /// - -q (--query) command line option is present.
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
@@ -1359,6 +1381,13 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
+            else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+            {
+                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+                ++arg_num;
+                arg = argv[arg_num];
+                addMultiquery(arg, common_arguments);
+            }
             else
                 common_arguments.emplace_back(arg);
         }

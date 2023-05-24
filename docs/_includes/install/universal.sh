@@ -60,12 +60,21 @@ fi
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-i=0
-while [ -f "$clickhouse" ]
-do
-    clickhouse="${clickhouse_download_filename_prefix}.${i}"
-    i=$(($i+1))
-done
+if [ -f "$clickhouse" ]
+then
+    read -p "ClickHouse binary ${clickhouse} already exists. Overwrite? [y/N] " answer
+    if [ "$answer" = "y" -o "$answer" = "Y" ]
+    then
+        rm -f "$clickhouse"
+    else
+        i=0
+        while [ -f "$clickhouse" ]
+        do
+            clickhouse="${clickhouse_download_filename_prefix}.${i}"
+            i=$(($i+1))
+        done
+    fi
+fi
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo

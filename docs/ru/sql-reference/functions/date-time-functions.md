@@ -235,13 +235,13 @@ SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Ti
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-Переводит дату-с-временем в число типа UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
-Для аргумента String, строка конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
+Переводит строку, дату или дату-с-временем в [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time), имеющий тип `UInt32`.
+Строка может сопровождаться вторым (необязательным) аргументом, указывающим часовой пояс.
 
 **Синтаксис**
 
 ``` sql
-toUnixTimestamp(datetime)
+toUnixTimestamp(date)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -256,19 +256,33 @@ toUnixTimestamp(str, [timezone])
 Запрос:
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
+SELECT
+    '2017-11-05 08:07:47' AS dt_str,
+    toUnixTimestamp(dt_str) AS from_str,
+    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
+    toUnixTimestamp(toDate(dt_str)) AS from_date,
+    toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
 ```
 
 Результат:
 
 ``` text
-┌─unix_timestamp─┐
-│     1509836867 │
-└────────────────┘
+Row 1:
+──────
+dt_str:          2017-11-05 08:07:47
+from_str:        1509869267
+from_str_tokyo:  1509836867
+from_datetime:   1509869267
+from_datetime64: 1509869267
+from_date:       1509840000
+from_date32:     1509840000
 ```
 
 :::note
-Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
+Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
 
 Поведение для
 * `enable_extended_results_for_datetime_functions = 0`: Функции `toStartOf*`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`. Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения типа `Date32` или `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.

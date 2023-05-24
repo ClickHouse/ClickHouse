@@ -33,6 +33,15 @@ struct QueryPlanOptimizationSettings
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
 
+    bool aggregate_partitions_independently = false;
+
+    /// If removing redundant distinct steps is enabled
+    bool remove_redundant_distinct = true;
+
+    /// If reading from projection can be applied
+    bool optimize_projection = false;
+    bool force_use_projection = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

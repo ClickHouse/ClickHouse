@@ -49,11 +49,7 @@ HTTPServerRequestImpl::HTTPServerRequestImpl(HTTPServerResponseImpl& response, H
 	if (getChunkedTransferEncoding())
 		_pStream = new HTTPChunkedInputStream(session);
 	else if (hasContentLength())
-#if defined(POCO_HAVE_INT64)
 		_pStream = new HTTPFixedLengthInputStream(session, getContentLength64());
-#else
-		_pStream = new HTTPFixedLengthInputStream(session, getContentLength());
-#endif
 	else if (getMethod() == HTTPRequest::HTTP_GET || getMethod() == HTTPRequest::HTTP_HEAD || getMethod() == HTTPRequest::HTTP_DELETE)
 		_pStream = new HTTPFixedLengthInputStream(session, 0);
 	else

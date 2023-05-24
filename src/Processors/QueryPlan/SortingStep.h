@@ -53,7 +53,9 @@ public:
         const DataStream & input_stream,
         SortDescription sort_description_,
         size_t max_block_size_,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        bool always_read_till_end_ = false
+    );
 
     String getName() const override { return "Sorting"; }
 
@@ -73,11 +75,20 @@ public:
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
+    static void fullSortStreams(
+        QueryPipelineBuilder & pipeline,
+        const Settings & sort_settings,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_,
+        bool skip_partial_sort = false);
+
 private:
     void updateOutputStream() override;
 
+    static void
+    mergeSorting(QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_);
+
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
     void finishSorting(
         QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
     void fullSort(
@@ -91,6 +102,7 @@ private:
     SortDescription prefix_description;
     const SortDescription result_description;
     UInt64 limit;
+    bool always_read_till_end = false;
 
     Settings sort_settings;
 

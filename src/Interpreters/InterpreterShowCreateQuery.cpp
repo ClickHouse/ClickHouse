@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -94,10 +95,8 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
-    String res = create_query->formatWithSecretsHidden(/* max_length= */ 0, /* one_line= */ false);
-
     MutableColumnPtr column = ColumnString::create();
-    column->insert(res);
+    column->insert(format({.ctx = getContext(), .query = *create_query, .one_line = false}));
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),

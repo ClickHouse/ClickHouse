@@ -296,6 +296,11 @@ double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
 }
 
+UInt64 ColumnMap::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnMap>();
+}
+
 void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
@@ -307,9 +312,9 @@ ColumnPtr ColumnMap::compress() const
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed)]
     {
-        return ColumnMap::create(compressed->decompress());
+        return ColumnMap::create(my_compressed->decompress());
     });
 }
 

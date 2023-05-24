@@ -18,69 +18,70 @@
 #define Foundation_NullStream_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/UnbufferedStreamBuf.h"
 #include <istream>
 #include <ostream>
+#include "Poco/Foundation.h"
+#include "Poco/UnbufferedStreamBuf.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API NullStreamBuf: public UnbufferedStreamBuf
-	/// This stream buffer discards all characters written to it.
-	/// Any read operation immediately yields EOF.
+class Foundation_API NullStreamBuf : public UnbufferedStreamBuf
+/// This stream buffer discards all characters written to it.
+/// Any read operation immediately yields EOF.
 {
 public:
-	NullStreamBuf();
-		/// Creates a NullStreamBuf.
-	
-	~NullStreamBuf();
-		/// Destroys the NullStreamBuf.
-		
-protected:
-	int readFromDevice();
-	int writeToDevice(char c);
-};
+    NullStreamBuf();
+    /// Creates a NullStreamBuf.
 
-
-class Foundation_API NullIOS: public virtual std::ios
-	/// The base class for NullInputStream and NullOutputStream.
-	///
-	/// This class is needed to ensure the correct initialization
-	/// order of the stream buffer and base classes.
-{
-public:
-	NullIOS();
-	~NullIOS();
+    ~NullStreamBuf();
+    /// Destroys the NullStreamBuf.
 
 protected:
-	NullStreamBuf _buf;
+    int readFromDevice();
+    int writeToDevice(char c);
 };
 
 
-class Foundation_API NullInputStream: public NullIOS, public std::istream
-	/// Any read operation from this stream immediately
-	/// yields EOF.
+class Foundation_API NullIOS : public virtual std::ios
+/// The base class for NullInputStream and NullOutputStream.
+///
+/// This class is needed to ensure the correct initialization
+/// order of the stream buffer and base classes.
 {
 public:
-	NullInputStream();
-		/// Creates the NullInputStream.
+    NullIOS();
+    ~NullIOS();
 
-	~NullInputStream();
-		/// Destroys the NullInputStream.
+protected:
+    NullStreamBuf _buf;
 };
 
 
-class Foundation_API NullOutputStream: public NullIOS, public std::ostream
-	/// This stream discards all characters written to it.
+class Foundation_API NullInputStream : public NullIOS, public std::istream
+/// Any read operation from this stream immediately
+/// yields EOF.
 {
 public:
-	NullOutputStream();
-		/// Creates the NullOutputStream.
-	
-	~NullOutputStream();
-		/// Destroys the NullOutputStream.
+    NullInputStream();
+    /// Creates the NullInputStream.
+
+    ~NullInputStream();
+    /// Destroys the NullInputStream.
+};
+
+
+class Foundation_API NullOutputStream : public NullIOS, public std::ostream
+/// This stream discards all characters written to it.
+{
+public:
+    NullOutputStream();
+    /// Creates the NullOutputStream.
+
+    ~NullOutputStream();
+    /// Destroys the NullOutputStream.
 };
 
 

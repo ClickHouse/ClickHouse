@@ -46,7 +46,10 @@ public:
     /// clickhouse-client so that without -m flag, one can still paste multiline queries, and
     /// possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
     /// more details.
+    /// These methods (if implemented) emit the control characters immediately, without waiting
+    /// for the next readLine() call.
     virtual void enableBracketedPaste() {}
+    virtual void disableBracketedPaste() {}
 
 protected:
     enum InputStatus

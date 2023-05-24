@@ -247,7 +247,7 @@ private:
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
-      role_cache(std::make_unique<RoleCache>(*this)),
+      role_cache(std::make_unique<RoleCache>(*this, 600)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
@@ -271,7 +271,10 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
+    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
+
+    setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -282,6 +285,8 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
+
+    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
 
 
@@ -651,6 +656,27 @@ bool AccessControl::isPlaintextPasswordAllowed() const
     return allow_plaintext_password;
 }
 
+void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
+{
+    for (auto check_type : collections::range(AuthenticationType::MAX))
+    {
+        const auto & info = AuthenticationTypeInfo::get(check_type);
+
+        if (type_ == info.name && info.is_password)
+        {
+            default_password_type = check_type;
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
+}
+
+AuthenticationType AccessControl::getDefaultPasswordType() const
+{
+    return default_password_type;
+}
+
 void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
 {
     password_rules->setPasswordComplexityRulesFromConfig(config_);
@@ -669,6 +695,21 @@ void AccessControl::checkPasswordComplexityRules(const String & password_) const
 std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules() const
 {
     return password_rules->getPasswordComplexityRules();
+}
+
+void AccessControl::setBcryptWorkfactor(int workfactor_)
+{
+    if (workfactor_ < 4)
+        bcrypt_workfactor = 4;
+    else if (workfactor_ > 31)
+        bcrypt_workfactor = 31;
+    else
+        bcrypt_workfactor = workfactor_;
+}
+
+int AccessControl::getBcryptWorkfactor() const
+{
+    return bcrypt_workfactor;
 }
 
 

@@ -348,6 +348,23 @@ size_t DiskEncrypted::getFileSize(const String & path) const
     return size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
 }
 
+UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
+{
+    auto wrapped_path = wrappedPath(path);
+    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    if (read_buffer->eof())
+        return 0;
+    auto header = readHeader(*read_buffer);
+    return header.init_vector.get();
+}
+
+size_t DiskEncrypted::getEncryptedFileSize(size_t unencrypted_size) const
+{
+    if (unencrypted_size)
+        return unencrypted_size + FileEncryption::Header::kSize;
+    return 0;
+}
+
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
     auto wrapped_path = wrappedPath(path);
@@ -358,6 +375,19 @@ SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
     return delegate->getDirectorySyncGuard(wrapped_path);
+}
+
+std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const std::vector<String> & paths) const
+{
+    std::vector<String> wrapped_paths;
+    wrapped_paths.reserve(paths.size());
+    for (const auto & path : paths)
+        wrapped_paths.emplace_back(wrappedPath(path));
+    auto metadata = delegate->getSerializedMetadata(wrapped_paths);
+    std::unordered_map<String, String> res;
+    for (size_t i = 0; i != paths.size(); ++i)
+        res.emplace(paths[i], metadata.at(wrapped_paths.at(i)));
+    return res;
 }
 
 void DiskEncrypted::applyNewSettings(

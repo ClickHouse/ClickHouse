@@ -31,8 +31,6 @@ set (SRCS
     src/ASCIIEncoding.cpp
     src/AsyncChannel.cpp
     src/AtomicCounter.cpp
-    src/Base32Decoder.cpp
-    src/Base32Encoder.cpp
     src/Base64Decoder.cpp
     src/Base64Encoder.cpp
     src/BinaryReader.cpp
@@ -81,9 +79,6 @@ set (SRCS
     src/HexBinaryEncoder.cpp
     src/InflatingStream.cpp
     src/JSONString.cpp
-    src/Latin1Encoding.cpp
-    src/Latin2Encoding.cpp
-    src/Latin9Encoding.cpp
     src/LineEndingConverter.cpp
     src/LocalDateTime.cpp
     src/LogFile.cpp
@@ -91,8 +86,6 @@ set (SRCS
     src/LoggingFactory.cpp
     src/LoggingRegistry.cpp
     src/LogStream.cpp
-    src/Manifest.cpp
-    src/MD4Engine.cpp
     src/MD5Engine.cpp
     src/MemoryPool.cpp
     src/MemoryStream.cpp
@@ -113,7 +106,6 @@ set (SRCS
     src/PatternFormatter.cpp
     src/Pipe.cpp
     src/PipeImpl.cpp
-    src/PipeStream.cpp
     src/PriorityNotificationQueue.cpp
     src/Process.cpp
     src/PurgeStrategy.cpp
@@ -136,10 +128,8 @@ set (SRCS
     src/StreamChannel.cpp
     src/StreamConverter.cpp
     src/StreamCopier.cpp
-    src/StreamTokenizer.cpp
     src/String.cpp
     src/StringTokenizer.cpp
-    src/SynchronizedObject.cpp
     src/SyslogChannel.cpp
     src/Task.cpp
     src/TaskManager.cpp
@@ -175,9 +165,6 @@ set (SRCS
     src/VarHolder.cpp
     src/VarIterator.cpp
     src/Void.cpp
-    src/Windows1250Encoding.cpp
-    src/Windows1251Encoding.cpp
-    src/Windows1252Encoding.cpp
 )
 
 add_library (_poco_foundation ${SRCS})
@@ -233,7 +220,8 @@ target_link_libraries (_poco_foundation
     PRIVATE
         Poco::Foundation::PCRE
         ch_contrib::zlib
-        ch_contrib::lz4)
+        ch_contrib::lz4
+        ch_contrib::double_conversion)
 
 if(OS_DARWIN AND ARCH_AARCH64)
     target_compile_definitions (_poco_foundation

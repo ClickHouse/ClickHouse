@@ -63,78 +63,25 @@ public:
         const String & comment);
 
     ~StorageLiveView() override;
-    String getName() const override { return "LiveView"; }
-    bool isView() const override { return true; }
-    String getBlocksTableName() const
-    {
-        return getStorageID().table_name + "_blocks";
-    }
-    StoragePtr getParentStorage() const;
 
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
-    ASTPtr getInnerSubQuery() const
-    {
-        if (inner_subquery)
-            return inner_subquery->clone();
-        return nullptr;
-    }
-    ASTPtr getInnerBlocksQuery();
+    String getName() const override { return "LiveView"; }
+
+    bool isView() const override { return true; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
+
     bool supportsFinal() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
 
-    /// Check we have any active readers
-    /// must be called with mutex locked
-    bool hasActiveUsers()
-    {
-        return active_ptr.use_count() > 1;
-    }
-
-    /// Get blocks hash
-    /// must be called with mutex locked
-    String getBlocksHashKey()
-    {
-        if (*blocks_metadata_ptr)
-            return (*blocks_metadata_ptr)->hash;
-        return {};
-    }
-    /// Get blocks version
-    /// must be called with mutex locked
-    UInt64 getBlocksVersion()
-    {
-        if (*blocks_metadata_ptr)
-            return (*blocks_metadata_ptr)->version;
-        return 0;
-    }
-
-    /// Get blocks time
-    /// must be called with mutex locked
-    Time getBlocksTime()
-    {
-        if (*blocks_metadata_ptr)
-            return (*blocks_metadata_ptr)->time;
-        return {};
-    }
-
-    /// Reset blocks
-    /// must be called with mutex locked
-    void reset()
-    {
-        (*blocks_ptr).reset();
-        if (*blocks_metadata_ptr)
-            (*blocks_metadata_ptr)->hash.clear();
-        mergeable_blocks.reset();
-    }
-
     void checkTableCanBeDropped() const override;
-    void drop() override;
-    void startup() override;
-    void shutdown() override;
 
-    void refresh(bool grab_lock = true);
+    void drop() override;
+
+    void startup() override;
+
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,
@@ -153,36 +100,88 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
-    MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
+    ASTPtr getInnerQuery() const { return select_query_description.select_query->clone(); }
 
-    /// Collect mergeable blocks and their sample. Must be called holding mutex
-    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
-    /// Complete query using input streams from mergeable blocks
-    QueryPipelineBuilder completeQuery(Pipes pipes);
+    /// Get blocks hash
+    /// must be called with mutex locked
+    String getBlocksHashKey(const std::lock_guard<std::mutex> &)
+    {
+        if (*blocks_metadata_ptr)
+            return (*blocks_metadata_ptr)->hash;
+        return {};
+    }
+    /// Get blocks version
+    /// must be called with mutex locked
+    UInt64 getBlocksVersion(const std::lock_guard<std::mutex> &)
+    {
+        if (*blocks_metadata_ptr)
+            return (*blocks_metadata_ptr)->version;
+        return 0;
+    }
 
-    void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
-    std::shared_ptr<bool> getActivePtr() { return active_ptr; }
+    void writeBlock(const Block & block, ContextPtr context);
 
-    /// Read new data blocks that store query result
-    bool getNewBlocks();
+    void refresh();
+
+private:
+    void refreshImpl(const std::lock_guard<std::mutex> & lock);
+
+    String getBlocksTableName() const
+    {
+        return getStorageID().table_name + "_blocks";
+    }
 
     Block getHeader() const;
 
-    /// convert blocks to input streams
-    static Pipes blocksToPipes(BlocksPtrs blocks, Block & sample_block);
+    StoragePtr getDependentTableStorage() const;
 
-    static void writeIntoLiveView(
-        StorageLiveView & live_view,
-        const Block & block,
-        ContextPtr context);
+    ASTPtr getInnerBlocksQuery();
 
-private:
-    /// TODO move to common struct SelectQueryDescription
-    StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
-    ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
-    ASTPtr inner_subquery; /// stored query's innermost subquery if any
-    ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
+    /// Check we have any active readers
+    /// must be called with mutex locked
+    bool hasActiveUsers(const std::lock_guard<std::mutex> &) const
+    {
+        return active_ptr.use_count() > 1;
+    }
+
+    /// Get blocks time
+    /// must be called with mutex locked
+    Time getBlocksTime(const std::lock_guard<std::mutex> &)
+    {
+        if (*blocks_metadata_ptr)
+            return (*blocks_metadata_ptr)->time;
+        return {};
+    }
+
+    /// Reset blocks
+    /// must be called with mutex locked
+    void reset(const std::lock_guard<std::mutex> &)
+    {
+        (*blocks_ptr).reset();
+        if (*blocks_metadata_ptr)
+            (*blocks_metadata_ptr)->hash.clear();
+        mergeable_blocks.reset();
+    }
+
+    /// Collect mergeable blocks and their sample. Must be called holding mutex
+    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context, const std::lock_guard<std::mutex> & lock) const;
+
+    /// Complete query using input streams from mergeable blocks
+    QueryPipelineBuilder completeQuery(Pipes pipes);
+
+    /// Read new data blocks that store query result
+    bool getNewBlocks(const std::lock_guard<std::mutex> & lock);
+
+    void periodicRefreshTaskFunc();
+
+    /// Must be called with mutex locked
+    void scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock);
+
+    SelectQueryDescription select_query_description;
+
+    /// Query over the mergeable blocks to produce final result
+    ASTPtr inner_blocks_query;
+
     ContextMutablePtr live_view_context;
 
     Poco::Logger * log;
@@ -212,10 +211,6 @@ private:
 
     /// Periodic refresh task used when [PERIODIC] REFRESH is specified in create statement
     BackgroundSchedulePool::TaskHolder periodic_refresh_task;
-    void periodicRefreshTaskFunc();
-
-    /// Must be called with mutex locked
-    void scheduleNextPeriodicRefresh();
 };
 
 }

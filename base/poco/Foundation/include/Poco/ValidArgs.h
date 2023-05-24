@@ -21,50 +21,32 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 template <class TKey>
 class ValidArgs
 {
 public:
-	ValidArgs(const TKey& key):
-		_key(key), 
-		_isValid(true)
-	{
-	}
+    ValidArgs(const TKey & key) : _key(key), _isValid(true) { }
 
-	ValidArgs(const ValidArgs& args): 
-		_key(args._key), 
-		_isValid(args._isValid)
-	{
-	}
+    ValidArgs(const ValidArgs & args) : _key(args._key), _isValid(args._isValid) { }
 
-	~ValidArgs()
-	{
-	}
-	
-	const TKey&	key() const
-	{
-		return _key;
-	}
+    ~ValidArgs() { }
 
-	bool isValid() const
-	{
-		return _isValid;
-	}
+    const TKey & key() const { return _key; }
 
-	void invalidate()
-	{
-		_isValid = false;
-	}
+    bool isValid() const { return _isValid; }
+
+    void invalidate() { _isValid = false; }
 
 protected:
-	const TKey& _key;
-	bool        _isValid;
+    const TKey & _key;
+    bool _isValid;
 
 private:
-	ValidArgs& operator = (const ValidArgs& args);
+    ValidArgs & operator=(const ValidArgs & args);
 };
 
 

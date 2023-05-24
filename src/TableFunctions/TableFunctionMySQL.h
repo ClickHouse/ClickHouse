@@ -3,7 +3,7 @@
 
 #if USE_MYSQL
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageMySQL.h>
 #include <mysqlxx/Pool.h>
 
 
@@ -30,7 +30,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable std::optional<mysqlxx::PoolWithFailover> pool;
-    std::optional<StorageMySQLConfiguration> configuration;
+    std::optional<StorageMySQL::Configuration> configuration;
 };
 
 }
