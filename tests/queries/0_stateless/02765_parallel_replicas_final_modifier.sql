@@ -10,3 +10,5 @@ SELECT * FROM parallel_replicas_final FINAL FORMAT Null;
 SET allow_experimental_parallel_reading_from_replicas=2;
 
 SELECT * FROM parallel_replicas_final FINAL FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE IF EXISTS parallel_replicas_final;
