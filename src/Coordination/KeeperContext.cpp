@@ -76,14 +76,30 @@ DiskPtr KeeperContext::getCurrentLogDisk() const
     return getDisk(current_log_storage);
 }
 
-DiskPtr KeeperContext::getSnapshotsDisk() const
+void KeeperContext::setLogDisk(DiskPtr disk)
+{
+    log_storage = disk;
+    current_log_storage = std::move(disk);
+}
+
+DiskPtr KeeperContext::getSnapshotDisk() const
 {
     return getDisk(snapshot_storage);
+}
+
+void KeeperContext::setSnapshotDisk(DiskPtr disk)
+{
+    snapshot_storage = std::move(disk);
 }
 
 DiskPtr KeeperContext::getStateFileDisk() const
 {
     return getDisk(state_file_storage);
+}
+
+void KeeperContext::setStateFileDisk(DiskPtr disk)
+{
+    state_file_storage = std::move(disk);
 }
 
 KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const

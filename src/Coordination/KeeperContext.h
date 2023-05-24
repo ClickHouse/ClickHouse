@@ -34,8 +34,13 @@ public:
 
     DiskPtr getCurrentLogDisk() const;
     DiskPtr getLogDisk() const;
-    DiskPtr getSnapshotsDisk() const;
+    void setLogDisk(DiskPtr disk);
+
+    DiskPtr getSnapshotDisk() const;
+    void setSnapshotDisk(DiskPtr disk);
+
     DiskPtr getStateFileDisk() const;
+    void setStateFileDisk(DiskPtr disk);
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
