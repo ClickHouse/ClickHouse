@@ -384,12 +384,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             char * sql_query = new char[max_query_size];
             memset(sql_query, 0, max_query_size);
             int res = to_sql(begin, sql_query);
-            if (res == -1) {
+            if (res == -1)
+            {
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
             size_t idx = 0;
             char * sql_query_end = sql_query;
-            while (idx < max_query_size && *sql_query_end) {
+            while (idx < max_query_size && *sql_query_end)
+            {
                 ++sql_query_end;
                 ++idx;
             }
