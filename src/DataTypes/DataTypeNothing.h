@@ -16,6 +16,8 @@ public:
     static constexpr bool is_parametric = false;
 
     const char * getFamilyName() const override { return "Nothing"; }
+    const char * getMySQLName() const override { return "text"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
 
     MutableColumnPtr createColumn() const override;

@@ -36,6 +36,29 @@ const char * DataTypeEnum<Type>::getFamilyName() const
     return EnumName<FieldType>::value;
 }
 
+template <typename Type>
+std::string DataTypeEnum<Type>::generateMySQLName(const Values & values)
+{
+    WriteBufferFromOwnString out;
+
+    writeString("enum", out);
+    writeChar('(', out);
+
+    auto first = true;
+    for (const auto & name_and_value : values)
+    {
+        if (!first)
+            writeString(", ", out);
+
+        first = false;
+
+        writeQuotedString(name_and_value.first, out);
+    }
+
+    writeChar(')', out);
+
+    return out.str();
+}
 
 template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
@@ -67,6 +90,7 @@ template <typename Type>
 DataTypeEnum<Type>::DataTypeEnum(const Values & values_)
     : EnumValues<Type>(values_)
     , type_name(generateName(this->getValues()))
+    , my_sql_type_name(generateMySQLName(this->getValues()))
 {
 }
 

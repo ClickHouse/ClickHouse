@@ -42,6 +42,7 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
 
     const char * getFamilyName() const override { return "FixedString"; }
+    const char * getMySQLName() const override { return "text"; }
 
     size_t getN() const
     {

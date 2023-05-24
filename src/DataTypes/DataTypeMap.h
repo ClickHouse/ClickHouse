@@ -30,6 +30,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Map"; }
+    const char * getMySQLName() const override { return "json"; }
 
     bool canBeInsideNullable() const override { return false; }
 

@@ -13,6 +13,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Date32; }
     const char * getFamilyName() const override { return family_name; }
+    const char * getMySQLName() const override { return "date"; }
 
     Field getDefault() const override
     {

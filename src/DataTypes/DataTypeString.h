@@ -21,6 +21,9 @@ public:
         return "String";
     }
 
+    // FIXME: string can contain arbitrary bytes, not only UTF-8 sequences
+    const char * getMySQLName() const override { return "text"; }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     MutableColumnPtr createColumn() const override;

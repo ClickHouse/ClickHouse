@@ -74,6 +74,7 @@ public:
         : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
+        , clientInfo(context->getClientInfo())
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -129,6 +130,17 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            auto get_type_name = [this](const IDataType& type) -> std::string
+            {
+                if (clientInfo.interface == DB::ClientInfo::Interface::MYSQL)
+                {
+                   return type.getMySQLTypeName();
+                }
+                else
+                {
+                    return type.getName();
+                }
+            };
             size_t position = 0;
             for (const auto & column : columns)
             {
@@ -146,7 +158,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(column.type->getName());
+                    res_columns[res_index++]->insert(get_type_name(*column.type));
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(position);
 
@@ -281,6 +293,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ClientInfo clientInfo;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
