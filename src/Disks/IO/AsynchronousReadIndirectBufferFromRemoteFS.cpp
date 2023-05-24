@@ -110,20 +110,20 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size, int64_t priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size, Priority priority)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = base_priority + priority;
+    request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     return reader.submit(request);
 }
 
 
-void AsynchronousReadIndirectBufferFromRemoteFS::prefetch(int64_t priority)
+void AsynchronousReadIndirectBufferFromRemoteFS::prefetch(Priority priority)
 {
     if (prefetch_future.valid())
         return;

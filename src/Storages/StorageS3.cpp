@@ -356,7 +356,7 @@ private:
                 request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
             return outcome;
-        }, 0);
+        }, Priority{});
     }
 
     std::mutex mutex;
@@ -619,7 +619,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
 {
-    return create_reader_scheduler([this] { return createReader(); }, 0);
+    return create_reader_scheduler([this] { return createReader(); }, Priority{});
 }
 
 StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)

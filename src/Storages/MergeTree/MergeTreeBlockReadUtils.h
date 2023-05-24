@@ -71,11 +71,7 @@ struct MergeTreeReadTask
     std::future<MergeTreeReaderPtr> reader;
     std::vector<std::future<MergeTreeReaderPtr>> pre_reader_for_step;
 
-    int64_t priority = 0; /// Priority of the task. Bigger value, bigger priority.
-    bool operator <(const MergeTreeReadTask & rhs) const
-    {
-        return priority < rhs.priority;
-    }
+    Priority priority;
 
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
@@ -86,7 +82,7 @@ struct MergeTreeReadTask
         const NameSet & column_name_set_,
         const MergeTreeReadTaskColumns & task_columns_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        int64_t priority_ = 0,
+        Priority priority_ = {},
         std::future<MergeTreeReaderPtr> reader_ = {},
         std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
 
