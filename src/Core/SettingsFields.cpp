@@ -381,6 +381,11 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
 
 #else
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
 String SettingFieldMap::toString() const
 {

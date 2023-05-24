@@ -520,19 +520,41 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     , keeper_context(keeper_context_)
 {
     auto disk = getDisk();
+
+    std::unordered_set<std::string> invalid_snapshots;
+    /// collect invalid snapshots
     for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
     {
         const auto & name = it->name();
         if (name.empty())
             continue;
+
         if (startsWith(name, "tmp_"))
+        {
+            disk->removeFile(it->path());
+            invalid_snapshots.insert(name.substr(4));
+            continue;
+        }
+
+    }
+
+    /// process snapshots
+    for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
+    {
+        const auto & name = it->name();
+        if (name.empty())
+            continue;
+
+        /// Not snapshot file
+        if (!startsWith(name, "snapshot_"))
+            continue;
+
+        if (invalid_snapshots.contains(name))
         {
             disk->removeFile(it->path());
             continue;
         }
-        /// Not snapshot file
-        if (!startsWith(name, "snapshot_"))
-            continue;
+
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(name);
         existing_snapshots[snapshot_up_to] = it->path();
     }
@@ -549,11 +571,16 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getDisk();
-    auto plain_buf = disk->writeFile(tmp_snapshot_file_name);
+
+    {
+        disk->writeFile(tmp_snapshot_file_name);
+    }
+
+    auto plain_buf = disk->writeFile(snapshot_file_name);
     copyData(reader, *plain_buf);
     plain_buf->sync();
 
-    disk->moveFile(tmp_snapshot_file_name, snapshot_file_name);
+    disk->removeFile(tmp_snapshot_file_name);
 
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
     removeOutdatedSnapshotsIfNeeded();
@@ -673,7 +700,12 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
-    auto writer = getDisk()->writeFile(tmp_snapshot_file_name);
+    auto disk = getDisk();
+    {
+        disk->writeFile(tmp_snapshot_file_name);
+    }
+
+    auto writer = disk->writeFile(snapshot_file_name);
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
         compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
@@ -688,7 +720,8 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
 
     try
     {
-        getDisk()->moveFile(tmp_snapshot_file_name, snapshot_file_name);
+        std::cout << "Removing file " << tmp_snapshot_file_name << std::endl;
+        disk->removeFile(tmp_snapshot_file_name);
     }
     catch (fs::filesystem_error & e)
     {

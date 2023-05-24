@@ -385,7 +385,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             }
 
             auto state = nuraft::srv_state::deserialize(*state_buf);
-            LOG_INFO(logger, "Read state from {}", disk->getPath() + path);
+            LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
             return state;
         }
         catch (const std::exception & e)
@@ -408,7 +408,6 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         if (state)
         {
             disk->removeFileIfExists(old_path);
-
             return state;
         }
 

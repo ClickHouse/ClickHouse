@@ -21,6 +21,12 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance());
 
     log_storage = getLogsPathFromConfig(config);
+
+    if (config.has("keeper_server.current_log_storage_disk"))
+        current_log_storage = config.getString("keeper_server.current_log_storage_disk");
+    else
+        current_log_storage = log_storage;
+
     snapshot_storage = getSnapshotsPathFromConfig(config);
 
     state_file_storage = getStatePathFromConfig(config);
@@ -57,13 +63,17 @@ DiskPtr KeeperContext::getDisk(const Storage & storage) const
         return *storage_disk;
 
     const auto & disk_name = std::get<std::string>(storage);
-
     return disk_selector->get(disk_name);
 }
 
 DiskPtr KeeperContext::getLogDisk() const
 {
     return getDisk(log_storage);
+}
+
+DiskPtr KeeperContext::getCurrentLogDisk() const
+{
+    return getDisk(current_log_storage);
 }
 
 DiskPtr KeeperContext::getSnapshotsDisk() const

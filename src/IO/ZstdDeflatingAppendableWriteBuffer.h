@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 #include <zstd.h>
 
@@ -32,6 +33,7 @@ public:
         std::unique_ptr<WriteBufferFromFileBase> out_,
         int compression_level,
         bool append_to_existing_file_,
+        std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
@@ -69,6 +71,7 @@ private:
     void addEmptyBlock();
 
     std::unique_ptr<WriteBufferFromFileBase> out;
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator;
 
     bool append_to_existing_file = false;
     ZSTD_CCtx * cctx;
