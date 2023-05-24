@@ -4,6 +4,11 @@
 
 #include <IO/WriteBufferFromS3TaskTracker.h>
 
+namespace ProfileEvents
+{
+    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
+}
+
 namespace DB
 {
 
@@ -125,10 +130,10 @@ void WriteBufferFromS3::TaskTracker::waitAny()
 {
     LOG_TEST(log, "waitAny, in queue {}", futures.size());
 
-    while (futures.size() > 0 && consumeReady() == 0)
+    while (!futures.empty() && consumeReady() == 0)
     {
             std::unique_lock lock(mutex);
-            cond_var.wait(lock, [&] () { return finished_futures.size() > 0; });
+            cond_var.wait(lock, [&] () { return !finished_futures.empty(); });
     }
 
     LOG_TEST(log, "waitAny ended, in queue {}", futures.size());
@@ -167,10 +172,15 @@ void WriteBufferFromS3::TaskTracker::waitInFlight()
 
     LOG_TEST(log, "waitInFlight, in queue {}", futures.size());
 
+    Stopwatch watch;
+
     while (futures.size() >= max_tasks_inflight)
     {
         waitAny();
     }
+
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
 
     LOG_TEST(log, "waitInFlight ended, in queue {}", futures.size());
 }
