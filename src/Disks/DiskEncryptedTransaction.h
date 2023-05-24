@@ -2,7 +2,6 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -23,7 +22,7 @@ struct DiskEncryptedSettings
 class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
-    explicit DiskEncryptedTransaction(DiskTransactionPtr delegate_transaction_, const std::string & disk_path_, DiskEncryptedSettings current_settings_, IDisk * delegate_disk_)
+    DiskEncryptedTransaction(DiskTransactionPtr delegate_transaction_, const std::string & disk_path_, DiskEncryptedSettings current_settings_, IDisk * delegate_disk_)
         : delegate_transaction(delegate_transaction_)
         , disk_path(disk_path_)
         , current_settings(current_settings_)
@@ -32,19 +31,14 @@ public:
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    void commit(const TransactionCommitOptionsVariant & options = NoCommitOptions{}) override // NOLINT
+    void commit() override // NOLINT
     {
-        delegate_transaction->commit(options);
+        delegate_transaction->commit();
     }
 
     void undo() override
     {
         delegate_transaction->undo();
-    }
-
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
-    {
-        return delegate_transaction->tryCommit(options);
     }
 
     ~DiskEncryptedTransaction() override = default;
@@ -114,13 +108,6 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {},
         bool autocommit = true) override;
-
-    /// Write a file using a custom function to write an object to the disk's object storage.
-    void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function) override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeFile(const std::string & path) override
@@ -223,6 +210,23 @@ public:
         auto wrapped_dst_path = wrappedPath(dst_path);
         delegate_transaction->createHardLink(wrapped_src_path, wrapped_dst_path);
     }
+
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        delegate_transaction->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) const
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+    }
+
 
 private:
     String wrappedPath(const String & path) const

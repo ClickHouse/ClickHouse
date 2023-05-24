@@ -110,14 +110,5 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile(
     return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
 
 }
-void DiskEncryptedTransaction::writeFileUsingCustomWriteObject(
-    const String &,
-    WriteMode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `writeFileUsingCustomWriteObject()` is not implemented");
-}
-
-
 
 }
