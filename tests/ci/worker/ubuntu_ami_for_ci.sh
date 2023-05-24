@@ -78,10 +78,10 @@ EOT
 systemctl restart docker
 
 # # install buildx
+sudo -u ubuntu mkdir -p /home/ubuntu/.docker/cli-plugins/
 BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | jq -r '.tag_name')
 sudo -u ubuntu wget -q https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64 -O /home/ubuntu/.docker/cli-plugins/docker-buildx
 sudo -u ubuntu chmod a+x /home/ubuntu/.docker/cli-plugins/docker-buildx
-sudo -u ubuntu docker buildx version
 
 # buildx builder is user-specific
 sudo -u ubuntu docker buildx version
