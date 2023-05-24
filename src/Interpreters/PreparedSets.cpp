@@ -140,6 +140,10 @@ FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryF
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", key.toString());
 
+    // std::cerr << key.toString() << std::endl;
+    // std::cerr << "========= PreparedSets::addFromSubquery\n";
+    // std::cerr << StackTrace().toString() << std::endl;
+
     subqueries.emplace(id, std::move(from_subquery));
     return it->second;
 }
@@ -226,7 +230,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     if (set)
         return nullptr;
 
-    //std::cerr << StackTrace().toString() << std::endl;
+    // std::cerr << StackTrace().toString() << std::endl;
 
     auto set_cache = context->getPreparedSetsCache();
     if (set_cache)

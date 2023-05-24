@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include "Parsers/queryToString.h"
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -1392,7 +1393,14 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
     {
         if (no_subqueries)
             return {};
+        //std::cerr << queryToString(right_in_operand) << std::endl;
         auto set_key = PreparedSetKey::forSubquery(right_in_operand->getTreeHash());
+
+        // std::cerr << set_key.toString() << std::endl;
+        // std::cerr << data.prepared_sets->getSets().size() << std::endl;
+        // std::cerr << reinterpret_cast<const void *>(data.prepared_sets.get()) << std::endl;
+        // for (const auto & [k, v] : data.prepared_sets->getSets())
+        //     std::cerr << "... " << k.toString();
 
         if (auto set = data.prepared_sets->getFuture(set_key))
             return set;
