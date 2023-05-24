@@ -20,16 +20,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
     }
 
-    static RedisStorageType parseStorageType(const String & storage_type_str)
-    {
-        if (storage_type_str == "hash_map")
-            return RedisStorageType::HASH_MAP;
-        else if (!storage_type_str.empty() && storage_type_str != "simple")
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown storage type {} for Redis dictionary", storage_type_str);
-
-        return RedisStorageType::SIMPLE;
-    }
-
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
         auto create_table_source = [=](const DictionaryStructure & dict_struct,
