@@ -409,6 +409,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor().visit(query_ptr);
     }
 
+    query_info.query = query_ptr->clone();
     query_info.original_query = query_ptr->clone();
 
     if (settings.count_distinct_optimization)
@@ -472,7 +473,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     /// Check support for FINAL for parallel replicas
-    bool is_query_with_final = isQueryWithFinal(query_info, getSelectQuery());
+    bool is_query_with_final = isQueryWithFinal(query_info);
     if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
@@ -3137,9 +3138,9 @@ void InterpreterSelectQuery::initSettings()
     }
 }
 
-bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info, ASTSelectQuery & query)
+bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
 {
-    bool result = query.final();
+    bool result = info.query->as<ASTSelectQuery &>().final();
     if (info.table_expression_modifiers)
         result |= info.table_expression_modifiers->hasFinal();
 

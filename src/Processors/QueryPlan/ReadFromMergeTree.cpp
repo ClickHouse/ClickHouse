@@ -100,7 +100,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(
@@ -1315,7 +1314,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
         auto reader_settings = getMergeTreeReaderSettings(context, query_info);
 
         bool use_skip_indexes = settings.use_skip_indexes;
-        bool final = InterpreterSelectQuery::isQueryWithFinal(query_info, query_info.query->as<ASTSelectQuery &>());
+        bool final = InterpreterSelectQuery::isQueryWithFinal(query_info);
 
         if (final && !settings.use_skip_indexes_if_final)
             use_skip_indexes = false;
@@ -1501,7 +1500,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 
 bool ReadFromMergeTree::isQueryWithFinal() const
 {
-    return InterpreterSelectQuery::isQueryWithFinal(query_info, query_info.query->as<ASTSelectQuery &>());
+    return InterpreterSelectQuery::isQueryWithFinal(query_info);
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const
