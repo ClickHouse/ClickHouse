@@ -17,8 +17,30 @@ REGISTER_FUNCTION(ToCustomWeek)
 {
     factory.registerFunction<FunctionToWeek>();
     factory.registerFunction<FunctionToYearWeek>();
-    factory.registerFunction<FunctionToStartOfWeek>();
-    factory.registerFunction<FunctionToLastDayOfWeek>();
+
+    factory.registerFunction<FunctionToStartOfWeek>(FunctionDocumentation{.description=R"(
+Rounds a date or date with time down to the nearest Sunday or Monday. Returns the date.
+Syntax: toStartOfWeek(t[, mode[, timezone]])
+The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
+
+Example:
+[example:typical]
+)",
+    .examples{
+        {"typical", "SELECT toStartOfWeek(today(), 1);", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseSensitive);
+
+    factory.registerFunction<FunctionToLastDayOfWeek>(FunctionDocumentation{.description=R"(
+Rounds a date or date with time up to the nearest Saturday or Sunday. Returns the date.
+Syntax: toLastDayOfWeek(t[, mode[, timezone]])
+The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
+
+Example:
+[example:typical]
+)",
+    .examples{
+        {"typical", "SELECT toLastDayOfWeek(today(), 1);", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseSensitive);
 
     /// Compatibility aliases for mysql.
     factory.registerAlias("week", "toWeek", FunctionFactory::CaseInsensitive);
