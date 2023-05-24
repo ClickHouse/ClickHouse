@@ -865,16 +865,34 @@ LIFETIME(3600);
 
 The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys. The syntax is:
+The syntax is:
 
 ``` sql
-dictGetT('dict_name', 'attr_name', tuple(ip))
+dictGetT('dict_name', 'attr_name', ip)
 ```
 
 The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
 
 ``` sql
-select dictGet('my_ip_trie_dictionary', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
 ```
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
