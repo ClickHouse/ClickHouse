@@ -44,8 +44,6 @@
 
 #include <Disks/registerDisks.h>
 
-#include <filesystem>
-
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {

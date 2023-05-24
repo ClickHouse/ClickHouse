@@ -32,6 +32,7 @@ public:
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
 
+    DiskPtr getCurrentLogDisk() const;
     DiskPtr getLogDisk() const;
     DiskPtr getSnapshotsDisk() const;
     DiskPtr getStateFileDisk() const;
@@ -53,6 +54,7 @@ private:
     std::shared_ptr<DiskSelector> disk_selector;
 
     Storage log_storage;
+    Storage current_log_storage;
     Storage snapshot_storage;
     Storage state_file_storage;
 

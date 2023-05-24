@@ -60,6 +60,7 @@ struct ChangelogFileDescription
     uint64_t to_log_index;
     std::string extension;
 
+    DiskPtr disk;
     std::string path;
 
     bool deleted = false;
@@ -154,6 +155,7 @@ private:
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
     DiskPtr getDisk() const;
+    DiskPtr getCurrentLogDisk() const;
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
@@ -187,7 +189,7 @@ private:
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
-    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
+    ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
 
     struct AppendLog

@@ -120,6 +120,7 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
     auto object = StoredObject(metadata_storage.getAbsolutePath(path));
+    std::cout << "Removing from plain " << path << std::endl;
     metadata_storage.object_storage->removeObject(object);
 }
 
