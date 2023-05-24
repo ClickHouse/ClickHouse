@@ -90,7 +90,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[4]->insert(database->getUUID());
         res_columns[5]->insert(getEngineFull(context, database));
         res_columns[6]->insert(database->getDatabaseComment());
-   }
+    }
 }
 
 }
