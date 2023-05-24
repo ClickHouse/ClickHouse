@@ -632,7 +632,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
 
-    if (table_join->kind() == JoinKind::Cross) {
+    if (table_join->kind() == JoinKind::Cross)
+    {
         return std::make_shared<CrossJoin>(planner_context->getQueryContext(), table_join, right_table_expression_header);
     }
 

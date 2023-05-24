@@ -310,14 +310,16 @@ Block TemporaryFileStream::read(bool finalize_earlier)
     return block;
 }
 
-void TemporaryFileStream::resetReading() {
+void TemporaryFileStream::resetReading()
+{
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
     in_reader.reset();
     in_reader = std::make_unique<InputReader>(getPath(), header);
 }
 
-std::unique_ptr<TemporaryFileStream::InputReader> TemporaryFileStream::getReader() const {
+std::unique_ptr<TemporaryFileStream::InputReader> TemporaryFileStream::getReader() const
+{
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
     return std::make_unique<InputReader>(getPath(), header);

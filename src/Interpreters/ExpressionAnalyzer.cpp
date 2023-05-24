@@ -1093,7 +1093,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
-        if (analyzed_join->kind() == JoinKind::Cross) {
+        if (analyzed_join->kind() == JoinKind::Cross)
+        {
             return std::make_shared<CrossJoin>(context, analyzed_join, right_sample_block);
         }
         if (analyzed_join->allowParallelHashJoin())

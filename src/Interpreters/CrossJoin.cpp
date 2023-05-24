@@ -16,11 +16,13 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForJoin;
 }
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
 extern const int SET_SIZE_LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 CrossJoin::CrossJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
@@ -34,7 +36,7 @@ CrossJoin::CrossJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_
 }
 
 
-bool CrossJoin::addJoinedBlock(const Block & block, bool check_limits) 
+bool CrossJoin::addJoinedBlock(const Block & block, bool check_limits)
 {
     if (unlikely(block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", block.rows());
@@ -42,12 +44,13 @@ bool CrossJoin::addJoinedBlock(const Block & block, bool check_limits)
     Block materialized = materializeBlock(block);
 
     ++right_blocks_count;
+    right_rows += materialized.rows();
+    right_bytes += materialized.bytes();
     right_blocks.push_back(std::move(materialized));
-    right_rows += block.rows();
-    right_bytes += block.bytes();
 
     auto max_bytes_in_join = context->getSettings().cross_join_in_memory_limit;
-    if (right_bytes > max_bytes_in_join && max_bytes_in_join != 0) {
+    if (right_bytes > max_bytes_in_join && max_bytes_in_join != 0)
+    {
         LOG_DEBUG(log, "Moving blocks to disk...");
         moveBlocksToDisk();
     }
@@ -66,7 +69,7 @@ struct NotProcessedCrossJoin : public ExtraBlock
     size_t right_block;
 };
 
-void CrossJoin::joinBlock(Block &block, std::shared_ptr<ExtraBlock> &not_processed)
+void CrossJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &not_processed)
 {
     join_block_count_in_progress.fetch_add(1);
     LOG_DEBUG(log, "joinBlock, {} in progress now...", join_block_count_in_progress.load());
@@ -116,7 +119,8 @@ void CrossJoin::joinBlock(Block &block, std::shared_ptr<ExtraBlock> &not_process
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
-        auto process_right_block = [&](const Block & block_right) {
+        auto process_right_block = [&](const Block & block_right)
+        {
             ++block_number;
             if (block_number < start_right_block)
                 return;
@@ -192,7 +196,8 @@ size_t CrossJoin::getTotalRowCount() const
     return right_rows + right_rows_on_disk;
 }
 
-bool CrossJoin::alwaysReturnsEmptySet() const {
+bool CrossJoin::alwaysReturnsEmptySet() const
+{
     return right_rows_on_disk == 0 && right_rows == 0;
 }
 
@@ -202,12 +207,14 @@ IBlocksStreamPtr CrossJoin::getNonJoinedBlocks(const Block & /*left_sample_block
     return nullptr;
 }
 
-void CrossJoin::moveBlocksToDisk() {
+void CrossJoin::moveBlocksToDisk()
+{
     right_bytes_on_disk += right_bytes;
     right_rows_on_disk += right_rows;
     right_bytes = 0;
     right_rows = 0;
-    for (const auto & block : right_blocks) {
+    for (const auto & block : right_blocks)
+    {
         block_stream.write(block);
     }
     right_blocks.clear();
