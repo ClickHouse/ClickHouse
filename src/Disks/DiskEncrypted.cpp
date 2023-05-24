@@ -138,19 +138,6 @@ namespace
         }
     }
 
-    String getCurrentKey(const String & path, const DiskEncryptedSettings & settings)
-    {
-        auto it = settings.keys.find(settings.current_key_id);
-        if (it == settings.keys.end())
-            throw Exception(
-                ErrorCodes::DATA_ENCRYPTION_ERROR,
-                "Not found a key with the current ID {} required to cipher file {}",
-                settings.current_key_id,
-                quoteString(path));
-
-        return it->second;
-    }
-
     String getKey(const String & path, const FileEncryption::Header & header, const DiskEncryptedSettings & settings)
     {
         auto it = settings.keys.find(header.key_id);
@@ -309,38 +296,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     String key = getKey(path, header, *encryption_settings);
     return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
-
-std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
-{
-    auto wrapped_path = wrappedPath(path);
-    FileEncryption::Header header;
-    String key;
-    UInt64 old_file_size = 0;
-    auto settings = current_settings.get();
-    if (mode == WriteMode::Append && exists(path))
-    {
-        old_file_size = getFileSize(path);
-        if (old_file_size)
-        {
-            /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
-            header = readHeader(*read_buffer);
-            key = getKey(path, header, *settings);
-        }
-    }
-    if (!old_file_size)
-    {
-        /// Rewrite mode: we generate a new header.
-        key = getCurrentKey(path, *settings);
-        header.algorithm = settings->current_algorithm;
-        header.key_id = settings->current_key_id;
-        header.key_hash = calculateKeyHash(key);
-        header.init_vector = InitVector::random();
-    }
-    auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
-}
-
 
 size_t DiskEncrypted::getFileSize(const String & path) const
 {
