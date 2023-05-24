@@ -77,7 +77,7 @@ Pipe StorageRedis::read(
     {
         RedisCommand command_for_keys("KEYS");
         /// generate keys by table name prefix
-//        command_for_keys << table_id.getTableName() + ":" + storageTypeToKeyType(configuration.storage_type) + ":*";
+//        command_for_keys << table_id.getTableName() + ":" + serializeStorageType(configuration.storage_type) + ":*";
         command_for_keys << "*";
 
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
@@ -178,7 +178,7 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
         configuration.port = static_cast<uint32_t>(named_collection->get<UInt64>("port"));
         configuration.password = named_collection->get<String>("password");
         configuration.db_index = static_cast<uint32_t>(named_collection->get<UInt64>({"db_index"}));
-        configuration.storage_type = keyTypeToStorageType(named_collection->getOrDefault<String>("storage_type", ""));
+        configuration.storage_type = parseStorageType(named_collection->getOrDefault<String>("storage_type", ""));
         configuration.pool_size = static_cast<uint32_t>(named_collection->get<UInt64>("pool_size"));
     }
     else
@@ -193,7 +193,7 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
         configuration.port = parsed_host_port.second;
         configuration.db_index = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[1], "db_index"));
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
-        configuration.storage_type = keyTypeToStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
+        configuration.storage_type = parseStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
         configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[4], "pool_size"));
     }
 
@@ -222,7 +222,7 @@ void registerStorageRedis(StorageFactory & factory)
                 args.comment);
         },
         {
-            .source_access_type = AccessType::Redis,
+            .source_access_type = AccessType::REDIS,
         });
 }
 

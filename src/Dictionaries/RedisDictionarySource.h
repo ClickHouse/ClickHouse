@@ -7,16 +7,6 @@
 #include "IDictionarySource.h"
 #include <Storages/RedisCommon.h>
 
-namespace Poco
-{
-    namespace Redis
-    {
-        class Client;
-        class Array;
-        class Command;
-    }
-}
-
 namespace DB
 {
     namespace ErrorCodes

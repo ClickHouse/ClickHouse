@@ -9,6 +9,7 @@ namespace ErrorCodes
     extern const int INVALID_REDIS_TABLE_STRUCTURE;
     extern const int INTERNAL_REDIS_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int INVALID_REDIS_STORAGE_TYPE;
 }
 
 RedisColumnTypes REDIS_HASH_MAP_COLUMN_TYPES = {RedisColumnType::KEY, RedisColumnType::FIELD, RedisColumnType::VALUE};
@@ -24,27 +25,27 @@ RedisConnection::~RedisConnection()
     pool->returnObject(std::move(client));
 }
 
-String storageTypeToKeyType(RedisStorageType storage_type)
+String serializeStorageType(RedisStorageType storage_type)
 {
     switch (storage_type)
     {
         case RedisStorageType::SIMPLE:
-            return "string";
+            return "simple";
         case RedisStorageType::HASH_MAP:
-            return "hash";
+            return "hash_map";
         default:
             return "none";
     }
 }
 
-RedisStorageType keyTypeToStorageType(const String & key_type)
+RedisStorageType parseStorageType(const String & storage_type_str)
 {
-    if (key_type == "string")
-        return RedisStorageType::SIMPLE;
-    else if (key_type == "hash")
+    if (storage_type_str == "hash_map")
         return RedisStorageType::HASH_MAP;
-    else
-        return RedisStorageType::UNKNOWN;
+    else if (!storage_type_str.empty() && storage_type_str != "simple")
+        throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Unknown storage type {} for Redis dictionary", storage_type_str);
+
+    return RedisStorageType::SIMPLE;
 }
 
 RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguration & configuration)
