@@ -9,6 +9,7 @@ jdbc
 meilisearch
 merge
 mongodb
+redis
 null
 numbers
 numbers_mt
