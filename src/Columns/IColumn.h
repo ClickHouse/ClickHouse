@@ -399,12 +399,9 @@ public:
 
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
-    virtual void shrinkToFit()
+    virtual MutablePtr shrinkToFit() const
     {
-      /// Create a new column with the same values and move it into the initial column
-      auto temporary_copy = cloneEmpty();
-      temporary_copy->insertRangeFrom(*this, 0, size());
-      getPtr() = std::move(temporary_copy);
+      return cloneResized(size());
     }
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
