@@ -6,22 +6,14 @@
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Disks/DiskEncryptedTransaction.h>
 
 
 namespace DB
 {
+
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-namespace FileEncryption { enum class Algorithm; }
-
-struct DiskEncryptedSettings
-{
-    DiskPtr wrapped_disk;
-    String disk_path;
-    std::unordered_map<UInt64, String> keys;
-    UInt64 current_key_id;
-    FileEncryption::Algorithm current_algorithm;
-};
 
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
@@ -29,8 +21,8 @@ struct DiskEncryptedSettings
 class DiskEncrypted : public IDisk
 {
 public:
-    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
-    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
+    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_);
 
     const String & getName() const override { return encrypted_name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -68,7 +60,6 @@ public:
         auto wrapped_path = wrappedPath(path);
         delegate->createDirectories(wrapped_path);
     }
-
 
     void clearDirectory(const String & path) override
     {
@@ -293,7 +284,16 @@ public:
     {
         /// Need to overwrite explicetly because this disk change
         /// a lot of "delegate" methods.
-        return std::make_shared<FakeDiskTransaction>(*this);
+
+        if (use_fake_transaction)
+        {
+            return std::make_shared<FakeDiskTransaction>(*this);
+        }
+        else
+        {
+            auto delegate_transaction = delegate->createTransaction();
+            return std::make_shared<DiskEncryptedTransaction>(delegate_transaction, disk_path, *current_settings.get(), delegate.get());
+        }
     }
 
     UInt64 getTotalSpace() const override
@@ -342,6 +342,7 @@ private:
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;
+    bool use_fake_transaction;
 };
 
 }
