@@ -1,6 +1,0 @@
-It allows to integrate JEMalloc into CMake project.
-
-- Remove JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF because it's non standard.
-- Added JEMALLOC_CONFIG_MALLOC_CONF substitution
-- Add musl support (USE_MUSL)
-- Also note, that darwin build requires JEMALLOC_PREFIX, while others don not
