@@ -18,10 +18,10 @@ namespace DB
 namespace ApproximateNearestNeighbour
 {
 
-template<typename Dist>
-void AnnoyIndex<Dist>::serialize(WriteBuffer& ostr) const
+template<typename Distance>
+void AnnoyIndex<Distance>::serialize(WriteBuffer& ostr) const
 {
-    assert(Base::_built);
+    chassert(Base::_built);
     writeIntBinary(Base::_s, ostr);
     writeIntBinary(Base::_n_items, ostr);
     writeIntBinary(Base::_n_nodes, ostr);
@@ -32,10 +32,10 @@ void AnnoyIndex<Dist>::serialize(WriteBuffer& ostr) const
     ostr.write(reinterpret_cast<const char*>(Base::_nodes), Base::_s * Base::_n_nodes);
 }
 
-template<typename Dist>
-void AnnoyIndex<Dist>::deserialize(ReadBuffer& istr)
+template<typename Distance>
+void AnnoyIndex<Distance>::deserialize(ReadBuffer& istr)
 {
-    assert(!Base::_built);
+    chassert(!Base::_built);
     readIntBinary(Base::_s, istr);
     readIntBinary(Base::_n_items, istr);
     readIntBinary(Base::_n_nodes, istr);
@@ -54,8 +54,8 @@ void AnnoyIndex<Dist>::deserialize(ReadBuffer& istr)
     Base::_built = true;
 }
 
-template<typename Dist>
-uint64_t AnnoyIndex<Dist>::getNumOfDimensions() const
+template<typename Distance>
+uint64_t AnnoyIndex<Distance>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -84,16 +84,16 @@ template <typename Distance>
 MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    AnnoyIndexPtr index_base_)
+    AnnoyIndexPtr index_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , index(std::move(index_base_))
+    , index(std::move(index_))
 {}
 
 template <typename Distance>
 void MergeTreeIndexGranuleAnnoy<Distance>::serializeBinary(WriteBuffer & ostr) const
 {
-    /// number of dimensions is required in the constructor,
+    /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
     writeIntBinary(index->getNumOfDimensions(), ostr); // write dimension
     index->serialize(ostr);
@@ -123,7 +123,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndR
 {
     // NOLINTNEXTLINE(*)
     index->build(static_cast<int>(number_of_trees), /*number_of_threads=*/1);
-    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance> >(index_name, index_sample_block, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
 }
@@ -202,7 +202,8 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const SelectQueryInfo & query,
     ContextPtr context,
     const String& distance_name_)
-    : condition(query, context), distance_name(distance_name_)
+    : condition(query, context)
+    , distance_name(distance_name_)
 {}
 
 
@@ -232,15 +233,16 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 {
     UInt64 limit = condition.getLimit();
     UInt64 index_granularity = condition.getIndexGranularity();
-    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighbour::ANNQueryInformation::Type::Where ?
-     std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
+    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighbour::ANNQueryInformation::Type::Where
+        ? std::optional<float>(condition.getComparisonDistanceForWhereQuery())
+        : std::nullopt;
 
     if (comp_dist && comp_dist.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
     std::vector<float> target_vec = condition.getTargetVector();
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance> >(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance>>(idx_granule);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
@@ -291,18 +293,19 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
     if (distance_name == "L2Distance")
-        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block);
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean>>(index.name, index.sample_block);
     else if (distance_name == "cosineDistance")
-        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular> >(index.name, index.sample_block);
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular>>(index.name, index.sample_block);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
+    /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_name == "L2Distance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block, number_of_trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean>>(index.name, index.sample_block, number_of_trees);
     if (distance_name == "cosineDistance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular> >(index.name, index.sample_block, number_of_trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular>>(index.name, index.sample_block, number_of_trees);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
@@ -378,4 +381,4 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 
 }
 
-#endif // ENABLE_ANNOY
+#endif
