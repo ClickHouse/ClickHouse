@@ -4,6 +4,7 @@
 
 #include <Core/Block.h>
 #include <capnp/dynamic.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
