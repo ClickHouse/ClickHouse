@@ -58,6 +58,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
         bytes_read = readFromSocket();
 
+#if USE_SSL
         /// In case of non-blocking connect for secure socket receiveBytes can return ERR_SSL_WANT_READ,
         /// in this case we should call receiveBytes again when socket is ready.
         if (socket.secure())
@@ -65,6 +66,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
             while (bytes_read == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
                 bytes_read = readFromSocket();
         }
+#endif
     }
     catch (const Poco::Net::NetException & e)
     {
