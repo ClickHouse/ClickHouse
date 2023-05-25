@@ -202,8 +202,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const IndexDescription & /*index*/,
     const SelectQueryInfo & query,
-    ContextPtr context,
-    const String& distance_name_)
+    const String& distance_name_,
+    ContextPtr context)
     : condition(query, context)
     , distance_name(distance_name_)
 {}
@@ -320,7 +320,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context, distance_name);
+    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, distance_name, context);
 };
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
