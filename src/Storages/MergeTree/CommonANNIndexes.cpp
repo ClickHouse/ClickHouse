@@ -24,10 +24,8 @@ namespace ErrorCodes
 namespace
 {
 
-namespace ANN = ApproximateNearestNeighbour;
-
 template <typename Literal>
-void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target, Literal literal)
+void extractTargetVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & target, Literal literal)
 {
     Float64 float_element_of_target_vector;
     Int64 int_element_of_target_vector;
@@ -43,28 +41,25 @@ void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target
     }
 }
 
-ANN::ANNQueryInformation::Metric castMetricFromStringToType(String metric_name)
+ApproximateNearestNeighborInformation::Metric castMetricFromStringToType(String metric_name)
 {
     if (metric_name == "L2Distance")
-        return ANN::ANNQueryInformation::Metric::L2;
+        return ApproximateNearestNeighborInformation::Metric::L2;
     if (metric_name == "LpDistance")
-        return ANN::ANNQueryInformation::Metric::Lp;
-    return ANN::ANNQueryInformation::Metric::Unknown;
+        return ApproximateNearestNeighborInformation::Metric::Lp;
+    return ApproximateNearestNeighborInformation::Metric::Unknown;
 }
 
 }
 
-namespace ApproximateNearestNeighbour
-{
-
-ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
+ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info,
                                  ContextPtr context) :
     block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
     index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
     limit_restriction{context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()},
     index_is_useful{checkQueryStructure(query_info)} {}
 
-bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
+bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric_name) const
 {
     if (!index_is_useful)
         return true; // Query isn't supported
@@ -72,64 +67,64 @@ bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
     return !(castMetricFromStringToType(metric_name) == query_information->metric);
 }
 
-float ANNCondition::getComparisonDistanceForWhereQuery() const
+float ApproximateNearestNeighborCondition::getComparisonDistanceForWhereQuery() const
 {
     if (index_is_useful && query_information.has_value()
-        && query_information->query_type == ANNQueryInformation::Type::Where)
+        && query_information->query_type == ApproximateNearestNeighborInformation::Type::Where)
         return query_information->distance;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
 
-UInt64 ANNCondition::getLimit() const
+UInt64 ApproximateNearestNeighborCondition::getLimit() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->limit;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
-std::vector<float> ANNCondition::getTargetVector() const
+std::vector<float> ApproximateNearestNeighborCondition::getTargetVector() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->target;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Target vector was requested for useless or uninitialized index.");
 }
 
-size_t ANNCondition::getNumOfDimensions() const
+size_t ApproximateNearestNeighborCondition::getNumOfDimensions() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->target.size();
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of dimensions was requested for useless or uninitialized index.");
 }
 
-String ANNCondition::getColumnName() const
+String ApproximateNearestNeighborCondition::getColumnName() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->column_name;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-ANNQueryInformation::Metric ANNCondition::getMetricType() const
+ApproximateNearestNeighborInformation::Metric ApproximateNearestNeighborCondition::getMetricType() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->metric;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
 
-float ANNCondition::getPValueForLpDistance() const
+float ApproximateNearestNeighborCondition::getPValueForLpDistance() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->p_for_lp_dist;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
 }
 
-ANNQueryInformation::Type ANNCondition::getQueryType() const
+ApproximateNearestNeighborInformation::Type ApproximateNearestNeighborCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->query_type;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
 }
 
-bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
+bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryInfo & query)
 {
     // RPN-s for different sections of the query
     RPN rpn_prewhere_clause;
@@ -138,9 +133,9 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     RPNElement rpn_limit;
     UInt64 limit;
 
-    ANNQueryInformation prewhere_info;
-    ANNQueryInformation where_info;
-    ANNQueryInformation order_by_info;
+    ApproximateNearestNeighborInformation prewhere_info;
+    ApproximateNearestNeighborInformation where_info;
+    ApproximateNearestNeighborInformation order_by_info;
 
     // Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -195,7 +190,7 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     return query_information.has_value();
 }
 
-void ANNCondition::traverseAST(const ASTPtr & node, RPN & rpn)
+void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 {
     // If the node is ASTFunction, it may have children nodes
     if (const auto * func = node->as<ASTFunction>())
@@ -214,7 +209,7 @@ void ANNCondition::traverseAST(const ASTPtr & node, RPN & rpn)
     rpn.emplace_back(std::move(element));
 }
 
-bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
+bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 {
     // Match Functions
     if (const auto * function = node->as<ASTFunction>())
@@ -259,7 +254,7 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
     return tryCastToConstType(node, out);
 }
 
-bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
+bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -318,18 +313,18 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
     return false;
 }
 
-void ANNCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
+void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
 {
     if (const auto * expr_list = node->as<ASTExpressionList>())
         if (const auto * order_by_element = expr_list->children.front()->as<ASTOrderByElement>())
             traverseAST(order_by_element->children.front(), rpn);
 }
 
-// Returns true and stores ANNQueryInformation if the query has valid WHERE clause
-bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
+// Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
+bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & expr)
 {
     /// Fill query type field
-    expr.query_type = ANNQueryInformation::Type::Where;
+    expr.query_type = ApproximateNearestNeighborInformation::Type::Where;
 
     // WHERE section must have at least 5 expressions
     // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
@@ -381,10 +376,10 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
 }
 
 // Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr)
+bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & expr)
 {
     /// Fill query type field
-    expr.query_type = ANNQueryInformation::Type::OrderBy;
+    expr.query_type = ApproximateNearestNeighborInformation::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
@@ -393,11 +388,11 @@ bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr)
     auto iter = rpn.begin();
     auto end = rpn.end();
 
-    return ANNCondition::matchMainParts(iter, end, expr);
+    return ApproximateNearestNeighborCondition::matchMainParts(iter, end, expr);
 }
 
 // Returns true and stores Length if we have valid LIMIT clause in query
-bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
+bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 {
     if (rpn.function == RPNElement::FUNCTION_INT_LITERAL)
     {
@@ -409,7 +404,7 @@ bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 }
 
 /* Matches dist function, target vector, column name */
-bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ANNQueryInformation & expr)
+bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & expr)
 {
     bool identifier_found = false;
 
@@ -420,7 +415,7 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
     expr.metric = castMetricFromStringToType(iter->func_name);
     ++iter;
 
-    if (expr.metric == ANN::ANNQueryInformation::Metric::Lp)
+    if (expr.metric == ApproximateNearestNeighborInformation::Metric::Lp)
     {
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
             iter->function != RPNElement::FUNCTION_INT_LITERAL)
@@ -497,15 +492,13 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
 }
 
 // Gets float or int from AST node
-float ANNCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
+float ApproximateNearestNeighborCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
 {
     if (iter->float_literal.has_value())
         return iter->float_literal.value();
     if (iter->int_literal.has_value())
         return static_cast<float>(iter->int_literal.value());
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong parsed AST in buildRPN\n");
-}
-
 }
 
 }

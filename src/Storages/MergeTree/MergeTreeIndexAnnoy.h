@@ -60,7 +60,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionAnnoy final : public IMergeTreeIndexConditionApproximateNearestNeighbor
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -81,7 +81,7 @@ private:
     template <typename Distance>
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
-    const ApproximateNearestNeighbour::ANNCondition condition;
+    const ApproximateNearestNeighborCondition condition;
     const String distance_function;
     const Int64 search_k;
 };

@@ -240,7 +240,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 {
     UInt64 limit = condition.getLimit();
     UInt64 index_granularity = condition.getIndexGranularity();
-    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighbour::ANNQueryInformation::Type::Where
+    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
         ? std::optional<float>(condition.getComparisonDistanceForWhereQuery())
         : std::nullopt;
 
@@ -267,6 +267,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     distances.reserve(limit);
 
     annoy->get_nns_by_vector(target_vec.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
+
     std::unordered_set<size_t> granule_numbers;
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
