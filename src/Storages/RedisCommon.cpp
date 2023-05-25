@@ -25,6 +25,21 @@ RedisConnection::~RedisConnection()
     pool->returnObject(std::move(client));
 }
 
+String storageTypeToKeyType(RedisStorageType type)
+{
+    switch (type)
+    {
+        case RedisStorageType::SIMPLE:
+            return "string";
+        case RedisStorageType::HASH_MAP:
+            return "hash";
+        default:
+            return "none";
+    }
+
+    UNREACHABLE();
+}
+
 String serializeStorageType(RedisStorageType storage_type)
 {
     switch (storage_type)

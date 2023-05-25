@@ -37,7 +37,7 @@ extern RedisColumnTypes REDIS_HASH_MAP_COLUMN_TYPES;
 extern RedisColumnTypes REDIS_SIMPLE_COLUMN_TYPES;
 
 /// storage type to Redis key type
-String storageTypeToKeyType(RedisStorageType storage_type);
+String storageTypeToKeyType(RedisStorageType type);
 
 RedisStorageType parseStorageType(const String & storage_type_str);
 String serializeStorageType(RedisStorageType storage_type);
