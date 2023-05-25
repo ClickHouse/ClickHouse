@@ -15,6 +15,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/createArchiveReader.h>
 #include <IO/MMapReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -248,11 +250,17 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & storage_name,
     int table_fd,
     const String & compression_method,
-    ContextPtr context)
+    ContextPtr context,
+    const String & path_to_archive = "auto")
 {
     CompressionMethod method;
 
     struct stat file_stat{};
+    if (path_to_archive != "auto") {
+        auto reader = createArchiveReader(path_to_archive);
+        std::unique_ptr<ReadBuffer> in = reader->readFile(current_path);
+        return in;
+    }
 
     if (use_table_fd)
     {
@@ -361,7 +369,8 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     const std::vector<String> & paths,
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr context)
+    ContextPtr context,
+    const std::vector<String> & paths_to_archive)
 {
     if (format == "Distributed")
     {
@@ -382,14 +391,24 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
-    {
-        if (it == paths.end())
-            return nullptr;
+    ReadBufferIterator read_buffer_iterator;
+    if (paths_to_archive.empty()) {
+        read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+        {
+            if (it == paths.end())
+                return nullptr;
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
-    };
+            return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+        };
+    } else {
+        read_buffer_iterator = [&, it = paths_to_archive.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+        {
+            if (it == paths_to_archive.end())
+                return nullptr;
 
+            return createReadBuffer(paths[0], false, "File", -1, compression_method, context, *it);
+        };
+    }
     ColumnsDescription columns;
     if (columns_from_cache)
         columns = *columns_from_cache;
@@ -430,8 +449,13 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
+    if (args.path_to_archive != "auto") {
+        paths_to_archive = getPathsList(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
+        paths = {table_path_};
+    } else {
+        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    }
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     is_path_with_globs = paths.size() > 1;
     if (!paths.empty())
         path_for_partitioned_write = paths.front();
@@ -483,7 +507,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
             columns = getTableStructureFromFileDescriptor(args.getContext());
         else
         {
-            columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
+            columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext(), paths_to_archive);
             if (!args.columns.empty() && args.columns != columns)
                 throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
         }
@@ -516,8 +540,10 @@ public:
     struct FilesInfo
     {
         std::vector<std::string> files;
+        std::vector<std::string> paths_to_archive;
 
         std::atomic<size_t> next_file_to_read = 0;
+        std::atomic<size_t> next_archive_to_read = 0;
 
         bool need_path_column = false;
         bool need_file_column = false;
@@ -588,12 +614,19 @@ public:
             {
                 if (!storage->use_table_fd)
                 {
-                    auto current_file = files_info->next_file_to_read.fetch_add(1);
-                    if (current_file >= files_info->files.size())
-                        return {};
-
-                    current_path = files_info->files[current_file];
-
+                    size_t current_file = 0, current_archive = 0;
+                    if (files_info->files.size() == 1 && !files_info->paths_to_archive.empty()) {
+                        current_archive = files_info->next_archive_to_read.fetch_add(1);
+                        if (current_archive >= files_info->paths_to_archive.size())
+                            return {};
+                        current_path = files_info->files[current_file];
+                        current_archive_path = files_info->paths_to_archive[current_archive];
+                    } else {
+                        current_file = files_info->next_file_to_read.fetch_add(1);
+                        if (current_file >= files_info->files.size())
+                            return {};
+                        current_path = files_info->files[current_file];
+                    }
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
@@ -603,9 +636,13 @@ public:
                     }
                 }
 
-                if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
-
+                if (!read_buf) {
+                    if (files_info->paths_to_archive.empty()) {
+                        read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                    } else {
+                        read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context, current_archive_path);
+                    }
+                }
                 auto format
                     = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
 
@@ -673,6 +710,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     FilesInfoPtr files_info;
     String current_path;
+    String current_archive_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
@@ -709,7 +747,7 @@ Pipe StorageFile::read(
     }
     else
     {
-        if (paths.size() == 1 && !fs::exists(paths[0]))
+        if (paths.size() == 1 && paths_to_archive.empty() && !fs::exists(paths[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
@@ -720,6 +758,7 @@ Pipe StorageFile::read(
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
     files_info->files = paths;
+    files_info->paths_to_archive = paths_to_archive;
     files_info->total_bytes_to_read = total_bytes_to_read;
 
     for (const auto & column : column_names)
