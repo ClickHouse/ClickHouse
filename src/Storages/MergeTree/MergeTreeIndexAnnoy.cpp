@@ -18,6 +18,12 @@ namespace DB
 namespace ApproximateNearestNeighbour
 {
 
+template <typename Distance>
+AnnoyIndex<Distance>::AnnoyIndex(uint64_t dim)
+    : Base::AnnoyIndex(dim)
+{
+}
+
 template<typename Distance>
 void AnnoyIndex<Distance>::serialize(WriteBuffer& ostr) const
 {
@@ -289,6 +295,12 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     return result_vector;
 }
+
+MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& distance_name_)
+    : IMergeTreeIndex(index_)
+    , number_of_trees(number_of_trees_)
+    , distance_name(distance_name_)
+{}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
