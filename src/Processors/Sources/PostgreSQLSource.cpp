@@ -176,12 +176,10 @@ template<typename T>
 void PostgreSQLSource<T>::onFinish()
 {
     if (stream)
-    {
-        stream->complete();
+        stream->close();
 
-        if (auto_commit)
-            tx->commit();
-    }
+    if (tx && auto_commit)
+        tx->commit();
 }
 
 template
