@@ -75,6 +75,7 @@
 #include <random>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include "config.h" // USE_PRQL
 
 #ifdef USE_PRQL
 #include <prql.h>
