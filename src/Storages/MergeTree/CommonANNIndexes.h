@@ -12,7 +12,7 @@ namespace DB
 /**
  * Queries for Approximate Nearest Neighbour Search
  * have similar structure:
- *    1) target vector from which all distances are calculated
+ *    1) reference vector from which all distances are calculated
  *    2) metric name (e.g L2Distance, LpDistance, etc.)
  *    3) name of column with embeddings
  *    4) type of query
@@ -27,7 +27,7 @@ struct ApproximateNearestNeighborInformation
     using Embedding = std::vector<float>;
 
     // Extracted data from valid query
-    Embedding target;
+    Embedding reference_vector;
     enum class Metric
     {
         Unknown,
@@ -56,14 +56,14 @@ struct ApproximateNearestNeighborInformation
     There are two main patterns of queries being supported
 
     1) Search query type
-    SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral LIMIT count
+    SELECT * FROM * WHERE DistanceFunc(column, reference) < floatLiteral LIMIT count
 
     2) OrderBy query type
-    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIMIT count
+    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, reference) LIMIT count
 
     *Query without LIMIT count is not supported*
 
-    target_vector(should have float coordinates) examples:
+    reference(should have float coordinates) examples:
         tuple(0.1, 0.1, ...., 0.1) or (0.1, 0.1, ...., 0.1)
         [the word tuple is not needed]
 
@@ -72,11 +72,11 @@ struct ApproximateNearestNeighborInformation
     returns true.
 
     From matching query it extracts
-    * targetVector
+    * referenceVector
     * metricName(DistanceFunction)
     * dimension size if query uses LpDistance
     * distance to compare(ONLY for search types, otherwise you get exception)
-    * spaceDimension(which is targetVector's components count)
+    * spaceDimension(which is reference vector's components count)
     * column
     * objects count from LIMIT clause(for both queries)
     * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
@@ -96,10 +96,10 @@ public:
     // returns the distance to compare with for search query
     float getComparisonDistanceForWhereQuery() const;
 
-    // distance should be calculated regarding to targetVector
-    std::vector<float> getTargetVector() const;
+    // distance should be calculated regarding to reference vector
+    std::vector<float> getReferenceVector() const;
 
-    // targetVector dimension size
+    // reference vector's dimension size
     size_t getNumOfDimensions() const;
 
     String getColumnName() const;
@@ -196,7 +196,7 @@ private:
     // Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
-    /* Matches dist function, target vector, column name */
+    /* Matches dist function, reference vector, column name */
     static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info);
 
     // Gets float or int from AST node
