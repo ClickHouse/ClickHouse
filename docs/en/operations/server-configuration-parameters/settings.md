@@ -917,9 +917,9 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a DROP query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -929,6 +929,28 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
+```
+
+## max_partition_size_to_drop {#max-partition-size-to-drop}
+
+Restriction on dropping partitions.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+
+Default value: 50 GB.
+
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max_table_size_to_drop)
+:::
+
+**Example**
+
+``` xml
+<max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
 ## max_thread_pool_size {#max-thread-pool-size}
