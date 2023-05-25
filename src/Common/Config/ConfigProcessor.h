@@ -92,7 +92,7 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
-    /// Decrypt nodes in config with specified encryption attributes
+    /// crypt nodes in config with specified encryption attributes
     void decryptConfig(LoadedConfig & loaded_config);
 
     /// Save preprocessed config to specified directory.

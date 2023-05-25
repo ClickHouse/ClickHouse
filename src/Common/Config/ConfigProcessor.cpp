@@ -26,6 +26,10 @@
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionCodecEncrypted.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <boost/algorithm/hex.hpp>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -181,14 +185,47 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
             Element & element = dynamic_cast<Element &>(*node);
             if (element.hasAttribute("encryption_codec"))
             {
-                LOG_DEBUG(log, "Encrypted node {} value '{}'.", node->nodeName(),  element.getNodeValue());
+                LOG_DEBUG(log, "Encrypted node <{}>", node->nodeName());
                 // for (Node * child_node = node->firstChild(); child_node;)
                 // {
                 //     LOG_DEBUG(log, "   Child node {} value '{}'.", child_node->nodeName(),  child_node->getNodeValue());
                 //     child_node = child_node->nextSibling();
                 // }
-                Node * child_node = node->firstChild();
-                child_node->setNodeValue("decrypted_" + child_node->getNodeValue() + "_decrypted");
+
+                Node * text_node = node->firstChild();
+                auto codec_128 = DB::CompressionCodecEncrypted(DB::AES_128_GCM_SIV);
+                // DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
+
+                /*
+                DB::Memory<> memory1;
+                std::string password="abcd";
+                memory1.resize(password.size() + codec_128.getAdditionalSizeAtTheEndOfBuffer() + codec_128.getHeaderSize()+100);
+                auto bytes_written = codec_128.compress(password.data(), static_cast<DB::UInt32>(password.size()), memory1.data());
+                // std::string encrypted_password = std::string(memory1.data(), memory1.size());
+                std::string encrypted_password = std::string(memory1.data(), bytes_written);
+                std::string password_hex;
+                boost::algorithm::hex(encrypted_password.begin(), encrypted_password.end(), std::back_inserter(password_hex));
+                LOG_DEBUG(log, "Encrypted password: '{}'.", password_hex);
+                */
+
+                DB::Memory<> memory;
+                std::string encrypted_value;
+
+                try
+                {
+                    boost::algorithm::unhex(text_node->getNodeValue(), std::back_inserter(encrypted_value));
+                    // boost::algorithm::unhex(password_hex, std::back_inserter(encrypted_value));
+                }
+                catch (const std::exception &)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text for {}, check for valid characters [0-9a-fA-F] and length", node->nodeName());
+                }
+
+                memory.resize(codec_128.readDecompressedBlockSize(encrypted_value.data()) + codec_128.getAdditionalSizeAtTheEndOfBuffer());
+                codec_128.decompress(encrypted_value.data(), static_cast<DB::UInt32>(encrypted_value.size()), memory.data());
+                std::string decrypted_value = std::string(memory.data(), memory.size());
+                LOG_DEBUG(log, "Decrypted value '{}'", decrypted_value);
+                text_node->setNodeValue(decrypted_value);
             }
         }
 
@@ -729,6 +766,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
 {
+    DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
     Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
     decryptRecursive(config_root);
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
