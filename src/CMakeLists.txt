@@ -598,11 +598,6 @@ if (ENABLE_PRQL)
     dbms_target_link_libraries(PUBLIC ch_rust::prql_lib)
 endif ()
 
-# if (TARGET ch_rust::prql_lib)
-#     dbms_target_include_directories(PRIVATE ch_rust::prql_lib)
-#     dbms_target_link_libraries(PRIVATE ch_rust::prql_lib)
-# endif()
-
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS)
