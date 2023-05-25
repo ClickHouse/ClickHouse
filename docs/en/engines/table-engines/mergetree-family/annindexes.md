@@ -135,7 +135,8 @@ ORDER BY id;
 
 Annoy supports `L2Distance` and `cosineDistance`.
 
-In the `SELECT` in the settings (`ann_index_select_query_params`) you can specify the size of the internal buffer (more details in the description above or in the [original repository](https://github.com/spotify/annoy)). During the query it will inspect up to `search_k` nodes which defaults to `n_trees * n` if not provided. `search_k` gives you a run-time trade-off between better accuracy and speed.
+Setting `search_k` (default `LIMIT * NumTrees`) determines how many nodes the Annoy index will inspect during SELECT queries. The setting
+can be used to balance performance and accuracy at runtime.
 
 __Example__:
 ``` sql
