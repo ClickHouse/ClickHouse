@@ -1686,7 +1686,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             // Cast to Ann condition
             auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
@@ -1714,6 +1713,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             }
 
             bool result = false;
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else
