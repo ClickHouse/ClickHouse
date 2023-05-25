@@ -66,8 +66,8 @@ public:
     MergeTreeIndexConditionAnnoy(
         const IndexDescription & index,
         const SelectQueryInfo & query,
-        ContextPtr context,
-        const String& distance_name);
+        const String& distance_name,
+        ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
 
