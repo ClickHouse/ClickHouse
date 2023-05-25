@@ -595,7 +595,7 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
-if (ENABLE_RUST)
+if (ENABLE_PRQL)
     dbms_target_link_libraries(PUBLIC ch_rust::prql_lib)
 endif ()
 
