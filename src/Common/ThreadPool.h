@@ -17,6 +17,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -205,21 +206,21 @@ public:
         /// - If this will throw an exception, the destructor won't be called
         /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
         GlobalThreadPool::instance().scheduleOrThrow([
-            state = state,
-            func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            my_state = state,
+            my_func = std::forward<Function>(func),
+            my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
             SCOPE_EXIT(
-                state->thread_id = std::thread::id();
-                state->event.set();
+                my_state->thread_id = std::thread::id();
+                my_state->event.set();
             );
 
-            state->thread_id = std::this_thread::get_id();
+            my_state->thread_id = std::this_thread::get_id();
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(func);
-            auto arguments = std::move(args);
+            auto function = std::move(my_func);
+            auto arguments = std::move(my_args);
 
             /// Thread status holds raw pointer on query context, thus it always must be destroyed
             /// before sending signal that permits to join this thread.
@@ -322,7 +323,7 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 /// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
 ///
 /// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
-/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
+/// which means the tracing context initialized at underlying worker level won't be deleted for a very long time.
 /// This would cause wrong context for further jobs scheduled in ThreadPool.
 ///
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.

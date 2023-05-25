@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include "Common/Stopwatch.h"
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 
@@ -377,7 +378,7 @@ MergeTreeReadPoolParallelReplicas::~MergeTreeReadPoolParallelReplicas() = defaul
 
 Block MergeTreeReadPoolParallelReplicas::getHeader() const
 {
-    return storage_snapshot->getSampleBlockForColumns(extension.colums_to_read);
+    return storage_snapshot->getSampleBlockForColumns(extension.columns_to_read);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)

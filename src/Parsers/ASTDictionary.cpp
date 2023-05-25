@@ -161,8 +161,9 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
 
     if (source)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE("
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE"
             << (settings.hilite ? hilite_none : "");
+        settings.ostr << "(";
         source->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }

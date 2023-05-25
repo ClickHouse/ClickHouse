@@ -116,6 +116,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -150,7 +151,8 @@ FilterDAGInfoPtr generateFilterActions(
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
+        /// We should add back quotes around column name as it can contain dots.
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -300,13 +302,13 @@ void checkAccessRightsForSelect(
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
-    const Map & setting,
+    const Map & additional_table_filters,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
 {
-    for (size_t i = 0; i < setting.size(); ++i)
+    for (const auto & additional_filter : additional_table_filters)
     {
-        const auto & tuple = setting[i].safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
         auto & table = tuple.at(0).safeGet<String>();
         auto & filter = tuple.at(1).safeGet<String>();
 
@@ -384,6 +386,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.ignore_projections = options.ignore_projections;
     query_info.is_projection_query = options.is_projection_query;
+    query_info.is_internal = options.is_internal;
 
     initSettings();
     const Settings & settings = context->getSettingsRef();
@@ -407,6 +410,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor().visit(query_ptr);
     }
 
+    query_info.query = query_ptr->clone();
     query_info.original_query = query_ptr->clone();
 
     if (settings.count_distinct_optimization)
@@ -439,7 +443,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
-
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
     {
         if (storage)
@@ -455,11 +458,35 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    /// Check support for JOINs for parallel replicas
+    if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
     {
-        LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
-        context->setSetting("parallel_replicas_custom_key", String{""});
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        {
+            LOG_WARNING(log, "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("parallel_replicas_custom_key", String{""});
+        }
+        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+        }
+    }
+
+    /// Check support for FINAL for parallel replicas
+    bool is_query_with_final = isQueryWithFinal(query_info);
+    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    {
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        {
+            LOG_WARNING(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("parallel_replicas_custom_key", String{""});
+        }
+        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+        }
     }
 
     /// Rewrite JOINs
@@ -518,15 +545,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
-    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
+    if (storage && context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
     {
         if (settings.parallel_replicas_count > 1)
         {
             if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context))
             {
                 LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
-                if (!storage)
-                    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
                 parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
                     settings.parallel_replicas_count,
@@ -2982,20 +3007,27 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, context);
-        SortDescription fill_descr;
-        for (auto & desc : order_descr)
+        SortDescription sort_description = getSortDescription(query, context);
+        SortDescription fill_description;
+        for (auto & desc : sort_description)
         {
             if (desc.with_fill)
-                fill_descr.push_back(desc);
+                fill_description.push_back(desc);
         }
 
-        if (fill_descr.empty())
+        if (fill_description.empty())
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
             getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
-        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
+
+        const Settings & settings = context->getSettingsRef();
+        auto filling_step = std::make_unique<FillingStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(sort_description),
+            std::move(fill_description),
+            interpolate_descr,
+            settings.use_with_fill_by_sorting_prefix);
         query_plan.addStep(std::move(filling_step));
     }
 }
@@ -3113,5 +3145,15 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
+
+bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
+{
+    bool result = info.query->as<ASTSelectQuery &>().final();
+    if (info.table_expression_modifiers)
+        result |= info.table_expression_modifiers->hasFinal();
+
+    return result;
+}
+
 
 }

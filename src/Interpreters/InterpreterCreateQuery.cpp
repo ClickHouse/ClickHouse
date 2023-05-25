@@ -227,13 +227,23 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
+    {
+        /// Fill in default parameters
+        if (create.storage->engine->arguments->children.size() == 1)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
+
+        if (create.storage->engine->arguments->children.size() == 2)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
+    }
+
     if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal && !create.attach)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedMySQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_mysql to use it.");
+                        "Enable allow_experimental_database_materialized_mysql to use it");
     }
 
     if (create.storage->engine->name == "Replicated"
@@ -242,7 +252,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it.");
+                        "Enable allow_experimental_database_replicated to use it");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -251,7 +261,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_postgresql to use it.");
+                        "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
@@ -834,21 +844,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                                     "due to expected negative impact on performance. "
                                     "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
                                     current_type_ptr->getName());
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_geo_types)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            const auto & type = name_and_type_pair.type->getName();
-            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' which type is '{}' "
-                                "because experimental geo types are not allowed. "
-                                "Set setting allow_experimental_geo_types = 1 in order to allow it",
-                                name_and_type_pair.name, type);
             }
         }
     }

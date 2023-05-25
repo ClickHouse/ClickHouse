@@ -55,7 +55,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
 
 
 # Column TTL works only with wide parts, because it's very expensive to apply it for compact parts

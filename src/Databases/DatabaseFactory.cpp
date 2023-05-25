@@ -188,7 +188,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, context))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, false);
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, context, false);
         }
         else
         {
@@ -319,7 +319,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
+            use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {

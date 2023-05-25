@@ -14,31 +14,28 @@ namespace DB
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
-    bool databases{false};
-    bool clusters{false};
-    bool cluster{false};
-    bool dictionaries{false};
-    bool m_settings{false};
-    bool changed{false};
-    bool temporary{false};
-    bool caches{false};
-    bool full{false};
+    bool databases = false;
+    bool clusters = false;
+    bool cluster = false;
+    bool dictionaries = false;
+    bool m_settings = false;
+    bool changed = false;
+    bool temporary = false;
+    bool caches = false;
+    bool full = false;
 
     String cluster_str;
     String from;
     String like;
 
-    bool not_like{false};
-    bool case_insensitive_like{false};
+    bool not_like = false;
+    bool case_insensitive_like = false;
 
     ASTPtr where_expression;
     ASTPtr limit_length;
 
-    /** Get the text that identifies this element. */
     String getID(char) const override { return "ShowTables"; }
-
     ASTPtr clone() const override;
-
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:

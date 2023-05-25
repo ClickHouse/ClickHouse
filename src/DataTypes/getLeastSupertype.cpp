@@ -88,7 +88,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_unsigned_integer, 8);
         else if (type == TypeIndex::UInt16)
             maximize(max_bits_of_unsigned_integer, 16);
-        else if (type == TypeIndex::UInt32)
+        else if (type == TypeIndex::UInt32 || type == TypeIndex::IPv4)
             maximize(max_bits_of_unsigned_integer, 32);
         else if (type == TypeIndex::UInt64)
             maximize(max_bits_of_unsigned_integer, 64);

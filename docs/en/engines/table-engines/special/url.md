@@ -14,7 +14,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](../../../interfaces/formats.md#formats).
 
-    If this argument is not specified, ClickHouse detectes the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
+    If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
 - `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used.
 
@@ -91,11 +91,11 @@ SELECT * FROM url_engine_table
 
 ## Details of Implementation {#details-of-implementation}
 
--   Reads and writes can be parallel
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
-    -   Replication.
+- Reads and writes can be parallel
+- Not supported:
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - Replication.
 
 ## PARTITION BY
 

@@ -16,8 +16,8 @@ If the ORDER BY clause is omitted, the order of the rows is also undefined, and 
 
 There are two approaches to `NaN` and `NULL` sorting order:
 
--   By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
--   With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
+- By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
+- With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
 
 ### Example
 
@@ -543,6 +543,54 @@ Result:
 │   7 │ original │     7 │
 └─────┴──────────┴───────┘
 ```
+
+##Filling grouped by sorting prefix
+
+It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
+Assume there is the following time series table
+``` sql
+CREATE TABLE timeseries
+(
+    `sensor_id` UInt64,
+    `timestamp` DateTime64(3, 'UTC'),
+    `value` Float64
+)
+ENGINE = Memory;
+
+SELECT * FROM timeseries;
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+And we'd like to fill missing values for each sensor independently with 1 second interval.
+The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`
+```
+SELECT *
+FROM timeseries
+ORDER BY
+    sensor_id,
+    timestamp WITH FILL
+INTERPOLATE ( value AS 9999 )
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       234 │ 2021-12-01 00:00:04.000 │  9999 │
+│       234 │ 2021-12-01 00:00:05.000 │  9999 │
+│       234 │ 2021-12-01 00:00:06.000 │  9999 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       432 │ 2021-12-01 00:00:02.000 │  9999 │
+│       432 │ 2021-12-01 00:00:03.000 │  9999 │
+│       432 │ 2021-12-01 00:00:04.000 │  9999 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable
+This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enabled by default)
 
 ## Related content
 
