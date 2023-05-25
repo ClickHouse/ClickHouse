@@ -90,7 +90,7 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
     const IMergeTreeDataPart & data_part,
     const NamesAndTypesList & columns,
     const MarkRanges & required_ranges,
-    int64_t priority) const
+    Priority priority) const
 {
     auto reader = data_part.getReader(
         columns, storage_snapshot->metadata, required_ranges,
@@ -142,7 +142,7 @@ bool MergeTreePrefetchedReadPool::TaskHolder::operator <(const TaskHolder & othe
 {
     chassert(task->priority >= 0);
     chassert(other.task->priority >= 0);
-    return -task->priority < -other.task->priority; /// Less is better.
+    return task->priority > other.task->priority; /// Less is better.
     /// With default std::priority_queue, top() returns largest element.
     /// So closest to 0 will be on top with this comparator.
 }
@@ -153,7 +153,7 @@ void MergeTreePrefetchedReadPool::startPrefetches() const
         return;
 
     [[maybe_unused]] TaskHolder prev(nullptr, 0);
-    [[maybe_unused]] const int64_t highest_priority = reader_settings.read_settings.priority + 1;
+    [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
     assert(prefetch_queue.top().task->priority == highest_priority);
     while (!prefetch_queue.empty())
     {
@@ -495,11 +495,11 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         auto need_marks = min_marks_per_thread;
 
         /// Priority is given according to the prefetch number for each thread,
-        /// e.g. the first task of each thread has the same priority and is bigger
-        /// than second task of each thread, and so on.
+        /// e.g. the first task of each thread has the same priority and is greater
+        /// than the second task of each thread, and so on.
         /// Add 1 to query read priority because higher priority should be given to
         /// reads from pool which are from reader.
-        int64_t priority = reader_settings.read_settings.priority + 1;
+        Priority priority{reader_settings.read_settings.priority.value + 1};
 
         while (need_marks > 0 && part_idx < parts_infos.size())
         {
@@ -597,7 +597,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             {
                 prefetch_queue.emplace(TaskHolder(read_task.get(), i));
             }
-            ++priority;
+            ++priority.value;
 
             result_threads_tasks[i].push_back(std::move(read_task));
         }
