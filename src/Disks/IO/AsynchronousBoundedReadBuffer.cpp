@@ -90,7 +90,7 @@ AsynchronousBoundedReadBuffer::asyncReadInto(char * data, size_t size, Priority 
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = Priority{read_settings.priority + priority};
+    request.priority = Priority{read_settings.priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     return reader.submit(request);
 }
