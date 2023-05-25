@@ -507,52 +507,48 @@ void MergeTreeData::checkProperties(
 
     auto all_columns = new_metadata.columns.getAllPhysical();
 
-    /// Order by check AST
-    if (old_metadata.hasSortingKey())
+    /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
+    /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
+
+    Names new_primary_key_columns = new_primary_key.column_names;
+    Names new_sorting_key_columns = new_sorting_key.column_names;
+
+    ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+    const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
+    for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
     {
-        /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
-        /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
-
-        Names new_primary_key_columns = new_primary_key.column_names;
-        Names new_sorting_key_columns = new_sorting_key.column_names;
-
-        ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
-        const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
-        for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
+        if (old_i < old_sorting_key_columns.size())
         {
-            if (old_i < old_sorting_key_columns.size())
-            {
-                if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
-                    added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
-                else
-                    ++old_i;
-            }
-            else
+            if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
                 added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+            else
+                ++old_i;
         }
+        else
+            added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+    }
 
-        if (!added_key_column_expr_list->children.empty())
+    if (!added_key_column_expr_list->children.empty())
+    {
+        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
+        Names used_columns = syntax->requiredSourceColumns();
+
+        NamesAndTypesList deleted_columns;
+        NamesAndTypesList added_columns;
+        old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+
+        for (const String & col : used_columns)
         {
-            auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = syntax->requiredSourceColumns();
+            if (!added_columns.contains(col) || deleted_columns.contains(col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Existing column {} is used in the expression that was added to the sorting key. "
+                                "You can add expressions that use only the newly added columns",
+                                backQuoteIfNeed(col));
 
-            NamesAndTypesList deleted_columns;
-            NamesAndTypesList added_columns;
-            old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
-
-            for (const String & col : used_columns)
-            {
-                if (!added_columns.contains(col) || deleted_columns.contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Existing column {} is used in the expression that was added to the sorting key. "
-                                    "You can add expressions that use only the newly added columns",
-                                    backQuoteIfNeed(col));
-
-                if (new_metadata.columns.getDefaults().contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Newly added column {} has a default expression, so adding expressions that use "
-                                    "it to the sorting key is forbidden", backQuoteIfNeed(col));
-            }
+            if (new_metadata.columns.getDefaults().contains(col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Newly added column {} has a default expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
         }
     }
 
@@ -1082,7 +1078,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             else if (!prev_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects previous part {}. It is a bug!",
+                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, prev->second->name);
             }
         }
@@ -1099,7 +1095,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             else if (!next_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects next part {}. It is a bug!",
+                    "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, it->second->name);
             }
         }
