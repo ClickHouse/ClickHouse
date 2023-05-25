@@ -171,7 +171,7 @@ static void mergeAttributes(Element & config_element, Element & with_element)
     with_element_attributes->release();
 }
 
-void ConfigProcessor::encryptRecursive(Poco::XML::Node * config_root)
+void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 {
     for (Node * node = config_root->firstChild(); node;)
     {
@@ -179,7 +179,7 @@ void ConfigProcessor::encryptRecursive(Poco::XML::Node * config_root)
         {
             // NamedNodeMapPtr attributes = node->attributes();
             Element & element = dynamic_cast<Element &>(*node);
-            if (element.hasAttribute("enc_codec"))
+            if (element.hasAttribute("encryption_codec"))
             {
                 LOG_DEBUG(log, "Encrypted node {} value '{}'.", node->nodeName(),  element.getNodeValue());
                 // for (Node * child_node = node->firstChild(); child_node;)
@@ -188,11 +188,11 @@ void ConfigProcessor::encryptRecursive(Poco::XML::Node * config_root)
                 //     child_node = child_node->nextSibling();
                 // }
                 Node * child_node = node->firstChild();
-                child_node->setNodeValue("encrypted_" + child_node->getNodeValue() + "_encrypted");
+                child_node->setNodeValue("decrypted_" + child_node->getNodeValue() + "_decrypted");
             }
         }
 
-        encryptRecursive(node);
+        decryptRecursive(node);
 
         node = node->nextSibling();
     }
@@ -727,10 +727,10 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-void ConfigProcessor::encryptConfig(LoadedConfig & loaded_config)
+void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
 {
     Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
-    encryptRecursive(config_root);
+    decryptRecursive(config_root);
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
 }
 
