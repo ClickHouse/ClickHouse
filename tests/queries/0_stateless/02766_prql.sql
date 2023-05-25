@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
-CREATE TABLE IF NOT EXISTS aboba
+CREATE TEMPORARY TABLE IF NOT EXISTS aboba
 (
     `user_id` UInt32,
     `message` String,
