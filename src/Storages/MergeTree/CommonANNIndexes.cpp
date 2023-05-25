@@ -60,7 +60,6 @@ namespace ApproximateNearestNeighbour
 ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
                                  ContextPtr context) :
     block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-    ann_index_select_query_params{context->getSettings().get("ann_index_select_query_params").get<String>()},
     index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
     limit_restriction{context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()},
     index_is_useful{checkQueryStructure(query_info)} {}

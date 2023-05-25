@@ -69,13 +69,13 @@ public:
         const String& distance_function,
         ContextPtr context);
 
+    ~MergeTreeIndexConditionAnnoy() override = default;
+
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
-
-    ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
     template <typename Distance>
@@ -83,6 +83,7 @@ private:
 
     const ApproximateNearestNeighbour::ANNCondition condition;
     const String distance_function;
+    const Int64 search_k;
 };
 
 

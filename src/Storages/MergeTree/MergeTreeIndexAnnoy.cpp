@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -209,6 +210,7 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     ContextPtr context)
     : condition(query, context)
     , distance_function(distance_function_)
+    , search_k(context->getSettings().get("annoy_index_search_k_nodes").get<Int64>())
 {}
 
 
@@ -264,21 +266,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     neighbors.reserve(limit);
     distances.reserve(limit);
 
-    int k_search = -1;
-    String params_str = condition.getParamsStr();
-    if (!params_str.empty())
-    {
-        try
-        {
-            /// k_search=... (algorithm will inspect up to search_k nodes which defaults to n_trees * n if not provided)
-            k_search = std::stoi(params_str.data() + 9);
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting of the annoy index should be int");
-        }
-    }
-    annoy->get_nns_by_vector(target_vec.data(), limit, k_search, &neighbors, &distances);
+    annoy->get_nns_by_vector(target_vec.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
     std::unordered_set<size_t> granule_numbers;
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
