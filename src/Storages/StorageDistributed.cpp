@@ -1006,16 +1006,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
 
-            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(query_context));
-            in_second_argument_query_node->setIsSubquery(true);
-            in_second_argument_query_node->getProjectionNode() = std::make_shared<ListNode>();
-            in_second_argument_query_node->getProjection().getNodes() = { std::make_shared<MatcherNode>() };
-            in_second_argument_query_node->getJoinTree() = std::move(temporary_table_expression_node);
-
-            QueryAnalysisPass query_analysis_pass;
-            query_analysis_pass.run(in_second_argument_query_node, query_context);
-
-            replacement_map.emplace(join_right_table_expression.get(), std::move(in_second_argument_query_node));
+            replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
         else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
