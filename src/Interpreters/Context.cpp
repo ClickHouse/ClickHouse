@@ -2796,11 +2796,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    if (!shared->auxiliary_zookeepers.empty())
-        return shared->auxiliary_zookeepers;
-    else
-        return std::map<String, zkutil::ZooKeeperPtr>();
+    return shared->auxiliary_zookeepers;
 }
 
 #if USE_ROCKSDB
