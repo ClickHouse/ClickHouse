@@ -1191,7 +1191,7 @@ void Planner::buildPlanForQueryNode()
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
                     LOG_WARNING(
-            &Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
+            &Poco::Logger::get("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -1199,7 +1199,7 @@ void Planner::buildPlanForQueryNode()
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Joins are not supported with parallel replicas");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
         }
     }
 
