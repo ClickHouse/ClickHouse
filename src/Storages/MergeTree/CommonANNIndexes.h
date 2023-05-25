@@ -83,7 +83,7 @@ public:
                     ContextPtr context);
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
-    bool alwaysUnknownOrTrue(String metric_name) const;
+    bool alwaysUnknownOrTrue(String metric) const;
 
     /// Returns the distance to compare with for search query
     float getComparisonDistanceForWhereQuery() const;

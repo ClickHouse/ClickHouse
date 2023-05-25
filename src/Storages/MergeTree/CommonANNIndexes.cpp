@@ -41,30 +41,32 @@ void extraceReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Em
     }
 }
 
-ApproximateNearestNeighborInformation::Metric castMetricFromStringToType(String metric_name)
+ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view metric)
 {
-    if (metric_name == "L2Distance")
+    if (metric == "L2Distance")
         return ApproximateNearestNeighborInformation::Metric::L2;
-    if (metric_name == "LpDistance")
+    else if (metric == "LpDistance")
         return ApproximateNearestNeighborInformation::Metric::Lp;
-    return ApproximateNearestNeighborInformation::Metric::Unknown;
+    else
+        return ApproximateNearestNeighborInformation::Metric::Unknown;
 }
 
 }
 
 ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info,
                                  ContextPtr context) :
-    block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-    index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
-    limit_restriction{context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()},
-    index_is_useful{checkQueryStructure(query_info)} {}
+    block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)),
+    index_granularity(context->getMergeTreeSettings().get("index_granularity").get<UInt64>()),
+    limit_restriction(context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()),
+    index_is_useful(checkQueryStructure(query_info))
+{}
 
-bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric_name) const
+bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) const
 {
     if (!index_is_useful)
         return true; // Query isn't supported
     // If query is supported, check metrics for match
-    return !(castMetricFromStringToType(metric_name) == query_information->metric);
+    return !(stringToMetric(metric) == query_information->metric);
 }
 
 float ApproximateNearestNeighborCondition::getComparisonDistanceForWhereQuery() const
@@ -415,7 +417,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    ann_info.metric = castMetricFromStringToType(iter->func_name);
+    ann_info.metric = stringToMetric(iter->func_name);
     ++iter;
 
     if (ann_info.metric == ApproximateNearestNeighborInformation::Metric::Lp)
