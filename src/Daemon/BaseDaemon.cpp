@@ -663,7 +663,7 @@ void BaseDaemon::initialize(Application & self)
     umask(umask_num);
 
     DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
-    DB::ConfigProcessor(config_path).encryptConfig(loaded_config);
+    DB::ConfigProcessor(config_path).decryptConfig(loaded_config);
 
     /// Write core dump on crash.
     {
