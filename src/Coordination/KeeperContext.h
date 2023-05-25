@@ -2,6 +2,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <IO/WriteBufferFromString.h>
+
 #include <Disks/DiskSelector.h>
 
 #include <cstdint>
@@ -42,6 +44,8 @@ public:
 
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
+
+    void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;

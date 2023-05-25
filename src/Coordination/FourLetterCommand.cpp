@@ -292,6 +292,7 @@ String ConfCommand::run()
 
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 

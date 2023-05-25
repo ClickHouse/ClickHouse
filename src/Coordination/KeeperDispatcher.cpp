@@ -238,13 +238,13 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot));
 
-            if (snapshot_path.empty())
+            if (snapshot_file_info.path.empty())
                 continue;
 
             if (isLeader())
-                snapshot_s3.uploadSnapshot(snapshot_path);
+                snapshot_s3.uploadSnapshot(snapshot_file_info);
         }
         catch (...)
         {
@@ -336,12 +336,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
+    keeper_context->initialize(config);
+
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
         config,
         responses_queue,
         snapshots_queue,
-        standalone_keeper,
+        keeper_context,
         snapshot_s3,
         [this](const KeeperStorage::RequestForSession & request_for_session)
         {
