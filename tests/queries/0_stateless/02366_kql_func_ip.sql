@@ -44,7 +44,7 @@ print '-- parse_ipv4(arrayStringConcat([\'127\', \'0\', \'0\', \'1\'], \'.\'))';
 print parse_ipv4(arrayStringConcat(['127', '0', '0', '1'], '.')); -- { clientError UNKNOWN_FUNCTION }
 
 print '-- parse_ipv4_mask(\'127.0.0.1\', 24) == 2130706432';
-print parse_ipv4_mask('127.0.0.1', 24) == 2130706432;
+print parse_ipv4_mask('127.0.0.1', 24);
 print '-- parse_ipv4_mask(\'abc\', 31)';
 print parse_ipv4_mask('abc', 31)
 print '-- parse_ipv4_mask(\'192.1.168.2\', 1000)';

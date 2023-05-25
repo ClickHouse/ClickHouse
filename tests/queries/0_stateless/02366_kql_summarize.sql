@@ -44,16 +44,16 @@ Insert into Dates VALUES ('2015-10-12') , ('2016-10-12')
 Select '-- test summarize --' ;
 set dialect='kusto';
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age);
-Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age) by Occupation;
-Customers | summarize countif(Age>40) by Occupation;
-Customers | summarize MyMax = maxif(Age, Age<40) by Occupation;
-Customers | summarize MyMin = minif(Age, Age<40) by Occupation;
-Customers | summarize MyAvg = avgif(Age, Age<40) by Occupation;
-Customers | summarize MySum = sumif(Age, Age<40) by Occupation;
+Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age) by Occupation | order by Occupation;
+Customers | summarize countif(Age>40) by Occupation | order by Occupation;
+Customers | summarize MyMax = maxif(Age, Age<40) by Occupation | order by Occupation;
+Customers | summarize MyMin = minif(Age, Age<40) by Occupation | order by Occupation;
+Customers | summarize MyAvg = avgif(Age, Age<40) by Occupation | order by Occupation;
+Customers | summarize MySum = sumif(Age, Age<40) by Occupation | order by Occupation;
 Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
 Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
-Customers | summarize job_count = count() by Occupation | where job_count > 0;
+Customers | summarize job_count = count() by Occupation | where job_count > 0 | order by Occupation;
 Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError 62 }
 
 print '-- make_list() --';
@@ -86,7 +86,7 @@ Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew
 Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9);
 
 print '-- Summarize following sort --';
-Customers | sort by FirstName | summarize count() by Occupation;
+Customers | sort by FirstName | summarize count() by Occupation | sort by Occupation;
 
 print '-- summarize with bin --';
 EventLog | summarize count=count() by bin(Created, 1000);
@@ -95,8 +95,8 @@ EventLog | summarize count=count() by time_label=bin(Created/1000, 1s);
 Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
 Customers | summarize t = make_list_with_nulls(FirstName);
-Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation;
-Customers | summarize f_list = make_list_with_nulls(FirstName), a_list = make_list_with_nulls(Age) by Occupation;
+Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation | sort by Occupation;
+Customers | summarize f_list = make_list_with_nulls(FirstName), a_list = make_list_with_nulls(Age) by Occupation | sort by Occupation;
 -- TODO:
 -- arg_max()
 -- arg_min()
