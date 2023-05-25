@@ -77,7 +77,7 @@ void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, cons
     delegate_transaction->copyFile(wrapped_from_path, wrapped_to_path);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile(
+std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( // NOLINT
     const std::string & path,
     size_t buf_size,
     WriteMode mode,
