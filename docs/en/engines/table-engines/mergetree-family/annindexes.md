@@ -1,78 +1,89 @@
 # Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
 
-The main task that indexes achieve is to quickly find nearest neighbors for multidimensional data. An example of such a problem can be finding similar pictures (texts) for a given picture (text). That problem can be reduced to finding the nearest [embeddings](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning). They can be created from data using [UDF](/docs/en/sql-reference/functions/index.md/#executable-user-defined-functions).
+Nearest neighborhood search refers to the problem of finding the point(s) with the smallest distance to a given point in an n-dimensional
+space. Since exact search is in practice usually typically too slow, the task is often solved with approximate algorithms. A popular use
+case of of neighbor search is finding similar pictures (texts) for a given picture (text). Pictures (texts) can be decomposed into
+[embeddings](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning), and instead of
+comparing pictures (texts) pixel-by-pixel (character-by-character), only the embeddings are compared.
 
-The next queries find the closest neighbors in N-dimensional space using the L2 (Euclidean) distance:
-``` sql 
-SELECT * 
-FROM table_name 
-WHERE L2Distance(Column, Point) < MaxDistance 
+In terms of SQL, the problem can be expressed as follows:
+
+``` sql
+SELECT *
+FROM table
+WHERE L2Distance(column, Point) < MaxDistance
 LIMIT N
 ```
 
-``` sql 
-SELECT * 
-FROM table_name 
-ORDER BY L2Distance(Column, Point)
+``` sql
+SELECT *
+FROM table
+ORDER BY L2Distance(column, Point)
 LIMIT N
 ```
-But it will take some time for execution because of the long calculation of the distance between `TargetEmbedding` and all other vectors. This is where ANN indexes can help. They store a compact approximation of the search space (e.g. using clustering, search trees, etc.) and are able to compute approximate neighbors quickly.
+
+The queries are expensive because the L2 distance (Euclidean distance) between all points in `column` and `Point` must be computed. To speed this process up, ANN indexes store a compact representation of the search space (using clustering, search trees, etc.) which allows to compute an approximate answer quickly.
 
 ## Indexes Structure
 
-Approximate Nearest Neighbor Search Indexes (`ANNIndexes`) are similar to skip indexes. They are constructed by some granules and determine which of them should be skipped. Compared to skip indices, ANN indices use their results not only to skip some group of granules, but also to select particular granules from a set of granules.
+Approximate Nearest Neighbor Search Indexes (or `ANNIndexes`) are similar to skip indexes. They are constructed over granules and determine which granules can be skipped. Compared to skip indices, ANN indices are not only able to skip granules, they can also to select particular granules from a set of granules.
 
-`ANNIndexes` are designed to speed up two types of queries:
+`ANNIndexes` support two types of queries:
 
-- ######  Type 1: Where 
-   ``` sql 
-   SELECT * 
-   FROM table_name 
-   WHERE DistanceFunction(Column, Point) < MaxDistance 
+- WHERE queries:
+   ``` sql
+   SELECT *
+   FROM table
+   WHERE DistanceFunction(column, Point) < MaxDistance
    LIMIT N
    ```
-- ###### Type 2: Order by
+
+- ORDER BY queries:
   ``` sql
-  SELECT * 
-  FROM table_name [WHERE ...] 
-  ORDER BY DistanceFunction(Column, Point) 
+  SELECT *
+  FROM table [WHERE ...]
+  ORDER BY DistanceFunction(column, Point)
   LIMIT N
   ```
 
-In these queries, `DistanceFunction` is selected from [distance functions](/docs/en/sql-reference/functions/distance-functions.md). `Point` is a known vector (something like `(0.1, 0.1, ... )`). To avoid writing large vectors, use [client parameters](/docs/en//interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters). `Value` - a float value that will bound the neighbourhood.
+`DistanceFunction` is a [distance functions](/docs/en/sql-reference/functions/distance-functions.md), `Point` is a given vector (e.g. `(0.17, 0.33, ...)`) and `MaxDistance` is a float value which restricts the size of the neighbourhood.
 
-:::note
-ANN index can't speed up query that satisfies both types (`where + order by`, only one of them). All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
-:::
+To avoid writing large vectors, you can also use [query parameters](/docs/en//interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
 
-:::note
-Indexes are applied only to queries with a limit less than the `max_limit_for_ann_queries` setting. This helps to avoid memory overflows in queries with a large limit. `max_limit_for_ann_queries` setting can be changed if you know you can provide enough memory. The default value is `1000000`.
-:::
+```bash
+clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(embedding, {vec: Array(Float32)}) < 1.0"
+```
 
-Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` clause) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
+ANN index cannot speed up query that contain both `WHERE` and `ORDER BY`. Queries must have a limit, as the approximate algorithms used to determine the nearest neighbors require a specific number of them.
+
+Indexes are only used for queries with a `LIMIT` value smaller than setting `max_limit_for_ann_queries` (default: 1 million rows). This helps to prevent memory overflows in queries with a large limit.
+
+Both types of queries are processed similarly. The indexes are passed the number of neighbors `N`. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
 
 
-## Create table with ANNIndex
+## Creating Tables with an ANN Index
 
-This feature is disabled by default. To enable it, set `allow_experimental_annoy_index` to 1. Also, this feature is disabled on ARM, due to likely problems with the algorithm.
+As long as ANN indexes are experimental, you first need to `SET allow_experimental_annoy_index = 1`.
+
+Syntax:
 
 ```sql
-CREATE TABLE t
+CREATE TABLE table
 (
   `id` Int64,
-  `data` Tuple(Float32, Float32, Float32),
-  INDEX ann_index_name data TYPE ann_index_type(ann_index_parameters) GRANULARITY N
+  `embedding` Tuple(Float32, Float32, Float32),
+  INDEX <ann_index_name> embedding TYPE <ann_index_type>(<ann_index_parameters>) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
 
 ```sql
-CREATE TABLE t
+CREATE TABLE table
 (
   `id` Int64,
-  `data` Array(Float32),
-  INDEX ann_index_name data TYPE ann_index_type(ann_index_parameters) GRANULARITY N
+  `embedding` Array(Float32),
+  INDEX <ann_index_name> embedding TYPE <ann_index_type>(<ann_index_parameters>) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -80,69 +91,74 @@ ORDER BY id;
 
 With greater `GRANULARITY` indexes remember the data structure better. The `GRANULARITY` indicates how many granules will be used to construct the index. The more data is provided for the index, the more of it can be handled by one index and the more chances that with the right hyperparameters the index will remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
 
-As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. At this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
-
-You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
+Note that ANN indexes are built during column insertion and merge, i.e. `INSERT` and `OPTIMIZE` statements are slower than for ordinary tables. ANNIndexes are ideally used only with immutable or rarely changing data in conjunction with many read requests.
 
 # Index list
+
 - [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
 # Annoy {#annoy}
-Implementation of the algorithm was taken from [this repository](https://github.com/spotify/annoy).
+
+(currently disabled on ARM due to problems with the algorithm)
+
+This ANN index type implements [Annoy indexes](https://github.com/spotify/annoy).
 
 Short description of the algorithm:
 The algorithm recursively divides in half all space by random linear surfaces (lines in 2D, planes in 3D etc.). Thus it makes tree of polyhedrons and points that they contains. Repeating the operation several times for greater accuracy it creates a forest.
 To find K Nearest Neighbours it goes down through the trees and fills the buffer of closest points using the priority queue of polyhedrons. Next, it sorts buffer and return the nearest K points.
 
-__Examples__:
+Examples:
+
 ```sql
-CREATE TABLE t
+CREATE TABLE table
 (
   id Int64,
-  data Tuple(Float32, Float32, Float32),
-  INDEX ann_index_name data TYPE annoy(NumTrees, DistanceName) GRANULARITY N
+  embedding Tuple(Float32, Float32, Float32),
+  INDEX <ann_index_name> embedding TYPE annoy([DistanceName[, NumTrees]]) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
 
 ```sql
-CREATE TABLE t
+CREATE TABLE table
 (
   id Int64,
-  data Array(Float32),
-  INDEX ann_index_name data TYPE annoy(NumTrees, DistanceName) GRANULARITY N
+  embedding Array(Float32),
+  INDEX <ann_index_name> embedding TYPE annoy([DistanceName[, NumTrees]]) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
 
 :::note
-Table with array field will work faster, but all arrays **must** have same length. Use [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1 CHECK length(data) = 256`.
+Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays **must** have same length. Use [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1 CHECK length(embedding) = 256`.
 :::
 
-Parameter `NumTrees` is the number of trees which the algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness). By default it is set to `100`. Parameter `DistanceName` is name of distance function. By default it is set to `L2Distance`. It can be set without changing first parameter, for example
+Parameter `DistanceName` is name of a distance function with default `L2Distance`. Parameter `NumTrees` (default: 100) is the number of trees which the algorithm will create. Higher values of `NumTree` mean slower `CREATE` and `SELECT` statements (approximately linearly), but increase the accuracy of search results.
+
 ```sql
-CREATE TABLE t
+CREATE TABLE table
 (
   id Int64,
-  data Array(Float32),
-  INDEX ann_index_name data TYPE annoy('cosineDistance') GRANULARITY N
+  embedding Array(Float32),
+  INDEX ann_index_name embedding TYPE annoy('cosineDistance') GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
 
-Annoy supports `L2Distance` and `cosineDistance`.
+Annoy currently supports `L2Distance` and `cosineDistance` as distance functions.
 
-Setting `search_k` (default `LIMIT * NumTrees`) determines how many nodes the Annoy index will inspect during SELECT queries. The setting
-can be used to balance performance and accuracy at runtime.
+Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many nodes are inspected during SELECTs. It can be used to
+balance runtime and accuracy at runtime.
 
-__Example__:
+Example:
+
 ``` sql
-SELECT * 
-FROM table_name [WHERE ...] 
-ORDER BY L2Distance(Column, Point) 
+SELECT *
+FROM table_name [WHERE ...]
+ORDER BY L2Distance(column, Point)
 LIMIT N
-SETTING ann_index_select_query_params=`k_search=100`
+SETTINGS annoy_index_search_k_nodes=100
 ```
