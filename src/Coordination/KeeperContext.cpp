@@ -8,7 +8,6 @@
 namespace DB
 {
 
-
 KeeperContext::KeeperContext(bool standalone_keeper_)
     : disk_selector(std::make_shared<DiskSelector>())
     , standalone_keeper(standalone_keeper_)
@@ -28,13 +27,19 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
     else
         current_log_storage = log_storage;
 
-    Poco::Util::AbstractConfiguration::Keys old_log_disk_name_keys;
-    config.keys("keeper_server", old_log_disk_name_keys);
-    for (const auto & key : old_log_disk_name_keys)
+    const auto collect_old_disk_names = [&](const std::string_view key_prefix, std::vector<std::string> & disk_names)
     {
-        if (key.starts_with("old_log_storage_disk"))
-            old_log_disk_names.push_back(config.getString("keeper_server." + key));
-    }
+        Poco::Util::AbstractConfiguration::Keys disk_name_keys;
+        config.keys("keeper_server", disk_name_keys);
+        for (const auto & key : disk_name_keys)
+        {
+            if (key.starts_with(key_prefix))
+                disk_names.push_back(config.getString(fmt::format("keeper_server.{}", key_prefix)));
+        }
+    };
+
+    collect_old_disk_names("old_log_storage_disk", old_log_disk_names);
+    collect_old_disk_names("old_snapshot_storage_disk", old_snapshot_disk_names);
 
     snapshot_storage = getSnapshotsPathFromConfig(config);
 
@@ -105,6 +110,17 @@ void KeeperContext::setLogDisk(DiskPtr disk)
 DiskPtr KeeperContext::getSnapshotDisk() const
 {
     return getDisk(snapshot_storage);
+}
+
+std::vector<DiskPtr> KeeperContext::getOldSnapshotDisks() const
+{
+    std::vector<DiskPtr> old_snapshot_disks;
+    old_snapshot_disks.reserve(old_snapshot_disk_names.size());
+
+    for (const auto & disk_name : old_snapshot_disk_names)
+        old_snapshot_disks.push_back(disk_selector->get(disk_name));
+
+    return old_snapshot_disks;
 }
 
 void KeeperContext::setSnapshotDisk(DiskPtr disk)

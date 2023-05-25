@@ -404,11 +404,11 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                 }
                 else
                 {
+                    latest_snapshot_meta = snapshot->snapshot_meta;
                     /// we rely on the fact that the snapshot disk cannot be changed during runtime
                     if (isLocalDisk(*keeper_context->getSnapshotDisk()))
                     {
                         latest_snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                        latest_snapshot_meta = snapshot->snapshot_meta;
                         latest_snapshot_buf = nullptr;
                     }
                     else

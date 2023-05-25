@@ -149,11 +149,10 @@ public:
     {
         if (!existing_snapshots.empty())
         {
-            const auto & path = existing_snapshots.at(getLatestSnapshotIndex());
+            const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
 
             try
             {
-                auto disk = getDisk();
                 if (disk->exists(path))
                     return {path, disk};
             }
@@ -176,7 +175,7 @@ private:
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
-    std::map<uint64_t, std::string> existing_snapshots;
+    std::map<uint64_t, SnapshotFileInfo> existing_snapshots;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage

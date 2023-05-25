@@ -519,49 +519,79 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
+    const auto load_snapshot_from_disk = [&](DiskPtr disk)
+    {
+        std::unordered_set<std::string> invalid_snapshots;
+        /// collect invalid snapshots
+        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
+        {
+            const auto & name = it->name();
+            if (name.empty())
+                continue;
+
+            if (startsWith(name, "tmp_"))
+            {
+                disk->removeFile(it->path());
+                invalid_snapshots.insert(name.substr(4));
+                continue;
+            }
+        }
+
+        /// process snapshots
+        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
+        {
+            const auto & name = it->name();
+            if (name.empty())
+                continue;
+
+            /// Not snapshot file
+            if (!startsWith(name, "snapshot_"))
+                continue;
+
+            if (invalid_snapshots.contains(name))
+            {
+                disk->removeFile(it->path());
+                continue;
+            }
+
+            size_t snapshot_up_to = getSnapshotPathUpToLogIdx(name);
+            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to, SnapshotFileInfo{it->path(), disk});
+
+            if (!inserted)
+                LOG_WARNING(
+                    &Poco::Logger::get("KeeperSnapshotManager"),
+                    "Found another snapshots with last log idx {}, will use snapshot from disk {}",
+                    snapshot_up_to,
+                    disk->getName());
+        }
+    };
+
+    for (const auto & disk : keeper_context->getOldSnapshotDisks())
+        load_snapshot_from_disk(disk);
+
     auto disk = getDisk();
-
-    std::unordered_set<std::string> invalid_snapshots;
-    /// collect invalid snapshots
-    for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
-    {
-        const auto & name = it->name();
-        if (name.empty())
-            continue;
-
-        if (startsWith(name, "tmp_"))
-        {
-            disk->removeFile(it->path());
-            invalid_snapshots.insert(name.substr(4));
-            continue;
-        }
-
-    }
-
-    /// process snapshots
-    for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
-    {
-        const auto & name = it->name();
-        if (name.empty())
-            continue;
-
-        /// Not snapshot file
-        if (!startsWith(name, "snapshot_"))
-            continue;
-
-        if (invalid_snapshots.contains(name))
-        {
-            disk->removeFile(it->path());
-            continue;
-        }
-
-        size_t snapshot_up_to = getSnapshotPathUpToLogIdx(name);
-        existing_snapshots[snapshot_up_to] = it->path();
-    }
+    load_snapshot_from_disk(disk);
 
     removeOutdatedSnapshotsIfNeeded();
-}
 
+    /// move snapshots from old disks to new one 
+    for (auto & [_, file_info] : existing_snapshots)
+    {
+        if (file_info.disk == disk)
+            continue;
+
+        auto file_path = fs::path(file_info.path);
+        auto tmp_snapshot_path = file_path.parent_path() / ("tmp_" + file_path.filename().generic_string());
+
+        {
+            disk->writeFile(tmp_snapshot_path);
+        }
+
+        file_info.disk->copyFile(file_info.path, *disk, file_info.path, {});
+        disk->removeFile(tmp_snapshot_path);
+        file_info.disk = disk;
+    }
+}
 
 SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
 {
@@ -599,7 +629,8 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
         }
         catch (const DB::Exception &)
         {
-            getDisk()->removeFile(latest_itr->second);
+            const auto & [path, disk] = latest_itr->second;
+            disk->removeFile(path);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -610,9 +641,9 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
-    const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
+    const auto & [snapshot_path, snapshot_disk] = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = getDisk()->readFile(snapshot_path);
+    auto reader = snapshot_disk->readFile(snapshot_path);
     copyData(*reader, writer);
     return writer.getBuffer();
 }
@@ -690,7 +721,8 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    getDisk()->removeFile(itr->second);
+    const auto & [path, disk] = itr->second;
+    disk->removeFile(path);
     existing_snapshots.erase(itr);
 }
 
