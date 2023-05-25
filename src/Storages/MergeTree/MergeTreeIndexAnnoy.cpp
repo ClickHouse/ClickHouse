@@ -86,7 +86,7 @@ template <typename Distance>
 MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    AnnoyIndexPtr index_)
+    AnnoyIndexPtr<Distance> index_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index(std::move(index_))
@@ -106,7 +106,7 @@ void MergeTreeIndexGranuleAnnoy<Distance>::deserializeBinary(ReadBuffer & istr, 
 {
     uint64_t dimension;
     readIntBinary(dimension, istr);
-    index = std::make_shared<AnnoyIndex>(dimension);
+    index = std::make_shared<AnnoyIndex<Distance>>(dimension);
     index->deserialize(istr);
 }
 
@@ -164,7 +164,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             if (offsets[i + 1] - offsets[i] != size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
 
-        index = std::make_shared<AnnoyIndex>(size);
+        index = std::make_shared<AnnoyIndex<Distance>>(size);
 
         index->add_item(index->get_n_items(), array.data());
         /// add all rows from 1 to num_rows - 1 (this is the same as the beginning of the last element)
@@ -190,7 +190,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         }
         assert(!data.empty());
         if (!index)
-            index = std::make_shared<AnnoyIndex>(data[0].size());
+            index = std::make_shared<AnnoyIndex<Distance>>(data[0].size());
         for (const auto& item : data)
             index->add_item(index->get_n_items(), item.data());
     }
