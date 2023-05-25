@@ -65,7 +65,7 @@ namespace DB
 static constexpr size_t map_size = 1u << 16;
 
 /// If the haystack size is bigger than this, behaviour is unspecified for this function.
-static constexpr size_t max_string_size = 1u << 15;
+// static constexpr size_t max_string_size = 1u << 15;
 
 /// Default padding to read safely.
 static constexpr size_t default_padding = 16;
@@ -324,7 +324,7 @@ public:
             models[slice_name].learn(slice_text);
         }
     }
-    std::unordered_map<String, Float64> score(const String &text) {
+    std::unordered_map<String, Float64> score(const String &text) const {
         NaiveBayes<CodePoint, N, UTF8, case_insensitive> text_model;
         text_model.learn(text);
         std::shared_ptr<Float64[]> text_map = text_model.getmap();
@@ -343,6 +343,25 @@ private:
 template<class Section>
 class NgramStorage {
 public:
+
+    String classify(const String &name, const String &text) {
+        if (map.find(name) == map.end()) {
+            // BOOM
+        }
+        std::unordered_map<String, Float64> scoring = map.at(name).score(text);
+
+        Float64 best_score = 0.;
+        std::string_view result;
+
+        for (auto &[sub_name, score] : scoring) {
+            if (score > best_score) {
+                best_score = score;
+                result = sub_name;
+            }
+        }
+
+        return String(result);
+    }
 
 
     explicit NgramStorage() 
@@ -400,266 +419,46 @@ public:
 
 
 
-
+template <class Storage> 
 class NgramTextClassificationImpl
 {
+public:
     using ResultType = String;
-    static constexpr Float64 zero_frequency = 1e-06;
-    
-    template <typename Map>
-    static Float64 naiveBayes(
-        const Map & text, // text is normalized
-        const Map & model) // model is not normalized
-    {
-        int cnt_words_in_model = 0;
-
-        for (const auto &[word, stat] : model)
-        {
-            cnt_words_in_model += stat;
-        }
-
-        for (const auto &[word, stat] : text)
-        {
-            if (model.find(word) == model.end())
-            {
-                ++cnt_words_in_model;
-            }
-        }
-
-
-        Float64 result = 0;
-        for (const auto &[word, stat] : text)
-        {
-            const auto it = model.find(word); 
-            if (it == model.end())
-            {
-                result += stat * log(zero_frequency);
-            } else
-            {
-                result += stat * log(stat / cnt_words_in_model);
-            }
-        }
-        return result;
+    String classify(const String &name, const String &text) {
+        return storage.classify(name, text);
     }
-
-    template<class Map, size_t N>
-    class NgramModel {
-        // модель, в которой лежит только одна запись какого-то slice-а
-    public:
-        // explicit NgramModel(const String &filename) {
-        //     load(filename);
-        // }
-        /*
-        Формат модели
-
-        Имя N[сколько грам]
-        [N-gram1] [cnt1]
-        [N-gram2] [cnt2]
-        ...
-        */
-        
-        Float64 scoreText(const Map &text_model) const {
-            return naiveBayes(text_model, map);
-        }
-        void learn(const String &name_, const String &text) { // загружаем из строки модель
-            name = name_;
-            map = buildModel<Map, N>(text);
-        }
-        const Map& getMap() const {
-            return map;
-        }
-        String getName() const {
-            return name;
-        }
-        size_t getN() const {
-            return N;
-        }
-    private:
-        String name;
-        Map map;
-
-        Float64 naiveBayes(
-                const Map & text, // text is normalized
-                const Map & model) const { // model is not normalized 
-            int cnt_words_in_model = 0;
-
-            for (const auto &[word, stat] : model) {
-                cnt_words_in_model += stat;
-            }
-
-            for (const auto &[word, stat] : text) {
-                if (model.find(word) == model.end()) {
-                    ++cnt_words_in_model;
-                }
-            }
-
-            Float64 result = 0;
-            for (const auto &[word, stat] : text) {
-                const auto it = model.find(word); 
-                if (it == model.end()) {
-                    result += stat * log(1 / cnt_words_in_model);
-                } else {
-                    result += stat * log(zero_frequency);
-                }
-            }
-            return result;
-        }
-
-
-    };
-
-    template<class Map, size_t N>
-    class Slice {
-        // for example, Lang-slice, explicity slice, ..., e.t.c.
-    public:
-        Slice() = default;
-        explicit Slice(const std::string &directory) {
-            load(directory);
-        }
-
-        String classify(const String &text) const {
-            Map text_map = buildModel<Map, N>(text);
-            Float64 best_score = 0.;
-            String result;
-            for (const auto &model : models) {
-                Float64 local_result = model.scoreText(text_map);
-                if (local_result > best_score) {
-                    best_score = local_result;
-                    result = model.getName();
-                }
-            }
-            return result;
-        }
-
-        std::vector<std::pair<String, Float64>> score(const String &text, bool sorted = false) {
-            Map text_map = buildModel<Map, N>(text);
-            std::vector<std::pair<String, Float64>> result;
-            for (const auto &model : models) {
-                result.emplace_back(model.getName(), model.score(text_map));
-            }
-            if (sorted) {
-                sort(result.begin(), result.end(), [](const auto &a, const auto &b){ return a.second > b.second; });
-            }
-            return result;
-        }
-    private:
-        std::vector<NgramModel<Map, N>> models;
-        std::string name;
-        void load(const std::string &directory) {
-            const std::filesystem::path path{directory};
-            for (auto const& dir_entry : std::filesystem::directory_iterator{path}) {
-                models.emplace_back(dir_entry.path());
-            }
-            if (models.empty()) {
-                // BOOM
-            }
-            for (const auto &model : models) {
-                if (model.getN() != N) {
-                    // BOOM
-                }
-            }
-        }
-    };
-
-    template <size_t N>
-    struct StringSlice {
-        const size_t p = 313;
-        size_t precalced_pn;
-        size_t length = 0;
-        StringSlice() = default;
-        size_t value = 0;
-        explicit StringSlice(const String &s) {
-            precalced_pn = 1;
-            for (size_t index = 0; index < std::min(s.size(), N); ++index) {
-                value *= p;
-                value += static_cast<size_t>(s[index]);
-                precalced_pn *= p;
-            }
-        }
-
-        explicit StringSlice(char *buf) {
-            precalced_pn = 1;
-            for (size_t index = 0; index < std::min(strlen(buf), N); ++index) {
-                value *= p;
-                value += static_cast<size_t>(buf[index]);
-                precalced_pn *= p;
-            }
-        }
-        void slide(char old_c, char new_c) {
-            value -= precalced_pn * static_cast<size_t>(old_c);
-            value *= p;
-            value += static_cast<size_t>(new_c);
-        }
-        bool operator == (const StringSlice& ss) const {
-            return length == ss.length && value == ss.value;
-        }
-        size_t get() const {
-            return value;
-        }
-    };
-
-    template<size_t N>
-    class SliceHash {
-    public:
-        size_t operator()(const StringSlice<N>& p) const
-        {
-            return p.value + p.length;
-        }
-    };
-
-    template <typename Map, size_t N>
-   Map static buildModel(const String &text) {
-        // depends on custom_Hash
-        StringSlice<N> ss(text);
-        std::unordered_map<StringSlice<N>, int, SliceHash<N>> map;
-        ++map[ss];
-        for (size_t index = N; index < text.size(); ++index) {
-            ss.slide(text[index - N], text[index]);
-            ++map[ss];
-        }
-        return map;
-    }
-
-    template <typename Map, size_t N>
-    Float64 ngramScore(const String &text, const NgramModel<Map, N> &model) {
-        // depends on buildModel
-        Map text_model = buildModel<Map>(text, model.getN());
-        return naiveBayes(text_model, model.getMap());
-    }
-
-    // path will be "~/ClickHouse/src/Storages/NgramModels/[slice-Name]-[N]/"
-    static void constant(std::string data, const String &slice_name, String &res) {
-        Slice<std::unordered_map<StringSlice, int, CustomHashFunction> > slice(model_path + slice_name);
-        res = slice.classify(data);
-    }
-
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets &offsets, const String &slice_name, ColumnString::Chars &res_data, ColumnString::Offsets &res_offsets) {
-        Slice<std::unordered_map<StringSlice, int, CustomHashFunction> > slice(model_path + slice_name);
-        size_t prev_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i) {
-            const UInt8 * haystack = &data[prev_offset];
-            const String &result_value = slice.classify(reinterpret_cast<const char *>(haystack));
-            res_data.resize(prev_offset + result_value.size() + 1);
-            prev_offset = offsets[i];
-            memcpy(&res_data[prev_offset], result_value.data(), result_value.size());
-            res_data[prev_offset + result_value.size()] = '\0';
-            prev_offset += result_value.size() + 1;
-            res_offsets[i] = prev_offset;
-        }
-    }
-    
+private:
+    Storage storage;
 };
+
+
+using Bayes = NaiveBayes<UInt8, 5, false, true>;
+using NgramSlice = Slice<UInt8, 5, false, true>;
+using Storage = NgramStorage<NgramSlice>;
+
+
+using BayesUTF8 = NaiveBayes<UInt8, 5, true, true>;
+using NgramSliceUTF8 = Slice<UInt8, 5, true, true>;
+using StorageUTF8 = NgramStorage<NgramSliceUTF8>;
+    
 
 struct NgramClassificationName
 {
     static constexpr auto name = "NgramClassify";
 };
 
-using FunctionNgramTextClassification = NgramTextClassification<NgramTextClassificationImpl, NgramClassificationName>;
+struct NgramClassificationNameUTF8
+{
+    static constexpr auto name = "NgramClassifyUTF8";
+};
+
+using FunctionNgramClassification = NgramTextClassification<NgramTextClassificationImpl<Storage>, NgramClassificationName>;
+using FunctionNgramClassificationUTF8 = NgramTextClassification<NgramTextClassificationImpl<StorageUTF8>, NgramClassificationNameUTF8>;
 
 REGISTER_FUNCTION(NgramClassify)
 {
-    factory.registerFunction<FunctionNgramTextClassification>();
+    factory.registerFunction<FunctionNgramClassification>();
+    factory.registerFunction<FunctionNgramClassificationUTF8>();
 }
 
 }
