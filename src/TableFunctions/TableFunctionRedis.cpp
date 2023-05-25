@@ -74,7 +74,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
             "Table function 'Redis' requires from 5 parameters: "
             "redis('host:port', db_index, 'password', 'storage_type', 'pool_size')");
     }
-    configuration = StorageRedis::getConfiguration(args, context);
+    configuration = getRedisConfiguration(args, context);
 }
 
 
