@@ -166,6 +166,10 @@ SinkToStoragePtr StorageRedis::write(
 RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     RedisConfiguration configuration;
+    configuration.db_index = 0;
+    configuration.password = "";
+    configuration.storage_type = RedisStorageType::SIMPLE;
+    configuration.pool_size = 10;
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
@@ -175,11 +179,15 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
             {});
 
         configuration.host = named_collection->getAny<String>({"host", "hostname"});
-        configuration.port = static_cast<uint32_t>(named_collection->get<UInt64>("port"));
-        configuration.password = named_collection->get<String>("password");
-        configuration.db_index = static_cast<uint32_t>(named_collection->get<UInt64>({"db_index"}));
-        configuration.storage_type = parseStorageType(named_collection->getOrDefault<String>("storage_type", ""));
-        configuration.pool_size = static_cast<uint32_t>(named_collection->get<UInt64>("pool_size"));
+        configuration.port = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("port", 6379));
+        if (engine_args.size() > 1)
+            configuration.password = named_collection->get<String>("password");
+        if (engine_args.size() > 2)
+            configuration.db_index = static_cast<uint32_t>(named_collection->get<UInt64>("db_index"));
+        if (engine_args.size() > 3)
+            configuration.storage_type = parseStorageType(named_collection->get<String>("storage_type"));
+        if (engine_args.size() > 4)
+            configuration.pool_size = static_cast<uint32_t>(named_collection->get<UInt64>("pool_size"));
     }
     else
     {
@@ -191,10 +199,14 @@ RedisConfiguration StorageRedis::getConfiguration(ASTs engine_args, ContextPtr c
 
         configuration.host = parsed_host_port.first;
         configuration.port = parsed_host_port.second;
-        configuration.db_index = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[1], "db_index"));
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
-        configuration.storage_type = parseStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
-        configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[4], "pool_size"));
+        if (engine_args.size() > 1)
+            configuration.db_index = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[1], "db_index"));
+        if (engine_args.size() > 2)
+            configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
+        if (engine_args.size() > 3)
+            configuration.storage_type = parseStorageType(checkAndGetLiteralArgument<String>(engine_args[3], "storage_type"));
+        if (engine_args.size() > 4)
+            configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[4], "pool_size"));
     }
 
     if (configuration.storage_type == RedisStorageType::UNKNOWN)
