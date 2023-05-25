@@ -25,7 +25,7 @@ namespace
 {
 
 template <typename Literal>
-void extraceReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & reference_vector, Literal literal)
+void extractReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & reference_vector, Literal literal)
 {
     Float64 float_element_of_reference_vector;
     Int64 int_element_of_reference_vector;
@@ -441,13 +441,13 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
-        extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
+        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
         ++iter;
     }
 
@@ -462,12 +462,12 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
         {
-            extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
+            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
             ++iter;
         }
         else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
             ++iter;
         }
         else
