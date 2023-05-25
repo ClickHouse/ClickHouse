@@ -137,7 +137,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
-            toString(*pos), toString(block.rows()));
+            *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)
