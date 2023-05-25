@@ -9,6 +9,40 @@ CREATE TABLE tab(id Int32, embedding Array(Float32), INDEX annoy_index embedding
 -- SETTINGS index_granularity=5, index_granularity_bytes = '10Mi';
 INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5]), (3, [0.0, 0.0, 9.5]), (4, [0.0, 0.0, 9.7]), (5, [0.0, 0.0, 10.2]), (6, [10.0, 0.0, 0.0]), (7, [9.5, 0.0, 0.0]), (8, [9.7, 0.0, 0.0]), (9, [10.2, 0.0, 0.0]), (10, [10.5, 0.0, 0.0]), (11, [0.0, 10.0, 0.0]), (12, [0.0, 9.5, 0.0]), (13, [0.0, 9.7, 0.0]), (14, [0.0, 10.2, 0.0]), (15, [0.0, 10.5, 0.0]);
 
+SELECT 'WHERE type, L2Distance';
+SELECT *
+FROM tab
+WHERE L2Distance(embedding, [0.0, 0.0, 10.0]) < 1.0
+LIMIT 5;
+
+SELECT 'ORDER BY type, L2Distance';
+SELECT *
+FROM tab
+ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
+LIMIT 3;
+
+
+SELECT 'Reference ARRAYs with non-matching dimension are rejected';
+SELECT *
+FROM tab
+ORDER BY L2Distance(embedding, [0.0, 0.0])
+LIMIT 3; -- { serverError INCORRECT_QUERY }
+
+
+SELECT 'WHERE type, L2Distance, check that index is used';
+EXPLAIN indexes=1
+SELECT *
+FROM tab
+WHERE L2Distance(embedding, [0.0, 0.0, 10.0]) < 1.0
+LIMIT 5;
+
+SELECT 'ORDER BY type, L2Distance, check that index is used';
+EXPLAIN indexes=1
+SELECT *
+FROM tab
+ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
+LIMIT 3;
+
 SELECT 'parameter annoy_index_search_k_nodes';
 SELECT *
 FROM tab
