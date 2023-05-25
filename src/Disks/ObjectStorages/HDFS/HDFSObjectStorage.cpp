@@ -7,7 +7,6 @@
 #include <Storages/HDFS/HDFSCommon.h>
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
