@@ -38,8 +38,8 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !index.get(); }
 
-    String index_name;
-    Block index_sample_block;
+    const String index_name;
+    const Block index_sample_block;
     AnnoyIndexWithSerializationPtr<Distance> index;
 };
 
@@ -53,8 +53,8 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    String index_name;
-    Block index_sample_block;
+    const String index_name;
+    const Block index_sample_block;
     const uint64_t trees;
     AnnoyIndexWithSerializationPtr<Distance> index;
 };
@@ -81,7 +81,7 @@ private:
     template <typename Distance>
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
-    ApproximateNearestNeighbour::ANNCondition condition;
+    const ApproximateNearestNeighbour::ANNCondition condition;
     const String distance_name;
 };
 
