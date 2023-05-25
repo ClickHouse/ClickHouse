@@ -10,11 +10,6 @@
 namespace DB
 {
 
-// auxiliary namespace for working with spotify-annoy library
-// mainly for serialization and deserialization of the index
-namespace ApproximateNearestNeighbour
-{
-
 template <typename Distance>
 class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>
 {
@@ -27,12 +22,10 @@ public:
     uint64_t getNumOfDimensions() const;
 };
 
-}
-
 template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = ApproximateNearestNeighbour::AnnoyIndex<Distance>;
+    using AnnoyIndex = AnnoyIndex<Distance>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
@@ -53,7 +46,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 template <typename Distance>
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = ApproximateNearestNeighbour::AnnoyIndex<Distance>;
+    using AnnoyIndex = AnnoyIndex<Distance>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t trees);
