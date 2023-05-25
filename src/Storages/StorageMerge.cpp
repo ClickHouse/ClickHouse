@@ -45,7 +45,6 @@
 
 #include <Common/logger_useful.h>
 
-
 namespace
 {
 
@@ -578,8 +577,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-
-
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
             get_column_options.withSubcolumns();
@@ -600,10 +597,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
-        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-        new_analyzer_res.has_explicit_columns = false;
-
-        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
     }
     else
     {
