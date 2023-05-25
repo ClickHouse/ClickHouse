@@ -149,10 +149,10 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
 
-    if (const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get()))
+    if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
         const auto & data = column_array->getData();
-        const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
+        const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
         if (array.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
         const auto & offsets = column_array->getOffsets();
@@ -171,21 +171,21 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
             index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
     }
-    else if (const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get()))
+    else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
         const auto & columns = column_tuple->getColumns();
 
         std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-        for (const auto& column : columns)
+        for (const auto & column : columns)
         {
-            const auto& pod_array = typeid_cast<const ColumnFloat32*>(column.get())->getData();
+            const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
             for (size_t i = 0; i < pod_array.size(); ++i)
                 data[i].push_back(pod_array[i]);
         }
         assert(!data.empty());
         if (!index)
             index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
-        for (const auto& item : data)
+        for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
     }
     else
