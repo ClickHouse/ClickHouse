@@ -5,8 +5,9 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Poco/Event.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
+#include <Poco/Event.h>
 
 namespace DB
 {
@@ -97,7 +98,7 @@ struct PushingAsyncPipelineExecutor::Data
     }
 };
 
-static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)

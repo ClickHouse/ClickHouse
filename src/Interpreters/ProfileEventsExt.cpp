@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 namespace ProfileEvents
 {
@@ -32,7 +33,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     auto & value_column = tuple_column.getColumn(1);
 
     size_t size = 0;
-    for (Event event = 0; event < Counters::num_counters; ++event)
+    for (Event event = Event(0); event < Counters::num_counters; ++event)
     {
         UInt64 value = counters[event];
 
@@ -54,7 +55,7 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     size_t rows = 0;
     auto & name_column = columns[NAME_COLUMN_INDEX];
     auto & value_column = columns[VALUE_COLUMN_INDEX];
-    for (Event event = 0; event < Counters::num_counters; ++event)
+    for (Event event = Event(0); event < Counters::num_counters; ++event)
     {
         Int64 value = snapshot.counters[event];
 

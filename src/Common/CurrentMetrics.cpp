@@ -53,6 +53,7 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
+    M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
@@ -126,6 +127,8 @@
     M(DDLWorkerThreadsActive, "Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.") \
     M(StorageDistributedThreads, "Number of threads in the StorageDistributed thread pool.") \
     M(StorageDistributedThreadsActive, "Number of threads in the StorageDistributed thread pool running a task.") \
+    M(DistributedInsertThreads, "Number of threads used for INSERT into Distributed.") \
+    M(DistributedInsertThreadsActive, "Number of threads used for INSERT into Distributed running a task.") \
     M(StorageS3Threads, "Number of threads in the StorageS3 thread pool.") \
     M(StorageS3ThreadsActive, "Number of threads in the StorageS3 thread pool running a task.") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
@@ -136,6 +139,12 @@
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
+    M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
+    M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
+    M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
+    M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool.") \
+    M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
+    M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
     M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
@@ -182,12 +191,13 @@
     M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
 
+
 namespace CurrentMetrics
 {
-    #define M(NAME, DOCUMENTATION) extern const Metric NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION) extern const Metric NAME = Metric(__COUNTER__);
         APPLY_FOR_METRICS(M)
     #undef M
-    constexpr Metric END = __COUNTER__;
+    constexpr Metric END = Metric(__COUNTER__);
 
     std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
 

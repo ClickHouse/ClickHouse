@@ -143,7 +143,7 @@ def test_select():
 
 def main():
     # HEAD + GET
-    t = start_server(3)
+    t = start_server(2)
     t.start()
     test_select()
     t.join()

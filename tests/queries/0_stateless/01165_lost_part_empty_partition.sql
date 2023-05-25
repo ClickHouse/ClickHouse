@@ -10,6 +10,7 @@ insert into rmt1 values (now(), rand());
 drop table rmt1;
 
 system sync replica rmt2;
+select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
 
 
@@ -21,6 +22,7 @@ insert into rmt1 values (now(), rand());
 drop table rmt1;
 
 system sync replica rmt2;
+select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
 
 

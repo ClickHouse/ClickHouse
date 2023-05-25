@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -33,6 +34,9 @@ struct BackupFileInfo
     /// Index of the data file. -1 means there is no data file.
     /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
+
+    /// Whether this file is encrypted by an encrypted disk.
+    bool encrypted_by_disk = false;
 
     struct LessByFileName
     {

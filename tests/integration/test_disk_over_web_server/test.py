@@ -21,23 +21,31 @@ def cluster():
         cluster.add_instance(
             "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
         )
+
+        cluster.add_instance(
+            "node4",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
+            stay_alive=True,
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="22.8.14.53",
+        )
+
         cluster.start()
 
-        node1 = cluster.instances["node1"]
-        expected = ""
-        global uuids
-        for i in range(3):
-            node1.query(
+        def create_table_and_upload_data(node, i):
+            node.query(
                 f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
 
             for _ in range(10):
-                node1.query(
+                node.query(
                     f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})"
                 )
-            expected = node1.query(f"SELECT * FROM data{i} ORDER BY id")
+            node.query(f"SELECT * FROM data{i} ORDER BY id")
 
-            metadata_path = node1.query(
+            metadata_path = node.query(
                 f"SELECT data_paths FROM system.tables WHERE name='data{i}'"
             )
             metadata_path = metadata_path[
@@ -45,7 +53,7 @@ def cluster():
             ]
             print(f"Metadata: {metadata_path}")
 
-            node1.exec_in_container(
+            node.exec_in_container(
                 [
                     "bash",
                     "-c",
@@ -56,8 +64,20 @@ def cluster():
                 user="root",
             )
             parts = metadata_path.split("/")
-            uuids.append(parts[3])
             print(f"UUID: {parts[3]}")
+            return parts[3]
+
+        node1 = cluster.instances["node1"]
+
+        global uuids
+        for i in range(2):
+            uuid = create_table_and_upload_data(node1, i)
+            uuids.append(uuid)
+
+        node4 = cluster.instances["node4"]
+
+        uuid = create_table_and_upload_data(node4, 2)
+        uuids.append(uuid)
 
         yield cluster
 
@@ -68,6 +88,7 @@ def cluster():
 @pytest.mark.parametrize("node_name", ["node2"])
 def test_usage(cluster, node_name):
     node1 = cluster.instances["node1"]
+    node4 = cluster.instances["node4"]
     node2 = cluster.instances[node_name]
     global uuids
     assert len(uuids) == 3
@@ -90,7 +111,11 @@ def test_usage(cluster, node_name):
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
-        assert result == node1.query(
+        node = node1
+        if i == 2:
+            node = node4
+
+        assert result == node.query(
             "SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
 
@@ -99,7 +124,7 @@ def test_usage(cluster, node_name):
                 i
             )
         )
-        assert result == node1.query(
+        assert result == node.query(
             "SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
                 i
             )
@@ -141,6 +166,7 @@ def test_incorrect_usage(cluster):
 @pytest.mark.parametrize("node_name", ["node2"])
 def test_cache(cluster, node_name):
     node1 = cluster.instances["node1"]
+    node4 = cluster.instances["node4"]
     node2 = cluster.instances[node_name]
     global uuids
     assert len(uuids) == 3
@@ -178,7 +204,12 @@ def test_cache(cluster, node_name):
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
-        assert result == node1.query(
+
+        node = node1
+        if i == 2:
+            node = node4
+
+        assert result == node.query(
             "SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
 
@@ -187,7 +218,7 @@ def test_cache(cluster, node_name):
                 i
             )
         )
-        assert result == node1.query(
+        assert result == node.query(
             "SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
                 i
             )

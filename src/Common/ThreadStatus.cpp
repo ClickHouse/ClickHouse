@@ -2,6 +2,8 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -61,7 +63,7 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroupStatus::ThreadGroupStatus()
+ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
@@ -119,7 +121,7 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
+ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     return thread_group;
 }
@@ -139,7 +141,7 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
-void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);
     shared_data.logs_queue_ptr = logs_queue;

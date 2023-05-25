@@ -97,6 +97,7 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -389,6 +390,7 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
+kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
@@ -416,17 +418,10 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
-mapApply
-mapContains
-mapContainsKeyLike
-mapExtractKeyLike
-mapFilter
 mapFromArrays
-mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
-mapValues
 match
 materialize
 max2
