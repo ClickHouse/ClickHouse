@@ -353,35 +353,35 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
 
-    DataTypePtr column_data_type_ptr = index.sample_block.getDataTypes()[0];
+    DataTypePtr data_type = index.sample_block.getDataTypes()[0];
 
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(column_data_type_ptr.get()))
+    if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
-        TypeIndex nested_type_index = array_type->getNestedType()->getTypeId();
+        TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-                column_data_type_ptr->getName());
+                data_type->getName());
     }
-    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column_data_type_ptr.get()))
+    else if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
-        const DataTypes & nested_types = tuple_type->getElements();
-        for (const auto & type : nested_types)
+        const DataTypes & inner_types = data_type_tuple->getElements();
+        for (const auto & inner_type : inner_types)
         {
-            TypeIndex nested_type_index = type->getTypeId();
+            TypeIndex nested_type_index = inner_type->getTypeId();
             if (!WhichDataType(nested_type_index).isFloat32())
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-                    column_data_type_ptr->getName());
+                    "Unexpected inner_type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
+                    data_type->getName());
         }
     }
     else
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-            column_data_type_ptr->getName());
+            data_type->getName());
 }
 
 }
