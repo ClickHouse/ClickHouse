@@ -30,6 +30,8 @@ public:
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
 private:
+    ssize_t readFromSocket();
+
     AsyncCallback async_callback;
     std::string socket_description;
 };

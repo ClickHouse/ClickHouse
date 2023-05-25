@@ -35,6 +35,8 @@ protected:
     Poco::Net::SocketAddress our_address;
 
 private:
+    ssize_t writeToSocket(char * data, size_t size);
+
     AsyncCallback async_callback;
     std::string socket_description;
 };

@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Poco/Net/SecureStreamSocket.h>
 
 namespace ProfileEvents
 {
@@ -49,16 +50,18 @@ bool ReadBufferFromPocoSocket::nextImpl()
     {
         CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
 
-        /// If async_callback is specified, and read will block, run async_callback and try again later.
-        /// It is expected that file descriptor may be polled externally.
-        /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR))
-            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
-
         if (internal_buffer.size() > INT_MAX)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+        bytes_read = readFromSocket();
+
+        /// In case of non-blocking connect for secure socket receiveBytes can return ERR_SSL_WANT_READ,
+        /// in this case we should call receiveBytes again when socket is ready.
+        if (socket.secure())
+        {
+            while (bytes_read == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
+                bytes_read = readFromSocket();
+        }
     }
     catch (const Poco::Net::NetException & e)
     {
@@ -84,6 +87,17 @@ bool ReadBufferFromPocoSocket::nextImpl()
         return false;
 
     return true;
+}
+
+ssize_t ReadBufferFromPocoSocket::readFromSocket()
+{
+    /// If async_callback is specified, and read will block, run async_callback and try again later.
+    /// It is expected that file descriptor may be polled externally.
+    /// Note that receive timeout is not checked here. External code should check it while polling.
+    while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR))
+        async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+
+    return socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
 }
 
 ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)

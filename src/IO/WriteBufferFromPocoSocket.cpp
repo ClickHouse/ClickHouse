@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Poco/Net/SecureStreamSocket.h>
 
 
 namespace ProfileEvents
@@ -62,13 +63,15 @@ void WriteBufferFromPocoSocket::nextImpl()
             if (size > INT_MAX)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-            /// If async_callback is specified, and write will block, run async_callback and try again later.
-            /// It is expected that file descriptor may be polled externally.
-            /// Note that send timeout is not checked here. External code should check it while polling.
-            while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
-                async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+            res = writeToSocket(pos, size);
 
-            res = socket.impl()->sendBytes(pos, static_cast<int>(size));
+            /// In case of non-blocking connect for secure socket sendBytes can return ERR_SSL_WANT_READ,
+            /// in this case we should call sendBytes again when socket is ready.
+            if (socket.secure())
+            {
+                while (res == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
+                    res = writeToSocket(pos, size);
+            }
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -93,6 +96,18 @@ void WriteBufferFromPocoSocket::nextImpl()
 
         bytes_written += res;
     }
+}
+
+ssize_t WriteBufferFromPocoSocket::writeToSocket(char * data, size_t size)
+{
+    /// If async_callback is specified, and write will block, run async_callback and try again later.
+    /// It is expected that file descriptor may be polled externally.
+    /// Note that send timeout is not checked here. External code should check it while polling.
+    while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+        async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+
+    return socket.impl()->sendBytes(data, static_cast<int>(size));
+
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
