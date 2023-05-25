@@ -272,6 +272,7 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
     // Pass 2. Schedule all incoming jobs
     for (const auto & job : jobs)
     {
+        chassert(job->pool() < pools.size());
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             scheduled_jobs.try_emplace(job);
@@ -359,6 +360,7 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
 {
     if (!job)
         return;
+    chassert(new_pool < pools.size());
     DENY_ALLOCATIONS_IN_SCOPE;
     std::unique_lock lock{mutex};
     prioritize(job, new_pool, lock);
