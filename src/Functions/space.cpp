@@ -115,7 +115,7 @@ public:
             checkRepeatTime(times);
 
             if (pos + times + 1 > res_chars.size())
-                res_chars.resize(std::max(2 * res_chars.size(), pos + times + 1));
+                res_chars.resize(std::max(2 * res_chars.size(), static_cast<size_t>(pos + times + 1)));
 
             memset(res_chars.begin() + pos, space, times);
             pos += times;
