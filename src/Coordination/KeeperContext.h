@@ -40,6 +40,7 @@ public:
     void setLogDisk(DiskPtr disk);
 
     DiskPtr getSnapshotDisk() const;
+    std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
 
     DiskPtr getStateFileDisk() const;
@@ -69,6 +70,7 @@ private:
     Storage state_file_storage;
 
     std::vector<std::string> old_log_disk_names;
+    std::vector<std::string> old_snapshot_disk_names;
 
     bool standalone_keeper;
 };
