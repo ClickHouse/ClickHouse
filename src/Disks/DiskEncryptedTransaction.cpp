@@ -88,9 +88,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
     FileEncryption::Header header;
     String key;
     UInt64 old_file_size = 0;
-    if (mode == WriteMode::Append && delegate_disk->exists(path))
+    if (mode == WriteMode::Append && delegate_disk->exists(wrapped_path))
     {
-        old_file_size = delegate_disk->getFileSize(path);
+        size_t size = delegate_disk->getFileSize(wrapped_path);
+        old_file_size = size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
         if (old_file_size)
         {
             /// Append mode: we continue to use the same header.
