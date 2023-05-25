@@ -15,6 +15,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace ApproximateNearestNeighbour
 {
 
@@ -68,16 +78,6 @@ uint64_t AnnoyIndex<Distance>::getNumOfDimensions() const
 
 }
 
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int INCORRECT_DATA;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-}
 
 template <typename Distance>
 MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
