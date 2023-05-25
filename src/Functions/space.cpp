@@ -27,9 +27,9 @@ private:
     static constexpr auto space = ' ';
 
     /// Safety threshold against DoS.
-    static inline void checkRepeatTime(UInt64 repeat_time)
+    static inline void checkRepeatTime(size_t repeat_time)
     {
-        static constexpr UInt64 max_repeat_times = 1'000'000;
+        static constexpr auto max_repeat_times = 1'000'000uz;
         if (repeat_time > max_repeat_times)
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", repeat_time, max_repeat_times);
     }
@@ -114,8 +114,8 @@ public:
 
             checkRepeatTime(times);
 
-            if (res_chars.size() + times + 1 >= res_chars.capacity())
-                res_chars.resize(2 * res_chars.capacity());
+            if (pos + times + 1 > res_chars.size())
+                res_chars.resize(std::max(2 * res_chars.size(), pos + times + 1));
 
             memset(res_chars.begin() + pos, space, times);
             pos += times;
