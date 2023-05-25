@@ -56,7 +56,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     using AnnoyIndex = ApproximateNearestNeighbour::AnnoyIndex<Distance>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
-    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t number_of_trees);
+    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t trees);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
     bool empty() const override { return !index || index->get_n_items() == 0; }
@@ -65,7 +65,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
-    const uint64_t number_of_trees;
+    const uint64_t trees;
     AnnoyIndexPtr index;
 };
 
@@ -100,7 +100,7 @@ class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
 
-    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& distance_name_);
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t trees_, const String& distance_name_);
 
     ~MergeTreeIndexAnnoy() override = default;
 
@@ -112,7 +112,7 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
 private:
-    const uint64_t number_of_trees;
+    const uint64_t trees;
     const String distance_name;
 };
 
