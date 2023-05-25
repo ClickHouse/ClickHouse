@@ -10,8 +10,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
-#include <Poco/Net/SecureStreamSocket.h>
 
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -65,6 +67,7 @@ void WriteBufferFromPocoSocket::nextImpl()
 
             res = writeToSocket(pos, size);
 
+#if USE_SSL
             /// In case of non-blocking connect for secure socket sendBytes can return ERR_SSL_WANT_WRITE,
             /// in this case we should call sendBytes again when socket is ready.
             if (socket.secure())
@@ -72,6 +75,7 @@ void WriteBufferFromPocoSocket::nextImpl()
                 while (res == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
                     res = writeToSocket(pos, size);
             }
+#endif
         }
         catch (const Poco::Net::NetException & e)
         {
