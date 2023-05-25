@@ -65,7 +65,7 @@ void WriteBufferFromPocoSocket::nextImpl()
 
             res = writeToSocket(pos, size);
 
-            /// In case of non-blocking connect for secure socket sendBytes can return ERR_SSL_WANT_READ,
+            /// In case of non-blocking connect for secure socket sendBytes can return ERR_SSL_WANT_WRITE,
             /// in this case we should call sendBytes again when socket is ready.
             if (socket.secure())
             {
