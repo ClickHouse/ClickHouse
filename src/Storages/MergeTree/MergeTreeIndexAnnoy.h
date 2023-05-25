@@ -21,7 +21,7 @@ class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy
     using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 public:
-    explicit AnnoyIndex(uint64_t dim) : Base::AnnoyIndex(dim) {}
+    explicit AnnoyIndex(uint64_t dim);
     void serialize(WriteBuffer& ostr) const;
     void deserialize(ReadBuffer& istr);
     uint64_t getNumOfDimensions() const;
@@ -100,11 +100,7 @@ class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
 
-    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& distance_name_)
-        : IMergeTreeIndex(index_)
-        , number_of_trees(number_of_trees_)
-        , distance_name(distance_name_)
-    {}
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& distance_name_);
 
     ~MergeTreeIndexAnnoy() override = default;
 
