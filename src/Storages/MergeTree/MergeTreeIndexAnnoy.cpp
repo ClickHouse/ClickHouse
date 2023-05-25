@@ -219,17 +219,11 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     if (distance_name == "L2Distance")
-    {
         return getUsefulRangesImpl<::Annoy::Euclidean>(idx_granule);
-    }
     else if (distance_name == "cosineDistance")
-    {
         return getUsefulRangesImpl<::Annoy::Angular>(idx_granule);
-    }
     else
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
-    }
 }
 
 
@@ -297,26 +291,18 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
     if (distance_name == "L2Distance")
-    {
         return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block);
-    }
-    if (distance_name == "cosineDistance")
-    {
+    else if (distance_name == "cosineDistance")
         return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular> >(index.name, index.sample_block);
-    }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
     if (distance_name == "L2Distance")
-    {
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block, number_of_trees);
-    }
     if (distance_name == "cosineDistance")
-    {
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular> >(index.name, index.sample_block, number_of_trees);
-    }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
@@ -331,16 +317,10 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
     uint64_t param = 100;
     String distance_name = "L2Distance";
     if (!index.arguments.empty() && !index.arguments[0].tryGet<uint64_t>(param))
-    {
         if (!index.arguments[0].tryGet<String>(distance_name))
-        {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse first argument");
-        }
-    }
     if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(distance_name))
-    {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse second argument");
-    }
     return std::make_shared<MergeTreeIndexAnnoy>(index, param, distance_name);
 }
 
@@ -381,18 +361,14 @@ static void assertIndexColumnsType(const Block & header)
 void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 2)
-    {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
-    }
+
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
-    {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String.");
-    }
+
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-    {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String.");
-    }
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
@@ -401,4 +377,5 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 }
 
 }
+
 #endif // ENABLE_ANNOY
