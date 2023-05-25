@@ -777,37 +777,37 @@ void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
     keeper_stats.updateLatency(process_time_ms);
 }
 
-static uint64_t getDirSize(const fs::path & dir)
+static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
 {
     checkStackSize();
-    if (!fs::exists(dir))
-        return 0;
 
-    fs::directory_iterator it(dir);
-    fs::directory_iterator end;
-
-    uint64_t size{0};
-    while (it != end)
+    uint64_t size = 0;
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (it->is_regular_file())
-            size += fs::file_size(*it);
+        if (disk->isFile(it->path()))
+            size += disk->getFileSize(it->path());
         else
-            size += getDirSize(it->path());
-        ++it;
+            size += getTotalSize(disk, it->path());
     }
+
     return size;
 }
 
 uint64_t KeeperDispatcher::getLogDirSize() const
 {
-    //return getDirSize(configuration_and_settings->log_storage_path);
-    return 0;
+    auto log_disk = keeper_context->getLogDisk();
+    auto size = getTotalSize(log_disk);
+
+    auto current_log_disk = keeper_context->getCurrentLogDisk();
+    if (log_disk != current_log_disk)
+        size += getTotalSize(current_log_disk);
+
+    return size;
 }
 
 uint64_t KeeperDispatcher::getSnapDirSize() const
 {
-    //return getDirSize(configuration_and_settings->snapshot_storage_path);
-    return 0;
+    return getTotalSize(keeper_context->getSnapshotDisk());
 }
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
