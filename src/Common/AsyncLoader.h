@@ -59,7 +59,7 @@ public:
 
     // Returns pool in which the job is executing (was executed). May differ from initial pool and from current pool.
     // Value is only valid (and constant) after execution started.
-    size_t execution_pool() const;
+    size_t executionPool() const;
 
     // Returns current pool of the job. May differ from initial and execution pool.
     // This value is intended for creating new jobs during this job execution.
