@@ -1269,7 +1269,6 @@ try
                 global_context->loadOrReloadDictionaries(*config);
                 global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
             }
-            global_context->loadOrReloadModels(*config);
 
             global_context->setRemoteHostFilter(*config);
 

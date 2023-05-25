@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <utility>
 #include <Interpreters/DictionariesMetaStoreFDB.h>
+#include <Interpreters/FunctionsMetaStoreFDB.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>

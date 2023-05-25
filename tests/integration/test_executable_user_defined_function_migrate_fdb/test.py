@@ -9,16 +9,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    'node', 
-    stay_alive=True,
-    # main_configs=['config/foundationdb.xml'],
-    with_foundationdb=True
- )
-
-
-
 def skip_test_msan(instance):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with vfork")
@@ -33,22 +23,27 @@ config = '''<clickhouse>
 </clickhouse>'''
 
 @pytest.fixture(scope="module")
-def started_cluster():
+def started_cluster(request):
     try:
-        cluster.start()
+        cluster = ClickHouseCluster(__file__)
+        node = cluster.add_instance(
+            'node',
+            with_foundationdb=True,
+            stay_alive=True
+        )
+        cluster.start(destroy_dirs=True)
+        node = cluster.instances['node']
         node.replace_config(func_xml, config)
-
         copy_file_to_container(os.path.join(SCRIPT_DIR, 'functions/.'), '/etc/clickhouse-server/functions', node.docker_id)
         copy_file_to_container(os.path.join(SCRIPT_DIR, 'user_scripts/.'), '/var/lib/clickhouse/user_scripts', node.docker_id)
-
         node.restart_clickhouse()
-
         yield cluster
 
     finally:
         cluster.shutdown()
 
 def test_executable_function_python(started_cluster):
+    node = started_cluster.instances["node"]
     # Boot without fdb
     skip_test_msan(node)
     assert node.query("SELECT test_function_python(toUInt64(1))") == 'Key 1\n'

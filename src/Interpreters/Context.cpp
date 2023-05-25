@@ -2111,8 +2111,8 @@ void Context::tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfigurat
 
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
-    using RepositoryInfo = ExternalLoader::RepositoryInfo;
-    using Repository = IExternalLoaderConfigRepository;
+    using RepoInfo = ExternalLoader::RepositoryInfo;
+    using Repo = IExternalLoaderConfigRepository;
     bool dictionaries_lazy_load = config.getBool("dictionaries_lazy_load", true);
     auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
     std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
@@ -2155,10 +2155,10 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
         std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories = getFDBDictionaryLoaderUnlocked();
         external_dictionaries_loader.setFDBDictionaryRepositories(fdb_dictionary_repositories);
         external_dictionaries_loader.setFDBflag(true);
-        std::vector<std::unique_ptr<Repository>> repos;
+        std::vector<std::unique_ptr<Repo>> repos;
         if (fdb_first_start)
         {
-            std::unordered_map<Repository *, RepositoryInfo> repositories = external_dictionaries_loader.getAllLocalRepositories();
+            std::unordered_map<Repo *, RepoInfo> repositories = external_dictionaries_loader.getAllLocalRepositories();
             fdb_dictionary_repositories->addOneDict(shared->external_dictionaries_config_repository, repositories);
             shared->external_dictionaries_config_repository = nullptr;
         }

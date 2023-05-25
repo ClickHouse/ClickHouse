@@ -137,15 +137,15 @@ std::vector<std::string> FunctionsMetaStoreFDB::split(std::string & str, std::st
     int pos;
     std::vector<std::string> result;
     str += pattern;
-    int size = str.size();
+    int size = static_cast<int>((str).size());
     for (int i = 0; i < size; i++)
     {
-        pos = str.find(pattern, i);
+        pos = static_cast<int>(str.find(pattern, i));
         if (pos < size)
         {
             std::string s = str.substr(i, pos - i);
             result.push_back(s);
-            i = pos + pattern.size() - 1;
+            i = pos + static_cast<int>(pattern.size()) - 1;
         }
     }
     return result;
@@ -167,7 +167,7 @@ std::vector<std::string> FunctionsMetaStoreFDB::splitXML(std::string & xml)
             break;
         }
         loc2 += pattern_end.length();
-        begin = loc2;
+        begin = static_cast<int>(loc2);
         std::string result = "<functions>\n" + xml.substr(loc, loc2 - loc) + "\n</functions>";
         funcs.push_back(result);
     }
