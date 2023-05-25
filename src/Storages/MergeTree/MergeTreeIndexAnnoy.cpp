@@ -345,7 +345,7 @@ static void assertIndexColumnsType(const Block & header)
         if (!WhichDataType(nested_type_index).isFloat32())
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported.",
+                "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
                 column_data_type_ptr->getName());
     }
     else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column_data_type_ptr.get()))
@@ -357,14 +357,14 @@ static void assertIndexColumnsType(const Block & header)
             if (!WhichDataType(nested_type_index).isFloat32())
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported.",
+                    "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
                     column_data_type_ptr->getName());
         }
     }
     else
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported.",
+            "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
             column_data_type_ptr->getName());
 
 }
@@ -376,10 +376,10 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String");
 
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String");
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
