@@ -1005,6 +1005,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             ProcessorProfileLogElement processor_elem;
                             processor_elem.event_time = elem.event_time;
                             processor_elem.event_time_microseconds = elem.event_time_microseconds;
+                            processor_elem.initial_query_id = elem.client_info.initial_query_id;
                             processor_elem.query_id = elem.client_info.current_query_id;
 
                             auto get_proc_id = [](const IProcessor & proc) -> UInt64
