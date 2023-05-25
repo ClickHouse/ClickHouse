@@ -144,7 +144,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         return;
 
     if (index_sample_block.columns() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one column is supported");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
@@ -162,7 +162,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         size_t size = offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
             if (offsets[i + 1] - offsets[i] != size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
         index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
 
