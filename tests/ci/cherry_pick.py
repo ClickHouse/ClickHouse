@@ -261,7 +261,7 @@ close it.
         )
         self.backport_pr = self.repo.create_pull(
             title=title,
-            body=f"Original pull-request {self.pr.url}\n"
+            body=f"Original pull-request {self.pr.html_url}\n"
             f"Cherry-pick pull-request #{self.cherrypick_pr.number}\n\n"
             f"{self.BACKPORT_DESCRIPTION}",
             base=self.name,
