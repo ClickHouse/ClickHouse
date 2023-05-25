@@ -82,8 +82,6 @@ struct ANNQueryInformation
     * spaceDimension(which is targetVector's components count)
     * column
     * objects count from LIMIT clause(for both queries)
-    * settings str, if query has settings section with new 'ann_index_select_query_params' value,
-        than you can get the new value(empty by default) calling method getSettingsStr
     * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
 
     Search query type is also recognized for PREWHERE clause
@@ -121,11 +119,7 @@ public:
     // length's value from LIMIT clause
     UInt64 getLimit() const;
 
-    // value of 'ann_index_select_query_params' if have in SETTINGS clause, empty string otherwise
-    String getParamsStr() const { return ann_index_select_query_params; }
-
 private:
-
     struct RPNElement
     {
         enum Function
@@ -217,7 +211,6 @@ private:
     std::optional<ANNQueryInformation> query_information;
 
     // Get from settings ANNIndex parameters
-    String ann_index_select_query_params;
     UInt64 index_granularity;
     /// only queries with a lower limit can be considered to avoid memory overflow
     UInt64 limit_restriction;
