@@ -26,6 +26,7 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
+        std::string path_to_archive = "auto";
     };
 
     /// From file descriptor
@@ -85,7 +86,8 @@ public:
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context);
+        ContextPtr context,
+        const std::vector<String> & paths_to_archive = {"auto"});
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
@@ -118,6 +120,7 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
+    std::vector<std::string> paths_to_archive;
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path

@@ -26,7 +26,14 @@ namespace ErrorCodes
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
 {
-    filename = checkAndGetLiteralArgument<String>(arg, "source");
+    String path = checkAndGetLiteralArgument<String>(arg, "source");
+    size_t pos = path.find(" :: ");
+    if (pos == String::npos) {
+        filename = path;
+    } else {
+        path_to_archive = path.substr(0, pos);
+        filename = path.substr(pos + 4, path.size() - pos - 3);
+    }
 }
 
 String ITableFunctionFileLike::getFormatFromFirstArgument()
