@@ -10,7 +10,10 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node1", main_configs=["configs/storage_conf.xml"], with_nginx=True, with_zookeeper=True
+            "node1",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
@@ -277,6 +280,7 @@ def test_unavailable_server(cluster):
         )
         node2.start_clickhouse()
         node2.query("DROP TABLE test0 SYNC")
+
 
 def test_replicated_database(cluster):
     node1 = cluster.instances["node2"]
