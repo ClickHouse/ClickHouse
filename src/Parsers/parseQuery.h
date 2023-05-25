@@ -19,7 +19,7 @@ ASTPtr tryParseQuery(
     size_t max_query_size,          /// If (end - pos) > max_query_size and query is longer than max_query_size then throws "Max query size exceeded".
                                     /// Disabled if zero. Is used in order to check query size if buffer can contains data for INSERT query.
     size_t max_parser_depth,
-    bool skipp_insignificant = true);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    bool skip_insignificant = true);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
 
 
 /// Parse query or throw an exception with error message.
