@@ -594,8 +594,9 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
-if (ENABLE_PRQL)
+if (TARGET ch_rust::prql_lib)
     dbms_target_link_libraries(PUBLIC ch_rust::prql_lib)
+    set(ENABLE_PRQL ON)
 endif ()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
