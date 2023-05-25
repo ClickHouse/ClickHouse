@@ -193,8 +193,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
+
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
     extractMergingAndGatheringColumns(
         global_ctx->storage_columns,
@@ -544,8 +545,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             global_ctx->future_part->parts[part_num],
             column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         pipes.emplace_back(std::move(pipe));
@@ -896,8 +897,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             part,
             global_ctx->merging_column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         if (global_ctx->metadata_snapshot->hasSortingKey())

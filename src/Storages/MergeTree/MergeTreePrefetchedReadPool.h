@@ -57,6 +57,7 @@ private:
     std::future<MergeTreeReaderPtr> createPrefetchedReader(
         const IMergeTreeDataPart & data_part,
         const NamesAndTypesList & columns,
+        const AlterConversionsPtr & alter_conversions,
         const MarkRanges & required_ranges,
         int64_t priority) const;
 
