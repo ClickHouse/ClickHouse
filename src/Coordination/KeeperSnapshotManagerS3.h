@@ -6,11 +6,12 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
+#include <Coordination/KeeperSnapshotManager.h>
+
 #if USE_AWS_S3
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 
-#include <Coordination/KeeperSnapshotManager.h>
 
 #include <string>
 #endif
@@ -62,7 +63,7 @@ public:
     KeeperSnapshotManagerS3() = default;
 
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
-    void uploadSnapshot(const std::string &, [[maybe_unused]] bool async_upload = true) {}
+    void uploadSnapshot(const SnapshotFileInfo &, [[maybe_unused]] bool async_upload = true) {}
 
     void startup(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
 
