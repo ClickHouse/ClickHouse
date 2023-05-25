@@ -1297,7 +1297,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
     configuration.auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
-    configuration.format = collection.getOrDefault<String>("format", "auto");
+    configuration.format = collection.getOrDefault<String>("format", configuration.format);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 
