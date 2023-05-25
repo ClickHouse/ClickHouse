@@ -226,9 +226,9 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     if (distance_name == "L2Distance")
-        return getUsefulRangesImpl<::Annoy::Euclidean>(idx_granule);
+        return getUsefulRangesImpl<Annoy::Euclidean>(idx_granule);
     else if (distance_name == "cosineDistance")
-        return getUsefulRangesImpl<::Annoy::Angular>(idx_granule);
+        return getUsefulRangesImpl<Annoy::Angular>(idx_granule);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
@@ -305,9 +305,9 @@ MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
     if (distance_name == "L2Distance")
-        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean>>(index.name, index.sample_block);
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Euclidean>>(index.name, index.sample_block);
     else if (distance_name == "cosineDistance")
-        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular>>(index.name, index.sample_block);
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Angular>>(index.name, index.sample_block);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
@@ -315,9 +315,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_name == "L2Distance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
     if (distance_name == "cosineDistance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
