@@ -31,7 +31,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFromStorageProgress.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 
@@ -676,8 +676,8 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-    auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-        pool_reader, modified_settings, std::move(s3_impl),
+    auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
+        std::move(s3_impl), pool_reader, modified_settings,
         context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
 
     async_reader->setReadUntilEnd();
@@ -1297,7 +1297,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
     configuration.auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
-    configuration.format = collection.getOrDefault<String>("format", "auto");
+    configuration.format = collection.getOrDefault<String>("format", configuration.format);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 
