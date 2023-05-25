@@ -57,10 +57,12 @@ def test_simple_select(started_cluster):
 
     push_data(client, table, data)
 
+    parameters = "'http://meili1:7700', 'new_table', ''"
+
     node = started_cluster.instances["meili"]
     node.query("DROP TABLE IF EXISTS simple_meili_table")
     node.query(
-        "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili1:7700', 'new_table', '')"
+        f"CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch({parameters})"
     )
 
     assert node.query("SELECT COUNT() FROM simple_meili_table") == "100\n"
@@ -73,7 +75,25 @@ def test_simple_select(started_cluster):
         node.query("SELECT data FROM simple_meili_table WHERE id = 42")
         == hex(42 * 42) + "\n"
     )
+    node.query(
+        f"CREATE TABLE simple_meili_table_auto_schema_engine ENGINE=MeiliSearch({parameters})"
+    )
+    node.query(
+        f"CREATE TABLE simple_meili_table_auto_schema_function AS meilisearch({parameters})"
+    )
+
+    expected = "id\tInt64\t\t\t\t\t\ndata\tString\t\t\t\t\t\n"
+    assert (
+        node.query("DESCRIBE TABLE simple_meili_table_auto_schema_engine") == expected
+    )
+    assert (
+        node.query("DESCRIBE TABLE simple_meili_table_auto_schema_function") == expected
+    )
+
     node.query("DROP TABLE simple_meili_table")
+    node.query("DROP TABLE simple_meili_table_auto_schema_engine")
+    node.query("DROP TABLE simple_meili_table_auto_schema_function")
+
     table.delete()
 
 
