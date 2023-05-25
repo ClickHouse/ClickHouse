@@ -109,10 +109,9 @@ StorageS3Queue::StorageS3Queue(
     , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
-    , is_key_with_globs(s3_configuration.url.key.find_first_of("*?{") != std::string::npos)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
-    if (!is_key_with_globs)
+    if (!withGlobs())
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue engine can read only from url with globs");
     }
