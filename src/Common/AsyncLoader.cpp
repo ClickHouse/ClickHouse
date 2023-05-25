@@ -42,7 +42,7 @@ std::exception_ptr LoadJob::exception() const
     return load_exception;
 }
 
-size_t LoadJob::execution_pool() const
+size_t LoadJob::executionPool() const
 {
     return execution_pool_id;
 }
