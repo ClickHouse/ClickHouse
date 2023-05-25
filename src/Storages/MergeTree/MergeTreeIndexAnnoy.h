@@ -11,25 +11,25 @@ namespace DB
 {
 
 template <typename Distance>
-class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>
+class AnnoyIndexWithSerialization : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>
 {
     using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 public:
-    explicit AnnoyIndex(uint64_t dim);
+    explicit AnnoyIndexWithSerialization(uint64_t dim);
     void serialize(WriteBuffer& ostr) const;
     void deserialize(ReadBuffer& istr);
     uint64_t getNumOfDimensions() const;
 };
 
 template <typename Distance>
-using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex<Distance>>;
+using AnnoyIndexWithSerializationPtr = std::shared_ptr<AnnoyIndexWithSerialization<Distance>>;
 
 template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_, AnnoyIndexPtr<Distance> index_);
+    MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_, AnnoyIndexWithSerializationPtr<Distance> index_);
 
     ~MergeTreeIndexGranuleAnnoy() override = default;
 
@@ -40,7 +40,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
     String index_name;
     Block index_sample_block;
-    AnnoyIndexPtr<Distance> index;
+    AnnoyIndexWithSerializationPtr<Distance> index;
 };
 
 template <typename Distance>
@@ -56,7 +56,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     String index_name;
     Block index_sample_block;
     const uint64_t trees;
-    AnnoyIndexPtr<Distance> index;
+    AnnoyIndexWithSerializationPtr<Distance> index;
 };
 
 
