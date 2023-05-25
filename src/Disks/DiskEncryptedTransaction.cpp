@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
