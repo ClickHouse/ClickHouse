@@ -208,9 +208,9 @@ private:
     std::optional<ApproximateNearestNeighborInformation> query_information;
 
     // Get from settings ANNIndex parameters
-    UInt64 index_granularity;
+    const UInt64 index_granularity;
     /// only queries with a lower limit can be considered to avoid memory overflow
-    UInt64 limit_restriction;
+    const UInt64 limit_restriction;
     bool index_is_useful = false;
 };
 
