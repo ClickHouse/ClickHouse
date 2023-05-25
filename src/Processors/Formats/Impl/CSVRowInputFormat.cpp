@@ -282,7 +282,7 @@ bool CSVFormatReader::readField(
     bool is_last_file_column,
     const String & /*column_name*/)
 {
-    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(RemoveNullable(type))) [[likely]]
+    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
         skipWhitespacesAndTabs(*buf);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
