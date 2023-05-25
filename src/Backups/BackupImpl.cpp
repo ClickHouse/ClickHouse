@@ -15,7 +15,7 @@
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatSeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
