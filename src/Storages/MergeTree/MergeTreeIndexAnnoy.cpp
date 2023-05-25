@@ -205,31 +205,31 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const IndexDescription & /*index*/,
     const SelectQueryInfo & query,
-    const String& distance_name_,
+    const String & distance_function_,
     ContextPtr context)
     : condition(query, context)
-    , distance_name(distance_name_)
+    , distance_function(distance_function_)
 {}
 
 
-bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /* idx_granule */) const
+bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
 }
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue(distance_name);
+    return condition.alwaysUnknownOrTrue(distance_function);
 }
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    if (distance_name == "L2Distance")
+    if (distance_function == "L2Distance")
         return getUsefulRangesImpl<Annoy::Euclidean>(idx_granule);
-    else if (distance_name == "cosineDistance")
+    else if (distance_function == "cosineDistance")
         return getUsefulRangesImpl<Annoy::Angular>(idx_granule);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
 }
 
 
@@ -295,49 +295,48 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     return result_vector;
 }
 
-MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t trees_, const String& distance_name_)
+MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t trees_, const String & distance_function_)
     : IMergeTreeIndex(index_)
     , trees(trees_)
-    , distance_name(distance_name_)
+    , distance_function(distance_function_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
-    if (distance_name == "L2Distance")
+    if (distance_function == "L2Distance")
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Euclidean>>(index.name, index.sample_block);
-    else if (distance_name == "cosineDistance")
+    else if (distance_function == "cosineDistance")
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Angular>>(index.name, index.sample_block);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
-    if (distance_name == "L2Distance")
+    if (distance_function == "L2Distance")
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
-    if (distance_name == "cosineDistance")
+    if (distance_function == "cosineDistance")
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, distance_name, context);
+    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, distance_function, context);
 };
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
     uint64_t trees = 100;
-    String distance_name = "L2Distance";
+    String distance_function = "L2Distance";
 
     if (!index.arguments.empty())
-        distance_name = index.arguments[0].get<String>();
+        distance_function = index.arguments[0].get<String>();
 
     if (index.arguments.size() > 1)
         trees = index.arguments[1].get<uint64_t>();
 
-    return std::make_shared<MergeTreeIndexAnnoy>(index, trees, distance_name);
+    return std::make_shared<MergeTreeIndexAnnoy>(index, trees, distance_function);
 }
 
 void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
