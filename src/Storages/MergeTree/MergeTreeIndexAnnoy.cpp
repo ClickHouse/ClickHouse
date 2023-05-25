@@ -353,16 +353,21 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
 
+    auto throw_unsupported_underlying_column_exception = [](DataTypePtr data_type)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32). Given type: {}",
+            data_type->getName());
+    };
+
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
 
     if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-                data_type->getName());
+            throw_unsupported_underlying_column_exception(data_type);
     }
     else if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
@@ -371,17 +376,11 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
         {
             TypeIndex nested_type_index = inner_type->getTypeId();
             if (!WhichDataType(nested_type_index).isFloat32())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Unexpected inner_type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-                    data_type->getName());
+                throw_unsupported_underlying_column_exception(data_type);
         }
     }
     else
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
-            data_type->getName());
+        throw_unsupported_underlying_column_exception(data_type);
 }
 
 }
