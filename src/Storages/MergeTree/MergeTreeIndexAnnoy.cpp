@@ -340,6 +340,8 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 
 void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
+    /// Check number and type of Annoy index arguments:
+
     if (index.arguments.size() > 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
 
@@ -350,8 +352,12 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String");
 
+    /// Check that the index is created on a single column
+
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
+
+    /// Check data type of indexed column:
 
     auto throw_unsupported_underlying_column_exception = [](DataTypePtr data_type)
     {
