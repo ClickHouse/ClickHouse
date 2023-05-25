@@ -23,9 +23,9 @@ class ASTStorage;
     M(UInt64, s3queue_polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
     M(UInt64, s3queue_polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
     M(UInt64, s3queue_polling_backoff_ms, 0, "Polling backoff", 0) \
-    M(UInt64, s3queue_max_set_size, 1000, "Max set size for tracking processed files in unordered mode in ZooKeeper", 0) \
+    M(UInt64, s3queue_tracked_files_limit, 1000, "Max set size for tracking processed files in unordered mode in ZooKeeper", 0) \
     M(UInt64, \
-      s3queue_max_set_age_s, \
+      s3queue_tracked_file_ttl_sec, \
       0, \
       "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", \
       0) \

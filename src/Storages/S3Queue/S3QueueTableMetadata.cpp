@@ -2,8 +2,9 @@
 
 #if USE_AWS_S3
 
-#    include <IO/Operators.h>
-#    include <IO/ReadBufferFromString.h>
+#    include <Poco/JSON/JSON.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 #    include <Storages/S3Queue/S3QueueSettings.h>
 #    include <Storages/S3Queue/S3QueueTableMetadata.h>
 #    include <Storages/StorageS3.h>
@@ -22,42 +23,41 @@ S3QueueTableMetadata::S3QueueTableMetadata(const StorageS3::Configuration & conf
     format_name = configuration.format;
     after_processing = engine_settings.after_processing.toString();
     mode = engine_settings.mode.toString();
-    s3queue_max_set_size = engine_settings.s3queue_max_set_size;
-    s3queue_max_set_age_s = engine_settings.s3queue_max_set_age_s;
+    s3queue_tracked_files_limit = engine_settings.s3queue_tracked_files_limit;
+    s3queue_tracked_file_ttl_sec = engine_settings.s3queue_tracked_file_ttl_sec;
 }
 
-void S3QueueTableMetadata::write(WriteBuffer & out) const
-{
-    out << "metadata format version: 1\n"
-        << "after processing: " << after_processing << "\n"
-        << "mode: " << mode << "\n"
-        << "s3queue_max_set_size: " << s3queue_max_set_size << "\n"
-        << "s3queue_max_set_age_s: " << s3queue_max_set_age_s << "\n"
-        << "format name: " << format_name << "\n";
-}
 
 String S3QueueTableMetadata::toString() const
 {
-    WriteBufferFromOwnString out;
-    write(out);
-    return out.str();
+    Poco::JSON::Object json;
+    json.set("after_processing", after_processing);
+    json.set("mode", mode);
+    json.set("s3queue_tracked_files_limit", s3queue_tracked_files_limit);
+    json.set("s3queue_tracked_file_ttl_sec", s3queue_tracked_file_ttl_sec);
+    json.set("format_name", format_name);
+
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
 }
 
-void S3QueueTableMetadata::read(ReadBuffer & in)
+void S3QueueTableMetadata::read(const String & s)
 {
-    in >> "metadata format version: 1\n";
-    in >> "after processing: " >> after_processing >> "\n";
-    in >> "mode: " >> mode >> "\n";
-    in >> "s3queue_max_set_size: " >> s3queue_max_set_size >> "\n";
-    in >> "s3queue_max_set_age_s: " >> s3queue_max_set_age_s >> "\n";
-    in >> "format name: " >> format_name >> "\n";
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(s).extract<Poco::JSON::Object::Ptr>();
+    after_processing = json->getValue<String>("after_processing");
+    mode = json->getValue<String>("mode");
+    s3queue_tracked_files_limit = json->getValue<UInt64>("s3queue_tracked_files_limit");
+    s3queue_tracked_file_ttl_sec = json->getValue<UInt64>("s3queue_tracked_file_ttl_sec");
+    format_name = json->getValue<String>("format_name");
 }
 
 S3QueueTableMetadata S3QueueTableMetadata::parse(const String & s)
 {
     S3QueueTableMetadata metadata;
-    ReadBufferFromString buf(s);
-    metadata.read(buf);
+    metadata.read(s);
     return metadata;
 }
 
@@ -80,21 +80,21 @@ void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata
             DB::toString(from_zk.after_processing),
             DB::toString(after_processing));
 
-    if (s3queue_max_set_size != from_zk.s3queue_max_set_size)
+    if (s3queue_tracked_files_limit != from_zk.s3queue_tracked_files_limit)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in max set size. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.s3queue_max_set_size,
-            s3queue_max_set_size);
+            from_zk.s3queue_tracked_files_limit,
+            s3queue_tracked_files_limit);
 
-    if (s3queue_max_set_age_s != from_zk.s3queue_max_set_age_s)
+    if (s3queue_tracked_file_ttl_sec != from_zk.s3queue_tracked_file_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in max set age. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.s3queue_max_set_age_s,
-            s3queue_max_set_age_s);
+            from_zk.s3queue_tracked_file_ttl_sec,
+            s3queue_tracked_file_ttl_sec);
 
     if (format_name != from_zk.format_name)
         throw Exception(

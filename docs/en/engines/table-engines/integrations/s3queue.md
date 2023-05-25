@@ -20,8 +20,8 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [s3queue_polling_min_timeout_ms = 1000,]
     [s3queue_polling_max_timeout_ms = 10000,]
     [s3queue_polling_backoff_ms = 0,]
-    [s3queue_max_set_size = 1000,]
-    [s3queue_max_set_age_s = 0,]
+    [s3queue_tracked_files_limit = 1000,]
+    [s3queue_tracked_file_ttl_sec = 0,]
     [s3queue_polling_size = 50,]
 ```
 
@@ -33,12 +33,39 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will autodetect compression by file extension.
 
+**Example**
+
+```sql
+CREATE TABLE s3queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
+SETTINGS
+    mode = 'ordred';
+```
+
+Using named collections:
+
+``` xml
+<clickhouse>
+    <named_collections>
+        <s3queue_conf>
+            <url>'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*</url>
+            <access_key_id>test<access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </s3queue_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE s3queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue(s3queue_conf, 'CSV', 'gzip')
+SETTINGS
+    mode = 'ordred';
+```
 
 ## Settings {#s3queue-settings}
 
 ### mode {#mode}
-
-Allows to automatically close the connection after query execution, i.e. disable connection reuse.
 
 Possible values:
 
@@ -64,7 +91,7 @@ Possible values:
 
 - String.
 
-Default value: ``.
+Default value: `/`.
 
 ### s3queue_loading_retries {#s3queue_loading_retries}
 
@@ -105,9 +132,10 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_max_set_size {#s3queue_max_set_size}
+### s3queue_tracked_files_limit {#s3queue_tracked_files_limit}
 
-Max set size for tracking processed files in unordered mode in ZooKeeper.
+Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
+If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
 
 Possible values:
 
@@ -115,9 +143,10 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_max_set_age_s {#s3queue_max_set_age_s}
+### s3queue_tracked_file_ttl_sec {#s3queue_tracked_file_ttl_sec}
 
-Maximum number of seconds to store processed files in ZooKeeper node (store forever by default).
+Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+After the specified number of seconds, the file will be re-imported.
 
 Possible values:
 
@@ -128,6 +157,8 @@ Default value: `0`.
 ### s3queue_polling_size {#s3queue_polling_size}
 
 Maximum files to fetch from S3 with SELECT or in background task.
+Engine takes files for processing from S3 in batches.
+We limit the batch size to increase concurrency if multiple table engines with the same `keeper_path` consume files from the same path.
 
 Possible values:
 

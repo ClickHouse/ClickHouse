@@ -112,8 +112,6 @@ StorageS3Queue::StorageS3Queue(
     , is_key_with_globs(s3_configuration.url.key.find_first_of("*?{") != std::string::npos)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
-    LOG_INFO(log, "Init engine");
-
     if (!is_key_with_globs)
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue engine can read only from url with globs");
@@ -138,7 +136,7 @@ StorageS3Queue::StorageS3Queue(
             LOG_INFO(log, "S3Queue engine keeper_path not specified. Use replicated database zookeeper path");
             String base_zookeeper_path = assert_cast<const DatabaseReplicated *>(database.get())->getZooKeeperPath();
             zookeeper_path = zkutil::extractZooKeeperPath(
-                fs::path(base_zookeeper_path) / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
+                fs::path(base_zookeeper_path) / "s3queue" / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
         }
         else
         {
@@ -184,8 +182,8 @@ StorageS3Queue::StorageS3Queue(
         zookeeper_path,
         mode,
         getContext(),
-        s3queue_settings->s3queue_max_set_size.value,
-        s3queue_settings->s3queue_max_set_age_s.value,
+        s3queue_settings->s3queue_tracked_files_limit.value,
+        s3queue_settings->s3queue_tracked_file_ttl_sec.value,
         s3queue_settings->s3queue_loading_retries.value);
 
     auto default_virtuals = NamesAndTypesList{
@@ -506,8 +504,6 @@ void StorageS3Queue::streamToViews()
     std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(1);
-
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -546,7 +542,7 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
 
-    for (size_t i = 0; i < 1000; ++i)
+    for (size_t i = 0; i < zk_create_table_retries; ++i)
     {
         Coordination::Requests ops;
         bool is_first_replica = true;
@@ -638,7 +634,7 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysW
         read_keys,
         s3_configuration.request_settings);
 
-    auto zookeeper_lock = queue_holder->AcquireLock();
+    auto zookeeper_lock = queue_holder->acquireLock();
     S3QueueHolder::S3FilesCollection exclude = queue_holder->getExcludedFiles();
 
     Strings processing_files;
