@@ -704,7 +704,7 @@ TEST(AsyncLoader, DynamicPriorities)
         {
             {
                 std::unique_lock lock{schedule_mutex};
-                schedule += fmt::format("{}{}", self->name, self->execution_pool());
+                schedule += fmt::format("{}{}", self->name, self->executionPool());
             }
 
             if (prioritize && self->name == "C")
@@ -905,7 +905,7 @@ TEST(AsyncLoader, DynamicPools)
 
         auto job_func = [&] (const LoadJobPtr & self)
         {
-            auto pool_id = self->execution_pool();
+            auto pool_id = self->executionPool();
             executing[pool_id]++;
             if (executing[pool_id] > max_threads[0])
                 boosted = true;
