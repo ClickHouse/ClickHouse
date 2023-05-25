@@ -73,8 +73,6 @@
 
 #include <memory>
 #include <random>
-#include <string_view>
-#include <system_error>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
