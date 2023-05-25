@@ -1386,6 +1386,20 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+void Context::addQueryAccessInfo(const Names & partition_names)
+{
+    if (isGlobalContext())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+    }
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    for (const auto & partition_name : partition_names)
+    {
+        query_access_info.partitions.emplace(partition_name);
+    }
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (isGlobalContext())
