@@ -126,7 +126,7 @@ ApproximateNearestNeighborInformation::Type ApproximateNearestNeighborCondition:
 
 bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryInfo & query)
 {
-    // RPN-s for different sections of the query
+    /// RPN-s for different sections of the query
     RPN rpn_prewhere_clause;
     RPN rpn_where_clause;
     RPN rpn_order_by_clause;
@@ -137,47 +137,50 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
     ApproximateNearestNeighborInformation where_info;
     ApproximateNearestNeighborInformation order_by_info;
 
-    // Build rpns for query sections
+    /// Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
 
-    if (select.prewhere()) // If query has PREWHERE clause
+    /// If query has PREWHERE clause
+    if (select.prewhere())
         traverseAST(select.prewhere(), rpn_prewhere_clause);
 
-    if (select.where()) // If query has WHERE clause
+    /// If query has WHERE clause
+    if (select.where())
         traverseAST(select.where(), rpn_where_clause);
 
-    if (select.limitLength()) // If query has LIMIT clause
+    /// If query has LIMIT clause
+    if (select.limitLength())
         traverseAtomAST(select.limitLength(), rpn_limit);
 
     if (select.orderBy()) // If query has ORDERBY clause
         traverseOrderByAST(select.orderBy(), rpn_order_by_clause);
 
-    // Reverse RPNs for conveniences during parsing
+    /// Reverse RPNs for conveniences during parsing
     std::reverse(rpn_prewhere_clause.begin(), rpn_prewhere_clause.end());
     std::reverse(rpn_where_clause.begin(), rpn_where_clause.end());
     std::reverse(rpn_order_by_clause.begin(), rpn_order_by_clause.end());
 
-    // Match rpns with supported types and extract information
+    /// Match rpns with supported types and extract information
     const bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, prewhere_info);
     const bool where_is_valid = matchRPNWhere(rpn_where_clause, where_info);
     const bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, order_by_info);
     const bool limit_is_valid = matchRPNLimit(rpn_limit, limit);
 
-    // Query without a LIMIT clause or with a limit greater than a restriction is not supported
+    /// Query without a LIMIT clause or with a limit greater than a restriction is not supported
     if (!limit_is_valid || limit_restriction < limit)
         return false;
 
-    // Search type query in both sections isn't supported
+    /// Search type query in both sections isn't supported
     if (prewhere_is_valid && where_is_valid)
         return false;
 
-    // Search type should be in WHERE or PREWHERE clause
+    /// Search type should be in WHERE or PREWHERE clause
     if (prewhere_is_valid || where_is_valid)
         query_information = std::move(prewhere_is_valid ? prewhere_info : where_info);
 
     if (order_by_is_valid)
     {
-        // Query with valid where and order by type is not supported
+        /// Query with valid where and order by type is not supported
         if (query_information.has_value())
             return false;
 
@@ -202,7 +205,7 @@ void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN &
     }
 
     RPNElement element;
-    // Get the data behind node
+    /// Get the data behind node
     if (!traverseAtomAST(node, element))
         element.function = RPNElement::FUNCTION_UNKNOWN;
 
@@ -211,10 +214,10 @@ void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN &
 
 bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 {
-    // Match Functions
+    /// Match Functions
     if (const auto * function = node->as<ASTFunction>())
     {
-        // Set the name
+        /// Set the name
         out.func_name = function->name;
 
         if (function->name == "L1Distance" ||
@@ -240,7 +243,7 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
 
         return true;
     }
-    // Match identifier
+    /// Match identifier
     else if (const auto * identifier = node->as<ASTIdentifier>())
     {
         out.function = RPNElement::FUNCTION_IDENTIFIER;
@@ -250,7 +253,7 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
         return true;
     }
 
-    // Check if we have constants behind the node
+    /// Check if we have constants behind the node
     return tryCastToConstType(node, out);
 }
 
@@ -320,20 +323,20 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
             traverseAST(order_by_element->children.front(), rpn);
 }
 
-// Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
+/// Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
 bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
     ann_info.query_type = ApproximateNearestNeighborInformation::Type::Where;
 
-    // WHERE section must have at least 5 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(ReferenceVector(floats))
+    /// WHERE section must have at least 5 expressions
+    /// Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(ReferenceVector(floats))
     if (rpn.size() < 5)
         return false;
 
     auto iter = rpn.begin();
 
-    // Query starts from operator less
+    /// Query starts from operator less
     if (iter->function != RPNElement::FUNCTION_COMPARISON)
         return false;
 
@@ -371,11 +374,11 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
         ann_info.reference_vector.pop_back();
     }
 
-    // query is ok
+    /// query is ok
     return true;
 }
 
-// Returns true and stores ANNExpr if the query has valid ORDERBY clause
+/// Returns true and stores ANNExpr if the query has valid ORDERBY clause
 bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
@@ -391,7 +394,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     return ApproximateNearestNeighborCondition::matchMainParts(iter, end, ann_info);
 }
 
-// Returns true and stores Length if we have valid LIMIT clause in query
+/// Returns true and stores Length if we have valid LIMIT clause in query
 bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 {
     if (rpn.function == RPNElement::FUNCTION_INT_LITERAL)
@@ -403,12 +406,12 @@ bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64
     return false;
 }
 
-/* Matches dist function, referencer vector, column name */
+/// Matches dist function, referencer vector, column name
 bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info)
 {
     bool identifier_found = false;
 
-    // Matches DistanceFunc->[Column]->[Tuple(array)Func]->ReferenceVector(floats)->[Column]
+    /// Matches DistanceFunc->[Column]->[Tuple(array)Func]->ReferenceVector(floats)->[Column]
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
@@ -487,11 +490,11 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
     }
 
-    // Final checks of correctness
+    /// Final checks of correctness
     return identifier_found && !ann_info.reference_vector.empty();
 }
 
-// Gets float or int from AST node
+/// Gets float or int from AST node
 float ApproximateNearestNeighborCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
 {
     if (iter->float_literal.has_value())
