@@ -247,7 +247,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     if (comp_dist && comp_dist.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
-    std::vector<float> target_vec = condition.getTargetVector();
+    std::vector<float> reference_vector = condition.getReferenceVector();
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance>>(idx_granule);
     if (granule == nullptr)
@@ -260,13 +260,13 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
                         "does not match with the dimension in the index ({})",
                         toString(condition.getNumOfDimensions()), toString(annoy->getNumOfDimensions()));
 
-    /// neighbors contain indexes of dots which were closest to target vector
+    /// neighbors contain indexes of dots which were closest to the reference vector
     std::vector<UInt64> neighbors;
     std::vector<Float32> distances;
     neighbors.reserve(limit);
     distances.reserve(limit);
 
-    annoy->get_nns_by_vector(target_vec.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
+    annoy->get_nns_by_vector(reference_vector.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
 
     std::unordered_set<size_t> granule_numbers;
     for (size_t i = 0; i < neighbors.size(); ++i)
