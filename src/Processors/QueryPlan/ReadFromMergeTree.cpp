@@ -1618,6 +1618,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.selected_marks,
         result.selected_ranges);
 
+    // Adding partition info to QueryAccessInfo.
+    if (context->hasQueryContext() && !query_info.is_internal)
+    {
+        Names partition_names;
+        for (const auto & part : result.parts_with_ranges)
+        {
+            partition_names.emplace_back(
+                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
+        }
+        context->getQueryContext()->addQueryAccessInfo(partition_names);
+    }
+
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
