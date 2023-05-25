@@ -140,6 +140,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
+
     if (rows_read == 0)
         return;
 
@@ -153,10 +154,12 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     {
         const auto & data = column_array->getData();
         const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
+
         if (array.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
+
         const auto & offsets = column_array->getOffsets();
-        size_t num_rows = offsets.size();
+        const size_t num_rows = offsets.size();
 
         /// Check all sizes are the same
         size_t size = offsets[0];
@@ -166,8 +169,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 
         index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
 
+        /// Add all rows of block
         index->add_item(index->get_n_items(), array.data());
-        /// add all rows from 1 to num_rows - 1 (this is the same as the beginning of the last element)
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
             index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
     }
@@ -175,6 +178,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     {
         const auto & columns = column_tuple->getColumns();
 
+        /// TODO check if calling index->add_item() directly on the block's tuples is faster than materializing everything
         std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
         for (const auto & column : columns)
         {
@@ -182,9 +186,12 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             for (size_t i = 0; i < pod_array.size(); ++i)
                 data[i].push_back(pod_array[i]);
         }
-        assert(!data.empty());
-        if (!index)
-            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+
+        if (data.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
+
+        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+
         for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
     }
