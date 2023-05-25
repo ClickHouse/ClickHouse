@@ -1,6 +1,7 @@
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Disks/IDisk.h>
 #include <IO/LimitSeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
