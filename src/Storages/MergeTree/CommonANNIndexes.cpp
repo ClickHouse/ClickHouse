@@ -25,19 +25,19 @@ namespace
 {
 
 template <typename Literal>
-void extractTargetVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & target, Literal literal)
+void extraceReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & reference_vector, Literal literal)
 {
-    Float64 float_element_of_target_vector;
-    Int64 int_element_of_target_vector;
+    Float64 float_element_of_reference_vector;
+    Int64 int_element_of_reference_vector;
 
     for (const auto & value : literal.value())
     {
-        if (value.tryGet(float_element_of_target_vector))
-            target.emplace_back(float_element_of_target_vector);
-        else if (value.tryGet(int_element_of_target_vector))
-            target.emplace_back(static_cast<float>(int_element_of_target_vector));
+        if (value.tryGet(float_element_of_reference_vector))
+            reference_vector.emplace_back(float_element_of_reference_vector);
+        else if (value.tryGet(int_element_of_reference_vector))
+            reference_vector.emplace_back(static_cast<float>(int_element_of_reference_vector));
         else
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in reference vector. Only float or int are supported.");
     }
 }
 
@@ -82,17 +82,17 @@ UInt64 ApproximateNearestNeighborCondition::getLimit() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
-std::vector<float> ApproximateNearestNeighborCondition::getTargetVector() const
+std::vector<float> ApproximateNearestNeighborCondition::getReferenceVector() const
 {
     if (index_is_useful && query_information.has_value())
-        return query_information->target;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Target vector was requested for useless or uninitialized index.");
+        return query_information->reference_vector;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Reference vector was requested for useless or uninitialized index.");
 }
 
 size_t ApproximateNearestNeighborCondition::getNumOfDimensions() const
 {
     if (index_is_useful && query_information.has_value())
-        return query_information->target.size();
+        return query_information->reference_vector.size();
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of dimensions was requested for useless or uninitialized index.");
 }
 
@@ -327,7 +327,7 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
     ann_info.query_type = ApproximateNearestNeighborInformation::Type::Where;
 
     // WHERE section must have at least 5 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
+    // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(ReferenceVector(floats))
     if (rpn.size() < 5)
         return false;
 
@@ -363,12 +363,12 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
 
     if (greater_case)
     {
-        if (ann_info.target.size() < 2)
+        if (ann_info.reference_vector.size() < 2)
             return false;
-        ann_info.distance = ann_info.target.back();
+        ann_info.distance = ann_info.reference_vector.back();
         if (ann_info.distance < 0)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", ann_info.distance);
-        ann_info.target.pop_back();
+        ann_info.reference_vector.pop_back();
     }
 
     // query is ok
@@ -403,12 +403,12 @@ bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64
     return false;
 }
 
-/* Matches dist function, target vector, column name */
+/* Matches dist function, referencer vector, column name */
 bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info)
 {
     bool identifier_found = false;
 
-    // Matches DistanceFunc->[Column]->[Tuple(array)Func]->TargetVector(floats)->[Column]
+    // Matches DistanceFunc->[Column]->[Tuple(array)Func]->ReferenceVector(floats)->[Column]
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
@@ -436,13 +436,13 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
-        extractTargetVectorFromLiteral(ann_info.target, iter->tuple_literal);
+        extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extractTargetVectorFromLiteral(ann_info.target, iter->array_literal);
+        extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
         ++iter;
     }
 
@@ -457,12 +457,12 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
         {
-            extractTargetVectorFromLiteral(ann_info.target, iter->tuple_literal);
+            extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
             ++iter;
         }
         else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extractTargetVectorFromLiteral(ann_info.target, iter->array_literal);
+            extraceReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
             ++iter;
         }
         else
@@ -473,7 +473,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     {
         if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
             iter->function == RPNElement::FUNCTION_INT_LITERAL)
-            ann_info.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+            ann_info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
             if (identifier_found)
@@ -488,7 +488,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     }
 
     // Final checks of correctness
-    return identifier_found && !ann_info.target.empty();
+    return identifier_found && !ann_info.reference_vector.empty();
 }
 
 // Gets float or int from AST node
