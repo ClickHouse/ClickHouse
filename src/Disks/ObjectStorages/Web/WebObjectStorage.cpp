@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -189,8 +190,8 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-            reader, read_settings, std::move(web_impl),
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(web_impl), reader, read_settings,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
