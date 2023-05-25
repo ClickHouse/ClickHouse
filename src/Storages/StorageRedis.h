@@ -40,8 +40,6 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
-    static RedisConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
-
 private:
     StorageID table_id;
     RedisConfiguration configuration;

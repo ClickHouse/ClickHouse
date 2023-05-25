@@ -83,6 +83,9 @@ RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisAr
 ///     HASH_MAP: all_columns must have 2 items and the first one is Redis key the second is field, the third is value.
 RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column);
 
+/// parse redis table engine/function configuration from engine_args
+RedisConfiguration getRedisConfiguration(const ASTs & engine_args, ContextPtr context);
+
 /// checking Redis table/table-function when creating
 void checkRedisTableStructure(const ColumnsDescription & columns, const RedisConfiguration & configuration);
 
