@@ -14,19 +14,23 @@ namespace DB
 // mainly for serialization and deserialization of the index
 namespace ApproximateNearestNeighbour
 {
-    using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexMultiThreadedBuildPolicy;
-    // TODO: Support different metrics. List of available metrics can be taken from here:
-    // https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
-    template <typename Distance>
-    class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>
-    {
-        using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
-    public:
-        explicit AnnoyIndex(const uint64_t dim) : Base::AnnoyIndex(dim) {}
-        void serialize(WriteBuffer& ostr) const;
-        void deserialize(ReadBuffer& istr);
-        uint64_t getNumOfDimensions() const;
-    };
+
+using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexMultiThreadedBuildPolicy;
+
+// TODO: Support different metrics. List of available metrics can be taken from here:
+// https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
+template <typename Distance>
+class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>
+{
+    using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
+
+public:
+    explicit AnnoyIndex(const uint64_t dim) : Base::AnnoyIndex(dim) {}
+    void serialize(WriteBuffer& ostr) const;
+    void deserialize(ReadBuffer& istr);
+    uint64_t getNumOfDimensions() const;
+};
+
 }
 
 template <typename Distance>
