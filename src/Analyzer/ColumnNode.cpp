@@ -96,7 +96,7 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
     std::vector<std::string> column_identifier_parts;
 
     auto column_source = getColumnSourceOrNull();
-    if (column_source && options.fully_qualified_identifiers)
+    if (column_source)
     {
         auto node_type = column_source->getNodeType();
         if (node_type == QueryTreeNodeType::TABLE ||
@@ -108,7 +108,8 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
             {
                 column_identifier_parts = {column_source->getAlias()};
             }
-            else if (auto * table_node = column_source->as<TableNode>())
+            else if (auto * table_node = column_source->as<TableNode>();
+                table_node && options.fully_qualified_identifiers)
             {
                 if (!table_node->getTemporaryTableName().empty())
                 {
