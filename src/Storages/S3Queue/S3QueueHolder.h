@@ -12,9 +12,15 @@ namespace DB
 class S3QueueHolder : public WithContext
 {
 public:
+    struct TrackedCollectionItem
+    {
+        String file_path;
+        Int64 timestamp = 0;
+        UInt64 retries_count = 0;
+    };
+
     using S3FilesCollection = std::unordered_set<String>;
-    using ProcessedFiles = std::vector<std::pair<String, Int64>>;
-    using FailedFiles = std::vector<std::pair<String, Int64>>;
+    using TrackedFiles = std::vector<TrackedCollectionItem>;
 
     S3QueueHolder(
         const String & zookeeper_path_,
@@ -30,7 +36,7 @@ public:
     S3FilesCollection getExcludedFiles();
     String getMaxProcessedFile();
 
-    std::shared_ptr<zkutil::EphemeralNodeHolder> AcquireLock();
+    std::shared_ptr<zkutil::EphemeralNodeHolder> acquireLock();
 
     struct S3QueueCollection
     {
@@ -42,7 +48,7 @@ public:
         virtual void parse(const String & s) = 0;
 
     protected:
-        ProcessedFiles files;
+        TrackedFiles files;
 
         void read(ReadBuffer & in);
         void write(WriteBuffer & out) const;
@@ -72,7 +78,7 @@ public:
         S3FilesCollection getFilesWithoutRetries();
 
     private:
-        const UInt64 max_retries_count;
+        UInt64 max_retries_count;
     };
 
 
@@ -93,7 +99,6 @@ private:
     const UUID table_uuid;
     Poco::Logger * log;
 
-    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     S3FilesCollection getFailedFiles();
@@ -101,7 +106,7 @@ private:
     S3FilesCollection getUnorderedProcessedFiles();
     void removeProcessingFile(const String & file_path);
 
-    static S3FilesCollection parseCollection(String & files);
+    S3FilesCollection parseCollection(String & files);
 };
 
 

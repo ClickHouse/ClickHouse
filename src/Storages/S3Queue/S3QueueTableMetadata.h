@@ -20,16 +20,15 @@ struct S3QueueTableMetadata
     String format_name;
     String after_processing;
     String mode;
-    UInt64 s3queue_max_set_size;
-    UInt64 s3queue_max_set_age_s;
+    UInt64 s3queue_tracked_files_limit;
+    UInt64 s3queue_tracked_file_ttl_sec;
 
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(const StorageS3::Configuration & configuration, const S3QueueSettings & engine_settings);
 
-    void read(ReadBuffer & in);
+    void read(const String & in);
     static S3QueueTableMetadata parse(const String & s);
 
-    void write(WriteBuffer & out) const;
     String toString() const;
 
     void checkEquals(const S3QueueTableMetadata & from_zk) const;

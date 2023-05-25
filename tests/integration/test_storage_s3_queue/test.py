@@ -621,8 +621,8 @@ def test_max_set_age(started_cluster):
             SETTINGS
                 mode = 'unordered',
                 keeper_path = '/clickhouse/test_set_age',
-                s3queue_max_set_size = 10,
-                s3queue_max_set_age_s = {max_age};
+                s3queue_tracked_files_limit = 10,
+                s3queue_tracked_file_ttl_sec = {max_age};
         """
     )
 
@@ -820,7 +820,7 @@ def test_max_set_size(started_cluster):
             SETTINGS
                 mode = 'unordered',
                 keeper_path = '/clickhouse/test_set_size',
-                s3queue_max_set_size = {files_to_generate - 1};
+                s3queue_tracked_files_limit = {files_to_generate - 1};
         """
     )
 

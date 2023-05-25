@@ -11,9 +11,9 @@
 
 #    include <Core/BackgroundSchedulePool.h>
 #    include <Storages/IStorage.h>
+#    include <Storages/S3Queue/S3QueueHolder.h>
 #    include <Storages/S3Queue/S3QueueSettings.h>
 #    include <Storages/S3Queue/S3QueueSource.h>
-#    include <Storages/S3Queue/S3QueueHolder.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <IO/CompressionMethod.h>
@@ -128,6 +128,8 @@ private:
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
+
+    const UInt32 zk_create_table_retries = 1000;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
     void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
     const String & getZooKeeperPath() const { return zookeeper_path; }
