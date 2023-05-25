@@ -488,6 +488,21 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
+    bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
+    if (is_plain_merge_tree && settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.parallel_replicas_for_non_replicated_merge_tree)
+    {
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        {
+            LOG_WARNING(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        }
+        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
+        }
+    }
+
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
