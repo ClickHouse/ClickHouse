@@ -7,6 +7,7 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -63,12 +64,12 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         global_context->getFilesystemCacheLog());
 
     /// We use `remove_fs_method` (not `local_fs_method`) because we are about to use
-    /// AsynchronousReadIndirectBufferFromRemoteFS which works by the remote_fs_* settings.
+    /// AsynchronousBoundedReadBuffer which works by the remote_fs_* settings.
     if (modified_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-            reader, modified_settings, std::move(impl),
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(impl), reader, modified_settings,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
