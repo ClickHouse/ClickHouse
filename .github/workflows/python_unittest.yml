@@ -17,10 +17,7 @@ jobs:
         with:
           clear-repository: true
       - name: Print environment variables
-        run: |
-          echo ${{ env.VAULT_URL }}
-          echo "VAULT_PATH: ${{ env.VAULT_PATH }}"
-          echo "VAULT_MOUNT_POINT: ${{ env.VAULT_MOUNT_POINT }}"
+        run: env
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
