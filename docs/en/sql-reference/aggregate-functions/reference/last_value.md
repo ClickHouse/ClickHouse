@@ -3,7 +3,7 @@ slug: /en/sql-reference/aggregate-functions/reference/last_value
 sidebar_position: 8
 ---
 
-# first_value
+# last_value
 
 Selects the last encountered value, similar to `anyLast`, but could accept NULL.
 
