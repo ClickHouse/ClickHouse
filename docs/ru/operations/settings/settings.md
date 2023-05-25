@@ -1706,7 +1706,7 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 Запрос
 
 ```bash
-echo '  string  ' |./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
 ```
 
 Результат
