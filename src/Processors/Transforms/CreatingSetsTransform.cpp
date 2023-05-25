@@ -27,11 +27,11 @@ CreatingSetsTransform::CreatingSetsTransform(
     Block out_header_,
     SubqueryForSet subquery_for_set_,
     SizeLimits network_transfer_limits_,
-    ContextPtr context_)
+    PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
-    , WithContext(context_)
     , subquery(std::move(subquery_for_set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
+    , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
 }
 
@@ -52,14 +52,13 @@ void CreatingSetsTransform::work()
 void CreatingSetsTransform::startSubquery()
 {
     /// Lookup the set in the cache if we don't need to build table.
-    auto ctx = context.lock();
-    if (ctx && ctx->getPreparedSetsCache() && !subquery.table)
+    if (prepared_sets_cache && !subquery.table)
     {
         /// Try to find the set in the cache and wait for it to be built.
         /// Retry if the set from cache fails to be built.
         while (true)
         {
-            auto from_cache = ctx->getPreparedSetsCache()->findOrPromiseToBuild(subquery.key);
+            auto from_cache = prepared_sets_cache->findOrPromiseToBuild(subquery.key);
             if (from_cache.index() == 0)
             {
                 promise_to_build = std::move(std::get<0>(from_cache));
@@ -89,9 +88,11 @@ void CreatingSetsTransform::startSubquery()
     if (subquery.table)
         LOG_TRACE(log, "Filling temporary table.");
 
+    // std::cerr << StackTrace().toString() << std::endl;
+
     if (subquery.table)
         /// TODO: make via port
-        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
+        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), nullptr));
 
     done_with_set = !subquery.set;
     done_with_table = !subquery.table;

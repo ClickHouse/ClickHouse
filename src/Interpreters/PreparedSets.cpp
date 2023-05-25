@@ -101,14 +101,14 @@ String PreparedSetKey::toString() const
 
 /// If the subquery is not associated with any set, create default-constructed SubqueryForSet.
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
-void PreparedSets::addStorageToSubquery(const String & subquery_id, StoragePtr storage)
-{
-    auto it = subqueries.find(subquery_id);
-    if (it == subqueries.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find subquery {}", subquery_id);
+// void PreparedSets::addStorageToSubquery(const String & subquery_id, StoragePtr storage)
+// {
+//     auto it = subqueries.find(subquery_id);
+//     if (it == subqueries.end())
+//         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find subquery {}", subquery_id);
 
-    it->second->addStorage(std::move(storage));
-}
+//     it->second->addStorage(std::move(storage));
+// }
 
 FutureSetPtr PreparedSets::addFromStorage(const PreparedSetKey & key, SetPtr set_)
 {
@@ -132,10 +132,10 @@ FutureSetPtr PreparedSets::addFromTuple(const PreparedSetKey & key, Block block,
     return it->second;
 }
 
-FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery)
+FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, FutureSetPtr external_table_set)
 {
     auto id = subquery.key;
-    auto from_subquery = std::make_shared<FutureSetFromSubquery>(std::move(subquery));
+    auto from_subquery = std::make_shared<FutureSetFromSubquery>(std::move(subquery), std::move(external_table_set));
     auto [it, inserted] = sets.emplace(key, from_subquery);
 
     if (!inserted)
@@ -145,7 +145,7 @@ FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryF
     // std::cerr << "========= PreparedSets::addFromSubquery\n";
     // std::cerr << StackTrace().toString() << std::endl;
 
-    subqueries.emplace(id, std::move(from_subquery));
+    subqueries.emplace_back(SetAndName{.name = id, .set = std::move(from_subquery)});
     return it->second;
 }
 
@@ -176,7 +176,7 @@ FutureSetPtr PreparedSets::getFuture(const PreparedSetKey & key) const
 //     return res;
 // }
 
-PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries(const ContextPtr &)
+PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries()
 {
     auto res = std::move(subqueries);
     subqueries = SubqueriesForSets();
@@ -224,6 +224,36 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     Entry & entry = cache[key];
     entry.future = promise_to_fill_set.get_future();
     return promise_to_fill_set;
+}
+
+SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
+{
+    if (!context->getSettingsRef().use_index_for_in_with_subqueries)
+        return nullptr;
+
+    if (set)
+    {
+        if (set->hasExplicitSetElements())
+            return set;
+
+        return nullptr;
+    }
+
+    if (external_table_set)
+        return set = external_table_set->buildOrderedSetInplace(context);
+
+    auto plan = buildPlan(context, true);
+    if (!plan)
+        return nullptr;
+
+    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+
+    return set;
 }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & context, bool create_ordered_set)
@@ -313,7 +343,8 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
     //block(std::move(block_))
 }
 
-FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_) : subquery(std::move(subquery_)) {}
+FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_)
+    : subquery(std::move(subquery_)), external_table_set(std::move(external_table_set_)) {}
 
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 

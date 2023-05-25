@@ -1405,6 +1405,8 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         if (auto set = data.prepared_sets->getFuture(set_key))
             return set;
 
+        FutureSetPtr external_table_set;
+
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
@@ -1417,6 +1419,9 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
             }
+
+            if (auto tmp_table = data.getContext()->findExternalTable(table_id.getShortName()))
+                external_table_set = tmp_table->future_set;
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
@@ -1438,7 +1443,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             subquery_for_set.createSource(*interpreter);
         }
 
-        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set));
+        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), std::move(external_table_set));
     }
     else
     {

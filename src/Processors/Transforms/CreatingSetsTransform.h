@@ -23,7 +23,7 @@ class PushingPipelineExecutor;
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each subquery.
-class CreatingSetsTransform : public IAccumulatingTransform, WithContext
+class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
@@ -31,7 +31,7 @@ public:
         Block out_header_,
         SubqueryForSet subquery_for_set_,
         SizeLimits network_transfer_limits_,
-        ContextPtr context_);
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     ~CreatingSetsTransform() override;
 
@@ -55,6 +55,7 @@ private:
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;
+    PreparedSetsCachePtr prepared_sets_cache;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

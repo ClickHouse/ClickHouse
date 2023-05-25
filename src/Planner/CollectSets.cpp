@@ -107,7 +107,8 @@ public:
             subquery_for_set.key = planner_context.createSetKey(in_second_argument);
             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
-            sets.addFromSubquery(set_key, std::move(subquery_for_set));
+            /// TODO
+            sets.addFromSubquery(set_key, std::move(subquery_for_set), nullptr);
 
             //planner_context.registerSet(set_key, PlannerSet(in_second_argument));
         }

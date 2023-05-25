@@ -1468,7 +1468,7 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
     {
-        auto subqueries = planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext());
+        auto subqueries = planner_context->getPreparedSets().detachSubqueries();
 
         if (!subqueries.empty())
         {
