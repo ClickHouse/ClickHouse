@@ -328,14 +328,16 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
-    uint64_t param = 100;
+    uint64_t trees = 100;
     String distance_name = "L2Distance";
-    if (!index.arguments.empty() && !index.arguments[0].tryGet<uint64_t>(param))
-        if (!index.arguments[0].tryGet<String>(distance_name))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse first argument");
-    if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(distance_name))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse second argument");
-    return std::make_shared<MergeTreeIndexAnnoy>(index, param, distance_name);
+
+    if (!index.arguments.empty())
+        distance_name = index.arguments[0].get<String>();
+
+    if (index.arguments.size() > 1)
+        trees = index.arguments[1].get<uint64_t>();
+
+    return std::make_shared<MergeTreeIndexAnnoy>(index, trees, distance_name);
 }
 
 void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -345,12 +347,11 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (index.arguments.size() > 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
 
-    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
-        && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String");
+    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::String)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance function argument of Annoy index must be of type String");
 
-    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String");
+    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::UInt64)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Number of trees argument of Annoy index must be UInt64");
 
     /// Check that the index is created on a single column
 
