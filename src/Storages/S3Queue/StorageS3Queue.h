@@ -95,9 +95,9 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-    bool is_key_with_globs = false;
 
     bool supportsSubcolumns() const override;
+    bool withGlobs() const { return s3_configuration.url.key.find_first_of("*?{") != std::string::npos; }
 
     void threadFunc();
     size_t getTableDependentCount() const;
