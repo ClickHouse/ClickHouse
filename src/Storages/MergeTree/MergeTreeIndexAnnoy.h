@@ -15,17 +15,13 @@ namespace DB
 namespace ApproximateNearestNeighbour
 {
 
-using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexMultiThreadedBuildPolicy;
-
-// TODO: Support different metrics. List of available metrics can be taken from here:
-// https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
 template <typename Distance>
-class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>
+class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>
 {
-    using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
+    using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 public:
-    explicit AnnoyIndex(const uint64_t dim) : Base::AnnoyIndex(dim) {}
+    explicit AnnoyIndex(uint64_t dim) : Base::AnnoyIndex(dim) {}
     void serialize(WriteBuffer& ostr) const;
     void deserialize(ReadBuffer& istr);
     uint64_t getNumOfDimensions() const;
@@ -40,10 +36,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleAnnoy(
-        const String & index_name_,
-        const Block & index_sample_block_,
-        AnnoyIndexPtr index_base_);
+    MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_, AnnoyIndexPtr index_);
 
     ~MergeTreeIndexGranuleAnnoy() override = default;
 
@@ -118,8 +111,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
@@ -131,4 +123,4 @@ private:
 
 }
 
-#endif // ENABLE_ANNOY
+#endif
