@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -387,10 +388,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else if (settings.dialect == Dialect::prql && !internal)
         {
             char * sql_query = new char[max_query_size];
+            if (sql_query == nullptr)
+            {
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough ram");
+            }
             memset(sql_query, 0, max_query_size);
             int res = to_sql(begin, sql_query);
             if (res == -1)
             {
+                delete[] sql_query;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
             size_t idx = 0;
@@ -402,7 +408,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
             ParserQuery parser(sql_query_end, settings.allow_settings_after_format_in_insert);
             ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
-            free(sql_query);
+            delete[] sql_query;
         }
         #endif
         else
