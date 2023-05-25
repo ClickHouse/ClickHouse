@@ -148,8 +148,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
-    const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get());
-    if (column_array)
+
+    if (const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get()))
     {
         const auto & data = column_array->getData();
         const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
@@ -171,14 +171,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
             index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
     }
-    else
+    else if (const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get()))
     {
-        /// Other possible type of column is Tuple
-        const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
-
-        if (!column_tuple)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
-
         const auto & columns = column_tuple->getColumns();
 
         std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
@@ -194,6 +188,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         for (const auto& item : data)
             index->add_item(index->get_n_items(), item.data());
     }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
 
     *pos += rows_read;
 }
