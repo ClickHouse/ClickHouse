@@ -9,7 +9,9 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/system_logs_order_by.xml"],
+    main_configs=[
+        "configs/system_logs_order_by.xml"
+    ],
     stay_alive=True,
 )
 
@@ -69,8 +71,8 @@ def test_system_logs_engine_expr(start_cluster):
     node2.query("SYSTEM FLUSH LOGS")
 
     # Check 'engine_full' of system.query_log.
-    expected_result = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = 'policy2', ttl_only_drop_parts = 1"
-    assert expected_result in node2.query(
+    expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'policy2\\', ttl_only_drop_parts = 1"
+    assert expected in node2.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
 
@@ -81,7 +83,7 @@ def test_system_logs_settings_expr(start_cluster):
     node3.query("SYSTEM FLUSH LOGS")
 
     # Check 'engine_full' of system.query_log.
-    expected_result = "MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time, initial_query_id) TTL event_date + toIntervalDay(30) SETTINGS storage_policy = 'policy1', storage_policy = 'policy2', ttl_only_drop_parts = 1"
-    assert expected_result in node3.query(
+    expected = "MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time, initial_query_id) TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'policy1\\', storage_policy = \\'policy2\\', ttl_only_drop_parts = 1"
+    assert expected in node3.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
