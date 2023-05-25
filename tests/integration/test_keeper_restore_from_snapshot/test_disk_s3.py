@@ -10,18 +10,33 @@ import time
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/enable_keeper1.xml", "configs/local_storage_path.xml"],
+    main_configs=[
+        "configs/enable_keeper1.xml",
+        "configs/disk_s3_storage.xml",
+        "configs/keeper1_snapshot_disk.xml",
+    ],
     stay_alive=True,
+    with_minio=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/enable_keeper2.xml", "configs/local_storage_path.xml"],
+    main_configs=[
+        "configs/enable_keeper2.xml",
+        "configs/disk_s3_storage.xml",
+        "configs/keeper2_snapshot_disk.xml",
+    ],
     stay_alive=True,
+    with_minio=True,
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/enable_keeper3.xml", "configs/local_storage_path.xml"],
+    main_configs=[
+        "configs/enable_keeper3.xml",
+        "configs/disk_s3_storage.xml",
+        "configs/keeper3_snapshot_disk.xml",
+    ],
     stay_alive=True,
+    with_minio=True,
 )
 
 from kazoo.client import KazooClient, KazooState
@@ -55,7 +70,7 @@ def stop_zk(zk):
         pass
 
 
-def test_recover_from_snapshot(started_cluster):
+def test_recover_from_snapshot_with_disk_s3(started_cluster):
     try:
         node1_zk = node2_zk = node3_zk = None
         node1_zk = get_fake_zk("node1")

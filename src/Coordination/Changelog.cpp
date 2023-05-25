@@ -616,7 +616,8 @@ Changelog::Changelog(Poco::Logger * log_, LogFileSettings log_file_settings, Kee
     load_from_disk(disk);
 
     auto current_log_disk = getCurrentLogDisk();
-    load_from_disk(current_log_disk);
+    if (disk != current_log_disk)
+        load_from_disk(current_log_disk);
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
