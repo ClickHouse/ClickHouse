@@ -307,7 +307,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Euclidean>>(index.name, index.sample_block);
     else if (distance_function == "cosineDistance")
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Angular>>(index.name, index.sample_block);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
+    std::unreachable();
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
@@ -317,7 +317,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
     if (distance_function == "cosineDistance")
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
+    std::unreachable();
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
@@ -356,6 +356,15 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
+
+    /// Check that a supported metric was passed as first argument
+
+    if (!index.arguments.empty())
+    {
+        String distance_name = index.arguments[0].get<String>();
+        if (distance_name != "L2Distance" && distance_name != "cosineDistance")
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index supports only distance functions 'L2Distance' and 'cosineDistance'. Given distance function: {}", distance_name);
+    }
 
     /// Check data type of indexed column:
 
