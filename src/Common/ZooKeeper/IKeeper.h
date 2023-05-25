@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Coordination/KeeperConstants.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <vector>
 #include <memory>
@@ -466,7 +467,7 @@ public:
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
-    virtual String getConnectedAddress() const = 0;
+    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
