@@ -9,7 +9,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
+
+#if USE_SSL
 #include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 namespace ProfileEvents
 {
