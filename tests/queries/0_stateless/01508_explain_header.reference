@@ -1,0 +1,4 @@
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Header: x UInt8
+  ReadFromStorage (SystemOne)
+  Header: dummy UInt8

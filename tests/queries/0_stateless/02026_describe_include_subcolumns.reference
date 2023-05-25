@@ -1,0 +1,23 @@
+┌─name─┬─type────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─────────────────┬─codec_expression─┬─ttl_expression───────┐
+│ d    │ Date                                                │              │                    │                         │                  │                      │
+│ n    │ Nullable(String)                                    │              │                    │ It is a nullable column │                  │                      │
+│ arr1 │ Array(UInt32)                                       │              │                    │                         │ ZSTD(1)          │                      │
+│ arr2 │ Array(Array(String))                                │              │                    │                         │                  │ d + toIntervalDay(1) │
+│ t    │ Tuple(s String, a Array(Tuple(a UInt32, b UInt32))) │              │                    │                         │ ZSTD(1)          │                      │
+└──────┴─────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────────────────────┴──────────────────┴──────────────────────┘
+┌─name───────┬─type────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─────────────────┬─codec_expression─┬─ttl_expression───────┬─is_subcolumn─┐
+│ d          │ Date                                                │              │                    │                         │                  │                      │            0 │
+│ n          │ Nullable(String)                                    │              │                    │ It is a nullable column │                  │                      │            0 │
+│ arr1       │ Array(UInt32)                                       │              │                    │                         │ ZSTD(1)          │                      │            0 │
+│ arr2       │ Array(Array(String))                                │              │                    │                         │                  │ d + toIntervalDay(1) │            0 │
+│ t          │ Tuple(s String, a Array(Tuple(a UInt32, b UInt32))) │              │                    │                         │ ZSTD(1)          │                      │            0 │
+│ n.null     │ UInt8                                               │              │                    │ It is a nullable column │                  │                      │            1 │
+│ arr1.size0 │ UInt64                                              │              │                    │                         │                  │                      │            1 │
+│ arr2.size0 │ UInt64                                              │              │                    │                         │                  │ d + toIntervalDay(1) │            1 │
+│ arr2.size1 │ Array(UInt64)                                       │              │                    │                         │                  │ d + toIntervalDay(1) │            1 │
+│ t.s        │ String                                              │              │                    │                         │ ZSTD(1)          │                      │            1 │
+│ t.a        │ Array(Tuple(a UInt32, b UInt32))                    │              │                    │                         │                  │                      │            1 │
+│ t.a.size0  │ UInt64                                              │              │                    │                         │                  │                      │            1 │
+│ t.a.a      │ Array(UInt32)                                       │              │                    │                         │ ZSTD(1)          │                      │            1 │
+│ t.a.b      │ Array(UInt32)                                       │              │                    │                         │ ZSTD(1)          │                      │            1 │
+└────────────┴─────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────────────────────┴──────────────────┴──────────────────────┴──────────────┘

@@ -1,0 +1,13 @@
+performing test: select
+1	2	3
+performing test: union_all
+1	2
+3	4
+performing test: bad_union_all
+query failed
+performing test: describe_table
+dummy	UInt8					
+performing test: clickhouse-local
+2	3
+performing test: http
+query failed

@@ -1,0 +1,2 @@
+clickhouse_add_executable (names_and_types_fuzzer names_and_types_fuzzer.cpp)
+target_link_libraries (names_and_types_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})

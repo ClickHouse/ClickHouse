@@ -1,0 +1,81 @@
+-- { echo }
+select * from remote('127.1', 'system.one') settings log_queries=1, log_comment='127.1 db.name literal' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.1 db.name literal' and current_database = currentDatabase()
+    );
+0
+select * from remote('127.1', 'system', 'one') settings log_queries=1, log_comment='127.1 db,name literal' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.1 db,name literal' and current_database = currentDatabase()
+    );
+0
+select * from remote('127.1', system.one) settings log_queries=1, log_comment='127.1 db.name identifier' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.1 db.name identifier' and current_database = currentDatabase()
+    );
+0
+select * from remote('127.1', system, one) settings log_queries=1, log_comment='127.1 db,name identifier' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.1 db,name identifier' and current_database = currentDatabase()
+    );
+0
+select * from remote('127.2', 'system.one') settings log_queries=1, log_comment='127.2 db.name literal' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.2 db.name literal' and current_database = currentDatabase()
+    );
+1
+select * from remote('127.2', 'system', 'one') settings log_queries=1, log_comment='127.2 db,name literal' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.2 db,name literal' and current_database = currentDatabase()
+    );
+1
+select * from remote('127.2', system.one) settings log_queries=1, log_comment='127.2 db.name identifier' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.2 db.name identifier' and current_database = currentDatabase()
+    );
+1
+select * from remote('127.2', system, one) settings log_queries=1, log_comment='127.2 db,name identifier' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '127.2 db,name identifier' and current_database = currentDatabase()
+    );
+1

@@ -1,0 +1,11 @@
+<yandex>
+    <users>
+        <test_dns>
+            <password/>
+            <networks>
+                <host_regexp>test1\.example\.com$</host_regexp>
+            </networks>
+            <profile>default</profile>
+        </test_dns>
+    </users>
+</yandex>

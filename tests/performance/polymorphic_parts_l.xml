@@ -1,0 +1,35 @@
+<test>
+    <create_query>
+        CREATE TABLE hits_wide AS hits_10m_single ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE hits_compact AS hits_10m_single ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS min_bytes_for_wide_part = '10M'
+    </create_query>
+    <create_query>
+       CREATE TABLE hits_buffer AS hits_10m_single 
+       ENGINE = Buffer(default, hits_wide, 1, 0, 0, 10000, 10000, 0, 0)
+    </create_query>
+
+    <!-- Emulate writing many parts with 1000 rows, because single insert query is too fast -->
+    <settings>
+        <max_block_size>1000</max_block_size>
+        <min_insert_block_size_rows>1000</min_insert_block_size_rows>
+    </settings>
+
+    <!-- 100 parts -->
+    <query>INSERT INTO hits_wide(UserID)    SELECT rand() FROM  numbers(100000)</query>
+    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM  numbers(100000)</query>
+    <query>INSERT INTO hits_buffer(UserID)  SELECT rand() FROM numbers(100000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS hits_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_buffer</drop_query>
+</test>

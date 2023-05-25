@@ -1,0 +1,9 @@
+<clickhouse>
+  <named_collections>
+    <kafka1>
+        <kafka_broker_list>kafka1:19092</kafka_broker_list>
+        <kafka_topic_list>conf</kafka_topic_list>
+        <kafka_group_name>conf</kafka_group_name>
+    </kafka1>
+  </named_collections>
+</clickhouse>

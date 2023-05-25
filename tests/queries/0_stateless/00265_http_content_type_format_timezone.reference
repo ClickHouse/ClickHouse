@@ -1,0 +1,21 @@
+< Content-Type: application/json; charset=UTF-8
+< X-ClickHouse-Format: JSONCompact
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: application/json; charset=UTF-8
+< X-ClickHouse-Format: JSON
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: text/tab-separated-values; charset=UTF-8
+< X-ClickHouse-Format: TabSeparated
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: text/tab-separated-values; charset=UTF-8
+< X-ClickHouse-Format: TabSeparated
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: text/plain; charset=UTF-8
+< X-ClickHouse-Format: Vertical
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: application/octet-stream
+< X-ClickHouse-Format: Native
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
+< Content-Type: application/octet-stream
+< X-ClickHouse-Format: RowBinary
+< X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE

@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+from socket import socket, AF_INET, SOCK_STREAM
+import os
+
+
+EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
+TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
+
+
+def main():
+    host = os.environ["CLICKHOUSE_HOST"]
+    port = int(os.environ["CLICKHOUSE_PORT_HTTP"])
+
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect((host, port))
+    sock.settimeout(60)
+    s = "POST /play HTTP/1.1\r\n"
+    s += "Host: %s\r\n" % host
+    s += "Content-type: multipart/form-data\r\n"
+    s += "Transfer-encoding: chunked\r\n"
+    s += "\r\n"
+    s += "ffffffffffffffff"
+    s += "\r\n"
+    s += "X" * 100000
+    sock.sendall(s.encode())
+    data = sock.recv(10000).decode()
+    sock.close()
+
+    lines = data.splitlines()
+
+    print(lines.pop(0))
+
+    headers = {}
+    for x in lines:
+        x = x.strip()
+        if not x:
+            continue
+        tokens = x.split(":", 1)
+        if len(tokens) < 2:
+            continue
+        key, val = tokens
+        headers[key.strip()] = val.strip()
+
+    print("encoding type", headers[TRANSFER_ENCODING_HEADER])
+    print("error code", headers[EXCEPTION_CODE_HEADER])
+
+
+if __name__ == "__main__":
+    main()

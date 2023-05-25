@@ -1,0 +1,3 @@
+<clickhouse>
+    <dictionaries_config>/etc/clickhouse-server/dictionaries/*.xml</dictionaries_config>
+</clickhouse>

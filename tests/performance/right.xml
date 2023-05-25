@@ -1,0 +1,13 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>right(URL, 16)</value>
+               <value>substring(URL, greatest(minus(plus(length(URL), 1), 16), 1))</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func})</query>
+</test>

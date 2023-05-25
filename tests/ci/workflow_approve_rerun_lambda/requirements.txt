@@ -1,0 +1,3 @@
+requests<2.30
+PyJWT
+cryptography<38

@@ -1,0 +1,1 @@
+SELECT arrayJoin(['Hello', 'Goodbye'])

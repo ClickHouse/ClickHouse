@@ -1,0 +1,37 @@
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <reserved_log_items>5</reserved_log_items>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+                <priority>3</priority>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>node2</hostname>
+                <port>9234</port>
+                <priority>2</priority>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>9234</port>
+                <priority>1</priority>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

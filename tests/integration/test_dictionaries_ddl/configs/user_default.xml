@@ -1,0 +1,10 @@
+<clickhouse>
+    <users>
+        <default>
+            <allow_databases>
+                <database>default</database>
+                <database>test</database>
+            </allow_databases>
+        </default>
+    </users>
+</clickhouse>
