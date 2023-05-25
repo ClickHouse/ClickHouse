@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_SSL
+
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -251,3 +255,5 @@ private:
 };
 
 }
+
+#endif
