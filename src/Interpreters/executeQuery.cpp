@@ -78,7 +78,9 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
+#ifdef ENABLE_RUST
 #include <prql.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -381,6 +383,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
+        #ifdef ENABLE_RUST
         else if (settings.dialect == Dialect::prql && !internal)
         {
             char * sql_query = new char[max_query_size];
@@ -401,6 +404,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
             free(sql_query);
         }
+        #endif
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
