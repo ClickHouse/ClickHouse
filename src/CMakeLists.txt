@@ -291,7 +291,6 @@ macro (dbms_target_link_libraries)
     endforeach ()
 endmacro ()
 
-
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})
         target_include_directories (${module} ${ARGN})
