@@ -7,7 +7,7 @@
 namespace DB
 {
 /* Implements storage in the Redis.
- * Use ENGINE = Redis(host:port, db_index, password, storage_type, conn_pool_size);
+ * Use ENGINE = Redis(host:port, db_index, password, storage_type, pool_size);
  * Read only.
  *
  * Note If storage_type is
