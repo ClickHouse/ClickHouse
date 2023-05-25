@@ -76,8 +76,8 @@ bool traverseASTFilter(
             if (!future_set)
                 return false;
 
-            if (!future_set->isReady())
-                future_set->buildOrderedSetInplace(context);
+            //if (!future_set->isReady())
+            future_set->buildOrderedSetInplace(context);
 
             auto set = future_set->get();
             if (!set)

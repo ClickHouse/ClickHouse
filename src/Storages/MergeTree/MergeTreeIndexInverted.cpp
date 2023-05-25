@@ -661,7 +661,7 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
 
     //std::cerr << "==== Set for MergeTreeConditionInverted" << bool(future_set) << std::endl;
 
-    if (future_set && !future_set->isReady())
+    if (future_set) // && !future_set->isReady())
         future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
 
     ConstSetPtr prepared_set;

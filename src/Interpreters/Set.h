@@ -45,8 +45,22 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Columns & columns);
+    bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
+
+
+    struct SetKeyColumns
+    {
+        //ColumnRawPtrs key_columns;
+        /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
+        Columns key_columns;
+        ColumnPtr null_map_holder;
+        ColumnUInt8::MutablePtr filter;
+    };
+
+    void initSetElements();
+    bool insertFromColumns(const Columns & columns, SetKeyColumns & holder);
+    void appendSetElements(SetKeyColumns & holder);
 
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
@@ -68,7 +82,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements; }
+    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
     Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;

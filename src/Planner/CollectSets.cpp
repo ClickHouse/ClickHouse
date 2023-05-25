@@ -82,7 +82,7 @@ public:
 
             auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
 
-            sets.addFromTuple(set_key, std::move(set));
+            sets.addFromTuple(set_key, std::move(set), settings);
 
             //planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }

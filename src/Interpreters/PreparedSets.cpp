@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 PreparedSetKey PreparedSetKey::forLiteral(Hash hash, DataTypes types_)
@@ -120,9 +121,9 @@ FutureSetPtr PreparedSets::addFromStorage(const PreparedSetKey & key, SetPtr set
     return it->second;
 }
 
-FutureSetPtr PreparedSets::addFromTuple(const PreparedSetKey & key, Block block)
+FutureSetPtr PreparedSets::addFromTuple(const PreparedSetKey & key, Block block, const Settings & settings)
 {
-    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block));
+    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings);
     auto [it, inserted] = sets.emplace(key, std::move(from_tuple));
 
     if (!inserted)
@@ -292,7 +293,25 @@ SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordere
     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
 }
 
-FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) {}
+FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
+{
+    bool create_ordered_set = false;
+    auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
+    set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
+    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+
+    Columns columns;
+    columns.reserve(block.columns());
+    for (const auto & column : block)
+        columns.emplace_back(column.column);
+
+    set_key_columns.filter = ColumnUInt8::create(block.rows());
+
+    set->initSetElements();
+    set->insertFromColumns(columns, set_key_columns);
+    set->finishInsert();
+    //block(std::move(block_))
+}
 
 FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_) : subquery(std::move(subquery_)) {}
 
@@ -301,35 +320,40 @@ FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    auto size_limits = getSizeLimitsForSet(settings, true);
-    fill(size_limits, settings.transform_null_in, true);
+    auto limits = getSizeLimitsForSet(settings, true);
+
+    if (!limits.check(set->getTotalRowCount(), set->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        return nullptr;
+
+    set->initSetElements();
+    set->appendSetElements(set_key_columns);
     return set;
 }
 
-std::unique_ptr<QueryPlan> FutureSetFromTuple::build(const ContextPtr & context)
+std::unique_ptr<QueryPlan> FutureSetFromTuple::build(const ContextPtr &)
 {
-    const auto & settings = context->getSettingsRef();
-    auto size_limits = getSizeLimitsForSet(settings, false);
-    fill(size_limits, settings.transform_null_in, false);
+    // const auto & settings = context->getSettingsRef();
+    // auto size_limits = getSizeLimitsForSet(settings, false);
+    // fill(size_limits, settings.transform_null_in, false);
     return nullptr;
 }
 
-void FutureSetFromTuple::buildForTuple(SizeLimits size_limits, bool transform_null_in)
-{
-    fill(size_limits, transform_null_in, false);
-}
+// void FutureSetFromTuple::buildForTuple(SizeLimits size_limits, bool transform_null_in)
+// {
+//     fill(size_limits, transform_null_in, false);
+// }
 
-void FutureSetFromTuple::fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set)
-{
-    //std::cerr << StackTrace().toString() << std::endl;
+// void FutureSetFromTuple::fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set)
+// {
+//     //std::cerr << StackTrace().toString() << std::endl;
 
-    if (set)
-        return;
+//     if (set)
+//         return;
 
-    set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
-    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-    set->insertFromBlock(block.getColumnsWithTypeAndName());
-    set->finishInsert();
-}
+//     set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
+//     set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+//     set->insertFromBlock(block.getColumnsWithTypeAndName());
+//     set->finishInsert();
+// }
 
 };
