@@ -2,15 +2,15 @@
 
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
-#include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
