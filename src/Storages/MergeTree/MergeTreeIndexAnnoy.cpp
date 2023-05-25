@@ -25,8 +25,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace ApproximateNearestNeighbour
-{
 
 template <typename Distance>
 AnnoyIndex<Distance>::AnnoyIndex(uint64_t dim)
@@ -74,8 +72,6 @@ template<typename Distance>
 uint64_t AnnoyIndex<Distance>::getNumOfDimensions() const
 {
     return Base::get_f();
-}
-
 }
 
 
