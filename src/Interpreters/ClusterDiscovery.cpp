@@ -130,7 +130,7 @@ ClusterDiscovery::ClusterDiscovery(
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
                 /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
-                /* invisible_mode= */ ConfigHelper::getBool(config, prefix + ".invisible")
+                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
             )
         );
     }
