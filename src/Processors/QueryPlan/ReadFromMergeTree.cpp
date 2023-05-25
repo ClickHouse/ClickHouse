@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -99,7 +100,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(
@@ -1615,7 +1615,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
 {
-    bool final = isQueryWithFinal();
+    const bool final = isQueryWithFinal();
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     Names column_names_to_read = result.column_names_to_read;
@@ -1632,8 +1632,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
     if (final)
     {
-        if (is_parallel_reading_from_replicas)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+        chassert(!is_parallel_reading_from_replicas);
 
         if (output_each_partition_through_separate_port)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
@@ -1710,6 +1709,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.total_marks_pk,
         result.selected_marks,
         result.selected_ranges);
+
+    // Adding partition info to QueryAccessInfo.
+    if (context->hasQueryContext() && !query_info.is_internal)
+    {
+        Names partition_names;
+        for (const auto & part : result.parts_with_ranges)
+        {
+            partition_names.emplace_back(
+                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
+        }
+        context->getQueryContext()->addQueryAccessInfo(partition_names);
+    }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);

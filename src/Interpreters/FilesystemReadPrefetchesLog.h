@@ -45,4 +45,6 @@ public:
     using SystemLog<FilesystemReadPrefetchesLogElement>::SystemLog;
 };
 
+using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
+
 }
