@@ -132,30 +132,13 @@ public:
 class FutureSetFromSubquery : public FutureSet
 {
 public:
-    FutureSetFromSubquery(SubqueryForSet subquery_);
+    FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_);
 
     bool isReady() const override { return set != nullptr; }
     bool isFilled() const override { return isReady(); }
     SetPtr get() const override { return set; }
 
-    SetPtr buildOrderedSetInplace(const ContextPtr & context) override
-    {
-        if (!context->getSettingsRef().use_index_for_in_with_subqueries)
-            return nullptr;
-
-        auto plan = buildPlan(context, true);
-        if (!plan)
-            return nullptr;
-
-        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-
-        return set;
-    }
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context) override
     {
@@ -167,6 +150,7 @@ public:
 private:
     SetPtr set;
     SubqueryForSet subquery;
+    FutureSetPtr external_table_set;
 
     std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context, bool create_ordered_set);
 };
@@ -244,16 +228,21 @@ struct PreparedSetKey
 class PreparedSets
 {
 public:
-    using SubqueriesForSets = std::unordered_map<String, std::shared_ptr<FutureSetFromSubquery>>;
+    struct SetAndName
+    {
+        String name;
+        std::shared_ptr<FutureSetFromSubquery> set;
+    };
+    using SubqueriesForSets = std::vector<SetAndName>;
 
     // SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
     //                                      SizeLimits set_size_limit, bool transform_null_in);
 
     FutureSetPtr addFromStorage(const PreparedSetKey & key, SetPtr set_);
     FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block, const Settings & settings);
-    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery);
+    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, FutureSetPtr external_table_set);
 
-    void addStorageToSubquery(const String & subquery_id, StoragePtr external_storage);
+    //void addStorageToSubquery(const String & subquery_id, StoragePtr external_storage);
 
     FutureSetPtr getFuture(const PreparedSetKey & key) const;
     //SubqueryForSet & getSubquery(const String & subquery_id);
@@ -262,7 +251,7 @@ public:
     /// Get subqueries and clear them.
     /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
     /// SetPtr would still be available for consumers of PreparedSets.
-    SubqueriesForSets detachSubqueries(const ContextPtr &);
+    SubqueriesForSets detachSubqueries();
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey

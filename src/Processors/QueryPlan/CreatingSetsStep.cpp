@@ -48,7 +48,7 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
+    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context->getPreparedSetsCache());
 }
 
 void CreatingSetStep::updateOutputStream()
@@ -189,7 +189,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
     if (!prepared_sets || prepared_sets->empty())
         return;
 
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(context), context);
+    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(

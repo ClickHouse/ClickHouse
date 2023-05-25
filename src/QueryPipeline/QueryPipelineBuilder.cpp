@@ -569,7 +569,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
-void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, PreparedSetsCachePtr prepared_sets_cache)
 {
     resize(1);
 
@@ -578,7 +578,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, Su
             res_header,
             std::move(subquery_for_set),
             limits,
-            context);
+            std::move(prepared_sets_cache));
 
     InputPort * totals_port = nullptr;
 
