@@ -79,11 +79,13 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
+    size_t buf_size_,
     const S3Settings::RequestSettings & request_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
-    : bucket(bucket_)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
     , upload_settings(request_settings.getUploadSettings())
