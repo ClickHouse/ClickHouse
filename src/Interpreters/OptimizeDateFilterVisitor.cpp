@@ -10,26 +10,25 @@
 namespace DB
 {
 
-ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & converter, const String & column, UInt64 compare_to)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & converter, const String & column, UInt64 year)
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
     if (converter != "toYear") return {};
 
-    UInt64 year = compare_to;
-    String from_date = date_lut.dateToString(date_lut.makeDayNum(year, 1, 1));
-    String to_date = date_lut.dateToString(date_lut.makeDayNum(year, 12, 31));
+    String start_date = date_lut.dateToString(date_lut.makeDayNum(year, 1, 1));
+    String end_date = date_lut.dateToString(date_lut.makeDayNum(year, 12, 31));
 
     if (comparator == "equals")
     {
         return makeASTFunction("and",
                                 makeASTFunction("greaterOrEquals",
                                             std::make_shared<ASTIdentifier>(column),
-                                            std::make_shared<ASTLiteral>(from_date)
+                                            std::make_shared<ASTLiteral>(start_date)
                                             ),
                                 makeASTFunction("lessOrEquals",
                                             std::make_shared<ASTIdentifier>(column),
-                                            std::make_shared<ASTLiteral>(to_date)
+                                            std::make_shared<ASTLiteral>(end_date)
                                             )
                                 );
     }
@@ -38,11 +37,11 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & 
         return makeASTFunction("or",
                                 makeASTFunction("less",
                                             std::make_shared<ASTIdentifier>(column),
-                                            std::make_shared<ASTLiteral>(from_date)
+                                            std::make_shared<ASTLiteral>(start_date)
                                             ),
                                 makeASTFunction("greater",
                                             std::make_shared<ASTIdentifier>(column),
-                                            std::make_shared<ASTLiteral>(to_date)
+                                            std::make_shared<ASTLiteral>(end_date)
                                             )
                                 );
     }
@@ -50,14 +49,14 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & 
     {
         return makeASTFunction(comparator,
                     std::make_shared<ASTIdentifier>(column),
-                    std::make_shared<ASTLiteral>(from_date)
+                    std::make_shared<ASTLiteral>(start_date)
                     );
     }
     else
     {
         return makeASTFunction(comparator,
                     std::make_shared<ASTIdentifier>(column),
-                    std::make_shared<ASTLiteral>(to_date)
+                    std::make_shared<ASTLiteral>(end_date)
                     );
     }
 }
