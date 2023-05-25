@@ -321,10 +321,10 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
 }
 
 // Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
-bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & expr)
+bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
-    expr.query_type = ApproximateNearestNeighborInformation::Type::Where;
+    ann_info.query_type = ApproximateNearestNeighborInformation::Type::Where;
 
     // WHERE section must have at least 5 expressions
     // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
@@ -347,9 +347,9 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL)
             return false;
 
-        expr.distance = getFloatOrIntLiteralOrPanic(iter);
-        if (expr.distance < 0)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", expr.distance);
+        ann_info.distance = getFloatOrIntLiteralOrPanic(iter);
+        if (ann_info.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", ann_info.distance);
 
         ++iter;
 
@@ -358,17 +358,17 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
         return false;
 
     auto end = rpn.end();
-    if (!matchMainParts(iter, end, expr))
+    if (!matchMainParts(iter, end, ann_info))
         return false;
 
     if (greater_case)
     {
-        if (expr.target.size() < 2)
+        if (ann_info.target.size() < 2)
             return false;
-        expr.distance = expr.target.back();
-        if (expr.distance < 0)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", expr.distance);
-        expr.target.pop_back();
+        ann_info.distance = ann_info.target.back();
+        if (ann_info.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", ann_info.distance);
+        ann_info.target.pop_back();
     }
 
     // query is ok
@@ -376,10 +376,10 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
 }
 
 // Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & expr)
+bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
-    expr.query_type = ApproximateNearestNeighborInformation::Type::OrderBy;
+    ann_info.query_type = ApproximateNearestNeighborInformation::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
@@ -388,7 +388,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     auto iter = rpn.begin();
     auto end = rpn.end();
 
-    return ApproximateNearestNeighborCondition::matchMainParts(iter, end, expr);
+    return ApproximateNearestNeighborCondition::matchMainParts(iter, end, ann_info);
 }
 
 // Returns true and stores Length if we have valid LIMIT clause in query
@@ -404,7 +404,7 @@ bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64
 }
 
 /* Matches dist function, target vector, column name */
-bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & expr)
+bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info)
 {
     bool identifier_found = false;
 
@@ -412,22 +412,22 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    expr.metric = castMetricFromStringToType(iter->func_name);
+    ann_info.metric = castMetricFromStringToType(iter->func_name);
     ++iter;
 
-    if (expr.metric == ApproximateNearestNeighborInformation::Metric::Lp)
+    if (ann_info.metric == ApproximateNearestNeighborInformation::Metric::Lp)
     {
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
             iter->function != RPNElement::FUNCTION_INT_LITERAL)
             return false;
-        expr.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
+        ann_info.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
         identifier_found = true;
-        expr.column_name = std::move(iter->identifier.value());
+        ann_info.column_name = std::move(iter->identifier.value());
         ++iter;
     }
 
@@ -436,13 +436,13 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
-        extractTargetVectorFromLiteral(expr.target, iter->tuple_literal);
+        extractTargetVectorFromLiteral(ann_info.target, iter->tuple_literal);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extractTargetVectorFromLiteral(expr.target, iter->array_literal);
+        extractTargetVectorFromLiteral(ann_info.target, iter->array_literal);
         ++iter;
     }
 
@@ -457,12 +457,12 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
         {
-            extractTargetVectorFromLiteral(expr.target, iter->tuple_literal);
+            extractTargetVectorFromLiteral(ann_info.target, iter->tuple_literal);
             ++iter;
         }
         else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extractTargetVectorFromLiteral(expr.target, iter->array_literal);
+            extractTargetVectorFromLiteral(ann_info.target, iter->array_literal);
             ++iter;
         }
         else
@@ -473,12 +473,12 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     {
         if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
             iter->function == RPNElement::FUNCTION_INT_LITERAL)
-            expr.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+            ann_info.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
             if (identifier_found)
                 return false;
-            expr.column_name = std::move(iter->identifier.value());
+            ann_info.column_name = std::move(iter->identifier.value());
             identifier_found = true;
         }
         else
@@ -488,7 +488,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     }
 
     // Final checks of correctness
-    return identifier_found && !expr.target.empty();
+    return identifier_found && !ann_info.target.empty();
 }
 
 // Gets float or int from AST node
