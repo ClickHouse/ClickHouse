@@ -9,9 +9,6 @@
 namespace DB
 {
 
-namespace ApproximateNearestNeighbour
-{
-
 /**
  * Queries for Approximate Nearest Neighbour Search
  * have similar structure:
@@ -25,7 +22,7 @@ namespace ApproximateNearestNeighbour
  *    1) p for LpDistance function
  *    2) distance to compare with (only for where queries)
  */
-struct ANNQueryInformation
+struct ApproximateNearestNeighborInformation
 {
     using Embedding = std::vector<float>;
 
@@ -51,7 +48,7 @@ struct ANNQueryInformation
 };
 
 /**
-    Class ANNCondition, is responsible for recognizing special query types which
+    Class ApproximateNearestNeighborCondition, is responsible for recognizing special query types which
     can be speeded up by ANN Indexes. It parses the SQL query and checks
     if it matches ANNIndexes. The recognizing method - alwaysUnknownOrTrue
     returns false if we can speed up the query, and true otherwise.
@@ -87,10 +84,10 @@ struct ANNQueryInformation
     Search query type is also recognized for PREWHERE clause
 */
 
-class ANNCondition
+class ApproximateNearestNeighborCondition
 {
 public:
-    ANNCondition(const SelectQueryInfo & query_info,
+    ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info,
                     ContextPtr context);
 
     // false if query can be speeded up, true otherwise
@@ -107,12 +104,12 @@ public:
 
     String getColumnName() const;
 
-    ANNQueryInformation::Metric getMetricType() const;
+    ApproximateNearestNeighborInformation::Metric getMetricType() const;
 
     // the P- value if the metric is 'LpDistance'
     float getPValueForLpDistance() const;
 
-    ANNQueryInformation::Type getQueryType() const;
+    ApproximateNearestNeighborInformation::Type getQueryType() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
 
@@ -191,16 +188,16 @@ private:
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
     // Returns true and stores ANNExpr if the query has valid WHERE section
-    static bool matchRPNWhere(RPN & rpn, ANNQueryInformation & expr);
+    static bool matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & expr);
 
     // Returns true and stores ANNExpr if the query has valid ORDERBY section
-    static bool matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr);
+    static bool matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & expr);
 
     // Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /* Matches dist function, target vector, column name */
-    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ANNQueryInformation & expr);
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & expr);
 
     // Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
@@ -208,7 +205,7 @@ private:
     Block block_with_constants;
 
     // true if we have one of two supported query types
-    std::optional<ANNQueryInformation> query_information;
+    std::optional<ApproximateNearestNeighborInformation> query_information;
 
     // Get from settings ANNIndex parameters
     UInt64 index_granularity;
@@ -218,12 +215,10 @@ private:
 };
 
 // condition interface for Ann indexes. Returns vector of indexes of ranges in granule which are useful for query.
-class IMergeTreeIndexConditionAnn : public IMergeTreeIndexCondition
+class IMergeTreeIndexConditionApproximateNearestNeighbor : public IMergeTreeIndexCondition
 {
 public:
     virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const = 0;
 };
-
-}
 
 }
