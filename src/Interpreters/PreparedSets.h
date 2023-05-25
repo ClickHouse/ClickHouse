@@ -80,24 +80,23 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block_);
+    FutureSetFromTuple(Block block, const Settings & settings);
 
-    bool isReady() const override { return set != nullptr; }
+    bool isReady() const override { return true; }
     bool isFilled() const override { return true; }
     SetPtr get() const override { return set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context) override;
+    std::unique_ptr<QueryPlan> build(const ContextPtr &) override;
 
-    void buildForTuple(SizeLimits size_limits, bool transform_null_in);
+///    void buildForTuple(SizeLimits size_limits, bool transform_null_in);
 
 private:
-    Block block;
-
     SetPtr set;
+    Set::SetKeyColumns set_key_columns;
 
-    void fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set);
+    //void fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set);
 };
 
 /// Information on how to build set for the [GLOBAL] IN section.
@@ -145,6 +144,8 @@ public:
             return nullptr;
 
         auto plan = buildPlan(context, true);
+        if (!plan)
+            return nullptr;
 
         auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
@@ -249,7 +250,7 @@ public:
     //                                      SizeLimits set_size_limit, bool transform_null_in);
 
     FutureSetPtr addFromStorage(const PreparedSetKey & key, SetPtr set_);
-    FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block);
+    FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block, const Settings & settings);
     FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery);
 
     void addStorageToSubquery(const String & subquery_id, StoragePtr external_storage);

@@ -127,12 +127,12 @@ public:
         }
 
         auto future_set = column_set->getData();
-        if (!future_set || !future_set->isFilled())
+        if (!future_set || !future_set->isReady())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set passed as the second argument for function '{}'", getName());
 
-        if (auto * for_tuple = typeid_cast<FutureSetFromTuple *>(future_set.get()))
-            if (!for_tuple->isReady())
-                for_tuple->buildForTuple(size_limits, transform_null_in);
+        // if (auto * for_tuple = typeid_cast<FutureSetFromTuple *>(future_set.get()))
+        //     if (!for_tuple->isReady())
+        //         for_tuple->buildForTuple(size_limits, transform_null_in);
 
         auto set = future_set->get();
         auto set_types = set->getDataTypes();

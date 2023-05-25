@@ -625,7 +625,7 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
         return false;
 
     auto future_set = right_argument.tryGetPreparedSet(data_types);
-    if (future_set && !future_set->isReady())
+    if (future_set) // && !future_set->isReady())
         future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
 
     ConstSetPtr prepared_set;

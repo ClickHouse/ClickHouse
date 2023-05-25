@@ -316,7 +316,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
             //std::cerr << "==== Finding set for MergeTreeBF " << bool(future_set) << std::endl;
 
-            if (future_set && !future_set->isReady())
+            if (future_set) // && !future_set->isReady())
             {
                 //std::cerr << "==== not ready, building " << std::endl;
                 future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext());

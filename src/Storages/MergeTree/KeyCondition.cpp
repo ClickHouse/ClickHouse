@@ -1212,11 +1212,11 @@ bool KeyCondition::tryPrepareSetIndex(
 
     // LOG_TRACE(&Poco::Logger::get("KK"), "Found set for {}", right_arg.getColumnName());
 
-    if (!future_set->isReady())
-    {
+    //if (!future_set->isReady())
+    //{
         // LOG_TRACE(&Poco::Logger::get("KK"), "Building set inplace for {}", right_arg.getColumnName());
-        future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
-    }
+    future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    //}
 
     auto prepared_set = future_set->get();
     if (!prepared_set)

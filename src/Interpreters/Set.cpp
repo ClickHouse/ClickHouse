@@ -156,13 +156,18 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     {
         /// Create empty columns with set values in advance.
         /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
-        set_elements.reserve(keys_size);
-        for (const auto & type : set_elements_types)
-            set_elements.emplace_back(type->createColumn());
+        initSetElements();
     }
 
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
+}
+
+void Set::initSetElements()
+{
+    set_elements.reserve(keys_size);
+    for (const auto & type : set_elements_types)
+        set_elements.emplace_back(type->createColumn());
 }
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
@@ -171,10 +176,26 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     cols.reserve(columns.size());
     for (const auto & column : columns)
         cols.emplace_back(column.column);
-    return insertFromBlock(cols);
+    return insertFromColumns(cols);
 }
 
-bool Set::insertFromBlock(const Columns & columns)
+bool Set::insertFromColumns(const Columns & columns)
+{
+    size_t rows = columns.at(0)->size();
+
+    SetKeyColumns holder;
+    /// Filter to extract distinct values from the block.
+    if (fill_set_elements)
+        holder.filter = ColumnUInt8::create(rows);
+
+    bool inserted = insertFromColumns(columns, holder);
+    if (inserted && fill_set_elements)
+        appendSetElements(holder);
+
+    return inserted;
+}
+
+bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
 
@@ -183,15 +204,13 @@ bool Set::insertFromBlock(const Columns & columns)
 
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
-
-    /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
-    Columns materialized_columns;
+    holder.key_columns.reserve(keys_size);
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
-        key_columns.emplace_back(materialized_columns.back().get());
+        holder.key_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
+        key_columns.emplace_back(holder.key_columns.back().get());
     }
 
     size_t rows = columns.at(0)->size();
@@ -202,38 +221,35 @@ bool Set::insertFromBlock(const Columns & columns)
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    /// Filter to extract distinct values from the block.
-    ColumnUInt8::MutablePtr filter;
-    if (fill_set_elements)
-        filter = ColumnUInt8::create(rows);
-
     switch (data.type)
     {
         case SetVariants::Type::EMPTY:
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            insertFromBlockImpl(*data.NAME, key_columns, rows, data, null_map, filter ? &filter->getData() : nullptr); \
+            insertFromBlockImpl(*data.NAME, key_columns, rows, data, null_map, holder.filter ? &holder.filter->getData() : nullptr); \
             break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
 
-    if (fill_set_elements)
-    {
-        for (size_t i = 0; i < keys_size; ++i)
-        {
-            auto filtered_column = key_columns[i]->filter(filter->getData(), rows);
-            if (set_elements[i]->empty())
-                set_elements[i] = filtered_column;
-            else
-                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
-            if (transform_null_in && null_map_holder)
-                set_elements[i]->insert(Null{});
-        }
-    }
-
     return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+}
+
+void Set::appendSetElements(SetKeyColumns & holder)
+{
+    //std::cerr << "========= " << keys_size << ' ' << holder.key_columns.size() << std::endl;
+    size_t rows = holder.key_columns.at(0)->size();
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
+        if (set_elements[i]->empty())
+            set_elements[i] = filtered_column;
+        else
+            set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+        if (transform_null_in && holder.null_map_holder)
+            set_elements[i]->insert(Null{});
+    }
 }
 
 void Set::checkIsCreated() const

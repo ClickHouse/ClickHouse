@@ -458,7 +458,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block);
+    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
 }
 
 class ScopeStack::Index
