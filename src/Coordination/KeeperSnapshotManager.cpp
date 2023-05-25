@@ -612,7 +612,7 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::bu
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
+    existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
     removeOutdatedSnapshotsIfNeeded();
 
     return {snapshot_file_name, disk};
@@ -750,7 +750,7 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
+    existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
     removeOutdatedSnapshotsIfNeeded();
 
     return {snapshot_file_name, disk};
