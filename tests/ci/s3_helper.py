@@ -11,6 +11,7 @@ from typing import List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
+import boto3.s3.transfer as s3transfer  # type: ignore
 
 from env_helper import (
     S3_TEST_REPORTS_BUCKET,
@@ -42,8 +43,26 @@ def _flatten_list(lst):
     return result
 
 
+class Progress:
+    def __init__(self, total_size: int):
+        self._total_size = total_size
+        self._started_at = time.time()
+        self._updated_at = 0.0
+        self._total_transferred = 0
+
+    def __call__(self, size: int) -> None:
+        self._total_transferred += size
+        if (time.time() - self._updated_at) > 5:
+            self._updated_at = time.time()
+            print(
+                f"Processed {self._total_transferred}/{self._total_size} bytes, "
+                f"{int(self._total_transferred * 100 / self._total_size)}%, "
+                f"spent {self._updated_at - self._started_at}"
+            )
+
+
 class S3Helper:
-    max_pool_size = 100
+    max_pool_size = 256
 
     def __init__(self):
         config = botocore.config.Config(max_pool_connections=self.max_pool_size)
@@ -51,6 +70,9 @@ class S3Helper:
         self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
         self.host = S3_URL
         self.download_host = S3_DOWNLOAD
+        self._transfer_config = s3transfer.TransferConfig(
+            use_threads=True, max_concurrency=self.max_pool_size
+        )
 
     def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
         logging.debug(
@@ -130,6 +152,69 @@ class S3Helper:
         else:
             return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
+    def fast_parallel_upload_dir_new(
+        self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
+    ) -> List[str]:
+        all_files = []
+
+        for root, _, files in os.walk(dir_path):
+            for file in files:
+                all_files.append(os.path.join(root, file))
+
+        upload_results = []
+        results = []
+        logging.info("Files found %s", len(all_files))
+        sum_time = 0
+        s3_tm = s3transfer.create_transfer_manager(self.client, self._transfer_config)
+        failed_files = []  # type: List[str]
+        for attempt in range(1, 6):
+            files = failed_files or all_files
+            if attempt == 1:
+                logging.info("Upload %s files to S3", len(all_files))
+            else:
+                logging.info(
+                    "Attempt %s, reupload %s failed files", attempt, len(failed_files)
+                )
+
+            total_size = sum(iter(os.stat(f).st_size for f in files))
+
+            progress = Progress(total_size)
+            for file_path in files:
+                s3_path = file_path.replace(str(dir_path), s3_dir_path)
+                metadata = {}
+                if s3_path.endswith("html"):
+                    metadata["ContentType"] = "text/html; charset=utf-8"
+                elif s3_path.endswith("css"):
+                    metadata["ContentType"] = "text/css; charset=utf-8"
+                elif s3_path.endswith("js"):
+                    metadata["ContentType"] = "text/javascript; charset=utf-8"
+
+                upload_results.append(
+                    s3_tm.upload(
+                        file_path,
+                        bucket_name,
+                        s3_path,
+                        extra_args=metadata,
+                        subscribers=[s3transfer.ProgressCallbackInvoker(progress)],
+                    )
+                )
+            failed_files = []
+            for r in upload_results:
+                try:
+                    print(r.result())
+                    results.append(f"{self.download_host}/{bucket_name}/{s3_path}")
+                except Exception:
+                    failed_files.append(r.meta.call_args.fileobj)
+            if not failed_files:
+                break
+        else:
+            logging.critical(
+                "Failed after 5 attempts with %s failed files", len(failed_files)
+            )
+
+        s3_tm.shutdown()
+        return results
+
     def fast_parallel_upload_dir(
         self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
     ) -> List[str]:
@@ -189,6 +274,7 @@ class S3Helper:
         logging.basicConfig(level=logging.CRITICAL)
         result = sorted(_flatten_list(p.map(upload_task, all_files)))
         logging.basicConfig(level=original_level)
+        print("Time spent:", sum_time + int(time.time() - t))
         return result
 
     def _upload_folder_to_s3(
