@@ -122,6 +122,35 @@ void KeeperContext::setStateFileDisk(DiskPtr disk)
     state_file_storage = std::move(disk);
 }
 
+void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
+{
+    auto dump_disk_info = [&](const std::string_view prefix, const IDisk & disk)
+    {
+        writeText(fmt::format("{}_path=", prefix), buf);
+        writeText(disk.getPath(), buf);
+        buf.write('\n');
+
+        writeText(fmt::format("{}_disk=", prefix), buf);
+        writeText(disk.getName(), buf);
+        buf.write('\n');
+
+    };
+
+    {
+        auto log_disk = getDisk(log_storage);
+        dump_disk_info("log_storage", *log_disk);
+
+        auto current_log_disk = getDisk(current_log_storage);
+        if (log_disk != current_log_disk)
+            dump_disk_info("current_log_storage", *current_log_disk);
+    }
+
+    {
+        auto snapshot_disk = getDisk(snapshot_storage);
+        dump_disk_info("snapshot_storage", *snapshot_disk);
+    }
+}
+
 KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
 {
     const auto create_local_disk = [](const auto & path)
@@ -129,7 +158,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LogDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalLogDisk", path, 0);
     };
 
     /// the most specialized path
@@ -155,7 +184,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("SnapshotDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path, 0);
     };
 
     /// the most specialized path
@@ -181,7 +210,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("SnapshotDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalStateFileDisk", path, 0);
     };
 
     if (config.has("keeper_server.state_storage_disk"))

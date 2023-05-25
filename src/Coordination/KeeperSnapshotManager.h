@@ -87,8 +87,14 @@ public:
     uint64_t nodes_digest;
 };
 
+struct SnapshotFileInfo
+{
+    std::string path;
+    DiskPtr disk;
+};
+
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<std::string(KeeperStorageSnapshotPtr &&)>;
+using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
 
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
@@ -112,10 +118,10 @@ public:
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
-    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+    SnapshotFileInfo serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Serialize snapshot directly to disk
-    std::pair<std::string, std::error_code> serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
+    SnapshotFileInfo serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
     SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
@@ -139,7 +145,7 @@ public:
         return 0;
     }
 
-    std::string getLatestSnapshotPath() const
+    SnapshotFileInfo getLatestSnapshotInfo() const
     {
         if (!existing_snapshots.empty())
         {
@@ -147,14 +153,15 @@ public:
 
             try
             {
-                if (getDisk()->exists(path))
-                    return path;
+                auto disk = getDisk();
+                if (disk->exists(path))
+                    return {path, disk};
             }
             catch (...)
             {
             }
         }
-        return "";
+        return {"", nullptr};
     }
 
 private:

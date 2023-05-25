@@ -563,7 +563,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 }
 
 
-std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
@@ -585,7 +585,7 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
     removeOutdatedSnapshotsIfNeeded();
 
-    return snapshot_file_name;
+    return {snapshot_file_name, disk};
 }
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
@@ -694,7 +694,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     existing_snapshots.erase(itr);
 }
 
-std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
+SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
 {
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
@@ -716,22 +716,12 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     compressed_writer->finalize();
     compressed_writer->sync();
 
-    std::error_code ec;
-
-    try
-    {
-        disk->removeFile(tmp_snapshot_file_name);
-    }
-    catch (fs::filesystem_error & e)
-    {
-        ec = e.code();
-        return {snapshot_file_name, ec};
-    }
+    disk->removeFile(tmp_snapshot_file_name);
 
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
     removeOutdatedSnapshotsIfNeeded();
 
-    return {snapshot_file_name, ec};
+    return {snapshot_file_name, disk};
 }
 
 }

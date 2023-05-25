@@ -55,8 +55,8 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
         DB::KeeperSnapshotManager manager(1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
-        auto path = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
-        std::cout << "Snapshot serialized to path:" << path << std::endl;
+        auto file_info = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
+        std::cout << "Snapshot serialized to path:" << fs::path(file_info.disk->getPath()) / file_info.path << std::endl;
     }
     catch (...)
     {
