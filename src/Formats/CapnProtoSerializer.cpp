@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnArray.h>
@@ -77,7 +76,7 @@ namespace
 
     struct ListBuilder : public FieldBuilder
     {
-        explicit ListBuilder(capnp::DynamicValue::Builder builder) : impl(builder.as<capnp::DynamicList>())
+        explicit ListBuilder(capnp::DynamicValue::Builder builder, UInt32 elements_size) : impl(builder.as<capnp::DynamicList>()), nested_builders(elements_size)
         {
         }
 
@@ -87,10 +86,6 @@ namespace
 
     struct StructBuilder : public FieldBuilder
     {
-        explicit StructBuilder(capnp::DynamicValue::Builder builder, size_t fields_size) : impl(builder.as<capnp::DynamicStruct>()), field_builders(fields_size)
-        {
-        }
-
         explicit StructBuilder(capnp::DynamicStruct::Builder struct_builder, size_t fields_size) : impl(std::move(struct_builder)), field_builders(fields_size)
         {
         }
@@ -99,135 +94,143 @@ namespace
         std::vector<std::unique_ptr<FieldBuilder>> field_builders;
     };
 
-    std::unique_ptr<FieldBuilder> initStructFieldBuilderIfNeeded(const ColumnPtr & column, size_t row_num, capnp::DynamicStruct::Builder & struct_builder, const capnp::StructSchema::Field & field, const capnp::Type & capnp_type, size_t nested_fields_size)
-    {
-        switch (capnp_type.which())
-        {
-            case capnp::schema::Type::LIST:
-            {
-                const auto * array_column = assert_cast<const ColumnArray *>(column.get());
-                size_t size = array_column->getOffsets()[row_num] - array_column->getOffsets()[row_num - 1];
-                return std::make_unique<ListBuilder>(struct_builder.init(field, static_cast<unsigned>(size)));
-            }
-            case capnp::schema::Type::STRUCT:
-            {
-                return std::make_unique<StructBuilder>(struct_builder.init(field), nested_fields_size);
-            }
-            default:
-                return nullptr;
-        }
-    }
-
     class ICapnProtoSerializer
     {
     public:
-        virtual std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * builder, size_t row_num) = 0;
-        virtual void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) = 0;
+        virtual void writeRow(
+            const ColumnPtr & column,
+            std::unique_ptr<FieldBuilder> & builder,
+            capnp::DynamicStruct::Builder & parent_struct_builder,
+            UInt32 slot_offset,
+            size_t row_num) = 0;
+
+        virtual void writeRow(
+            const ColumnPtr & column,
+            std::unique_ptr<FieldBuilder> & builder,
+            capnp::DynamicList::Builder & parent_list_builder,
+            UInt32 array_index,
+            size_t row_num) = 0;
+
+        virtual void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) = 0;
+
+        virtual void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) = 0;
 
         virtual ~ICapnProtoSerializer() = default;
     };
 
-    template <typename NumericType, bool is_bool_data_type, capnp::DynamicValue::Type capnp_dynamic_type>
+    template <typename CHNumericType, typename CapnProtoNumericType, bool convert_to_bool_on_read>
     class CapnProtoIntegerSerializer : public ICapnProtoSerializer
     {
     public:
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            if constexpr (capnp_dynamic_type == capnp::DynamicValue::Type::INT)
-                return capnp::DynamicValue::Reader(column->getInt(row_num));
-            if constexpr (capnp_dynamic_type == capnp::DynamicValue::Type::UINT)
-                return capnp::DynamicValue::Reader(column->getUInt(row_num));
-            return capnp::DynamicValue::Reader(column->getBool(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            CapnProtoNumericType value = static_cast<CapnProtoNumericType>(assert_cast<const ColumnVector<CHNumericType> &>(*column).getElement(row_num));
+            builder_impl.setDataField<CapnProtoNumericType>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            NumericType value;
-            if constexpr (capnp_dynamic_type == capnp::DynamicValue::Type::INT)
-                value = static_cast<NumericType>(reader.as<Int64>());
-            else if constexpr (capnp_dynamic_type == capnp::DynamicValue::Type::UINT)
-                value = static_cast<NumericType>(reader.as<UInt64>());
-            else if constexpr (capnp_dynamic_type == capnp::DynamicValue::Type::BOOL)
-                value = static_cast<NumericType>(reader.as<bool>());
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            CapnProtoNumericType value = static_cast<CapnProtoNumericType>(assert_cast<const ColumnVector<CHNumericType> &>(*column).getElement(row_num));
+            builder_impl.setDataElement<CapnProtoNumericType>(array_index, value);
+        }
 
-            if constexpr (is_bool_data_type)
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            CapnProtoNumericType value = reader_impl.getDataField<CapnProtoNumericType>(slot_offset);
+            if constexpr (convert_to_bool_on_read)
                 assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<bool>(value));
             else
-                assert_cast<ColumnVector<NumericType> &>(column).insertValue(value);
+                assert_cast<ColumnVector<CHNumericType> &>(column).insertValue(static_cast<CHNumericType>(value));
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            CapnProtoNumericType value = reader_impl.getDataElement<CapnProtoNumericType>(array_index);
+            if constexpr (convert_to_bool_on_read)
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<bool>(value));
+            else
+                assert_cast<ColumnVector<CHNumericType> &>(column).insertValue(static_cast<CHNumericType>(value));
         }
     };
 
-    template <typename NumericType, bool is_bool_data_type = false>
+    template <typename NumericType, bool convert_to_bool_on_read = false>
     std::unique_ptr<ICapnProtoSerializer> createIntegerSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
     {
         switch (capnp_type.which())
         {
-            case capnp::schema::Type::INT8: [[fallthrough]];
-            case capnp::schema::Type::INT16: [[fallthrough]];
-            case capnp::schema::Type::INT32: [[fallthrough]];
+            case capnp::schema::Type::INT8:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, Int8, convert_to_bool_on_read>>();
+            case capnp::schema::Type::INT16:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, Int16, convert_to_bool_on_read>>();
+            case capnp::schema::Type::INT32:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, Int32, convert_to_bool_on_read>>();
             case capnp::schema::Type::INT64:
-                return std::make_unique<CapnProtoIntegerSerializer<NumericType, is_bool_data_type, capnp::DynamicValue::Type::INT>>();
-            case capnp::schema::Type::UINT8: [[fallthrough]];
-            case capnp::schema::Type::UINT16: [[fallthrough]];
-            case capnp::schema::Type::UINT32: [[fallthrough]];
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, Int64, convert_to_bool_on_read>>();
+            case capnp::schema::Type::UINT8:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, UInt8, convert_to_bool_on_read>>();
+            case capnp::schema::Type::UINT16:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, UInt16, convert_to_bool_on_read>>();
+            case capnp::schema::Type::UINT32:
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, UInt32, convert_to_bool_on_read>>();
             case capnp::schema::Type::UINT64:
-                return std::make_unique<CapnProtoIntegerSerializer<NumericType, is_bool_data_type, capnp::DynamicValue::Type::UINT>>();
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, UInt64, convert_to_bool_on_read>>();
             case capnp::schema::Type::BOOL:
-                return std::make_unique<CapnProtoIntegerSerializer<NumericType, is_bool_data_type, capnp::DynamicValue::Type::BOOL>>();
+                return std::make_unique<CapnProtoIntegerSerializer<NumericType, bool, convert_to_bool_on_read>>();
             default:
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
     }
 
-    template <typename NumericType>
-    class CapnProtoBigIntegerSerializer : public ICapnProtoSerializer
-    {
-    public:
-        CapnProtoBigIntegerSerializer(const DataTypePtr & data_type_, const String & column_name, const capnp::Type & capnp_type) : data_type(data_type_)
-        {
-            if (!capnp_type.isData())
-                throwCannotConvert(data_type, column_name, capnp_type);
-        }
-
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
-        {
-            auto data = column->getDataAt(row_num);
-            return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
-        }
-
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
-        {
-            auto value = reader.as<capnp::Data>();
-            if (value.size() != sizeof(NumericType))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", data_type->getName(), value.size());
-
-            column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
-        }
-
-    private:
-        DataTypePtr data_type;
-    };
-
-    template <typename FloatType>
+    template <typename CHFloatType, typename CapnProtoFloatType>
     class CapnProtoFloatSerializer : public ICapnProtoSerializer
     {
     public:
-        CapnProtoFloatSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            if (!capnp_type.isFloat32() && !capnp_type.isFloat64())
-                throwCannotConvert(data_type, column_name, capnp_type);
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            CapnProtoFloatType value = static_cast<CapnProtoFloatType>(assert_cast<const ColumnVector<CHFloatType> &>(*column).getElement(row_num));
+            builder_impl.setDataField<CapnProtoFloatType>(slot_offset, value);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getFloat64(row_num));
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            CapnProtoFloatType value = static_cast<CapnProtoFloatType>(assert_cast<const ColumnVector<CHFloatType> &>(*column).getElement(row_num));
+            builder_impl.setDataElement<CapnProtoFloatType>(array_index, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            assert_cast<ColumnVector<FloatType> &>(column).insertValue(reader.as<FloatType>());
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            CapnProtoFloatType value = reader_impl.getDataField<CapnProtoFloatType>(slot_offset);
+            assert_cast<ColumnVector<CHFloatType> &>(column).insertValue(static_cast<CHFloatType>(value));
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            CapnProtoFloatType value = reader_impl.getDataElement<CapnProtoFloatType>(array_index);
+            assert_cast<ColumnVector<CHFloatType> &>(column).insertValue(static_cast<CHFloatType>(value));
         }
     };
+
+    template <typename FloatType>
+    std::unique_ptr<ICapnProtoSerializer> createFloatSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
+    {
+        switch (capnp_type.which())
+        {
+            case capnp::schema::Type::FLOAT32:
+                return std::make_unique<CapnProtoFloatSerializer<FloatType, Float32>>();
+            case capnp::schema::Type::FLOAT64:
+                return std::make_unique<CapnProtoFloatSerializer<FloatType, Float64>>();
+            default:
+                throwCannotConvert(data_type, column_name, capnp_type);
+        }
+    }
 
     template <typename EnumType>
     class CapnProtoEnumSerializer : public ICapnProtoSerializer
@@ -267,86 +270,90 @@ namespace
             }
             else
             {
-                auto names = enum_values.getSetOfAllNames(to_lower);
-                std::unordered_set<String> capn_enum_names;
-
-                for (auto enumerant : enumerants)
-                {
-                    String name = enumerant.getProto().getName();
-                    capn_enum_names.insert(to_lower ? boost::algorithm::to_lower_copy(name) : name);
-                }
-
-                if (names != capn_enum_names)
+                auto all_values = enum_values.getValues();
+                if (all_values.size() != enumerants.size())
                     throw Exception(
                         ErrorCodes::CAPN_PROTO_BAD_CAST,
                         "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum");
+
+                std::unordered_map<String, EnumType> ch_name_to_value;
+                for (auto & [name, value] : all_values)
+                    ch_name_to_value[to_lower ? boost::algorithm::to_lower_copy(name) : name] = value;
+
+                for (auto enumerant : enumerants)
+                {
+                    String capnp_name = enumerant.getProto().getName();
+                    UInt16 capnp_value = enumerant.getOrdinal();
+                    auto it = ch_name_to_value.find(to_lower ? boost::algorithm::to_lower_copy(capnp_name) : capnp_name);
+                    if (it == ch_name_to_value.end())
+                        throw Exception(
+                            ErrorCodes::CAPN_PROTO_BAD_CAST,
+                            "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum");
+
+                    ch_to_capnp_values[it->second] = capnp_value;
+                    capnp_to_ch_values[capnp_value] = it->second;
+                }
             }
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            const auto * enum_data_type = assert_cast<const DataTypeEnum<EnumType> *>(data_type.get());
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
             EnumType enum_value = assert_cast<const ColumnVector<EnumType> &>(*column).getElement(row_num);
+            UInt16 capnp_value;
             if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
-                return capnp::DynamicValue::Reader(capnp::DynamicEnum(enum_schema, enum_value));
+                capnp_value = static_cast<UInt16>(enum_value);
+            else
+                capnp_value = ch_to_capnp_values[enum_value];
 
-            auto enum_name = enum_data_type->getNameForValue(enum_value);
-            for (const auto enumerant : enum_schema.getEnumerants())
-            {
-                if (compareEnumNames(String(enum_name), enumerant.getProto().getName(), enum_comparing_mode))
-                    return capnp::DynamicValue::Reader(capnp::DynamicEnum(enumerant));
-            }
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert ClickHouse Enum value to CapnProto Enum");
+            builder_impl.setDataField<UInt16>(slot_offset, capnp_value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            auto enum_value = reader.as<capnp::DynamicEnum>();
-            auto enumerant = *kj::_::readMaybe(enum_value.getEnumerant());
-            auto enum_type = assert_cast<const DataTypeEnum<EnumType> *>(data_type.get());
-            DataTypePtr nested_type = std::make_shared<DataTypeNumber<EnumType>>();
-            switch (enum_comparing_mode)
-            {
-                case FormatSettings::CapnProtoEnumComparingMode::BY_VALUES:
-                {
-                    assert_cast<ColumnVector<EnumType> &>(column).insertValue(static_cast<EnumType>(enumerant.getOrdinal()));
-                    return;
-                }
-                case FormatSettings::CapnProtoEnumComparingMode::BY_NAMES:
-                {
-                    auto value = enum_type->getValue(String(enumerant.getProto().getName()));
-                    assert_cast<ColumnVector<EnumType> &>(column).insertValue(value);
-                    return;
-                }
-                case FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE:
-                {
-                    /// Find the same enum name case insensitive.
-                    String enum_name = enumerant.getProto().getName();
-                    for (auto & name : enum_type->getAllRegisteredNames())
-                    {
-                        if (compareEnumNames(name, enum_name, enum_comparing_mode))
-                        {
-                            assert_cast<ColumnVector<EnumType> &>(column).insertValue(enum_type->getValue(name));
-                            break;
-                        }
-                    }
-                    return;
-                }
-            }
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            EnumType enum_value = assert_cast<const ColumnVector<EnumType> &>(*column).getElement(row_num);
+            UInt16 capnp_value;
+            if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
+                capnp_value = static_cast<UInt16>(enum_value);
+            else
+                capnp_value = ch_to_capnp_values[enum_value];
+
+            builder_impl.setDataElement<UInt16>(array_index, capnp_value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            UInt16 capnp_value = reader_impl.getDataField<UInt16>(slot_offset);
+            EnumType value;
+            if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
+                value = static_cast<EnumType>(capnp_value);
+            else
+                value = capnp_to_ch_values[capnp_value];
+            
+            assert_cast<ColumnVector<EnumType> &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            UInt16 capnp_value = reader_impl.getDataElement<UInt16>(array_index);
+            EnumType value;
+            if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
+                value = static_cast<EnumType>(capnp_value);
+            else
+                value = capnp_to_ch_values[capnp_value];
+            
+            assert_cast<ColumnVector<EnumType> &>(column).insertValue(value);
         }
 
     private:
-        bool compareEnumNames(const String & first, const String & second, const FormatSettings::CapnProtoEnumComparingMode mode)
-        {
-            if (mode == FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE)
-                return boost::algorithm::to_lower_copy(first) == boost::algorithm::to_lower_copy(second);
-            return first == second;
-        }
-
         DataTypePtr data_type;
         capnp::EnumSchema enum_schema;
         const FormatSettings::CapnProtoEnumComparingMode enum_comparing_mode;
+        std::unordered_map<EnumType, UInt16> ch_to_capnp_values;
+        std::unordered_map<UInt16, EnumType> capnp_to_ch_values;
     };
 
     class CapnProtoDateSerializer : public ICapnProtoSerializer
@@ -358,14 +365,32 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getUInt(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            UInt16 value = assert_cast<const ColumnDate &>(*column).getElement(row_num);
+            builder_impl.setDataField<UInt16>(slot_offset, value);
+        }
+        
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
+        {
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            UInt16 value = assert_cast<const ColumnDate &>(*column).getElement(row_num);
+            builder_impl.setDataElement<UInt16>(array_index, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            assert_cast<ColumnDate &>(column).insertValue(reader.as<UInt16>());
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            UInt16 value = reader_impl.getDataField<UInt16>(slot_offset);
+            assert_cast<ColumnDate &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            UInt16 value = reader_impl.getDataElement<UInt16>(array_index);
+            assert_cast<ColumnDate &>(column).insertValue(value);
         }
     };
 
@@ -378,14 +403,32 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getInt(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            Int32 value = assert_cast<const ColumnDate32 &>(*column).getElement(row_num);
+            builder_impl.setDataField<Int32>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            assert_cast<ColumnDate32 &>(column).insertValue(reader.as<Int32>());
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            Int32 value = assert_cast<const ColumnDate32 &>(*column).getElement(row_num);
+            builder_impl.setDataElement<Int32>(array_index, value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            Int32 value = reader_impl.getDataField<Int32>(slot_offset);
+            assert_cast<ColumnDate32 &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            Int32 value = reader_impl.getDataElement<Int32>(array_index);
+            assert_cast<ColumnDate32 &>(column).insertValue(value);
         }
     };
 
@@ -398,14 +441,32 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getInt(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            UInt32 value = assert_cast<const ColumnDateTime &>(*column).getElement(row_num);
+            builder_impl.setDataField<UInt32>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            assert_cast<ColumnDateTime &>(column).insertValue(reader.as<UInt32>());
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            UInt32 value = assert_cast<const ColumnDateTime &>(*column).getElement(row_num);
+            builder_impl.setDataElement<UInt32>(array_index, value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            UInt32 value = reader_impl.getDataField<UInt32>(slot_offset);
+            assert_cast<ColumnDateTime &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            UInt32 value = reader_impl.getDataElement<UInt32>(array_index);
+            assert_cast<ColumnDateTime &>(column).insertValue(value);
         }
     };
 
@@ -418,14 +479,32 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getInt(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            Int64 value = assert_cast<const ColumnDateTime64 &>(*column).getElement(row_num);
+            builder_impl.setDataField<Int64>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            assert_cast<ColumnDateTime64 &>(column).insertValue(reader.as<Int64>());
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            Int64 value = assert_cast<const ColumnDateTime64 &>(*column).getElement(row_num);
+            builder_impl.setDataElement<Int64>(array_index, value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            Int64 value = reader_impl.getDataField<Int64>(slot_offset);
+            assert_cast<ColumnDateTime64 &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            Int64 value = reader_impl.getDataElement<Int64>(array_index);
+            assert_cast<ColumnDateTime64 &>(column).insertValue(value);
         }
     };
 
@@ -433,6 +512,8 @@ namespace
     class CapnProtoDecimalSerializer : public ICapnProtoSerializer
     {
     public:
+        using NativeType = typename DecimalType::NativeType;
+
         CapnProtoDecimalSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
         {
             auto which = WhichDataType(data_type);
@@ -440,37 +521,79 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(column->getInt(row_num));
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            DecimalType value = assert_cast<const ColumnDecimal<DecimalType> &>(*column).getElement(row_num);
+            builder_impl.setDataField<NativeType>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(reader.as<typename DecimalType::NativeType>());
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            DecimalType value = assert_cast<const ColumnDecimal<DecimalType> &>(*column).getElement(row_num);
+            builder_impl.setDataElement<NativeType>(array_index, value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            NativeType value = reader_impl.getDataField<NativeType>(slot_offset);
+            assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            NativeType value = reader_impl.getDataElement<NativeType>(array_index);
+            assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
         }
     };
 
-    template <typename DecimalType>
-    class CapnProtoBigDecimalSerializer : public ICapnProtoSerializer
+    template <typename T>
+    class CapnProtoFixedSizeRawDataSerializer : public ICapnProtoSerializer
     {
+    private:
+        static constexpr size_t value_size = sizeof(T);
+
     public:
-        CapnProtoBigDecimalSerializer(const DataTypePtr & data_type_, const String & column_name, const capnp::Type & capnp_type) : data_type(data_type_)
+        CapnProtoFixedSizeRawDataSerializer(const DataTypePtr & data_type_, const String & column_name, const capnp::Type & capnp_type) : data_type(data_type_)
         {
             if (!capnp_type.isData())
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
             auto data = column->getDataAt(row_num);
-            return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
+            capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+            builder_impl.getPointerField(slot_offset).template setBlob<capnp::Data>(value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_struct_builder, UInt32 array_index, size_t row_num) override
         {
-            auto value = reader.as<capnp::Data>();
-            if (value.size() != sizeof(DecimalType))
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            auto data = column->getDataAt(row_num);
+            capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+            builder_impl.getPointerElement(array_index).setBlob<capnp::Data>(value);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            capnp::Data::Reader value = reader_impl.getPointerField(slot_offset).template getBlob<capnp::Data>(nullptr, 0);
+            if (value.size() != value_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", data_type->getName(), value.size());
+
+            column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            capnp::Data::Reader value = reader_impl.getPointerElement(array_index).getBlob<capnp::Data>(nullptr, 0);
+            if (value.size() != value_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", data_type->getName(), value.size());
 
             column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
@@ -484,39 +607,73 @@ namespace
     class CapnProtoStringSerializer : public ICapnProtoSerializer
     {
     public:
-        CapnProtoStringSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type_) : capnp_type(capnp_type_)
+        CapnProtoStringSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
         {
             if (!capnp_type.isData() && !capnp_type.isText())
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
             auto data = column->getDataAt(row_num);
-
-            if constexpr (is_binary)
-                return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
-
-            /// For type TEXT data must be null-terminated, but in String column we always have 0 byte at the end of each value.
-            return capnp::DynamicValue::Reader(capnp::Text::Reader(data.data, data.size));
-        }
-
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
-        {
             if constexpr (is_binary)
             {
-                auto value = reader.as<capnp::Data>();
+                capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+                builder_impl.getPointerField(slot_offset).setBlob<capnp::Data>(value);
+            }
+            else
+            {
+                capnp::Text::Reader value = capnp::Text::Reader(data.data, data.size);
+                builder_impl.getPointerField(slot_offset).setBlob<capnp::Text>(value);
+            }
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_struct_builder, UInt32 array_index, size_t row_num) override
+        {
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            auto data = column->getDataAt(row_num);
+            if constexpr (is_binary)
+            {
+                capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+                builder_impl.getPointerElement(array_index).setBlob<capnp::Data>(value);
+            }
+            else
+            {
+                capnp::Text::Reader value = capnp::Text::Reader(data.data, data.size);
+                builder_impl.getPointerElement(array_index).setBlob<capnp::Text>(value);
+            }
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            if constexpr (is_binary)
+            {
+                capnp::Data::Reader value = reader_impl.getPointerField(slot_offset).getBlob<capnp::Data>(nullptr, 0);
                 column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
             }
             else
             {
-                auto value = reader.as<capnp::Text>();
+                capnp::Text::Reader value = reader_impl.getPointerField(slot_offset).getBlob<capnp::Text>(nullptr, 0);
                 column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
             }
         }
 
-    private:
-        capnp::Type capnp_type;
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            if constexpr (is_binary)
+            {
+                capnp::Data::Reader value = reader_impl.getPointerElement(array_index).getBlob<capnp::Data>(nullptr, 0);
+                column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+            }
+            else
+            {
+                capnp::Text::Reader value = reader_impl.getPointerElement(array_index).getBlob<capnp::Text>(nullptr, 0);
+                column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+            }
+        }
     };
 
     template <bool is_binary>
@@ -529,29 +686,71 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
             auto data = column->getDataAt(row_num);
             if constexpr (is_binary)
-                return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
-
-            if (data.data[data.size - 1] == 0)
-                return capnp::DynamicValue::Reader(capnp::Text::Reader(reinterpret_cast<const char *>(data.data), data.size));
-
-            /// In TEXT type data should be null-terminated, but ClickHouse FixedString data could not be.
-            /// To make data null-terminated we should copy it to temporary String object and use it in capnp::Text::Reader.
-            /// Note that capnp::Text::Reader works only with pointer to the data and it's size, so we should
-            /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
-            tmp_string = data.toString();
-            return capnp::DynamicValue::Reader(capnp::Text::Reader(reinterpret_cast<const char *>(tmp_string.data()), tmp_string.size()));
+            {
+                capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+                builder_impl.getPointerField(slot_offset).setBlob<capnp::Data>(value);
+            }
+            else
+            {
+                if (data.data[data.size - 1] == 0)
+                {
+                    capnp::Text::Reader value = capnp::Text::Reader(data.data, data.size);
+                    builder_impl.getPointerField(slot_offset).setBlob<capnp::Text>(value);
+                }
+                else
+                {
+                    /// In TEXT type data should be null-terminated, but ClickHouse FixedString data could not be.
+                    /// To make data null-terminated we should copy it to temporary String object and use it in capnp::Text::Reader.
+                    /// Note that capnp::Text::Reader works only with pointer to the data and it's size, so we should
+                    /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
+                    tmp_string = data.toString();
+                    capnp::Text::Reader value = capnp::Text::Reader(tmp_string.data(), tmp_string.size());
+                    builder_impl.getPointerField(slot_offset).setBlob<capnp::Text>(value);
+                }
+            }
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_struct_builder, UInt32 array_index, size_t row_num) override
         {
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            auto data = column->getDataAt(row_num);
+            if constexpr (is_binary)
+            {
+                capnp::Data::Reader value = capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
+                builder_impl.getPointerElement(array_index).setBlob<capnp::Data>(value);
+            }
+            else
+            {
+                if (data.data[data.size - 1] == 0)
+                {
+                    capnp::Text::Reader value = capnp::Text::Reader(data.data, data.size);
+                    builder_impl.getPointerElement(array_index).setBlob<capnp::Text>(value);
+                }
+                else
+                {
+                    /// In TEXT type data should be null-terminated, but ClickHouse FixedString data could not be.
+                    /// To make data null-terminated we should copy it to temporary String object and use it in capnp::Text::Reader.
+                    /// Note that capnp::Text::Reader works only with pointer to the data and it's size, so we should
+                    /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
+                    tmp_string = data.toString();
+                    capnp::Text::Reader value = capnp::Text::Reader(tmp_string.data(), tmp_string.size());
+                    builder_impl.getPointerElement(array_index).setBlob<capnp::Text>(value);
+                }
+            }
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
             auto & fixed_string_column = assert_cast<ColumnFixedString &>(column);
             if constexpr (is_binary)
             {
-                auto value = reader.as<capnp::Data>();
+                capnp::Data::Reader value = reader_impl.getPointerField(slot_offset).getBlob<capnp::Data>(nullptr, 0);
                 if (value.size() > fixed_string_column.getN())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read data with size {} to FixedString with size {}", value.size(), fixed_string_column.getN());
 
@@ -559,7 +758,29 @@ namespace
             }
             else
             {
-                auto value = reader.as<capnp::Text>();
+                capnp::Text::Reader value = reader_impl.getPointerField(slot_offset).getBlob<capnp::Text>(nullptr, 0);
+                if (value.size() > fixed_string_column.getN())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read data with size {} to FixedString with size {}", value.size(), fixed_string_column.getN());
+
+                fixed_string_column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+            }
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            auto & fixed_string_column = assert_cast<ColumnFixedString &>(column);
+            if constexpr (is_binary)
+            {
+                capnp::Data::Reader value = reader_impl.getPointerElement(array_index).getBlob<capnp::Data>(nullptr, 0);
+                if (value.size() > fixed_string_column.getN())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read data with size {} to FixedString with size {}", value.size(), fixed_string_column.getN());
+
+                fixed_string_column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+            }
+            else
+            {
+                capnp::Text::Reader value = reader_impl.getPointerElement(array_index).getBlob<capnp::Text>(nullptr, 0);
                 if (value.size() > fixed_string_column.getN())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read data with size {} to FixedString with size {}", value.size(), fixed_string_column.getN());
 
@@ -581,64 +802,32 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            return capnp::DynamicValue::Reader(assert_cast<const ColumnIPv4 &>(*column).getElement(row_num).toUnderType());
+            auto & builder_impl = parent_struct_builder.getBuilderImpl();
+            UInt32 value = assert_cast<const ColumnIPv4 &>(*column).getElement(row_num);
+            builder_impl.setDataField<UInt32>(slot_offset, value);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(reader.as<UInt32>()));
-        }
-    };
-
-    class CapnProtoIPv6Serializer : public ICapnProtoSerializer
-    {
-    public:
-        CapnProtoIPv6Serializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
-        {
-            if (!capnp_type.isData())
-                throwCannotConvert(data_type, column_name, capnp_type);
+            auto & builder_impl = parent_list_builder.getBuilderImpl();
+            UInt32 value = assert_cast<const ColumnIPv4 &>(*column).getElement(row_num);
+            builder_impl.setDataElement<UInt32>(array_index, value);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            auto data = column->getDataAt(row_num);
-            return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            UInt32 value = reader_impl.getDataField<UInt32>(slot_offset);
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
         {
-            auto value = reader.as<capnp::Data>();
-            if (value.size() != sizeof(IPv6))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of IPv6 value: {}", value.size());
-
-            column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
-        }
-    };
-
-    class CapnProtoUUIDSerializer : public ICapnProtoSerializer
-    {
-    public:
-        CapnProtoUUIDSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
-        {
-            if (!capnp_type.isData())
-                throwCannotConvert(data_type, column_name, capnp_type);
-        }
-
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder *, size_t row_num) override
-        {
-            auto data = column->getDataAt(row_num);
-            return capnp::DynamicValue::Reader(capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size));
-        }
-
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
-        {
-            auto value = reader.as<capnp::Data>();
-            if (value.size() != sizeof(UUID))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID value: {}", value.size());
-
-            column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            UInt32 value = reader_impl.getDataElement<UInt32>(array_index);
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
         }
     };
 
@@ -652,19 +841,35 @@ namespace
             nested_serializer = createSerializer(assert_cast<const DataTypeLowCardinality &>(*data_type).getDictionaryType(), column_name, capnp_type, settings);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * field_builder, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
             const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(*column);
             size_t index = low_cardinality_column.getIndexAt(row_num);
             const auto & dict_column = low_cardinality_column.getDictionary().getNestedColumn();
-            return nested_serializer->writeRow(dict_column, field_builder, index);
+            nested_serializer->writeRow(dict_column, field_builder, parent_struct_builder, slot_offset, index);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
+        {
+            const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(*column);
+            size_t index = low_cardinality_column.getIndexAt(row_num);
+            const auto & dict_column = low_cardinality_column.getDictionary().getNestedColumn();
+            nested_serializer->writeRow(dict_column, field_builder, parent_list_builder, array_index, index);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
             auto & low_cardinality_column = assert_cast<ColumnLowCardinality &>(column);
             auto tmp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
-            nested_serializer->readRow(*tmp_column, reader);
+            nested_serializer->readRow(*tmp_column, parent_struct_reader, slot_offset);
+            low_cardinality_column.insertFromFullColumn(*tmp_column, 0);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            auto & low_cardinality_column = assert_cast<ColumnLowCardinality &>(column);
+            auto tmp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
+            nested_serializer->readRow(*tmp_column, parent_list_reader, array_index);
             low_cardinality_column.insertFromFullColumn(*tmp_column, 0);
         }
 
@@ -685,7 +890,10 @@ namespace
                     getCapnProtoFullTypeName(capnp_type));
 
             /// Check that struct is a named union of type VOID and one arbitrary type.
-            auto struct_schema = capnp_type.asStruct();
+            struct_schema = capnp_type.asStruct();
+            auto node = struct_schema.getProto().getStruct();
+            struct_size = capnp::_::StructSize(node.getDataWordCount(), node.getPointerCount());
+            discriminant_offset = node.getDiscriminantOffset();
             if (!checkIfStructIsNamedUnion(struct_schema))
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
@@ -706,23 +914,18 @@ namespace
             auto first = union_fields[0];
             auto second = union_fields[1];
             auto nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+            nested_slot_offset = first.getProto().getSlot().getOffset(); /// Both fields have the same offset.
             if (first.getType().isVoid())
             {
-                null_field = first;
-                nested_field = second;
-                nested_capnp_type = second.getType();
-                if (nested_capnp_type.isStruct())
-                    nested_fields_size = nested_capnp_type.asStruct().getFields().size();
-                nested_serializer = createSerializer(nested_type, column_name, nested_capnp_type, settings);
+                nested_serializer = createSerializer(nested_type, column_name, second.getType(), settings);
+                null_discriminant = 0;
+                nested_discriminant = 1;
             }
             else if (second.getType().isVoid())
             {
-                null_field = second;
-                nested_field = first;
-                nested_capnp_type = first.getType();
-                if (nested_capnp_type.isStruct())
-                    nested_fields_size = nested_capnp_type.asStruct().getFields().size();
-                nested_serializer = createSerializer(nested_type, column_name, nested_capnp_type, settings);
+                nested_serializer = createSerializer(nested_type, column_name, first.getType(), settings);
+                null_discriminant = 1;
+                nested_discriminant = 0;
             }
             else
                 throw Exception(
@@ -733,50 +936,102 @@ namespace
                     getCapnProtoFullTypeName(capnp_type));
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * field_builder, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            assert(field_builder);
+            if (!field_builder)
+            {
+                auto builder_impl = parent_struct_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getPointerField(slot_offset).initStruct(struct_size));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), 1);
+            }
+
             auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
+
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row_num))
             {
-                struct_builder.impl.set(null_field, capnp::Void());
+                auto struct_builder_impl = struct_builder.impl.getBuilderImpl();
+                struct_builder_impl.setDataField<uint16_t>(discriminant_offset, null_discriminant);
+                struct_builder_impl.setDataField<capnp::Void>(nested_slot_offset, capnp::Void());
             }
             else
             {
-                struct_builder.impl.clear(nested_field);
                 const auto & nested_column = nullable_column.getNestedColumnPtr();
-                auto nested_field_builder = initStructFieldBuilderIfNeeded(nested_column, row_num, struct_builder.impl, nested_field, nested_capnp_type, nested_fields_size);
-                auto value = nested_serializer->writeRow(nested_column, nested_field_builder.get(), row_num);
-                if (value)
-                    struct_builder.impl.set(nested_field, *value);
+                struct_builder.impl.getBuilderImpl().setDataField<uint16_t>(discriminant_offset, nested_discriminant);
+                nested_serializer->writeRow(nested_column, struct_builder.field_builders[0], struct_builder.impl, nested_slot_offset, row_num);
             }
-
-            return std::nullopt;
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            auto struct_reader = reader.as<capnp::DynamicStruct>();
+            if (!field_builder)
+            {
+                auto builder_impl = parent_list_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getStructElement(array_index));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), 1);
+            }
+
+            auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
+
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
+            if (nullable_column.isNullAt(row_num))
+            {
+                auto struct_builder_impl = struct_builder.impl.getBuilderImpl();
+                struct_builder_impl.setDataField<uint16_t>(discriminant_offset, null_discriminant);
+                struct_builder_impl.setDataField<capnp::Void>(nested_slot_offset, capnp::Void());
+            }
+            else
+            {
+                const auto & nested_column = nullable_column.getNestedColumnPtr();
+                struct_builder.impl.getBuilderImpl().setDataField<uint16_t>(discriminant_offset, nested_discriminant);
+                nested_serializer->writeRow(nested_column, struct_builder.field_builders[0], struct_builder.impl, nested_slot_offset, row_num);
+            }
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
             auto & nullable_column = assert_cast<ColumnNullable &>(column);
-            auto field = *kj::_::readMaybe(struct_reader.which());
-            if (field.getType().isVoid())
+            auto reader_impl = parent_struct_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getPointerField(slot_offset).getStruct(nullptr));
+
+            auto discriminant = struct_reader.getReaderImpl().getDataField<uint16_t>(discriminant_offset);
+
+            if (discriminant == null_discriminant)
                 nullable_column.insertDefault();
             else
             {
                 auto & nested_column = nullable_column.getNestedColumn();
-                auto nested_reader = struct_reader.get(field);
-                nested_serializer->readRow(nested_column, nested_reader);
+                nested_serializer->readRow(nested_column, struct_reader, nested_slot_offset);
+                nullable_column.getNullMapData().push_back(0);
+            }
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(column);
+            auto reader_impl = parent_list_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getStructElement(array_index));
+
+            auto discriminant = struct_reader.getReaderImpl().getDataField<uint16_t>(discriminant_offset);
+
+            if (discriminant == null_discriminant)
+                nullable_column.insertDefault();
+            else
+            {
+                auto & nested_column = nullable_column.getNestedColumn();
+                nested_serializer->readRow(nested_column, struct_reader, nested_slot_offset);
                 nullable_column.getNullMapData().push_back(0);
             }
         }
 
     private:
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
-        capnp::StructSchema::Field null_field;
-        capnp::StructSchema::Field nested_field;
-        size_t nested_fields_size = 0;
-        capnp::Type nested_capnp_type;
+        capnp::StructSchema struct_schema;
+        capnp::_::StructSize struct_size;
+        UInt32 discriminant_offset;
+        UInt16 null_discriminant;
+        UInt16 nested_discriminant;
+        UInt32 nested_slot_offset;
     };
 
     class CapnProtoArraySerializer : public ICapnProtoSerializer
@@ -788,67 +1043,102 @@ namespace
                 throwCannotConvert(data_type, column_name, capnp_type);
 
             auto nested_type = assert_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-            element_type = capnp_type.asList().getElementType();
+            list_schema = capnp_type.asList();
+            auto element_type = list_schema.getElementType();
+            element_size = capnp::elementSizeFor(element_type.which());
             if (element_type.isStruct())
-                element_struct_fields = element_type.asStruct().getFields().size();
+            {
+                element_is_struct = true;
+                auto node = element_type.asStruct().getProto().getStruct();
+                element_struct_size = capnp::_::StructSize(node.getDataWordCount(), node.getPointerCount());
+            }
+
             nested_serializer = createSerializer(nested_type, column_name, capnp_type.asList().getElementType(), settings);
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * field_builder, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            assert(field_builder);
-            auto & list_builder = assert_cast<ListBuilder &>(*field_builder);
             const auto * array_column = assert_cast<const ColumnArray *>(column.get());
             const auto & nested_column = array_column->getDataPtr();
             const auto & offsets = array_column->getOffsets();
             auto offset = offsets[row_num - 1];
-            size_t size = offsets[row_num] - offset;
-            bool need_nested_builders = list_builder.nested_builders.empty();
-            for (unsigned i = 0; i != static_cast<unsigned>(size); ++i)
-            {
-                if (need_nested_builders)
-                {
-                    /// For nested lists we need to initialize nested list builder.
-                    if (element_type.isList())
-                    {
-                        const auto & nested_offset = checkAndGetColumn<ColumnArray>(*nested_column)->getOffsets();
-                        size_t nested_array_size = nested_offset[offset + i] - nested_offset[offset + i - 1];
-                        list_builder.nested_builders.emplace_back(std::make_unique<ListBuilder>(list_builder.impl.init(i, static_cast<unsigned>(nested_array_size))));
-                    }
-                    else if (element_type.isStruct())
-                    {
-                        list_builder.nested_builders.emplace_back(std::make_unique<StructBuilder>(list_builder.impl[i], element_struct_fields));
-                    }
-                    else
-                    {
-                        list_builder.nested_builders.emplace_back();
-                    }
-                }
+            UInt32 size = static_cast<UInt32>(offsets[row_num] - offset);
 
-                auto value = nested_serializer->writeRow(nested_column, list_builder.nested_builders[i].get(), offset + i);
-                if (value)
-                    list_builder.impl.set(i, *value);
+            if (!field_builder)
+            {
+                auto builder_impl = parent_struct_builder.getBuilderImpl();
+                capnp::DynamicList::Builder list_builder_impl;
+                if (element_is_struct)
+                    list_builder_impl = capnp::DynamicList::Builder(list_schema, builder_impl.getPointerField(slot_offset).initStructList(size, element_struct_size));
+                else
+                    list_builder_impl = capnp::DynamicList::Builder(list_schema, builder_impl.getPointerField(slot_offset).initList(element_size, size));
+                field_builder = std::make_unique<ListBuilder>(std::move(list_builder_impl), size);
             }
 
-            return std::nullopt;
+            auto & list_builder = assert_cast<ListBuilder &>(*field_builder);
+            for (UInt32 i = 0; i != size; ++i)
+                nested_serializer->writeRow(nested_column, list_builder.nested_builders[i], list_builder.impl, i, offset + i);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            auto list_reader = reader.as<capnp::DynamicList>();
+            const auto * array_column = assert_cast<const ColumnArray *>(column.get());
+            const auto & nested_column = array_column->getDataPtr();
+            const auto & offsets = array_column->getOffsets();
+            auto offset = offsets[row_num - 1];
+            UInt32 size = static_cast<UInt32>(offsets[row_num] - offset);
+
+            if (!field_builder)
+            {
+                auto builder_impl = parent_list_builder.getBuilderImpl();
+                capnp::DynamicList::Builder list_builder_impl;
+                if (element_is_struct)
+                    list_builder_impl = capnp::DynamicList::Builder(list_schema, builder_impl.getPointerElement(array_index).initStructList(size, element_struct_size));
+                else
+                    list_builder_impl = capnp::DynamicList::Builder(list_schema, builder_impl.getPointerElement(array_index).initList(element_size, size));
+                field_builder = std::make_unique<ListBuilder>(std::move(list_builder_impl), size);
+            }
+
+            auto & list_builder = assert_cast<ListBuilder &>(*field_builder);
+            for (UInt32 i = 0; i != size; ++i)
+                nested_serializer->writeRow(nested_column, list_builder.nested_builders[i], list_builder.impl, i, offset + i);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            const auto & reader_impl = parent_struct_reader.getReaderImpl();
+            auto list_reader = capnp::DynamicList::Reader(list_schema, reader_impl.getPointerField(slot_offset).getList(element_size, nullptr));
+            UInt32 size = list_reader.size();
             auto & column_array = assert_cast<ColumnArray &>(column);
             auto & offsets = column_array.getOffsets();
             offsets.push_back(offsets.back() + list_reader.size());
 
             auto & nested_column = column_array.getData();
-            for (const auto & nested_reader : list_reader)
-                nested_serializer->readRow(nested_column, nested_reader);
+            for (UInt32 i = 0; i != size; ++i)
+                nested_serializer->readRow(nested_column, list_reader, i);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            const auto & reader_impl = parent_list_reader.getReaderImpl();
+            auto list_reader = capnp::DynamicList::Reader(list_schema, reader_impl.getPointerElement(array_index).getList(element_size, nullptr));
+            UInt32 size = list_reader.size();
+            auto & column_array = assert_cast<ColumnArray &>(column);
+            auto & offsets = column_array.getOffsets();
+            offsets.push_back(offsets.back() + list_reader.size());
+
+            auto & nested_column = column_array.getData();
+            for (UInt32 i = 0; i != size; ++i)
+                nested_serializer->readRow(nested_column, list_reader, i);
         }
 
     private:
+        capnp::ListSchema list_schema;
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
-        capnp::Type element_type;
-        size_t element_struct_fields;
+        capnp::ElementSize element_size;
+        capnp::_::StructSize element_struct_size;
+        bool element_is_struct = false;
+
     };
 
     class CapnProtoMapSerializer : public ICapnProtoSerializer
@@ -869,7 +1159,9 @@ namespace
             if (!capnp_type.isStruct())
                 throwCannotConvert(data_type, column_name, capnp_type);
 
-            auto struct_schema = capnp_type.asStruct();
+            struct_schema = capnp_type.asStruct();
+            auto node = struct_schema.getProto().getStruct();
+            struct_size = capnp::_::StructSize(node.getDataWordCount(), node.getPointerCount());
 
             if (checkIfStructContainsUnnamedUnion(struct_schema))
                 throw Exception(
@@ -921,43 +1213,70 @@ namespace
             DataTypes types = {map_type.getKeyType(), map_type.getValueType()};
             Names names = {"key", "value"};
             auto entries_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(types, names));
-            entries_field = struct_schema.getFields()[0];
-            entries_capnp_type = entries_field.getType();
             nested_serializer = createSerializer(entries_type, column_name, field_type, settings);
+            entries_slot_offset = struct_schema.getFields()[0].getProto().getSlot().getOffset();
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * field_builder, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            assert(field_builder);
+            if (!field_builder)
+            {
+                auto builder_impl = parent_struct_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getPointerField(slot_offset).initStruct(struct_size));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), 1);
+            }
+
             auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
             const auto & entries_column = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
-            auto entries_builder = initStructFieldBuilderIfNeeded(entries_column, row_num, struct_builder.impl, entries_field, entries_capnp_type, 0);
-            nested_serializer->writeRow(entries_column, entries_builder.get(), row_num);
-            return std::nullopt;
+            nested_serializer->writeRow(entries_column, struct_builder.field_builders[0], struct_builder.impl, entries_slot_offset, row_num);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
-            auto struct_reader = reader.as<capnp::DynamicStruct>();
+            if (!field_builder)
+            {
+                auto builder_impl = parent_list_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getStructElement(array_index));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), 1);
+            }
+
+            auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
+            const auto & entries_column = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
+            nested_serializer->writeRow(entries_column, struct_builder.field_builders[0], struct_builder.impl, entries_slot_offset, row_num);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            auto reader_impl = parent_struct_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getPointerField(slot_offset).getStruct(nullptr));
             auto & entries_column = assert_cast<ColumnMap &>(column).getNestedColumn();
-            nested_serializer->readRow(entries_column, struct_reader.get(entries_field));
+            nested_serializer->readRow(entries_column, struct_reader, entries_slot_offset);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            auto reader_impl = parent_list_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getStructElement(array_index));
+            auto & entries_column = assert_cast<ColumnMap &>(column).getNestedColumn();
+            nested_serializer->readRow(entries_column, struct_reader, entries_slot_offset);
         }
 
     private:
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
-        capnp::StructSchema::Field entries_field;
-        capnp::Type entries_capnp_type;
+        capnp::StructSchema struct_schema;
+        capnp::_::StructSize struct_size;
+        UInt32 entries_slot_offset;
     };
 
     class CapnProtoStructureSerializer : public ICapnProtoSerializer
     {
     public:
-        CapnProtoStructureSerializer(const DataTypes & data_types, const Names & names, const capnp::StructSchema & schema, const FormatSettings::CapnProto & settings)
+        CapnProtoStructureSerializer(const DataTypes & data_types, const Names & names, const capnp::StructSchema & schema, const FormatSettings::CapnProto & settings) : struct_schema(schema)
         {
             if (checkIfStructIsNamedUnion(schema) || checkIfStructContainsUnnamedUnion(schema))
                 throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Root CapnProto Struct cannot be named union/struct with unnamed union");
 
-            initialize(data_types, names, schema, settings);
+            initialize(data_types, names, settings);
         }
 
         CapnProtoStructureSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type, const FormatSettings::CapnProto & settings)
@@ -965,7 +1284,7 @@ namespace
             if (!capnp_type.isStruct())
                 throwCannotConvert(data_type, column_name, capnp_type);
 
-            auto struct_schema = capnp_type.asStruct();
+            struct_schema = capnp_type.asStruct();
 
             if (checkIfStructIsNamedUnion(struct_schema) || checkIfStructContainsUnnamedUnion(struct_schema))
                 throw Exception(
@@ -1002,7 +1321,7 @@ namespace
 
             try
             {
-                initialize(nested_types, nested_names, struct_schema, settings);
+                initialize(nested_types, nested_names, settings);
             }
             catch (Exception & e)
             {
@@ -1011,77 +1330,118 @@ namespace
             }
         }
 
-        std::optional<capnp::DynamicValue::Reader> writeRow(const ColumnPtr & column, FieldBuilder * builder, size_t row_num) override
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            assert(builder);
-            auto & struct_builder = assert_cast<StructBuilder &>(*builder);
+            if (!field_builder)
+            {
+                auto builder_impl = parent_struct_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getPointerField(slot_offset).initStruct(struct_size));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), fields_count);
+            }
+
+            auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
             if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
-                writeRow(tuple_column->getColumnsCopy(), struct_builder, row_num);
+            {
+                const auto & columns = tuple_column->getColumns();
+                for (size_t i = 0; i != columns.size(); ++i)
+                    fields_serializers[i]->writeRow(columns[i], struct_builder.field_builders[fields_indexes[i]], struct_builder.impl, fields_offsets[i], row_num);
+            }
             else
-                writeRow(Columns{column}, struct_builder, row_num);
-            return std::nullopt;
+            {
+                fields_serializers[0]->writeRow(column, struct_builder.field_builders[fields_indexes[0]], struct_builder.impl, fields_offsets[0], row_num);
+            }
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
+        {
+            if (!field_builder)
+            {
+                auto builder_impl = parent_list_builder.getBuilderImpl();
+                auto struct_builder_impl = capnp::DynamicStruct::Builder(struct_schema, builder_impl.getStructElement(array_index));
+                field_builder = std::make_unique<StructBuilder>(std::move(struct_builder_impl), fields_count);
+            }
+
+            auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
+            if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
+            {
+                const auto & columns = tuple_column->getColumns();
+                for (size_t i = 0; i != columns.size(); ++i)
+                    fields_serializers[i]->writeRow(columns[i], struct_builder.field_builders[fields_indexes[i]], struct_builder.impl, fields_offsets[i], row_num);
+            }
+            else
+            {
+                fields_serializers[0]->writeRow(column, struct_builder.field_builders[fields_indexes[0]], struct_builder.impl, fields_offsets[0], row_num);
+            }
         }
 
         void writeRow(const Columns & columns, StructBuilder & struct_builder, size_t row_num)
         {
             for (size_t i = 0; i != columns.size(); ++i)
-            {
-                const auto & field = fields[i];
-                size_t field_index = field.getIndex();
-                if (likely(!struct_builder.field_builders[field_index]))
-                    struct_builder.field_builders[field_index] = initStructFieldBuilderIfNeeded(
-                        columns[i], row_num, struct_builder.impl, field, fields_types[i], nested_field_sizes[i]);
-
-                auto value = field_serializers[i]->writeRow(columns[i], struct_builder.field_builders[field_index].get(), row_num);
-                if (value)
-                    struct_builder.impl.set(field, *value);
-            }
+                fields_serializers[i]->writeRow(columns[i], struct_builder.field_builders[fields_indexes[i]], struct_builder.impl, fields_offsets[i], row_num);
         }
 
-        void readRow(IColumn & column, const capnp::DynamicValue::Reader & reader) override
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            auto struct_reader = reader.as<capnp::DynamicStruct>();
+            auto reader_impl = parent_struct_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getPointerField(slot_offset).getStruct(nullptr));
             if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
             {
                 for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
-                    field_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader.get(fields[i]));
+                    fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
             }
             else
-                field_serializers[0]->readRow(column, struct_reader.get(fields[0]));
+                fields_serializers[0]->readRow(column, struct_reader, fields_offsets[0]);
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            auto reader_impl = parent_list_reader.getReaderImpl();
+            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, reader_impl.getStructElement(array_index));
+            if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
+            {
+                for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
+                    fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
+            }
+            else
+                fields_serializers[0]->readRow(column, struct_reader, fields_offsets[0]);
         }
 
         void readRow(MutableColumns & columns, const capnp::DynamicStruct::Reader & reader)
         {
             for (size_t i = 0; i != columns.size(); ++i)
-                field_serializers[i]->readRow(*columns[i], reader.get(fields[i]));
+                fields_serializers[i]->readRow(*columns[i], reader, fields_offsets[i]);
         }
 
     private:
-        void initialize(const DataTypes & data_types, const Names & names, const capnp::StructSchema & schema, const FormatSettings::CapnProto & settings)
+        void initialize(const DataTypes & data_types, const Names & names, const FormatSettings::CapnProto & settings)
         {
-            field_serializers.reserve(data_types.size());
-            fields.reserve(data_types.size());
-            fields_types.reserve(data_types.size());
-            nested_field_sizes.reserve(data_types.size());
+            auto node = struct_schema.getProto().getStruct();
+            struct_size = capnp::_::StructSize(node.getDataWordCount(), node.getPointerCount());
+            fields_count = struct_schema.getFields().size();
+            fields_serializers.reserve(data_types.size());
+            fields_offsets.reserve(data_types.size());
+            fields_indexes.reserve(data_types.size());
             for (size_t i = 0; i != data_types.size(); ++i)
             {
                 auto [field_name, _] = splitFieldName(names[i]);
-                auto field = findFieldByName(schema, field_name);
+                auto field = findFieldByName(struct_schema, field_name);
                 if (!field)
                     throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Capnproto schema doesn't contain field with name {}", field_name);
 
-                fields.push_back(*field);
                 auto capnp_type = field->getType();
-                fields_types.push_back(capnp_type);
-                nested_field_sizes.push_back(capnp_type.isStruct() ? capnp_type.asStruct().getFields().size() : 0);
-                field_serializers.push_back(createSerializer(data_types[i], names[i], capnp_type, settings));
+                fields_serializers.push_back(createSerializer(data_types[i], names[i], capnp_type, settings));
+                fields_offsets.push_back(field->getProto().getSlot().getOffset());
+                fields_indexes.push_back(field->getIndex());
             }
         }
 
-        std::vector<std::unique_ptr<ICapnProtoSerializer>> field_serializers;
-        std::vector<capnp::StructSchema::Field> fields;
-        std::vector<size_t> nested_field_sizes;
-        std::vector<capnp::Type> fields_types;
+        capnp::StructSchema struct_schema;
+        capnp::_::StructSize struct_size;
+        size_t fields_count;
+        std::vector<std::unique_ptr<ICapnProtoSerializer>> fields_serializers;
+        std::vector<UInt32> fields_offsets;
+        std::vector<size_t> fields_indexes;
+
     };
 
     std::unique_ptr<ICapnProtoSerializer> createSerializer(const DataTypePtr & type, const String & name, const capnp::Type & capnp_type, const FormatSettings::CapnProto & settings)
@@ -1116,17 +1476,17 @@ namespace
             case TypeIndex::UInt64:
                 return createIntegerSerializer<UInt64>(type, name, capnp_type);
             case TypeIndex::Int128:
-                return std::make_unique<CapnProtoBigIntegerSerializer<Int128>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Int128>>(type, name, capnp_type);
             case TypeIndex::UInt128:
-                return std::make_unique<CapnProtoBigIntegerSerializer<UInt128>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UInt128>>(type, name, capnp_type);
             case TypeIndex::Int256:
-                return std::make_unique<CapnProtoBigIntegerSerializer<Int256>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Int256>>(type, name, capnp_type);
             case TypeIndex::UInt256:
-                return std::make_unique<CapnProtoBigIntegerSerializer<UInt256>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UInt256>>(type, name, capnp_type);
             case TypeIndex::Float32:
-                return std::make_unique<CapnProtoFloatSerializer<Float32>>(type, name, capnp_type);
+                return createFloatSerializer<Float32>(type, name, capnp_type);
             case TypeIndex::Float64:
-                return std::make_unique<CapnProtoFloatSerializer<Float64>>(type, name, capnp_type);
+                return createFloatSerializer<Float64>(type, name, capnp_type);
             case TypeIndex::Date:
                 return std::make_unique<CapnProtoDateSerializer>(type, name, capnp_type);
             case TypeIndex::Date32:
@@ -1140,15 +1500,15 @@ namespace
             case TypeIndex::Decimal64:
                 return std::make_unique<CapnProtoDecimalSerializer<Decimal64>>(type, name, capnp_type);
             case TypeIndex::Decimal128:
-                return std::make_unique<CapnProtoBigDecimalSerializer<Decimal128>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Decimal128>>(type, name, capnp_type);
             case TypeIndex::Decimal256:
-                return std::make_unique<CapnProtoBigDecimalSerializer<Decimal256>>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Decimal256>>(type, name, capnp_type);
             case TypeIndex::IPv4:
                 return std::make_unique<CapnProtoIPv4Serializer>(type, name, capnp_type);
             case TypeIndex::IPv6:
-                return std::make_unique<CapnProtoIPv6Serializer>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<IPv6>>(type, name, capnp_type);
             case TypeIndex::UUID:
-                return std::make_unique<CapnProtoUUIDSerializer>(type, name, capnp_type);
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UUID>>(type, name, capnp_type);
             case TypeIndex::Enum8:
                 return std::make_unique<CapnProtoEnumSerializer<Int8>>(type, name, capnp_type, settings.enum_comparing_mode);
             case TypeIndex::Enum16:
