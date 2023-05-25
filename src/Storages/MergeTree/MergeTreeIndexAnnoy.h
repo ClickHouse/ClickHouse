@@ -23,13 +23,13 @@ public:
 };
 
 template <typename Distance>
+using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex<Distance>>;
+
+template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = AnnoyIndex<Distance>;
-    using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
-
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_, AnnoyIndexPtr index_);
+    MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_, AnnoyIndexPtr<Distance> index_);
 
     ~MergeTreeIndexGranuleAnnoy() override = default;
 
@@ -40,15 +40,12 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
     String index_name;
     Block index_sample_block;
-    AnnoyIndexPtr index;
+    AnnoyIndexPtr<Distance> index;
 };
 
 template <typename Distance>
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = AnnoyIndex<Distance>;
-    using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
-
     MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t trees);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
@@ -59,7 +56,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     String index_name;
     Block index_sample_block;
     const uint64_t trees;
-    AnnoyIndexPtr index;
+    AnnoyIndexPtr<Distance> index;
 };
 
 
