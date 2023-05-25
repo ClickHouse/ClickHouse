@@ -1,6 +1,11 @@
+import time
+
 import redis
 import pytest
+
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -18,40 +23,160 @@ def started_cluster():
 
 def get_redis_connection(db_id=0):
     client = redis.Redis(
-        host=node.name, port=started_cluster.redis_port, password="clickhouse", db=db_id
+        host='localhost', port=cluster.redis_port, password="clickhouse", db=db_id
     )
     return client
 
 
-def get_address():
-    return node.name + started_cluster.redis_port
+def get_address_for_ch():
+    return cluster.redis_host + ':6379'
 
 
-@pytest.mark.parametrize("started_cluster")
+def drop_table(table):
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC");
+
+
 def test_storage_simple_select(started_cluster):
     client = get_redis_connection()
-    address = get_address()
+    address = get_address_for_ch()
+
+    # clean all
+    client.flushall()
+    drop_table('test_storage_simple_select')
 
     data = {}
     for i in range(100):
-        data['key{}'.format(i)] = 'value{}'.format(i)
+        data[str(i)] = str(i)
 
     client.mset(data)
+    client.close()
 
     # create table
     node.query(
         f"""
         CREATE TABLE test_storage_simple_select(
             k String, 
-            v String
-        ) Engine=Redis('{address}', 0, '','simple', 10)
+            v UInt32
+        ) Engine=Redis('{address}', 0, 'clickhouse')
         """
     )
 
-    select_query = "SELECT k, v from test_storage_simple_select where k='0' FORMAT Values"
-    assert (node.query(select_query) == "('0','0')")
+    response = TSV.toMat(node.query("SELECT k, v from test_storage_simple_select where k='0' FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['0', '0'])
 
-    select_query = "SELECT * from test_storage_simple_select FORMAT Values"
-    assert (len(node.query(select_query)) == 100)
-    assert (node.query(select_query)[0] == "('0','0')")
+    response = TSV.toMat(node.query("SELECT * from test_storage_simple_select order by k FORMAT TSV"))
+    assert (len(response) == 100)
+    assert (response[0] == ['0', '0'])
+
+
+def test_storage_hash_map_select(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+
+    # clean all
+    client.flushall()
+    drop_table('test_storage_hash_map_select')
+
+    key = 'k'
+    data = {}
+    for i in range(100):
+        data[str(i)] = str(i)
+
+    client.hset(key, mapping=data)
+    client.close()
+
+    # create table
+    node.query(
+        f"""
+        CREATE TABLE test_storage_hash_map_select(
+            k String,
+            f String, 
+            v UInt32
+        ) Engine=Redis('{address}', 0, 'clickhouse','hash_map')
+        """
+    )
+
+    response = TSV.toMat(node.query("SELECT k, f, v from test_storage_hash_map_select where f='0' FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['k', '0', '0'])
+
+    response = TSV.toMat(node.query("SELECT * from test_storage_hash_map_select FORMAT TSV"))
+    assert (len(response) == 100)
+    assert (response[0] == ['k', '0', '0'])
+
+
+def test_create_table(started_cluster):
+    address = get_address_for_ch()
+
+    # simple creation
+    drop_table('test_create_table')
+    node.query(
+        f"""
+        CREATE TABLE test_create_table(
+            k String,
+            v UInt32
+        ) Engine=Redis('{address}')
+        """
+    )
+
+    # simple creation with full engine args
+    drop_table('test_create_table')
+    node.query(
+        f"""
+        CREATE TABLE test_create_table(
+            k String,
+            v UInt32
+        ) Engine=Redis('{address}', 0, 'clickhouse','simple', 10)
+        """
+    )
+
+    drop_table('test_create_table')
+    node.query(
+        f"""
+        CREATE TABLE test_create_table(
+            k String,
+            f String,
+            v UInt32
+        ) Engine=Redis('{address}', 0, 'clickhouse','hash_map', 10)
+        """
+    )
+
+    # illegal columns
+    drop_table('test_create_table')
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            f"""
+            CREATE TABLE test_create_table(
+                k String,
+                f String,
+                v UInt32
+            ) Engine=Redis('{address}', 0, 'clickhouse','simple', 10)
+            """
+        )
+
+    drop_table('test_create_table')
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            f"""
+            CREATE TABLE test_create_table(
+                k String,
+                f String,
+                v UInt32,
+                n UInt32
+            ) Engine=Redis('{address}', 0, 'clickhouse','hash_map', 10)
+            """
+        )
+
+    # illegal storage type
+    drop_table('test_create_table')
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            f"""
+            CREATE TABLE test_create_table(
+                k String,
+                v UInt32
+            ) Engine=Redis('{address}', 0, 'clickhouse','not_exist', 10)
+            """
+        )
 
