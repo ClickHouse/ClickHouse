@@ -19,9 +19,11 @@ struct ArrayPackBitsImpl
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return true; }
-    static constexpr auto num_fixed_params = pack_groups ? 1 : 0;
+    static constexpr int num_fixed_params = pack_groups ? 1 : 0;
+    static constexpr bool return_fixed_string = result_type == ArrayPackBitsResultType::fixed_string;
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+    static DataTypePtr
+    getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/, const UInt64 fixed_string_size = 0)
     {
         auto call = [&](const auto & types)
         {
@@ -50,17 +52,16 @@ struct ArrayPackBitsImpl
         }
         else if constexpr (result_type == ArrayPackBitsResultType::fixed_string)
         {
-            auto string_size = 20; // should from args
-            return std::make_shared<DataTypeFixedString>(string_size);
+            return std::make_shared<DataTypeFixedString>(fixed_string_size);
         }
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayPackBits is not implemented for {} as result type", result_type);
     }
 
     static void checkArguments(const String & name, const ColumnWithTypeAndName * fixed_arguments)
-            requires(pack_groups)
+        requires(pack_groups)
     {
         if (!fixed_arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected fixed arguments to get the limit for partial array sort");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected fixed arguments to get the fixed size for fixed string result");
 
         WhichDataType which(fixed_arguments[0].type.get());
         if (!which.isUInt() && !which.isInt())
