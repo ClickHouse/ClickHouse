@@ -893,7 +893,7 @@ Default value: `true`.
 Query
 
 ```bash
-echo '  string  ' |./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
 ```
 
 Result
