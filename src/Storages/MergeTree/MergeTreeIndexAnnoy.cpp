@@ -338,9 +338,22 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
     return std::make_shared<MergeTreeIndexAnnoy>(index, param, distance_name);
 }
 
-static void assertIndexColumnsType(const Block & header)
+void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
-    DataTypePtr column_data_type_ptr = header.getDataTypes()[0];
+    if (index.arguments.size() > 2)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
+
+    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
+        && index.arguments[0].getType() != Field::Types::String)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String");
+
+    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String");
+
+    if (index.column_names.size() != 1 || index.data_types.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
+
+    DataTypePtr column_data_type_ptr = index.sample_block.getDataTypes()[0];
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(column_data_type_ptr.get()))
     {
@@ -369,25 +382,6 @@ static void assertIndexColumnsType(const Block & header)
             ErrorCodes::ILLEGAL_COLUMN,
             "Unexpected type {} of Annoy index. Only Array(Float32) and Tuple(Float32) are supported",
             column_data_type_ptr->getName());
-
-}
-
-void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
-{
-    if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
-
-    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
-        && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String");
-
-    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String");
-
-    if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
-
-    assertIndexColumnsType(index.sample_block);
 }
 
 }
