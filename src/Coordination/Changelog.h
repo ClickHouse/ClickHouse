@@ -155,7 +155,7 @@ private:
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
     DiskPtr getDisk() const;
-    DiskPtr getCurrentLogDisk() const;
+    DiskPtr getLatestLogDisk() const;
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;

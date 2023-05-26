@@ -798,9 +798,9 @@ uint64_t KeeperDispatcher::getLogDirSize() const
     auto log_disk = keeper_context->getLogDisk();
     auto size = getTotalSize(log_disk);
 
-    auto current_log_disk = keeper_context->getCurrentLogDisk();
-    if (log_disk != current_log_disk)
-        size += getTotalSize(current_log_disk);
+    auto latest_log_disk = keeper_context->getLatestLogDisk();
+    if (log_disk != latest_log_disk)
+        size += getTotalSize(latest_log_disk);
 
     return size;
 }

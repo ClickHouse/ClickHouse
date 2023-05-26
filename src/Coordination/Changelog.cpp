@@ -32,9 +32,21 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr std::string_view tmp_prefix = "tmp_";
+
 void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr description, DiskPtr disk_to, const std::string & path_to)
 {
-    disk_from->copyFile(description->path, *disk_to, path_to, {});
+    /// we use empty file with prefix tmp_ to detect incomplete copies
+    /// if a copy is complete we don't care from which disk we use the same file
+    /// so it's okay if a failure happens after removing of tmp file but before we remove
+    /// the changelog from the source disk
+    auto from_path = fs::path(description->path);
+    auto tmp_changelog_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
+    {
+        disk_to->writeFile(tmp_changelog_name);
+    }
+    disk_from->copyFile(from_path, *disk_to, path_to, {});
+    disk_to->removeFile(tmp_changelog_name);
     disk_from->removeFile(description->path);
     description->path = path_to;
     description->disk = disk_to;
@@ -164,9 +176,9 @@ public:
                 }
             }
 
-            auto current_log_disk = getCurrentLogDisk();
-            assert(file_description->disk == current_log_disk);
-            file_buf = current_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
+            auto latest_log_disk = getLatestLogDisk();
+            assert(file_description->disk == latest_log_disk);
+            file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             assert(file_buf);
             last_index_written.reset();
             current_file_description = std::move(file_description);
@@ -176,7 +188,7 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [current_log_disk, path = current_file_description->path] { return current_log_disk->readFile(path); });
+                    [latest_log_disk, path = current_file_description->path] { return latest_log_disk->readFile(path); });
 
             prealloc_done = false;
         }
@@ -274,7 +286,7 @@ public:
         new_description->from_log_index = new_start_log_index;
         new_description->to_log_index = new_start_log_index + log_file_settings.rotate_interval - 1;
         new_description->extension = "bin";
-        new_description->disk = getCurrentLogDisk();
+        new_description->disk = getLatestLogDisk();
 
         if (log_file_settings.compress_logs)
             new_description->extension += "." + toContentEncodingName(CompressionMethod::Zstd);
@@ -413,7 +425,7 @@ private:
         prealloc_done = true;
     }
 
-    DiskPtr getCurrentLogDisk() const { return keeper_context->getCurrentLogDisk(); }
+    DiskPtr getLatestLogDisk() const { return keeper_context->getLatestLogDisk(); }
 
     DiskPtr getDisk() const { return keeper_context->getLogDisk(); }
 
@@ -574,50 +586,87 @@ Changelog::Changelog(Poco::Logger * log_, LogFileSettings log_file_settings, Kee
     , append_completion_queue(std::numeric_limits<size_t>::max())
     , keeper_context(std::move(keeper_context_))
 {
-    if (auto current_log_disk = getCurrentLogDisk();
-        log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(current_log_disk.get()) == nullptr)
+    if (auto latest_log_disk = getLatestLogDisk();
+        log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
     {
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
             "force_sync is set to true for logs but disk '{}' cannot satisfy such guarantee because it's not of type DiskLocal.\n"
             "If you want to use force_sync and same disk for all logs, please set keeper_server.log_storage_disk to a local disk.\n"
             "If you want to use force_sync and different disk only for old logs, please set 'keeper_server.log_storage_disk' to any "
-            "supported disk and 'keeper_server.current_log_storage_disk' to a local disk.\n"
+            "supported disk and 'keeper_server.latest_log_storage_disk' to a local disk.\n"
             "Otherwise, disable force_sync",
-            current_log_disk->getName());
+            latest_log_disk->getName());
     }
 
     /// Load all files on changelog disks
 
     const auto load_from_disk = [&](const auto & disk)
     {
+        LOG_TRACE(log, "Reading from disk {}", disk->getName());
+        std::unordered_map<std::string, std::string> incomplete_files;
+
+        const auto clean_incomplete_file = [&](const auto & file_path)
+        {
+            if (auto incomplete_it = incomplete_files.find(fs::path(file_path).filename()); incomplete_it != incomplete_files.end())
+            {
+                LOG_TRACE(log, "Removing {} from {}", file_path, disk->getName());
+                disk->removeFile(file_path);
+                disk->removeFile(incomplete_it->second);
+                incomplete_files.erase(incomplete_it);
+                return true;
+            }
+
+            return false;
+        };
+
+        std::vector<std::string> changelog_files;
         for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
             if (it->name() == changelogs_detached_dir)
                 continue;
 
-            auto file_description = getChangelogFileDescription(it->path());
+            if (it->name().starts_with(tmp_prefix))
+            {
+                incomplete_files.emplace(it->name().substr(tmp_prefix.size()), it->path());
+                continue;
+            }
+
+            if (clean_incomplete_file(it->path()))
+                continue;
+
+            changelog_files.push_back(it->path());
+        }
+
+        for (const auto & changelog_file : changelog_files)
+        {
+            if (clean_incomplete_file(fs::path(changelog_file).filename()))
+                continue;
+
+            auto file_description = getChangelogFileDescription(changelog_file);
             file_description->disk = disk;
 
+            LOG_TRACE(log, "Found {} on {}", changelog_file, disk->getName());
             auto [changelog_it, inserted] = existing_changelogs.insert_or_assign(file_description->from_log_index, std::move(file_description));
 
             if (!inserted)
                 LOG_WARNING(log, "Found duplicate entries for {}, will use the entry from {}", changelog_it->second->path, disk->getName());
         }
+
+        for (const auto & [name, path] : incomplete_files)
+            disk->removeFile(path);
     };
 
     /// Load all files from old disks
     for (const auto & disk : keeper_context->getOldLogDisks())
-    {
         load_from_disk(disk);
-    }
 
     auto disk = getDisk();
     load_from_disk(disk);
 
-    auto current_log_disk = getCurrentLogDisk();
-    if (disk != current_log_disk)
-        load_from_disk(current_log_disk);
+    auto latest_log_disk = getLatestLogDisk();
+    if (disk != latest_log_disk)
+        load_from_disk(latest_log_disk);
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
@@ -779,12 +828,12 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     else if (last_log_read_result.has_value())
     {
         /// check if we need to move completed log to another disk
-        auto current_log_disk = getCurrentLogDisk();
+        auto latest_log_disk = getLatestLogDisk();
         auto disk = getDisk();
 
         auto & description = existing_changelogs.at(last_log_read_result->log_start_index);
-        if (current_log_disk != disk && current_log_disk == description->disk)
-            moveFileBetweenDisks(current_log_disk, description, disk, description->path);
+        if (latest_log_disk != disk && latest_log_disk == description->disk)
+            moveFileBetweenDisks(latest_log_disk, description, disk, description->path);
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
@@ -793,14 +842,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
-    auto current_log_disk = getCurrentLogDisk();
+    auto latest_log_disk = getLatestLogDisk();
     auto disk = getDisk();
     for (const auto & [start_index, description] : existing_changelogs)
     {
-        /// latest log should already be on current_log_disk
+        /// latest log should already be on latest_log_disk
         if (start_index == latest_start_index)
         {
-            chassert(description->disk == current_log_disk);
+            chassert(description->disk == latest_log_disk);
             continue;
         }
 
@@ -825,9 +874,9 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
     LOG_TRACE(log, "Continue to write into {}", description->path);
 
     auto log_disk = description->disk;
-    auto current_log_disk = getCurrentLogDisk();
-    if (log_disk != current_log_disk)
-        moveFileBetweenDisks(log_disk, description, current_log_disk, description->path);
+    auto latest_log_disk = getLatestLogDisk();
+    if (log_disk != latest_log_disk)
+        moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
@@ -855,9 +904,9 @@ DiskPtr Changelog::getDisk() const
     return keeper_context->getLogDisk();
 }
 
-DiskPtr Changelog::getCurrentLogDisk() const
+DiskPtr Changelog::getLatestLogDisk() const
 {
-    return keeper_context->getCurrentLogDisk();
+    return keeper_context->getLatestLogDisk();
 }
 
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
@@ -1044,9 +1093,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                 description = std::prev(index_changelog)->second;
 
             auto log_disk = description->disk;
-            auto current_log_disk = getCurrentLogDisk();
-            if (log_disk != current_log_disk)
-                moveFileBetweenDisks(log_disk, description, current_log_disk, description->path);
+            auto latest_log_disk = getLatestLogDisk();
+            if (log_disk != latest_log_disk)
+                moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
 
             current_writer->setFile(std::move(description), WriteMode::Append);
 

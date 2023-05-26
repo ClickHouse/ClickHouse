@@ -22,10 +22,10 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
 
     log_storage = getLogsPathFromConfig(config);
 
-    if (config.has("keeper_server.current_log_storage_disk"))
-        current_log_storage = config.getString("keeper_server.current_log_storage_disk");
+    if (config.has("keeper_server.latest_log_storage_disk"))
+        latest_log_storage = config.getString("keeper_server.latest_log_storage_disk");
     else
-        current_log_storage = log_storage;
+        latest_log_storage = log_storage;
 
     const auto collect_old_disk_names = [&](const std::string_view key_prefix, std::vector<std::string> & disk_names)
     {
@@ -34,7 +34,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
         for (const auto & key : disk_name_keys)
         {
             if (key.starts_with(key_prefix))
-                disk_names.push_back(config.getString(fmt::format("keeper_server.{}", key_prefix)));
+                disk_names.push_back(config.getString(fmt::format("keeper_server.{}", key)));
         }
     };
 
@@ -96,15 +96,15 @@ std::vector<DiskPtr> KeeperContext::getOldLogDisks() const
     return old_log_disks;
 }
 
-DiskPtr KeeperContext::getCurrentLogDisk() const
+DiskPtr KeeperContext::getLatestLogDisk() const
 {
-    return getDisk(current_log_storage);
+    return getDisk(latest_log_storage);
 }
 
 void KeeperContext::setLogDisk(DiskPtr disk)
 {
     log_storage = disk;
-    current_log_storage = std::move(disk);
+    latest_log_storage = std::move(disk);
 }
 
 DiskPtr KeeperContext::getSnapshotDisk() const
@@ -156,9 +156,9 @@ void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
         auto log_disk = getDisk(log_storage);
         dump_disk_info("log_storage", *log_disk);
 
-        auto current_log_disk = getDisk(current_log_storage);
-        if (log_disk != current_log_disk)
-            dump_disk_info("current_log_storage", *current_log_disk);
+        auto latest_log_disk = getDisk(latest_log_storage);
+        if (log_disk != latest_log_disk)
+            dump_disk_info("latest_log_storage", *latest_log_disk);
     }
 
     {
