@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from collections import namedtuple
-from typing import Any, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -36,10 +36,14 @@ class CHException(Exception):
     pass
 
 
+class InsertException(CHException):
+    pass
+
+
 class ClickHouseHelper:
     def __init__(
         self,
-        url: Optional[str] = None,
+        url: str,
         user: Optional[str] = None,
         password: Optional[str] = None,
     ):
@@ -49,6 +53,89 @@ class ClickHouseHelper:
             self.auth["X-ClickHouse-User"] = user
         if password:
             self.auth["X-ClickHouse-Key"] = password
+
+    @staticmethod
+    def _insert_json_str_info_impl(
+        url: str, auth: Dict[str, str], db: str, table: str, json_str: str
+    ) -> None:
+        params = {
+            "database": db,
+            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+
+        for i in range(5):
+            try:
+                response = requests.post(
+                    url, params=params, data=json_str, headers=auth
+                )
+            except Exception as e:
+                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
+                logging.warning(error)
+                continue
+
+            logging.info("Response content '%s'", response.content)
+
+            if response.ok:
+                break
+
+            error = (
+                "Cannot insert data into clickhouse at try "
+                + str(i)
+                + ": HTTP code "
+                + str(response.status_code)
+                + ": '"
+                + str(response.text)
+                + "'"
+            )
+
+            if response.status_code >= 500:
+                # A retriable error
+                time.sleep(1)
+                continue
+
+            logging.info(
+                "Request headers '%s', body '%s'",
+                response.request.headers,
+                response.request.body,
+            )
+
+            raise InsertException(error)
+        else:
+            raise InsertException(error)
+
+    def _insert_json_str_info(self, db: str, table: str, json_str: str) -> None:
+        self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
+
+    def insert_event_into(
+        self, db: str, table: str, event: object, safe: bool = True
+    ) -> None:
+        event_str = json.dumps(event)
+        try:
+            self._insert_json_str_info(db, table, event_str)
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
+
+    def insert_events_into(
+        self, db: str, table: str, events: Iterable[object], safe: bool = True
+    ) -> None:
+        jsons = []
+        for event in events:
+            jsons.append(json.dumps(event))
+
+        try:
+            self._insert_json_str_info(db, table, ",".join(jsons))
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
 
     def _select_and_get_json_each_row(self, db: str, query: str) -> str:
         params = {
