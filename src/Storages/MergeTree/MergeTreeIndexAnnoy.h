@@ -11,9 +11,9 @@ namespace DB
 {
 
 template <typename Distance>
-class AnnoyIndexWithSerialization : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>
+class AnnoyIndexWithSerialization : public Annoy::AnnoyIndex<UInt64, Float32, Distance, Annoy::Kiss64Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>
 {
-    using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, ::Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+    using Base = Annoy::AnnoyIndex<UInt64, Float32, Distance, Annoy::Kiss64Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 public:
     explicit AnnoyIndexWithSerialization(uint64_t dim);
