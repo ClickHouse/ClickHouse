@@ -948,9 +948,8 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
 }
 
 /// Collect a candidate chain to convert expr_name to an key expression
-bool KeyCondition::collectTransform(const String & expr_name, const ActionsDAG::Node & node, std::vector<const ActionsDAG::Node *> & chain, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+bool KeyCondition::collectTransform(const String & expr_name, const ActionsDAG::Node * & cur_node, std::vector<const ActionsDAG::Node *> & chain, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
-    const auto * cur_node = &node;
     bool is_valid_chain = true;
 
     while (is_valid_chain)
@@ -1001,7 +1000,8 @@ bool KeyCondition::tryCollectBestTransformForExpr(const String & expr_name, std:
         if (it != key_columns.end())
         {
             chain.clear();
-            if (collectTransform(expr_name, node, chain, always_monotonic))
+            const auto * cur_node = &node;
+            if (collectTransform(expr_name, cur_node, chain, always_monotonic))
             {
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
@@ -1043,7 +1043,7 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
             std::vector<const ActionsDAG::Node *> chain;
 
             const auto * cur_node = &node;
-            bool is_valid_chain = collectTransform(expr_name, node, chain, always_monotonic);
+            bool is_valid_chain = collectTransform(expr_name, cur_node, chain, always_monotonic);
 
             if (is_valid_chain)
             {

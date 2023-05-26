@@ -434,7 +434,7 @@ private:
 
     bool collectTransform(
         const String & expr_name,
-        const ActionsDAG::Node & node,
+        const ActionsDAG::Node * & cur_node,
         std::vector<const ActionsDAG::Node *> & chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
