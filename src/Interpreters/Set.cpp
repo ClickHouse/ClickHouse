@@ -434,7 +434,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns &
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::forward_as_tuple(l.key_index, l.transform_functions.size(), l.functions.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.transform_functions.size(), r.functions.size(),  r.tuple_index);
+            return std::forward_as_tuple(l.key_index, l.transform_functions.size(), l.functions.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.transform_functions.size(), r.functions.size(), r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
