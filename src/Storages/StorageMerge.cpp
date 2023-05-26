@@ -633,10 +633,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     QueryPipelineBuilderPtr builder;
-
-    bool final = isFinal(modified_query_info);
-
-    if (!final && storage->needRewriteQueryWithFinal(real_column_names))
+    if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
@@ -1010,19 +1007,11 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 {
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (order_info_->direction != 1 && isFinal(query_info))
+    if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
     order_info = order_info_;
     return true;
-}
-
-bool ReadFromMerge::isFinal(const SelectQueryInfo & query_info)
-{
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->hasFinal();
-    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
-    return select_query.final();
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
