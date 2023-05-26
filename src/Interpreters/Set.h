@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
@@ -211,9 +212,11 @@ public:
         size_t tuple_index;
         size_t key_index;
         std::vector<FunctionBasePtr> functions;
+        std::vector<const ActionsDAG::Node *> transform_functions;
+        DataTypePtr key_type;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const ContextPtr & context, const Columns & set_elements, const DataTypes & set_types, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
 

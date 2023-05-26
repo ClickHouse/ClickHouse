@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <base/defines.h>
+#include <Poco/Logger.h>
 
 #include <algorithm>
 #include <cassert>
@@ -878,7 +879,7 @@ static Field applyFunctionForField(
 }
 
 /// The case when arguments may have types different than in the primary key.
-static std::pair<ColumnPtr, DataTypePtr> applyFunctionForColumnOfUnknownType(
+std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyFunctionForColumnOfUnknownType(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
     const ColumnPtr arg_column)
@@ -897,7 +898,7 @@ static std::pair<ColumnPtr, DataTypePtr> applyFunctionForColumnOfUnknownType(
 }
 
 /// Same as above but for binary operators
-static std::pair<ColumnPtr, DataTypePtr> applyBinaryFunctionForColumnOfUnknownType(
+std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
     const FunctionOverloadResolverPtr & func,
     const DataTypePtr & arg_type,
     const ColumnPtr & arg_column,
@@ -946,6 +947,72 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/// Collect a candidate chain to convert expr_name to an key expression
+bool KeyCondition::collectTransform(const String & expr_name, const ActionsDAG::Node & node, std::vector<const ActionsDAG::Node *> & chain, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+{
+    const auto * cur_node = &node;
+    bool is_valid_chain = true;
+
+    while (is_valid_chain)
+    {
+        if (cur_node->result_name == expr_name)
+            break;
+
+        chain.push_back(cur_node);
+
+        if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
+        {
+            is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
+
+            const ActionsDAG::Node * next_node = nullptr;
+            for (const auto * arg : cur_node->children)
+            {
+                if (arg->column && isColumnConst(*arg->column))
+                    continue;
+
+                if (next_node)
+                    is_valid_chain = false;
+
+                next_node = arg;
+            }
+
+            if (!next_node)
+                is_valid_chain = false;
+
+            cur_node = next_node;
+        }
+        else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
+            cur_node = cur_node->children.front();
+        else
+            is_valid_chain = false;
+    }
+
+    return is_valid_chain;
+}
+
+/// Collect a chain to convert expr_name to an key expression
+bool KeyCondition::tryCollectBestTransformForExpr(const String & expr_name, std::vector<const ActionsDAG::Node *> & chain, size_t & out_key_column_num, DataTypePtr & out_key_column_type, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+{
+    const auto & sample_block = key_expr->getSampleBlock();
+
+    for (const auto & node : key_expr->getNodes())
+    {
+        auto it = key_columns.find(node.result_name);
+        if (it != key_columns.end())
+        {
+            chain.clear();
+            if (collectTransform(expr_name, node, chain, always_monotonic))
+            {
+                out_key_column_num = it->second;
+                out_key_column_type = sample_block.getByName(it->first).type;
+                reverse(chain.begin(), chain.end());
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /** The key functional expression constraint may be inferred from a plain column in the expression.
   * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
   * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
@@ -973,44 +1040,10 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
         auto it = key_columns.find(node.result_name);
         if (it != key_columns.end())
         {
-            std::stack<const ActionsDAG::Node *> chain;
+            std::vector<const ActionsDAG::Node *> chain;
 
             const auto * cur_node = &node;
-            bool is_valid_chain = true;
-
-            while (is_valid_chain)
-            {
-                if (cur_node->result_name == expr_name)
-                    break;
-
-                chain.push(cur_node);
-
-                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
-                {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
-                    const ActionsDAG::Node * next_node = nullptr;
-                    for (const auto * arg : cur_node->children)
-                    {
-                        if (arg->column && isColumnConst(*arg->column))
-                            continue;
-
-                        if (next_node)
-                            is_valid_chain = false;
-
-                        next_node = arg;
-                    }
-
-                    if (!next_node)
-                        is_valid_chain = false;
-
-                    cur_node = next_node;
-                }
-                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
-                    cur_node = cur_node->children.front();
-                else
-                    is_valid_chain = false;
-            }
+            bool is_valid_chain = collectTransform(expr_name, node, chain, always_monotonic);
 
             if (is_valid_chain)
             {
@@ -1024,15 +1057,15 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
 
                 while (!chain.empty())
                 {
-                    const auto * func = chain.top();
-                    chain.pop();
+                    const auto * func = chain.back();
+                    chain.pop_back();
 
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
                     if (func->children.size() == 1)
                     {
-                        std::tie(out_column, const_type)
+                        std::tie(const_values, const_type)
                             = applyFunctionForColumnOfUnknownType(func->function_base, const_type, const_values);
                     }
                     else if (func->children.size() == 2)
@@ -1042,14 +1075,14 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                         if (left->column && isColumnConst(*left->column))
                         {
                             auto left_arg_type = left->result_type;
-                            std::tie(out_column, const_type) = applyBinaryFunctionForColumnOfUnknownType(
+                            std::tie(const_values, const_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func->function_base->getName(), context),
                                 left_arg_type, left->column, const_type, const_values);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
-                            std::tie(out_column, const_type) = applyBinaryFunctionForColumnOfUnknownType(
+                            std::tie(const_values, const_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func->function_base->getName(), context),
                                 const_type, const_values, right_arg_type, right->column);
                         }
@@ -1057,8 +1090,7 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                 }
 
                 /// If there's no function at all
-                if (!out_column)
-                    out_column = const_values;
+                out_column = const_values;
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
                 out_type = const_type;
@@ -1117,56 +1149,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_value = (*out_column)[0];
 
     return success;
-}
-
-
-bool KeyCondition::canConstantsBeWrappedByMonotonicFunctions(
-        const RPNBuilderTreeNode & node,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        const ColumnPtr & in_column,
-        ColumnPtr & out_column,
-        DataTypePtr & out_type)
-{
-    String expr_name = node.getColumnName();
-
-    // LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "Checking if constants can be wrapped by monotonic functions for expression {}, key subexpression are ({})", expr_name, fmt::join(key_subexpr_names, ", "));
-
-    if (array_joined_column_names.contains(expr_name))
-        return false;
-
-    if (!key_subexpr_names.contains(expr_name))
-        return false;
-
-    for (size_t i = 0; i < in_column->size(); ++i)
-    {
-        if (in_column->isNullAt(i))
-            return false;
-    }
-
-    // LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "Checking if constants can be wrapped by monotonic functions for type {}", out_type->getName());
-
-    return transformConstColumnWithValidFunctions(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        out_key_column_num,
-        out_key_column_type,
-        in_column,
-        out_column,
-        out_type,
-        [](const IFunctionBase & func, const IDataType & type)
-        {
-            if (!func.hasInformationAboutMonotonicity())
-                return false;
-            else
-            {
-                /// Range is irrelevant in this case.
-                auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-                if (!monotonicity.is_always_monotonic)
-                    return false;
-            }
-            return true;
-        });
 }
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
@@ -1249,6 +1231,36 @@ bool KeyCondition::tryPrepareSetIndex(
             if (out_key_column_num < index_mapping.key_index)
                 out_key_column_num = index_mapping.key_index;
         }
+        else if (
+            !strict_condition
+            && func.getTreeContext().getQueryContext()->getSettingsRef().transform_set_with_monotonic_functions_for_analysis
+            && node.getDAGNode())  /// Without DAGNode, there's no way to get the data type of the lhs if it doesn't match any key expression
+        {
+            auto always_monotonic = [](const IFunctionBase & f, const IDataType & type)
+            {
+                if (!f.hasInformationAboutMonotonicity())
+                    return false;
+                else
+                {
+                    /// Range is irrelevant in this case.
+                    auto monotonicity = f.getMonotonicityForRange(type, Field(), Field());
+                    if (!monotonicity.is_always_monotonic)
+                        return false;
+                }
+                return true;
+            };
+            std::vector<const ActionsDAG::Node *> chain;
+            DataTypePtr key_column_type;
+            if (tryCollectBestTransformForExpr(node.getColumnName(), chain, index_mapping.key_index, key_column_type, always_monotonic))
+            {
+                index_mapping.key_type = key_column_type;
+                index_mapping.transform_functions = std::move(chain);
+                indexes_mapping.push_back(index_mapping);
+                data_types.push_back(node.getDAGNode()->result_type);
+                if (out_key_column_num < index_mapping.key_index)
+                    out_key_column_num = index_mapping.key_index;
+            }
+        }
     };
 
     size_t left_args_count = 1;
@@ -1271,37 +1283,6 @@ bool KeyCondition::tryPrepareSetIndex(
     else
     {
         get_key_tuple_position_mapping(left_arg, 0);
-        if (indexes_mapping.empty() && !strict_condition
-            && func.getTreeContext().getQueryContext()->getSettingsRef().transform_set_with_monotonic_functions_for_analysis)
-        {
-            const auto right_arg = func.getArgumentAt(1);
-            auto prepared_set = right_arg.tryGetPreparedSet();
-
-            if (!prepared_set || !prepared_set->hasExplicitSetElements())
-                return false;
-
-            MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
-            index_mapping.tuple_index = 0;
-            const auto & set_elements = prepared_set->getSetElements();
-            assert(set_elements.size() == 1);
-
-            DataTypePtr data_type = prepared_set->getDataTypes()[0];
-            DataTypePtr key_column_type;
-            Columns out_columns;
-            out_columns.resize(1);
-            if (canConstantsBeWrappedByMonotonicFunctions(func.getArgumentAt(0), index_mapping.key_index, key_column_type, set_elements[0], out_columns[0], data_type))
-            {
-                indexes_mapping.push_back(index_mapping);
-                data_types.push_back(data_type);
-                auto set = right_arg.tryGetPreparedSet(data_types);
-                if (set.get() != prepared_set.get())
-                    return false;
-                if (out_key_column_num < index_mapping.key_index)
-                    out_key_column_num = index_mapping.key_index;
-                out.set_index = std::make_shared<MergeTreeSetIndex>(out_columns, std::move(indexes_mapping));
-                return true;
-            }
-        }
     }
 
     if (indexes_mapping.empty())
@@ -1321,7 +1302,7 @@ bool KeyCondition::tryPrepareSetIndex(
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
         prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(func.getTreeContext().getQueryContext(), prepared_set->getSetElements(), prepared_set->getDataTypes(), std::move(indexes_mapping));
 
     return true;
 }

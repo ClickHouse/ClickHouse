@@ -337,6 +337,18 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static std::pair<ColumnPtr, DataTypePtr> applyFunctionForColumnOfUnknownType(
+        const FunctionBasePtr & func,
+        const DataTypePtr & arg_type,
+        const ColumnPtr arg_column);
+
+    static std::pair<ColumnPtr, DataTypePtr> applyBinaryFunctionForColumnOfUnknownType(
+        const FunctionOverloadResolverPtr & func,
+        const DataTypePtr & arg_type,
+        const ColumnPtr & arg_column,
+        const DataTypePtr & arg_type2,
+        const ColumnPtr & arg_column2);
+
     bool matchesExactContinuousRange() const;
 
 private:
@@ -420,6 +432,19 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
+    bool collectTransform(
+        const String & expr_name,
+        const ActionsDAG::Node & node,
+        std::vector<const ActionsDAG::Node *> & chain,
+        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+
+    bool tryCollectBestTransformForExpr(
+        const String & expr_name,
+        std::vector<const ActionsDAG::Node *> & chain,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+
     bool transformConstColumnWithValidFunctions(
         ContextPtr context,
         const String & expr_name,
@@ -435,14 +460,6 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
-
-    bool canConstantsBeWrappedByMonotonicFunctions(
-        const RPNBuilderTreeNode & node,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        const ColumnPtr & in_column,
-        ColumnPtr & out_column,
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
