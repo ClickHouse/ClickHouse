@@ -235,6 +235,14 @@ inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
     return result;
 }
 
+inline LoadJobSet getGoalsOr(const LoadTaskPtrs & tasks, const LoadJobSet & alternative)
+{
+    LoadJobSet result;
+    for (const auto & task : tasks)
+        result.insert(task->goals().begin(), task->goals().end());
+    return result.empty() ? alternative : result;
+}
+
 inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
 {
     LoadJobSet result;
@@ -368,7 +376,7 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
-    // Start workers to execute scheduled load jobs.
+    // Start workers to execute scheduled load jobs. Note that AsyncLoader is constructed as already started.
     void start();
 
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
@@ -390,7 +398,7 @@ public:
     void schedule(const LoadTaskPtr & task);
 
     // Schedule all tasks atomically. To ensure only highest priority jobs among all tasks are run first.
-    void schedule(const std::vector<LoadTaskPtr> & tasks);
+    void schedule(const LoadTaskPtrs & tasks);
 
     // Increase priority of a job and all its dependencies recursively.
     // Jobs from higher (than `new_pool`) priority pools are not changed.
