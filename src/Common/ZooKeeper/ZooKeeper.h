@@ -524,7 +524,7 @@ public:
     void setServerCompletelyStarted();
 
     String getConnectedZooKeeperHost() const { return connected_zk_host; }
-    String getConnectedZooKeeperPort() const { return connected_zk_port; }
+    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
     size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
 
 private:
@@ -591,7 +591,7 @@ private:
     ZooKeeperArgs args;
 
     String connected_zk_host;
-    String connected_zk_port;
+    UInt16 connected_zk_port;
     size_t connected_zk_index;
 
     std::mutex mutex;
