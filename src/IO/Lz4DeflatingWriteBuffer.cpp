@@ -42,6 +42,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
 {
+    //!
     finalize();
 }
 

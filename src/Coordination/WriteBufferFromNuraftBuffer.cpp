@@ -53,6 +53,7 @@ nuraft::ptr<nuraft::buffer> WriteBufferFromNuraftBuffer::getBuffer()
 
 WriteBufferFromNuraftBuffer::~WriteBufferFromNuraftBuffer()
 {
+    //!
     try
     {
         finalize();

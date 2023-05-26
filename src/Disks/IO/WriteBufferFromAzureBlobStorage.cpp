@@ -38,6 +38,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
+    //!
     finalize();
 }
 

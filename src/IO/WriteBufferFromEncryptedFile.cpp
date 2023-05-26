@@ -21,6 +21,7 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
 
 WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
 {
+    //!
     finalize();
 }
 
