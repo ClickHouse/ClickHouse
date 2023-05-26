@@ -1386,6 +1386,20 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+void Context::addQueryAccessInfo(const Names & partition_names)
+{
+    if (isGlobalContext())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+    }
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    for (const auto & partition_name : partition_names)
+    {
+        query_access_info.partitions.emplace(partition_name);
+    }
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (isGlobalContext())
@@ -1620,6 +1634,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             table_function_results[key] = res;
         }
     }
+    return res;
+}
+
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+{
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+    }
+
     return res;
 }
 
@@ -2782,11 +2810,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    if (!shared->auxiliary_zookeepers.empty())
-        return shared->auxiliary_zookeepers;
-    else
-        return std::map<String, zkutil::ZooKeeperPtr>();
+    return shared->auxiliary_zookeepers;
 }
 
 #if USE_ROCKSDB
@@ -4300,7 +4324,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas
+    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
         && !settings_.use_hedged_requests)
         return READ_TASKS;
 
