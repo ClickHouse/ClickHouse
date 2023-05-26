@@ -45,7 +45,7 @@
 
 #include <IO/WriteBufferFromOStream.h>
 
-#include <Storages/MergeTree/CommonANNIndexes.h>
+#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {

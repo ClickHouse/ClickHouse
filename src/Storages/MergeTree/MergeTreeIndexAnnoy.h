@@ -2,7 +2,7 @@
 
 #ifdef ENABLE_ANNOY
 
-#include <Storages/MergeTree/CommonANNIndexes.h>
+#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 #include <annoylib.h>
 #include <kissrandom.h>
