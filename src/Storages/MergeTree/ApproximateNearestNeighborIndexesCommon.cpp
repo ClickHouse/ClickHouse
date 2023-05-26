@@ -51,12 +51,11 @@ ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view me
 
 }
 
-ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info,
-                                 ContextPtr context) :
-    block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)),
-    index_granularity(context->getMergeTreeSettings().get("index_granularity").get<UInt64>()),
-    limit_restriction(context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()),
-    index_is_useful(checkQueryStructure(query_info))
+ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context)
+    : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
+    , index_granularity(context->getMergeTreeSettings().get("index_granularity").get<UInt64>())
+    , max_limit_for_ann_queries(context->getSettings().get("max_limit_for_ann_queries").get<UInt64>())
+    , index_is_useful(checkQueryStructure(query_info))
 {}
 
 bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) const
@@ -167,7 +166,7 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
     const bool limit_is_valid = matchRPNLimit(rpn_limit, limit);
 
     /// Query without a LIMIT clause or with a limit greater than a restriction is not supported
-    if (!limit_is_valid || limit_restriction < limit)
+    if (!limit_is_valid || max_limit_for_ann_queries < limit)
         return false;
 
     /// Search type query in both sections isn't supported
