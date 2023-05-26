@@ -97,6 +97,7 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -655,6 +656,7 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
+space
 splitByChar
 splitByNonAlpha
 splitByRegexp
