@@ -1,16 +1,14 @@
-#include <Storages/MergeTree/CommonANNIndexes.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
-
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-
-#include <Interpreters/Context.h>
 
 namespace DB
 {
