@@ -297,6 +297,7 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
         }
@@ -314,6 +315,7 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
         }
@@ -323,6 +325,7 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
+        std::set<std::string> partitions{};
         std::set<std::string> projections{};
         std::set<std::string> views{};
     };
@@ -631,6 +634,7 @@ public:
         const Names & column_names,
         const String & projection_name = {},
         const String & view_name = {});
+    void addQueryAccessInfo(const Names & partition_names);
 
 
     /// Supported factories for records in query_log

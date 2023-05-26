@@ -12,12 +12,14 @@
 #include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/copyData.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
+#include <Core/Types.h>
 
 
 namespace DB
