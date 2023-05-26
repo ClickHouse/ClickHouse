@@ -578,13 +578,16 @@ Entropy-learned hashing has two phases:
    - Function `prepareTrainEntropyLearnedHash(data, id)` caches the training data in a global state under a given `id`. It returns dummy
      value `0` on every row.
    - Function `trainEntropyLearnedHash(id)` computes a minimal partial sub-key of the training data stored stored under `id` in the global
-     state. The result is stored in the global state as well. It returns dummy value `0` on every row.
+     state. The cached training data in the global state is replaced by the partial key. Dummy value `0` is returned on every row.
 
 2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
    hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
 
 The reason that the training phase comprises two steps is that ClickHouse processes data at chunk granularity but entropy-learned hashing
 needs to process the entire training set at once.
+
+Since functions `prepareTrainEntropyLearnedHash()` and `trainEntropyLearnedHash()` access global state, they should not be called in
+parallel with the same `id`.
 
 **Syntax**
 
@@ -597,6 +600,7 @@ entropyLearnedHash(data, id);
 **Example**
 
 ```sql
+SET allow_experimental_hash_functions=1;
 CREATE TABLE tab (col String) ENGINE=Memory;
 INSERT INTO tab VALUES ('aa'), ('ba'), ('ca');
 
