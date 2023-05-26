@@ -478,9 +478,11 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     DB::writeIntBinary(request_for_session.session_id, write_buf);
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
-    DB::writeIntBinary(static_cast<int64_t>(0), write_buf);
-    DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf);
-    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf);
+    /// we fill with dummy values to eliminate unecessary copy later on when we will write correct values
+    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
+    DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
+    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
 
@@ -619,19 +621,47 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 assert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
-                auto & entry_buf = entry->get_buf();
-                auto request_for_session = state_machine->parseRequest(entry_buf);
+                auto entry_buf = entry->get_buf_ptr();
+
+                KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
+                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
                 request_for_session->zxid = next_zxid;
                 if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
                 request_for_session->digest = state_machine->getNodesDigest();
 
-                static constexpr size_t write_buffer_size
-                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
-                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf.data_begin() + entry_buf.size() - write_buffer_size);
+                using enum KeeperStateMachine::ZooKeeperLogSerializationVersion;
 
-                WriteBuffer write_buf(buffer_start, write_buffer_size);
+                /// older versions of Keeper can send logs that are missing some fields
+                size_t bytes_missing = 0;
+                if (serialization_version < WITH_TIME)
+                    bytes_missing += sizeof(request_for_session->time);
+
+                if (serialization_version < WITH_ZXID_DIGEST)
+                    bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+
+                if (bytes_missing != 0)
+                {
+                    auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
+                    memcpy(new_buffer->data_begin(), entry_buf->data_begin(), entry_buf->size());
+                    entry_buf = std::move(new_buffer);
+                    entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), entry_buf, entry->get_val_type());
+                }
+
+                size_t write_buffer_header_size
+                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+
+                if (serialization_version < WITH_TIME)
+                    write_buffer_header_size += sizeof(request_for_session->time);
+
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
+
+                WriteBuffer write_buf(buffer_start, write_buffer_header_size);
+
+                if (serialization_version < WITH_TIME)
+                    writeIntBinary(request_for_session->time, write_buf);
+
                 writeIntBinary(request_for_session->zxid, write_buf);
                 writeIntBinary(request_for_session->digest->version, write_buf);
                 if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
