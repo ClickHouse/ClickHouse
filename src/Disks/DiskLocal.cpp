@@ -328,6 +328,18 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
         fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
+std::vector<String> DiskLocal::getBlobPath(const String & path) const
+{
+    auto fs_path = fs::path(disk_path) / path;
+    return {fs_path};
+}
+
+void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+{
+    auto fs_path = fs::path(disk_path) / path;
+    std::move(write_blob_function)({fs_path}, mode, {});
+}
+
 void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
@@ -455,15 +467,8 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
+    , data_source_description(getLocalDataSourceDescription(disk_path))
 {
-    data_source_description.type = DataSourceType::Local;
-
-    if (auto block_device_id = tryGetBlockDeviceId(disk_path); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
-    else
-        data_source_description.description = disk_path;
-    data_source_description.is_encrypted = false;
-    data_source_description.is_cached = false;
 }
 
 DiskLocal::DiskLocal(
@@ -477,6 +482,20 @@ DiskLocal::DiskLocal(
 DataSourceDescription DiskLocal::getDataSourceDescription() const
 {
     return data_source_description;
+}
+
+DataSourceDescription DiskLocal::getLocalDataSourceDescription(const String & path)
+{
+    DataSourceDescription res;
+    res.type = DataSourceType::Local;
+
+    if (auto block_device_id = tryGetBlockDeviceId(path); block_device_id.has_value())
+        res.description = *block_device_id;
+    else
+        res.description = path;
+    res.is_encrypted = false;
+    res.is_cached = false;
+    return res;
 }
 
 void DiskLocal::shutdown()
@@ -544,6 +563,7 @@ try
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
+        buf->finalize();
         buf->sync();
     }
     return true;
