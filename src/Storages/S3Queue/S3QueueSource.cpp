@@ -28,12 +28,6 @@
 #    include <Storages/VirtualColumnUtils.h>
 #    include <Storages/getVirtualsForStorage.h>
 
-#    include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#    include <Disks/ObjectStorages/StoredObject.h>
-
-#    include <IO/ReadBufferFromS3.h>
-
 #    include <Formats/FormatFactory.h>
 
 #    include <Processors/Formats/IInputFormat.h>

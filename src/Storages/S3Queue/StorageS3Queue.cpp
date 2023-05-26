@@ -37,9 +37,6 @@
 #    include <Common/NamedCollections/NamedCollections.h>
 
 
-#    include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-
 #    include <Formats/FormatFactory.h>
 
 #    include <Processors/Formats/IInputFormat.h>
@@ -93,7 +90,6 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -106,7 +102,6 @@ StorageS3Queue::StorageS3Queue(
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
     , name(s3_configuration.url.storage_name)
-    , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
@@ -709,7 +704,6 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 args.comment,
                 args.getContext(),
                 format_settings,
-                /* distributed_processing_ */ false,
                 partition_by);
         },
         {

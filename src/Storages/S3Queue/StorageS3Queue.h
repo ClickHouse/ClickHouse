@@ -50,7 +50,6 @@ public:
         const String & comment,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
     String getName() const override { return "S3Queue"; }
@@ -92,7 +91,7 @@ private:
     String format_name;
     String compression_method;
     String name;
-    const bool distributed_processing;
+
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
