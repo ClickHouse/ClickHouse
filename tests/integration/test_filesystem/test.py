@@ -39,7 +39,8 @@ def started_cluster():
 
         node.exec_in_container(
             [
-                "ln", "-s",
+                "ln",
+                "-s",
                 f"/var/log/clickhouse-server/",
                 f"/var/lib/clickhouse/user_files/link",
             ]
@@ -52,18 +53,36 @@ def started_cluster():
 
 
 def test_full_path():
-    assert node.query("SELECT count() FROM filesystem('/var/lib/clickhouse/user_files/')") == '22\n'
+    assert (
+        node.query("SELECT count() FROM filesystem('/var/lib/clickhouse/user_files/')")
+        == "22\n"
+    )
+
 
 def test_file_path():
-    assert node.query("SELECT count() FROM filesystem('yes')") == '11\n'
+    assert node.query("SELECT count() FROM filesystem('yes')") == "11\n"
+
 
 def test_no_path():
-    assert node.query("SELECT count() FROM filesystem('')") == '22\n'
-    assert node.query("SELECT * FROM filesystem('/var/lib/clickhouse/user_files/') EXCEPT SELECT * FROM filesystem('')") == ''
+    assert node.query("SELECT count() FROM filesystem('')") == "22\n"
+    assert (
+        node.query(
+            "SELECT * FROM filesystem('/var/lib/clickhouse/user_files/') EXCEPT SELECT * FROM filesystem('')"
+        )
+        == ""
+    )
 
 
 def test_relative_path():
-    assert "DATABASE_ACCESS_DENIED" in node.query_and_get_error("SELECT * FROM filesystem('/var/lib/clickhouse/user_files/../')")
+    assert "DATABASE_ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT * FROM filesystem('/var/lib/clickhouse/user_files/../')"
+    )
+
 
 def test_escape_path():
-    assert node.query("SELECT count() FROM filesystem('/var/lib/clickhouse/user_files/link/clickhouse-server.log')") == '1\n'
+    assert (
+        node.query(
+            "SELECT count() FROM filesystem('/var/lib/clickhouse/user_files/link/clickhouse-server.log')"
+        )
+        == "1\n"
+    )
