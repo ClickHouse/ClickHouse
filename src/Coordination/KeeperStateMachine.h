@@ -47,7 +47,7 @@ public:
     /// [preprocess/PreAppendLog -> commit]
     /// [preprocess/PreAppendLog -> rollback]
     /// on events like commit and rollback we can remove the parsed request to keep the memory usage at minimum
-    /// request cache is also cleaned on session close in case somethign strange happened
+    /// request cache is also cleaned on session close in case something strange happened
     ///
     /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
     /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly

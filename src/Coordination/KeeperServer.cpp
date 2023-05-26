@@ -478,7 +478,7 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     DB::writeIntBinary(request_for_session.session_id, write_buf);
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
-    /// we fill with dummy values to eliminate unecessary copy later on when we will write correct values
+    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
     DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
     DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
