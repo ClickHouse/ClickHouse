@@ -53,7 +53,8 @@ public:
     {
         //ColumnRawPtrs key_columns;
         /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
-        Columns key_columns;
+        ColumnRawPtrs key_columns;
+        Columns materialized_columns;
         ColumnPtr null_map_holder;
         ColumnUInt8::MutablePtr filter;
     };

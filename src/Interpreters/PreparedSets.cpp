@@ -239,6 +239,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
     }
 
+    // std::cerr << "... external_table_set " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
+
     if (external_table_set)
         return set = external_table_set->buildOrderedSetInplace(context);
 
@@ -337,7 +339,7 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 
     set_key_columns.filter = ColumnUInt8::create(block.rows());
 
-    set->initSetElements();
+    //set->initSetElements();
     set->insertFromColumns(columns, set_key_columns);
     set->finishInsert();
     //block(std::move(block_))
@@ -350,6 +352,9 @@ FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
+    if (set->hasExplicitSetElements())
+        return set;
+
     const auto & settings = context->getSettingsRef();
     auto limits = getSizeLimitsForSet(settings, true);
 

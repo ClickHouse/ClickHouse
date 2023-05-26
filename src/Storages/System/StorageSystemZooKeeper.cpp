@@ -161,6 +161,17 @@ public:
     }
 };
 
+/// Type of path to be fetched
+enum class ZkPathType
+{
+    Exact,   /// Fetch all nodes under this path
+    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
+    Recurse, /// Fatch all nodes under this path, recursively
+};
+
+/// List of paths to be feched from zookeeper
+using Paths = std::deque<std::pair<String, ZkPathType>>;
+
 class ReadFromSystemZooKeeper final : public SourceStepWithFilter
 {
 public:
@@ -170,11 +181,14 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
+    void onAddFilterFinish() override;
+
 private:
-    void fillData(MutableColumns & res_columns) const;
+    void fillData(MutableColumns & res_columns);
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
     ContextPtr context;
+    Paths paths;
 };
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
@@ -245,17 +259,6 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
         { "path",           std::make_shared<DataTypeString>() },
     };
 }
-
-/// Type of path to be fetched
-enum class ZkPathType
-{
-    Exact,   /// Fetch all nodes under this path
-    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
-    Recurse, /// Fatch all nodes under this path, recursively
-};
-
-/// List of paths to be feched from zookeeper
-using Paths = std::deque<std::pair<String, ZkPathType>>;
 
 static String pathCorrected(const String & path)
 {
@@ -421,10 +424,13 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 }
 
 
-void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
+void ReadFromSystemZooKeeper::onAddFilterFinish()
 {
-    Paths paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+}
 
+void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
+{
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())

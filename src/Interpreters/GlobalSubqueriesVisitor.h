@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 class GlobalSubqueriesMatcher
@@ -159,6 +160,8 @@ public:
                 /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
 
+            // std::cerr << "......... adding external table " << external_table_name << std::endl;
+
             external_tables.emplace(external_table_name, external_storage_holder);
 
             /// We need to materialize external tables immediately because reading from distributed
@@ -195,6 +198,7 @@ public:
 
                     //std::cerr << reinterpret_cast<const void *>(prepared_sets.get()) << std::endl;
                     auto future_set = prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), nullptr);
+                    // std::cerr << "... Future set " << reinterpret_cast<const void *>(external_storage_holder.get()) << " " << reinterpret_cast<const void *>(future_set.get()) << std::endl;
                     external_storage_holder->future_set = std::move(future_set);
                 }
                 else

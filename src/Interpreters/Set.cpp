@@ -202,15 +202,14 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     if (data.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
-    ColumnRawPtrs key_columns;
-    key_columns.reserve(keys_size);
     holder.key_columns.reserve(keys_size);
+    holder.materialized_columns.reserve(keys_size);
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.key_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
-        key_columns.emplace_back(holder.key_columns.back().get());
+        holder.materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
+        holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
     size_t rows = columns.at(0)->size();
@@ -219,7 +218,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
-        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+        null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
     switch (data.type)
     {
@@ -227,7 +226,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            insertFromBlockImpl(*data.NAME, key_columns, rows, data, null_map, holder.filter ? &holder.filter->getData() : nullptr); \
+            insertFromBlockImpl(*data.NAME, holder.key_columns, rows, data, null_map, holder.filter ? &holder.filter->getData() : nullptr); \
             break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -445,6 +444,11 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
+    // std::cerr << "MergeTreeSetIndex::MergeTreeSetIndex "
+    //     << set_elements.size() << ' ' << indexes_mapping.size() << std::endl;
+    // for (const auto & vv : indexes_mapping)
+    //     std::cerr << vv.key_index << ' ' << vv.tuple_index << std::endl;
+
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
@@ -487,6 +491,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
+    // std::cerr << "MergeTreeSetIndex::checkInRange " << single_point << ' ' << tuple_size << ' ' << has_all_keys << std::endl;
 
     FieldValues left_point;
     FieldValues right_point;
