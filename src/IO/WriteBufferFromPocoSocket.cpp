@@ -11,6 +11,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
 
+#include "config.h"
+
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
