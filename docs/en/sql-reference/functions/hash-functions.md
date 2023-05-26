@@ -560,7 +560,9 @@ Result:
 └───────────────────────────┘
 ```
 
-## Entropy-learned hashing
+## Entropy-learned hashing (experimental)
+
+Entropy-learned hashing is disabled by default, to enable: `SET allow_experimental_hash_functions=1`.
 
 Entropy-learned hashing is not a standalone hash function like `metroHash64`, `cityHash64`, `sipHash64` etc. Instead, it aims to preprocess
 the data to be hashed in a way that a standalone hash function can be computed more efficiently while not compromising the hash quality,
@@ -570,15 +572,25 @@ bytes, then a hash function will be 95% less expensive to evaluate. For details 
 Time Hashing with Controllable Uniformity](https://doi.org/10.1145/3514221.3517894).
 
 Entropy-learned hashing has two phases:
-1. A training phase on a representative but typically small set of Strings to be hashed. Function `trainEntropyLearnedHash(data, id)`
-   calculates a minimal partial sub-key of `data` and stores it as `id`. The training step outputs dummy `0` values.
+
+1. A training phase on a representative but typically small set of Strings to be hashed. Training consists of two steps:
+
+   - Function `prepareTrainEntropyLearnedHash(data, id)` caches the training data in a global state under a given `id`. It returns dummy
+     value `0` on every row.
+   - Function `trainEntropyLearnedHash(id)` computes a minimal partial sub-key of the training data stored stored under `id` in the global
+     state. The result is stored in the global state as well. It returns dummy value `0` on every row.
+
 2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
    hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
+
+The reason that the training phase comprises two steps is that ClickHouse processes data at chunk granularity but entropy-learned hashing
+needs to process the entire training set at once.
 
 **Syntax**
 
 ``` sql
-trainEntropyLearnedHash(data, id);
+prepareTrainEntropyLearnedHash(data, id);
+trainEntropyLearnedHash(id);
 entropyLearnedHash(data, id);
 ```
 
@@ -588,18 +600,25 @@ entropyLearnedHash(data, id);
 CREATE TABLE tab (col String) ENGINE=Memory;
 INSERT INTO tab VALUES ('aa'), ('ba'), ('ca');
 
-SELECT trainEntropyLearnedHash(col, 'id1') AS trained FROM tab;
+SELECT prepareTrainEntropyLearnedHash(col, 'id1') AS prepared FROM tab;
+SELECT trainEntropyLearnedHash('id1') AS trained FROM tab;
 SELECT entropyLearnedHash(col, 'id1') as hashes FROM tab;
 ```
 
 Result:
 
 ``` response
-┌─trained─┐ 
-│       0 │ 
-│       0 │ 
-│       0 │ 
-└─────────┘ 
+┌─prepared─┐
+│        0 │
+│        0 │
+│        0 │
+└──────────┘
+
+┌─trained─┐
+│       0 │
+│       0 │
+│       0 │
+└─────────┘
 
 ┌───────────────hashes─┐
 │  2603192927274642682 │
