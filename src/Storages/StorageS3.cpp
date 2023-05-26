@@ -31,7 +31,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFromStorageProgress.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 
@@ -356,7 +356,7 @@ private:
                 request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
             return outcome;
-        }, 0);
+        }, Priority{});
     }
 
     std::mutex mutex;
@@ -619,7 +619,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
 {
-    return create_reader_scheduler([this] { return createReader(); }, 0);
+    return create_reader_scheduler([this] { return createReader(); }, Priority{});
 }
 
 StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
@@ -676,8 +676,8 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-    auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-        pool_reader, modified_settings, std::move(s3_impl),
+    auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
+        std::move(s3_impl), pool_reader, modified_settings,
         context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
 
     async_reader->setReadUntilEnd();
