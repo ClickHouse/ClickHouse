@@ -528,7 +528,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (TARGET ch_contrib::rocksdb)
@@ -613,6 +613,7 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gtest_all
+        ch_contrib::gmock_all
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers
