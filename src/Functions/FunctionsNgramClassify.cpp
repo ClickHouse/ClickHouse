@@ -14,6 +14,7 @@
 #include <fstream>
 #include <vector>
 #include <memory>
+#include "Core/Types.h"
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "base/defines.h"
 #include "base/types.h"
@@ -67,7 +68,7 @@ static constexpr size_t map_size = 1u << 16;
 /// If the haystack size is bigger than this, behaviour is unspecified for this function.
 // static constexpr size_t max_string_size = 1u << 15;
 
-/// Default padding to read safely.
+/// Default padding to read safely.n
 static constexpr size_t default_padding = 16;
 
 /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
@@ -311,9 +312,6 @@ private:
     }
 };
 
-
-// template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
-
 template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
 class Slice {
 public:
@@ -425,10 +423,13 @@ class NgramTextClassificationImpl
 public:
     using ResultType = String;
     String classify(const String &name, const String &text) {
-        return storage.classify(name, text);
+        if (!storage) {
+            storage = new Storage();
+        }
+        return storage->classify(name, text);
     }
 private:
-    Storage storage;
+    std::unique_ptr<Storage> storage = nullptr;
 };
 
 

@@ -46,13 +46,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
-
-
-
-    
-
    
-    
     
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -62,7 +56,7 @@ public:
                 arguments[0]->getName(), getName());
         }
 
-        if (!isString(arguments[1]) /* Тут еще нужно проверить, что это не вектор строк */) {
+        if (!isString(arguments[1]) /* Тут еще нужно проверить, что это не колонка строк */) {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument of function {}. Must be String or Column of Strings.",
                 arguments[1]->getName(), getName());
@@ -93,22 +87,21 @@ public:
             const String &text = texts_const->getValue<String>();
             const String &slice = slice_name_const->getValue<String>();
             ResultType res{};
-            Impl::constant(text, slice, res);
+            // Impl::constant(text, slice, res);
+            std::cout << "Constant Constant\n";
             return result_type->createColumnConst(texts_const->size(), toField(res));
         }
 
         auto col_res = ColumnString::create();
-        // typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-        // vec_res.resize(column_haystack->size());
 
-        const ColumnString * col_vector = checkAndGetColumn<ColumnString>(&*arguments[1].column);
+        // const ColumnString * col_vector = checkAndGetColumn<ColumnString>(&*arguments[1].column);
 
-        const auto &chars = col_vector->getChars();
-        const auto &offsets = col_vector->getOffsets();
+        // const auto &chars = col_vector->getChars();
+        // const auto &offsets = col_vector->getOffsets();
 
-        const String &slice = slice_name_const->getValue<String>();
+        // const String &slice = slice_name_const->getValue<String>();
 
-        Impl::vector(chars, offsets, slice, col_res->getChars(), col_res->getOffsets());
+        // Impl::vector(chars, offsets, slice, col_res->getChars(), col_res->getOffsets());
         return col_res;
     }
 
