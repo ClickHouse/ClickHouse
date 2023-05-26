@@ -36,7 +36,7 @@ public:
     /// There could be no finished tasks yet, so waitIfAny do nothing useful in that case
     /// the first exception is thrown if any task has failed
     void waitIfAny();
-    
+
     /// Well, waitAll waits all the tasks until they finish and collects their statuses
     void waitAll();
 
