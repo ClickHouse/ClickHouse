@@ -535,7 +535,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!args.storage_def->order_by)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
 
         /// Get sorting key from engine arguments.
         ///

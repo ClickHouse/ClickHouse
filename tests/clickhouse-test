@@ -286,11 +286,11 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
+                    p.*,
                     arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
-                    )) AS stacktraces,
-                    p.*
+                    )) AS stacktraces
                 FROM system.processes p
                 JOIN system.stack_trace s USING (query_id)
                 WHERE query NOT LIKE '%system.processes%'
@@ -307,11 +307,11 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
+                p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces,
-                p.*
+                )) AS stacktraces
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -530,6 +530,7 @@ class SettingsRandomizer:
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
+        "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
@@ -2244,7 +2245,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist)
+            print(processlist.decode())
             print(get_transactions_list(args))
 
             print_stacktraces()
