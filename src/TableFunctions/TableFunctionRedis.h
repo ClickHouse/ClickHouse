@@ -24,6 +24,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::optional<RedisConfiguration> configuration;
+    String structure;
 };
 
 }

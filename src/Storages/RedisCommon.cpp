@@ -1,5 +1,9 @@
 #include "RedisCommon.h"
 #include <Common/Exception.h>
+#include <Common/parseAddress.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 namespace DB
 {
@@ -169,7 +173,7 @@ RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & 
     }
 }
 
-RedisConfiguration getRedisConfiguration(const ASTs & engine_args, ContextPtr context)
+RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context)
 {
     RedisConfiguration configuration;
     configuration.db_index = 0;

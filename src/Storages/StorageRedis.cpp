@@ -168,7 +168,7 @@ void registerStorageRedis(StorageFactory & factory)
         "Redis",
         [](const StorageFactory::Arguments & args)
         {
-            auto configuration = StorageRedis::getConfiguration(args.engine_args, args.getLocalContext());
+            auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext());
 
             checkRedisTableStructure(args.columns, configuration);
 
