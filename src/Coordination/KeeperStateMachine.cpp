@@ -150,7 +150,7 @@ void assertDigest(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    auto request_for_session = parseRequest(data);
+    auto request_for_session = parseRequest(data, /*final=*/false);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
@@ -158,7 +158,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     return nullptr;
 }
 
-std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final)
+std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperStorage::RequestForSession>();
@@ -177,10 +177,10 @@ std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseReque
         Coordination::CLOSE_XID,
     };
 
-    const bool should_cache = request_for_session->session_id != -1 && data.size() > min_request_size_to_cache
-        && std::all_of(non_cacheable_xids.begin(),
-                       non_cacheable_xids.end(),
-                       [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+    const bool should_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        && std::all_of(
+              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 
     if (should_cache)
     {
@@ -212,22 +212,34 @@ std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseReque
     request_for_session->request->xid = xid;
     request_for_session->request->readImpl(buffer);
 
+    using enum ZooKeeperLogSerializationVersion;
+    ZooKeeperLogSerializationVersion version = INITIAL;
+
     if (!buffer.eof())
+    {
+        version = WITH_TIME;
         readIntBinary(request_for_session->time, buffer);
-    else /// backward compatibility
+    }
+    else
         request_for_session->time
             = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     if (!buffer.eof())
+    {
+        version = WITH_ZXID_DIGEST;
+
         readIntBinary(request_for_session->zxid, buffer);
 
-    if (!buffer.eof())
-    {
+        chassert(!buffer.eof());
+
         request_for_session->digest.emplace();
         readIntBinary(request_for_session->digest->version, buffer);
         if (request_for_session->digest->version != KeeperStorage::DigestVersion::NO_DIGEST || !buffer.eof())
             readIntBinary(request_for_session->digest->value, buffer);
     }
+
+    if (serialization_version)
+        *serialization_version = version;
 
     if (should_cache && !final)
     {
