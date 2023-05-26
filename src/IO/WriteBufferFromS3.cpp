@@ -182,6 +182,14 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
+    if (std::uncaught_exception())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Detected buffer finalization when an exception is unwinding the stack."
+            " Do not call finalize buffer in destructors or when exception thrown."
+            " Details {}",
+            getLogDetails());
+
     chassert(offset() == 0);
     chassert(hidden_size == 0);
 
@@ -521,7 +529,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     if (multipart_tags.empty())
         throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::S3_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
     for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -529,7 +537,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         const auto tag = multipart_tags.at(i);
         if (tag.empty())
             throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::S3_ERROR,
                     "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
     }
 
