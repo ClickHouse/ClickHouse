@@ -171,6 +171,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
+    //!
     finalize();
 }
 

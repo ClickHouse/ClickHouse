@@ -22,6 +22,7 @@ SnappyWriteBuffer::SnappyWriteBuffer(std::unique_ptr<WriteBuffer> out_, size_t b
 
 SnappyWriteBuffer::~SnappyWriteBuffer()
 {
+    //!
     finish();
 }
 

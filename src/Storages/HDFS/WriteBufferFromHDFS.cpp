@@ -147,6 +147,7 @@ void WriteBufferFromHDFS::finalizeImpl()
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
+    //!
     finalize();
 }
 

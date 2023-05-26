@@ -30,14 +30,15 @@ void WriteBufferFromFileDecorator::finalizeImpl()
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    //!
+//    try
+//    {
+//        finalize();
+//    }
+//    catch (...)
+//    {
+//        tryLogCurrentException(__PRETTY_FUNCTION__);
+//    }
 
     /// It is not a mistake that swap is called here
     /// Swap has been called at constructor, it should be called at destructor

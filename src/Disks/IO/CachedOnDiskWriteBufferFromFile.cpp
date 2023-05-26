@@ -123,6 +123,7 @@ void FileSegmentRangeWriter::finalize()
 
 FileSegmentRangeWriter::~FileSegmentRangeWriter()
 {
+    //!
     try
     {
         if (!finalized)

@@ -46,6 +46,7 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
+    //!
     finalize();
 }
 

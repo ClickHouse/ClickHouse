@@ -105,6 +105,7 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
+    //!
     finalize();
 }
 

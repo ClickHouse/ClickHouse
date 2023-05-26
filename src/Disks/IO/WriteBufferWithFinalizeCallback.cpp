@@ -16,14 +16,15 @@ WriteBufferWithFinalizeCallback::WriteBufferWithFinalizeCallback(
 
 WriteBufferWithFinalizeCallback::~WriteBufferWithFinalizeCallback()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    //!
+//    try
+//    {
+//        finalize();
+//    }
+//    catch (...)
+//    {
+//        tryLogCurrentException(__PRETTY_FUNCTION__);
+//    }
 }
 
 void WriteBufferWithFinalizeCallback::finalizeImpl()

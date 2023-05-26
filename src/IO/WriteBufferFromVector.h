@@ -63,6 +63,7 @@ public:
 
     ~WriteBufferFromVector() override
     {
+        //!
         finalize();
     }
 
