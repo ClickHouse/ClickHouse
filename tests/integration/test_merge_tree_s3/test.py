@@ -930,8 +930,9 @@ def test_merge_canceled_by_drop(cluster, node_name):
     )
 
 
+@pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
 @pytest.mark.parametrize("node_name", ["node"])
-def test_merge_canceled_by_s3_errors(cluster, node_name):
+def test_merge_canceled_by_s3_errors(cluster, node_name, storage_policy):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
     node.query(
@@ -939,7 +940,7 @@ def test_merge_canceled_by_s3_errors(cluster, node_name):
         " (key UInt32, value String)"
         " Engine=MergeTree() "
         " ORDER BY value "
-        " SETTINGS storage_policy='broken_s3'"
+        f" SETTINGS storage_policy='{storage_policy}'"
     )
     node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
     node.query(

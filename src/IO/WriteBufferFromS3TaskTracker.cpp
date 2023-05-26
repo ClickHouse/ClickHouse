@@ -162,15 +162,16 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
 
         for (auto & it : finished_futures)
         {
-            SCOPE_EXIT({
-                /// According to basic exception safety TaskTracker has to be destroyed after exception
-                /// If it would be true than this SCOPE_EXIT is superfluous
-                /// However WriteBufferWithFinalizeCallback, WriteBufferFromFileDecorator do call finalize in d-tor
-                /// TaskTracker has to cope this until the issue with finalizing in d-tor is addressed in #50274
-                futures.erase(it);
-            });
+//            SCOPE_EXIT({
+//                /// According to basic exception safety TaskTracker has to be destroyed after exception
+//                /// If it would be true than this SCOPE_EXIT is superfluous
+//                /// However WriteBufferWithFinalizeCallback, WriteBufferFromFileDecorator do call finalize in d-tor
+//                /// TaskTracker has to cope this until the issue with finalizing in d-tor is addressed in #50274
+//                futures.erase(it);
+//            });
 
             it->get();
+            futures.erase(it);
         }
 
         finished_futures.clear();
