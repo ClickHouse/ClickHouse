@@ -217,8 +217,8 @@ String WriteBufferFromS3::getLogDetails() const
         multipart_upload_details = fmt::format(", upload id {}, upload has finished {}"
                                        , multipart_upload_id, multipart_upload_finished);
 
-    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, finalized {}{}",
-                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), finalized, multipart_upload_details);
+    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}{}",
+                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), is_prefinalized, finalized, multipart_upload_details);
 }
 
 void WriteBufferFromS3::tryToAbortMultipartUpload()
