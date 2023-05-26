@@ -44,7 +44,9 @@ struct AsyncLoaderTest
 
     explicit AsyncLoaderTest(std::vector<Initializer> initializers)
         : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false)
-    {}
+    {
+        loader.stop(); // All tests call `start()` manually to better control ordering
+    }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
         : AsyncLoaderTest({{.max_threads = max_threads}})
