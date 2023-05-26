@@ -306,7 +306,7 @@ You can use this function in table engine parameters in a CREATE TABLE query whe
 
 ## currentUser()
 
-Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
+Returns the login of current user. Login of user, that initiated query, will be returned in case distributed query.
 
 ``` sql
 SELECT currentUser();
@@ -317,7 +317,7 @@ Alias: `user()`, `USER()`.
 **Returned values**
 
 - Login of current user.
-- Login of user that initiated query in case of disributed query.
+- Login of user that initiated query in case of distributed query.
 
 Type: `String`.
 

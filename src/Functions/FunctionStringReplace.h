@@ -47,7 +47,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column_haystack = arguments[0].column;
+        ColumnPtr column_haystack = arguments[0].column;
+        column_haystack = column_haystack->convertToFullColumnIfConst();
+
         const ColumnPtr column_needle = arguments[1].column;
         const ColumnPtr column_replacement = arguments[2].column;
 

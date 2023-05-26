@@ -143,8 +143,9 @@ You can also download and install packages manually from [here](https://packages
 #### Install standalone ClickHouse Keeper
 
 :::tip
-If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
-do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
+This command is only needed on standalone ClickHouse Keeper servers.
 :::
 
 ```bash
@@ -184,6 +185,15 @@ sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 ```
 
+For systems with `zypper` package manager (openSUSE, SLES):
+
+``` bash
+sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+```
+
+Later any `yum install` can be replaced by `zypper install`. To specify a particular version, add `-$VERSION` to the end of the package name, e.g. `clickhouse-client-22.2.2.22`.
+
 #### Install ClickHouse server and client
 
 ```bash
@@ -202,8 +212,9 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 #### Install standalone ClickHouse Keeper
 
 :::tip
-If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
-do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
+This command is only needed on standalone ClickHouse Keeper servers.
 :::
 
 ```bash

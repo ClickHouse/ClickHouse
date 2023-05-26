@@ -119,7 +119,7 @@ When processing a query, the client shows:
 1.  Progress, which is updated no more than 10 times per second (by default). For quick queries, the progress might not have time to be displayed.
 2.  The formatted query after parsing, for debugging.
 3.  The result in the specified format.
-4.  The number of lines in the result, the time passed, and the average speed of query processing.
+4.  The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
 
 You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press Ctrl+C a second time, the client will exit.
 
@@ -177,11 +177,11 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--user, -u` – The username. Default value: default.
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
-- `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
-- `--queries-file` – file path with queries to execute. You must specify either `query` or `queries-file` option.
-- `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
+- `--query, -q` – The query to process when using non-interactive mode. Cannot be used simultaneously with `--queries-file`.
+- `--queries-file` – file path with queries to execute. Cannot be used simultaneously with `--query`.
+- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
-- `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
+- `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 - `--format, -f` – Use the specified default format to output the result.
 - `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 - `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.

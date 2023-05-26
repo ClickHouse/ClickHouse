@@ -106,4 +106,23 @@ std::string_view CurrentThread::getQueryId()
     return current_thread->getQueryId();
 }
 
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
+
+    return tracker;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->flushUntrackedMemory();
+}
+
 }
