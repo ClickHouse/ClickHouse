@@ -12,12 +12,14 @@
 #include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/copyData.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -47,8 +49,6 @@ struct ObjectMetadata
     std::optional<Poco::Timestamp> last_modified;
     std::optional<ObjectAttributes> attributes;
 };
-
-using FinalizeCallback = std::function<void(size_t bytes_count)>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
@@ -119,7 +119,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 

@@ -32,6 +32,7 @@ class ReplicatedMergeTreeQueue
 {
 private:
     friend class CurrentlyExecuting;
+    friend class LocalMergePredicate;
     friend class ReplicatedMergeTreeMergePredicate;
     friend class MergeFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
@@ -390,7 +391,8 @@ public:
     size_t countUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint);
+    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
+                                                        std::optional<PartitionIdsHint> && partition_ids_hint);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
@@ -489,10 +491,33 @@ public:
     void createLogEntriesToFetchBrokenParts();
 };
 
+/// Lightweight version of ReplicatedMergeTreeMergePredicate that do not make any ZooKeeper requests,
+/// but may return false-positive results. Checks only a subset of required conditions.
+class LocalMergePredicate
+{
+public:
+    LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
+
+    bool operator()(const MergeTreeData::DataPartPtr & left,
+                    const MergeTreeData::DataPartPtr & right,
+                    const MergeTreeTransaction * txn,
+                    String * out_reason = nullptr) const;
+
+    bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
+                          const MergeTreeData::DataPartPtr & right,
+                          String * out_reason = nullptr) const;
+
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
+private:
+    const ReplicatedMergeTreeQueue & queue;
+};
+
 class ReplicatedMergeTreeMergePredicate
 {
 public:
-    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint_);
+    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper,
+                                      std::optional<PartitionIdsHint> && partition_ids_hint_);
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
@@ -523,7 +548,8 @@ public:
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
     std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
-    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers) const;
+    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
+                            std::unordered_set<String> & checked_partitions_cache) const;
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
@@ -535,9 +561,11 @@ public:
     String getCoveringVirtualPart(const String & part_name) const;
 
 private:
+    LocalMergePredicate nested_pred;
+
     const ReplicatedMergeTreeQueue & queue;
 
-    PartitionIdsHint partition_ids_hint;
+    std::optional<PartitionIdsHint> partition_ids_hint;
 
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
     ActiveDataPartSet prev_virtual_parts;
