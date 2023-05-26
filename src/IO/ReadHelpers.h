@@ -1100,12 +1100,24 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 
 template <std::endian endian, typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+requires std::is_integral_v<T> && (sizeof(T) <= 8)
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
     if constexpr (std::endian::native != endian)
         x = std::byteswap(x);
+}
+
+template <std::endian endian, typename T>
+requires is_decimal<T> || std::is_floating_point_v<T>
+inline void readBinaryEndian(T & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
+    if constexpr (std::endian::native != endian)
+    {
+        char *start = reinterpret_cast<char *>(&x), *end = start + sizeof(T);
+        std::reverse(start, end);
+    }
 }
 
 template <std::endian endian, typename T>

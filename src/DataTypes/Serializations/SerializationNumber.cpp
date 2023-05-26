@@ -106,28 +106,28 @@ void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & 
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
     typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.get<FieldType>());
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 template <typename T>
 void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     typename ColumnVector<T>::ValueType x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
 void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinary(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+    writeBinaryLittleEndian(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
 void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     typename ColumnVector<T>::ValueType x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
@@ -142,7 +142,21 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
         limit = size - offset;
 
     if (limit)
-        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+    {
+        if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+        {
+            for (size_t i = 0; i < limit; i++)
+            {
+                auto tmp(x[offset+i]);
+                char *start = reinterpret_cast<char*>(&tmp);
+                char *end = start + sizeof(typename ColumnVector<T>::ValueType);
+                std::reverse(start, end);
+                ostr.write(reinterpret_cast<const char *>(&tmp), sizeof(typename ColumnVector<T>::ValueType));
+            }
+        }
+        else
+            ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+    }
 }
 
 template <typename T>
@@ -152,6 +166,15 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+    {
+        for (size_t i = 0; i < limit; i++)
+        {
+            char *start = reinterpret_cast<char*>(&x[initial_size + i]);
+            char *end = start + sizeof(typename ColumnVector<T>::ValueType);
+            std::reverse(start, end);
+        }
+    }
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 }
 
