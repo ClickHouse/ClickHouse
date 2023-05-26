@@ -112,8 +112,11 @@ void WriteBufferFromS3::nextImpl()
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
-    /// Make sense to call to before adding new async task to check if there is an exception
-    task_tracker->consumeReady();
+    /// Make sense to call waitIfAny before adding new async task to check if there is an exception
+    /// The faster the exception is propagated the lesser time is spent for cancellation
+    /// Despite the fact that `task_tracker->add()` collects tasks statuses and propagates their exceptions
+    /// that call is necessary for the case when the is no in-flight limitation and therefore `task_tracker->add()` doesn't wait anything
+    task_tracker->waitIfAny();
 
     hidePartialData();
 
