@@ -1174,12 +1174,29 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 
 
 template <std::endian endian, typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+requires std::is_integral_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     if constexpr (std::endian::native != endian)
         x = std::byteswap(x);
     writePODBinary(x, buf);
+}
+
+template <std::endian endian, typename T>
+requires is_decimal<T> || std::is_floating_point_v<T>
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
+{
+    if constexpr (std::endian::native != endian)
+    {
+         T tmp(x);
+        char *start = reinterpret_cast<char*>(&tmp);
+        char *end = start + sizeof(T);
+        std::reverse(start, end);
+
+        buf.write(reinterpret_cast<const char *>(&tmp), sizeof(tmp)); /// NOLINT
+    }
+    else
+        writePODBinary(x, buf);
 }
 
 template <std::endian endian, typename T>
