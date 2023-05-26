@@ -36,11 +36,11 @@ public:
     /// There could be no finished tasks yet, so waitIfAny do nothing useful in that case
     /// the first exception is thrown if any task has failed
     void waitIfAny();
-
-    /// Well, waitAll waits all the tasks until they finish and collects they statuses
+    
+    /// Well, waitAll waits all the tasks until they finish and collects their statuses
     void waitAll();
 
-    /// safeWaitAll do the same as waitAll but do not rethrow the exceptions
+    /// safeWaitAll does the same as waitAll but mutes the exceptions
     void safeWaitAll();
 
     void add(Callback && func);
