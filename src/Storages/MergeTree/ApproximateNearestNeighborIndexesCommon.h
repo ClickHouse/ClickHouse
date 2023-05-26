@@ -79,8 +79,7 @@ struct ApproximateNearestNeighborInformation
 class ApproximateNearestNeighborCondition
 {
 public:
-    ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info,
-                    ContextPtr context);
+    ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String metric) const;
@@ -202,7 +201,7 @@ private:
     // Get from settings ANNIndex parameters
     const UInt64 index_granularity;
     /// only queries with a lower limit can be considered to avoid memory overflow
-    const UInt64 limit_restriction;
+    const UInt64 max_limit_for_ann_queries;
     bool index_is_useful = false;
 };
 
