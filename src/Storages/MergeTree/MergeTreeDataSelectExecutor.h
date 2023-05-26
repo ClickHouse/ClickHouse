@@ -173,11 +173,12 @@ public:
 
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
+        std::optional<PartitionPruner> & partition_pruner,
+        std::optional<KeyCondition> & minmax_idx_condition,
         MergeTreeData::DataPartsVector & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
-        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         Poco::Logger * log,

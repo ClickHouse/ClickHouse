@@ -793,38 +793,28 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
+    std::optional<PartitionPruner> & partition_pruner,
+    std::optional<KeyCondition> & minmax_idx_condition,
     MergeTreeData::DataPartsVector & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
-    const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     Poco::Logger * log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
-
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
 
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
-
-        if (context->getSettingsRef().allow_experimental_analyzer)
-            minmax_idx_condition.emplace(query_info.filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
-        else
-            minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
-
-        partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
+            auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
                 fmt::join(minmax_columns_names, ", "));
@@ -1835,7 +1825,9 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
+            auto val = partition_pruner->canBePruned(*part);
+            // std::cerr << "... part " << part->getNameWithState() << "  cbp ? " << val << std::endl;
+            if (val)
                 continue;
         }
 

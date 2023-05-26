@@ -31,12 +31,21 @@ namespace
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
+    // std::cerr << "====== " << prepared_set->getDataTypes().size() << std::endl;
     if (prepared_set->getDataTypes().size() == 1)
         return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
 
     Columns set_elements;
     for (auto & set_element : prepared_set->getSetElements())
+    {
+        // std::cerr << set_element->dumpStructure() << std::endl;
         set_elements.emplace_back(set_element->convertToFullColumnIfConst());
+    }
+
+    // for (auto & set_element : prepared_set->getElementsTypes())
+    // {
+    //     // std::cerr << set_element->getName() << std::endl;
+    // }
 
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
@@ -331,6 +340,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             if (prepared_set && prepared_set->hasExplicitSetElements())
             {
                 const auto prepared_info = getPreparedSetInfo(prepared_set);
+                // std::cerr << "...... " << prepared_info.dumpStructure() << std::endl;
                 if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
                     maybe_useful = true;
             }
@@ -377,6 +387,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+        // std::cerr << "::::: " << ColumnWithTypeAndName{column, type, ""}.dumpStructure() << " -> " << index_type->getName() << std::endl;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 

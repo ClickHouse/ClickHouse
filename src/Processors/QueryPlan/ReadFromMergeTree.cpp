@@ -1174,6 +1174,7 @@ static ActionsDAGPtr buildFilterDAG(
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     ActionsDAGPtr filter_actions_dag,
+    const MergeTreeData & data,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
     const StorageMetadataPtr & metadata_snapshot)
@@ -1196,7 +1197,7 @@ static void buildIndexes(
             context,
             primary_key_column_names,
             primary_key.expression,
-            array_join_name_set}, {}, false});
+            array_join_name_set}, {}, {}, {}, false});
     }
     else
     {
@@ -1204,7 +1205,22 @@ static void buildIndexes(
             query_info,
             context,
             primary_key_column_names,
-            primary_key.expression}, {}, false});
+            primary_key.expression}, {}, {}, {}, false});
+    }
+
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
+        // minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
+
+        // if (context->getSettingsRef().allow_experimental_analyzer)
+        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        // else
+        //     indexes->minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
+
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
@@ -1250,7 +1266,7 @@ void ReadFromMergeTree::onAddFilterFinish()
     if (!filter_nodes.nodes.empty())
     {
         auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
-        buildIndexes(indexes, filter_actions_dag, context, query_info, metadata_for_reading);
+        buildIndexes(indexes, filter_actions_dag, data, context, query_info, metadata_for_reading);
     }
 }
 
@@ -1366,7 +1382,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     // }
 
     if (!indexes)
-        buildIndexes(indexes, query_info.filter_actions_dag, context, query_info, metadata_snapshot);
+        buildIndexes(indexes, query_info.filter_actions_dag, data, context, query_info, metadata_snapshot);
 
     if (settings.force_primary_key && indexes->key_condition.alwaysUnknownOrTrue())
     {
@@ -1386,11 +1402,12 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     try
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
+            indexes->partition_pruner,
+            indexes->minmax_idx_condition,
             parts,
             part_values,
             metadata_snapshot_base,
             data,
-            query_info,
             context,
             max_block_numbers_to_read.get(),
             log,

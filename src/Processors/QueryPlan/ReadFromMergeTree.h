@@ -5,6 +5,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 
 namespace DB
 {
@@ -164,6 +165,8 @@ public:
     struct Indexes
     {
         KeyCondition key_condition;
+        std::optional<PartitionPruner> partition_pruner;
+        std::optional<KeyCondition> minmax_idx_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
     };
