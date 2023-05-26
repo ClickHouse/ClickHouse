@@ -214,7 +214,7 @@ public:
                     getName(),
                     arguments[num_fixed_params].type->getName());
             if constexpr (return_fixed_string)
-                return Impl::getReturnType(nested_type, nested_type, arguments[1 + num_fixed_params].column.get()->getUInt(0));
+                return Impl::getReturnType(nested_type, nested_type, arguments[num_fixed_params].column.get()->getUInt(0));
             else
                 return Impl::getReturnType(nested_type, nested_type);
         }
@@ -260,7 +260,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
             if constexpr (return_fixed_string)
                 return Impl::getReturnType(
-                    return_type, first_array_type->getNestedType(), arguments[1 + num_fixed_params].column.get()->getUInt(0));
+                    return_type, first_array_type->getNestedType(), arguments[num_fixed_params].column.get()->getUInt(0));
             else
                 return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
@@ -429,7 +429,7 @@ public:
             }
 
             if constexpr (num_fixed_params)
-                return Impl::execute(*column_first_array, lambda_result.column, arguments.data() + 1);
+                return Impl::execute(*column_first_array, lambda_result.column, arguments.data());
             else
                 return Impl::execute(*column_first_array, lambda_result.column);
         }

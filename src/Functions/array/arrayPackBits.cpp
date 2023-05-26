@@ -1,8 +1,11 @@
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/FunctionArrayMapped.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -19,8 +22,8 @@ struct ArrayPackBitsImpl
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return true; }
-    static constexpr int num_fixed_params = pack_groups ? 1 : 0;
     static constexpr bool return_fixed_string = result_type == ArrayPackBitsResultType::fixed_string;
+    static constexpr int num_fixed_params = pack_groups ? 1 : 0 + return_fixed_string;
 
     static DataTypePtr
     getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/, const UInt64 fixed_string_size = 0)
@@ -58,7 +61,7 @@ struct ArrayPackBitsImpl
     }
 
     static void checkArguments(const String & name, const ColumnWithTypeAndName * fixed_arguments)
-        requires(pack_groups)
+        requires(num_fixed_params != 0)
     {
         if (!fixed_arguments)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected fixed arguments to get the fixed size for fixed string result");
@@ -73,28 +76,101 @@ struct ArrayPackBitsImpl
     }
 
     static ColumnPtr
-    execute(const ColumnArray & array, ColumnPtr mapped, const ColumnWithTypeAndName * fixed_arguments [[maybe_unused]] = nullptr)
+    execute(const ColumnArray & array, ColumnPtr mapped, const ColumnWithTypeAndName * arguments [[maybe_unused]] = nullptr)
     {
         const auto & offsets = array.getOffsets();
-        auto out_column = ColumnUInt64::create(offsets.size());
-        ColumnUInt64::Container & out_counts = out_column->getData();
-
-        size_t pos = 0;
-        auto * log = &Poco::Logger::get("ArrayPackBitsToUint64Impl");
-        LOG_TRACE(log, "offset.size = {}", offsets.size());
-        for (size_t i = 0; i < offsets.size(); ++i)
+        auto * log = &Poco::Logger::get("ArrayPackBitsImpl");
+        if constexpr (result_type == ArrayPackBitsResultType::uin64)
         {
-            Int64 bit = 0;
-            LOG_TRACE(log, "pos.size = {}", offsets[i]);
-            for (; pos < std::min(offsets[i], 64ULL); ++pos)
+            auto out_column = ColumnUInt64::create();
+            out_column->reserve(offsets.size());
+            size_t pos = 0;
+            for (uint64_t offset : offsets)
             {
-                bit |= static_cast<UInt64>(mapped->getBool(pos)) << pos;
-                LOG_TRACE(log, "pos = {}, bit = {}", pos, bit);
+                auto max_offset = offset;
+                auto pack_size = 8ULL;
+                if constexpr (pack_groups)
+                {
+                    pack_size = std::min(pack_size, typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>());
+                    max_offset = std::min(max_offset, pack_size * 8);
+                }
+                uint64_t bit64 = 0;
+                uint8_t bit = 0;
+                for (; pos < max_offset; ++pos)
+                {
+                    uint8_t one_bit = static_cast<uint8_t>(mapped->getBool(pos));
+                    bit = bit << 1 | one_bit;
+                    if ((pos + 1) % pack_size == 0 || pos == max_offset - 1)
+                    {
+                        bit64 = bit64 << 8 | bit;
+                        bit = 0;
+                    }
+                }
+                out_column->insert(bit64);
             }
-            LOG_TRACE(log, "bit = {}", bit);
-            out_counts[i] = static_cast<UInt64>(bit);
+            return out_column;
         }
-        return out_column;
+        else if constexpr (result_type == ArrayPackBitsResultType::string)
+        {
+            auto out_column = ColumnString::create();
+            out_column->reserve(offsets.size());
+            size_t pos = 0;
+            for (uint64_t offset : offsets)
+            {
+                auto max_offset = offset;
+                auto pack_size = 8ULL;
+                if constexpr (pack_groups)
+                {
+                    pack_size = std::min(pack_size, typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>());
+                    max_offset = std::min(max_offset, pack_size * 8);
+                }
+                std::string bit_string;
+                uint8_t bit = 0;
+                for (; pos < max_offset; ++pos)
+                {
+                    uint8_t one_bit = static_cast<uint8_t>(mapped->getBool(pos));
+                    bit = bit << 1 | one_bit;
+                    if ((pos + 1) % pack_size == 0 || pos == max_offset - 1)
+                    {
+                        bit_string += bit;
+                        bit = 0;
+                    }
+                }
+                out_column->insert(bit_string);
+            }
+            return out_column;
+        }
+        else if constexpr (result_type == ArrayPackBitsResultType::fixed_string)
+        {
+            const auto fixed_string_size = typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>();
+            auto out_column = ColumnFixedString::create(fixed_string_size);
+            out_column->reserve(offsets.size());
+            size_t pos = 0;
+            for (uint64_t offset : offsets)
+            {
+                auto max_offset = std::min(offset, fixed_string_size * 8);
+                auto pack_size = 8ULL;
+                if constexpr (pack_groups)
+                {
+                    pack_size = std::min(pack_size, typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>());
+                    max_offset = std::min(max_offset, pack_size * 8);
+                }
+                std::string bit_string;
+                uint8_t bit = 0;
+                for (; pos < max_offset; ++pos)
+                {
+                    uint8_t one_bit = static_cast<uint8_t>(mapped->getBool(pos));
+                    bit = bit << 1 | one_bit;
+                    if ((pos + 1) % pack_size == 0 || pos == max_offset - 1)
+                    {
+                        bit_string += bit;
+                        bit = 0;
+                    }
+                }
+                out_column->insert(bit_string);
+            }
+            return out_column;
+        }
     }
 };
 
