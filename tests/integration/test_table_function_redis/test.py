@@ -1,276 +1,159 @@
-import pymongo
+import time
 
+import redis
 import pytest
-from helpers.client import QueryRuntimeException
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+cluster = ClickHouseCluster(__file__)
+
+node = cluster.add_instance("node", with_redis=True)
 
 
 @pytest.fixture(scope="module")
-def started_cluster(request):
+def started_cluster():
     try:
-        cluster = ClickHouseCluster(__file__)
-        node = cluster.add_instance(
-            "node",
-            with_mongo=True,
-            main_configs=[
-                "configs_secure/config.d/ssl_conf.xml",
-            ],
-            with_mongo_secure=request.param,
-        )
         cluster.start()
         yield cluster
     finally:
         cluster.shutdown()
 
 
-def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
-    connection_str = ""
-    if with_credentials:
-        connection_str = "mongodb://root:clickhouse@localhost:{}".format(
-            started_cluster.mongo_port
-        )
-    else:
-        connection_str = "mongodb://localhost:{}".format(
-            started_cluster.mongo_no_cred_port
-        )
-    if secure:
-        connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
-    return pymongo.MongoClient(connection_str)
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_simple_select(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-
-    node = started_cluster.instances["node"]
-    for i in range(0, 100):
-        node.query(
-            "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') (key, data) VALUES ({}, '{}')".format(
-                i, hex(i * i)
-            )
-        )
-    assert (
-        node.query(
-            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
-        )
-        == "100\n"
+def get_redis_connection(db_id=0):
+    client = redis.Redis(
+        host='localhost', port=cluster.redis_port, password="clickhouse", db=db_id
     )
-    assert (
-        node.query(
-            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
-        )
-        == str(sum(range(0, 100))) + "\n"
-    )
-    assert (
-        node.query(
-            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String')"
-        )
-        == str(sum(range(0, 100))) + "\n"
-    )
-
-    assert (
-        node.query(
-            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') where key = 42"
-        )
-        == hex(42 * 42) + "\n"
-    )
-    simple_mongo_table.drop()
+    return client
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_complex_data_type(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    incomplete_mongo_table = db["complex_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i), "dict": {"a": i, "b": str(i)}})
-    incomplete_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-
-    assert (
-        node.query(
-            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
-        )
-        == "100\n"
-    )
-    assert (
-        node.query(
-            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
-        )
-        == str(sum(range(0, 100))) + "\n"
-    )
-
-    assert (
-        node.query(
-            "SELECT data from mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)') where key = 42"
-        )
-        == hex(42 * 42) + "\n"
-    )
-    incomplete_mongo_table.drop()
+def get_address_for_ch():
+    return cluster.redis_host + ':6379'
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_incorrect_data_type(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    strange_mongo_table = db["strange_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i), "aaaa": "Hello"})
-    strange_mongo_table.insert_many(data)
+def test_storage_simple(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
 
-    node = started_cluster.instances["node"]
+    # clean all
+    client.flushall()
 
+    data = {}
+    for i in range(100):
+        data[str(i)] = str(i)
+
+    client.mset(data)
+    client.close()
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT 
+            key, value 
+        FROM 
+            redis('{address}', 0, 'clickhouse') 
+        WHERE 
+            key='0' 
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 1)
+    assert (response[0] == ['0', '0'])
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT 
+            * 
+        FROM 
+            redis('{address}', 0, 'clickhouse') 
+        ORDER BY 
+            key 
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 100)
+    assert (response[0] == ['0', '0'])
+
+
+def test_storage_hash_map(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+
+    # clean all
+    client.flushall()
+
+    key = 'k'
+    data = {}
+    for i in range(100):
+        data[str(i)] = str(i)
+
+    client.hset(key, mapping=data)
+    client.close()
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT 
+            key, field, value
+        FROM 
+            redis('{address}', 0, 'clickhouse','hash_map') 
+        WHERE 
+            field='0' 
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 1)
+    assert (response[0] == ['k', '0', '0'])
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT 
+            *
+        FROM 
+            redis('{address}', 0, 'clickhouse','hash_map') 
+        ORDER BY 
+            field 
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 100)
+    assert (response[0] == ['k', '0', '0'])
+
+
+def test_customized_table_structure(started_cluster):
+    address = get_address_for_ch()
+
+    node.query(
+        f"""
+        SELECT 
+            *
+        FROM 
+            redis('{address}', 0, 'clickhouse', "simple", 10, "k String, v UInt8") 
+        """)
+
+    node.query(
+        f"""
+            SELECT 
+                *
+            FROM 
+                redis('{address}', 0, 'clickhouse', "hash_map", 10, "k String, f UInt8, v String") 
+            """)
+
+    # illegal columns
     with pytest.raises(QueryRuntimeException):
         node.query(
-            "SELECT aaaa FROM mongodb('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse', structure='key UInt64, data String')"
-        )
+            f"""
+            SELECT 
+                *
+            FROM 
+                redis('{address}', 0, 'clickhouse', "hash_map", 10, "k String, v String") 
+            """)
 
-    strange_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [True], indirect=["started_cluster"])
-def test_secure_connection(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, secure=True)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-
-    assert (
+    # illegal data type
+    with pytest.raises(QueryRuntimeException):
         node.query(
-            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
-        )
-        == "100\n"
-    )
-    assert (
-        node.query(
-            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
-        )
-        == str(sum(range(0, 100))) + "\n"
-    )
-    assert (
-        node.query(
-            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String', 'ssl=true')"
-        )
-        == str(sum(range(0, 100))) + "\n"
-    )
-
-    assert (
-        node.query(
-            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true') where key = 42"
-        )
-        == hex(42 * 42) + "\n"
-    )
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_predefined_connection_configuration(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    assert (
-        node.query(
-            "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
-        )
-        == "100\n"
-    )
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_no_credentials(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    db = mongo_connection["test"]
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    assert (
-        node.query(
-            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', '', '', structure='key UInt64, data String')"
-        )
-        == "100\n"
-    )
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_auth_source(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    admin_db = mongo_connection["admin"]
-    admin_db.add_user(
-        "root",
-        "clickhouse",
-        roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
-    )
-    simple_mongo_table = admin_db["simple_table"]
-    data = []
-    for i in range(0, 50):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
-    db = mongo_connection["test"]
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-
-    node.query_and_get_error(
-        "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
-    )
-
-    assert (
-        node.query(
-            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='authSource=admin')"
-        )
-        == "100\n"
-    )
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_missing_columns(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 10):
-        data.append({"key": i, "data": hex(i * i)})
-    for i in range(0, 10):
-        data.append({"key": i})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    result = node.query(
-        "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data Nullable(String)') WHERE isNull(data)"
-    )
-    assert result == "10\n"
-    simple_mongo_table.drop()
+            f"""
+            SELECT 
+                *
+            FROM 
+                redis('{address}', 0, 'clickhouse', "simple", 10, "k Ss, v String") 
+            """)

@@ -11,6 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -43,19 +44,6 @@ StoragePtr TableFunctionRedis::executeImpl(
 /// TODO support user customized table structure
 ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context) const
 {
-    /// generate table structure by storage type.
-    String structure;
-    switch (configuration->storage_type)
-    {
-        case RedisStorageType::SIMPLE:
-            structure = "key String, value String";
-            break;
-        case RedisStorageType::HASH_MAP:
-            structure = "key String, field String, value String";
-            break;
-        case RedisStorageType::UNKNOWN:
-            throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Invalid Redis storage type.");
-    }
     return parseColumnsListFromString(structure, context);
 }
 
@@ -66,15 +54,25 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'redis' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
-
-    if (args.size() != 5)
-    {
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function 'Redis' requires from 5 parameters: "
-            "redis('host:port', db_index, 'password', 'storage_type', 'pool_size')");
-    }
     configuration = getRedisConfiguration(args, context);
+
+    if (args.size() > 5)
+        structure = checkAndGetLiteralArgument<String>(args[5], "structure");
+
+    if (structure.empty())
+    {
+        switch (configuration->storage_type)
+        {
+            case RedisStorageType::SIMPLE:
+                structure = "key String, value String";
+                break;
+            case RedisStorageType::HASH_MAP:
+                structure = "key String, field String, value String";
+                break;
+            case RedisStorageType::UNKNOWN:
+                throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Invalid Redis storage type.");
+        }
+    }
 }
 
 

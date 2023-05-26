@@ -1,5 +1,6 @@
 import time
 
+## sudo -H pip install redis
 import redis
 import pytest
 
@@ -61,11 +62,11 @@ def test_storage_simple_select(started_cluster):
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, v from test_storage_simple_select where k='0' FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT k, v FROM test_storage_simple_select WHERE k='0' FORMAT TSV"))
     assert (len(response) == 1)
     assert (response[0] == ['0', '0'])
 
-    response = TSV.toMat(node.query("SELECT * from test_storage_simple_select order by k FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT * FROM test_storage_simple_select ORDER BY k FORMAT TSV"))
     assert (len(response) == 100)
     assert (response[0] == ['0', '0'])
 
@@ -97,11 +98,11 @@ def test_storage_hash_map_select(started_cluster):
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, f, v from test_storage_hash_map_select where f='0' FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT k, f, v FROM test_storage_hash_map_select WHERE f='0' FORMAT TSV"))
     assert (len(response) == 1)
     assert (response[0] == ['k', '0', '0'])
 
-    response = TSV.toMat(node.query("SELECT * from test_storage_hash_map_select FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT * FROM test_storage_hash_map_select ORDER BY f FORMAT TSV"))
     assert (len(response) == 100)
     assert (response[0] == ['k', '0', '0'])
 
