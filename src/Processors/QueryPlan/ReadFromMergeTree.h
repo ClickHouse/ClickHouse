@@ -159,7 +159,6 @@ public:
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
-    static bool isFinal(const SelectQueryInfo & query_info);
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
