@@ -44,7 +44,7 @@ private:
     const DataSourceDescription data_source_description;
     const bool copy_encrypted;
     mutable std::optional<UInt64> file_size;
-    mutable std::optional<UInt64> checksum;
+    mutable std::optional<UInt128> checksum;
     mutable bool file_size_adjusted = false;
     mutable bool checksum_adjusted = false;
     mutable std::mutex size_and_checksum_mutex;

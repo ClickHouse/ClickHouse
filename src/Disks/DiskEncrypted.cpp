@@ -138,19 +138,6 @@ namespace
         }
     }
 
-    String getCurrentKey(const String & path, const DiskEncryptedSettings & settings)
-    {
-        auto it = settings.keys.find(settings.current_key_id);
-        if (it == settings.keys.end())
-            throw Exception(
-                ErrorCodes::DATA_ENCRYPTION_ERROR,
-                "Not found a key with the current ID {} required to cipher file {}",
-                settings.current_key_id,
-                quoteString(path));
-
-        return it->second;
-    }
-
     String getKey(const String & path, const FileEncryption::Header & header, const DiskEncryptedSettings & settings)
     {
         auto it = settings.keys.find(header.key_id);
@@ -203,18 +190,19 @@ private:
 };
 
 DiskEncrypted::DiskEncrypted(
-    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
-    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_))
+    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_)
+    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), use_fake_transaction_)
 {
 }
 
-DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_)
     : IDisk(name_)
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(use_fake_transaction_)
 {
     delegate->createDirectories(disk_path);
 }
@@ -309,38 +297,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
-{
-    auto wrapped_path = wrappedPath(path);
-    FileEncryption::Header header;
-    String key;
-    UInt64 old_file_size = 0;
-    auto settings = current_settings.get();
-    if (mode == WriteMode::Append && exists(path))
-    {
-        old_file_size = getFileSize(path);
-        if (old_file_size)
-        {
-            /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
-            header = readHeader(*read_buffer);
-            key = getKey(path, header, *settings);
-        }
-    }
-    if (!old_file_size)
-    {
-        /// Rewrite mode: we generate a new header.
-        key = getCurrentKey(path, *settings);
-        header.algorithm = settings->current_algorithm;
-        header.key_id = settings->current_key_id;
-        header.key_hash = calculateKeyHash(key);
-        header.init_vector = InitVector::random();
-    }
-    auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
-}
-
-
 size_t DiskEncrypted::getFileSize(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
@@ -416,7 +372,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
+        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map, config.getBool(config_prefix + ".use_fake_transaction", true));
         disk->startup(context, skip_access_check);
         return disk;
     };
