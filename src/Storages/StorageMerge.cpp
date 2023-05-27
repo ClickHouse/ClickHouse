@@ -45,6 +45,10 @@
 
 #include <Common/logger_useful.h>
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
+
 namespace
 {
 
@@ -264,6 +268,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
+    LOG_TRACE(&Poco::Logger::get("StorageMerge::getQueryProcessingStage"), "to_stage {}", to_stage);
+
     if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
         return QueryProcessingStage::FetchColumns;
 
@@ -287,13 +293,15 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table->getInMemoryMetadataPtr(), local_context), query_info));
+                LOG_TRACE(&Poco::Logger::get("StorageMerge::getQueryProcessingStage"), "stage_in_source_tables {}", stage_in_source_tables);
             }
 
             iterator->next();
         }
     }
 
-    return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    // return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    return QueryProcessingStage::Complete;
 }
 
 void StorageMerge::read(
@@ -312,6 +320,9 @@ void StorageMerge::read(
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
+    LOG_TRACE(&Poco::Logger::get("StorageMerge::read"), "processed_stage {}", QueryProcessingStage::toString(processed_stage));
+
+
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
     Names real_column_names;
@@ -324,7 +335,10 @@ void StorageMerge::read(
         else if (column_name == "_table" && isVirtualColumn(column_name, storage_snapshot->metadata))
             has_table_virtual_column = true;
         else
+        {
             real_column_names.push_back(column_name);
+            LOG_TRACE(&Poco::Logger::get("StorageMerge::read"), "column_name {}", column_name);
+        }
     }
 
     StorageListWithLocks selected_tables
@@ -353,7 +367,7 @@ void StorageMerge::read(
     query_plan.addInterpreterContext(modified_context);
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, QueryProcessingStage::Complete /* processed_stage */);
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
@@ -477,6 +491,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             bool with_aliases = common_processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
             if (with_aliases)
             {
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::initializePipeline"), "with_aliases");
                 ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
                 ASTPtr column_expr;
 
@@ -650,6 +665,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         storage_snapshot,
         modified_query_info);
 
+#pragma GCC diagnostic ignored "-Wunreachable-code"
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -660,6 +676,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (/* !view || */ allow_experimental_analyzer)
+        // if (!view ||  allow_experimental_analyzer)
         {
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "direct storage->read");
             storage->read(plan,
@@ -687,6 +704,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 storage,
                 storage->getInMemoryMetadataPtr(), // view->getInMemoryMetadataPtr(),
                 SelectQueryOptions(/* processed_stage*/));
+                // SelectQueryOptions(processed_stage));
+                // SelectQueryOptions(QueryProcessingStage::WithMergeableState));
             interpreter.buildQueryPlan(plan);
         }
         else
@@ -807,6 +826,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
+
         convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
     }
 
@@ -1017,6 +1037,20 @@ void ReadFromMerge::convertingSourceStream(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+
+
+    for (const auto & column_with_type_and_name : builder.getHeader().getColumnsWithTypeAndName())
+    {
+        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "column name: {} (builder.getHeader().getColumnsWithTypeAndName())", column_with_type_and_name.name);
+    }
+
+    for (const auto & column_with_type_and_name : header.getColumnsWithTypeAndName())
+    {
+        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "column name: {} (header.getColumnsWithTypeAndName())", column_with_type_and_name.name);
+    }
+
+
+
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),

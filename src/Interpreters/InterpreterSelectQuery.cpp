@@ -100,6 +100,7 @@ namespace ProfileEvents
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
 }
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 namespace DB
 {
@@ -548,12 +549,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), "table name: {}", table_id.getTableName());
+        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, table name: {}", (void*)this, table_id.getTableName());
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     }
     else
     {
-        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), "no storage");
+        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, no storage", (void*)this);
     }
 
 
@@ -1451,7 +1452,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
         executeFetchColumns(from_stage, query_plan);
 
-        LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
+        LOG_TRACE(log, "executeImpl {}, {} -> {}", (void*) this, QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
@@ -1522,6 +1523,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     expressions.filter_info->actions,
                     expressions.filter_info->column_name,
                     expressions.filter_info->do_remove_column);
+
+                LOG_TRACE(log, "executeImpl,  adding Row-level security filter");
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
