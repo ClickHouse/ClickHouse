@@ -109,8 +109,8 @@ void WriteBufferFromS3::nextImpl()
 
     if (is_prefinalized)
         throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
     /// Make sense to call waitIfAny before adding new async task to check if there is an exception
     /// The faster the exception is propagated the lesser time is spent for cancellation
@@ -183,12 +183,15 @@ void WriteBufferFromS3::finalizeImpl()
         preFinalize();
 
     if (std::uncaught_exception())
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Detected buffer finalization when an exception is unwinding the stack."
             " Do not call finalize buffer in destructors or when exception thrown."
             " Details {}",
             getLogDetails());
+    }
 
     chassert(offset() == 0);
     chassert(hidden_size == 0);
