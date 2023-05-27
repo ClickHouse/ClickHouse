@@ -80,8 +80,10 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"23.5", {{"input_format_parquet_preserve_order", true, false, "Allow Parquet reade to reorder rows for better parallelism."},
-              {"parallelize_output_from_storages", false, true, "Allow parallelism when executing queries that read from file/url/s3/etc. This may reorder rows."}}},
+    {"23.5", {{"input_format_parquet_preserve_order", true, false, "Allow Parquet reader to reorder rows for better parallelism."},
+              {"parallelize_output_from_storages", false, true, "Allow parallelism when executing queries that read from file/url/s3/etc. This may reorder rows."},
+              {"use_with_fill_by_sorting_prefix", false, true, "Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently"},
+              {"output_format_parquet_compliant_nested_types", false, true, "Change an internal field name in output Parquet file schema."}}},
     {"23.4", {{"allow_suspicious_indices", true, false, "If true, index can defined with identical expressions"},
               {"connect_timeout_with_failover_ms", 50, 1000, "Increase default connect timeout because of async connect"},
               {"connect_timeout_with_failover_secure_ms", 100, 1000, "Increase default secure connect timeout because of async connect"},

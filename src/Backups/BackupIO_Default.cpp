@@ -3,7 +3,7 @@
 #include <Disks/IDisk.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
