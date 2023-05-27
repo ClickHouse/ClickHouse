@@ -1,5 +1,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Disks/IDisk.h>
+#include <city.h>
 
 
 namespace DB
@@ -57,16 +59,31 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
 
 UInt128 BackupEntryFromImmutableFile::getChecksum() const
 {
-    std::lock_guard lock{size_and_checksum_mutex};
-    if (!checksum_adjusted)
     {
-        if (!checksum)
-            checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
-        else if (copy_encrypted)
-            checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
-        checksum_adjusted = true;
+        std::lock_guard lock{size_and_checksum_mutex};
+        if (checksum_adjusted)
+            return *checksum;
+
+        if (checksum)
+        {
+            if (copy_encrypted)
+                checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
+            checksum_adjusted = true;
+            return *checksum;
+        }
     }
-    return *checksum;
+
+    auto calculated_checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
+
+    {
+        std::lock_guard lock{size_and_checksum_mutex};
+        if (!checksum_adjusted)
+        {
+            checksum = calculated_checksum;
+            checksum_adjusted = true;
+        }
+        return *checksum;
+    }
 }
 
 std::optional<UInt128> BackupEntryFromImmutableFile::getPartialChecksum(size_t prefix_length) const
