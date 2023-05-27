@@ -47,7 +47,7 @@ Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compre
 
 Bzip2WriteBuffer::~Bzip2WriteBuffer()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 

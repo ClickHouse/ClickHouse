@@ -53,7 +53,7 @@ void ForkWriteBuffer::finalizeImpl()
 
 ForkWriteBuffer::~ForkWriteBuffer()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 

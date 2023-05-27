@@ -59,7 +59,7 @@ void CompressedWriteBuffer::nextImpl()
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 

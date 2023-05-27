@@ -40,7 +40,7 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 
 WriteBufferFromOStream::~WriteBufferFromOStream()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 
