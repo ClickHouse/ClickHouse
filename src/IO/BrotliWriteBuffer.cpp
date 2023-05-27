@@ -44,7 +44,7 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 

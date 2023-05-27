@@ -38,7 +38,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 

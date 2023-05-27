@@ -16,7 +16,7 @@ WriteBufferWithFinalizeCallback::WriteBufferWithFinalizeCallback(
 
 WriteBufferWithFinalizeCallback::~WriteBufferWithFinalizeCallback()
 {
-    //!
+    /// ! #50274
 //    try
 //    {
 //        finalize();

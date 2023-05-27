@@ -115,7 +115,7 @@ public:
 
     ~WriteBufferFromZipArchive() override
     {
-        //!
+        /// ! #50274
         try
         {
             finalize();
@@ -194,7 +194,7 @@ namespace
 
         ~StreamFromWriteBuffer()
         {
-            //!
+            /// ! #50274
             write_buffer->finalize();
         }
 

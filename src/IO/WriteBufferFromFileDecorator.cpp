@@ -30,7 +30,7 @@ void WriteBufferFromFileDecorator::finalizeImpl()
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
 {
-    //!
+    /// ! #50274
 //    try
 //    {
 //        finalize();

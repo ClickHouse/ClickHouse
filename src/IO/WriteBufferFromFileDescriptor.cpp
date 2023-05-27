@@ -105,7 +105,7 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    //!
+    /// ! #50274
     finalize();
 }
 
