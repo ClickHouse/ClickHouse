@@ -4,29 +4,42 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/FunctionArrayMapped.h>
-#include <Common/logger_useful.h>
-
+#include <Poco/Logger.h>
 
 namespace DB
 {
-enum class ArrayPackBitsResultType
+
+template <typename ResultType>
+struct ArrayAggregatePackImpl;
+
+template <>
+struct ArrayAggregatePackImpl<ColumnUInt64>
 {
-    uin64,
-    string,
-    fixed_string,
+    using PackType = uint64_t;
 };
 
-template <ArrayPackBitsResultType result_type, bool pack_groups = false>
+template <>
+struct ArrayAggregatePackImpl<ColumnString>
+{
+    using PackType = std::string;
+};
+
+template <>
+struct ArrayAggregatePackImpl<ColumnFixedString>
+{
+    using PackType = std::string;
+};
+
+template <typename ResultType, bool PackGroups = false>
 struct ArrayPackBitsImpl
 {
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return true; }
-    static constexpr bool return_fixed_string = result_type == ArrayPackBitsResultType::fixed_string;
-    static constexpr int num_fixed_params = pack_groups ? 1 : 0 + return_fixed_string;
+    static constexpr bool return_fixed_string = std::is_same_v<ResultType, ColumnFixedString>;
+    static constexpr int num_fixed_params = (PackGroups ? 1 : 0) + return_fixed_string;
 
-    static DataTypePtr
-    getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/, const UInt64 fixed_string_size = 0)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr &, const UInt64 fixed_string_size = 0)
     {
         auto call = [&](const auto & types)
         {
@@ -45,86 +58,112 @@ struct ArrayPackBitsImpl
                 "array pack bits function cannot be performed on type {}",
                 expression_return->getName());
         }
-        if constexpr (result_type == ArrayPackBitsResultType::uin64)
+        if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
         {
             return std::make_shared<DataTypeUInt64>();
         }
-        else if constexpr (result_type == ArrayPackBitsResultType::string)
+        else if constexpr (std::is_same_v<ResultType, ColumnString>)
         {
             return std::make_shared<DataTypeString>();
         }
-        else if constexpr (result_type == ArrayPackBitsResultType::fixed_string)
+        else if constexpr (std::is_same_v<ResultType, ColumnFixedString>)
         {
             return std::make_shared<DataTypeFixedString>(fixed_string_size);
         }
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayPackBits is not implemented for {} as result type", result_type);
     }
 
     static void checkArguments(const String & name, const ColumnWithTypeAndName * fixed_arguments)
         requires(num_fixed_params != 0)
     {
         if (!fixed_arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected fixed arguments to get the fixed size for fixed string result");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected fixed arguments for function {}", name);
+        {
+            WhichDataType which(fixed_arguments[0].type.get());
+            if (!which.isUInt() && !which.isInt())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of limit argument of function {} (must be UInt or Int)",
+                    fixed_arguments[0].type->getName(),
+                    name);
+        }
 
-        WhichDataType which(fixed_arguments[0].type.get());
-        if (!which.isUInt() && !which.isInt())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of limit argument of function {} (must be UInt or Int)",
-                fixed_arguments[0].type->getName(),
-                name);
+        if (num_fixed_params > 1)
+        {
+            WhichDataType which(fixed_arguments[1].type.get());
+            if (!which.isUInt() && !which.isInt())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of limit argument of function {} (must be UInt or Int)",
+                    fixed_arguments[1].type->getName(),
+                    name);
+        }
     }
 
     static ColumnPtr
     execute(const ColumnArray & array, ColumnPtr mapped, const ColumnWithTypeAndName * arguments [[maybe_unused]] = nullptr)
     {
         const auto & offsets = array.getOffsets();
-        auto process_offsets = [&](auto & out_column, uint64_t pack_size, uint64_t max_offset)
+        auto process_offsets = [&](auto & out_column, uint64_t max_result_size = std::numeric_limits<uint64_t>::max() / 8)
         {
+            uint64_t pack_group_size = 8;
+            if constexpr (PackGroups)
+            {
+                if constexpr (std::is_same_v<ResultType, ColumnFixedString>)
+                {
+                    pack_group_size = typeid_cast<const ColumnConst *>(arguments[2].column.get())->getValue<UInt64>();
+                }
+                else
+                {
+                    pack_group_size = typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>();
+                }
+            }
+
             size_t pos = 0;
             for (uint64_t offset : offsets)
             {
-                max_offset = offset;
-                if constexpr (pack_groups)
+                if constexpr (std::is_same_v<ResultType, ColumnUInt64> || std::is_same_v<ResultType, ColumnString>)
                 {
-                    pack_size = std::min(pack_size, typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>());
-                    max_offset = std::min(max_offset, pack_size * 8);
+                    max_result_size = static_cast<uint64_t>(std::ceil(static_cast<double>(offset) / pack_group_size));
                 }
-                uint64_t bit64 = 0;
+                uint64_t max_offset = std::min(max_result_size * 8, offset);
+                typename ArrayAggregatePackImpl<ResultType>::PackType result = {};
                 uint8_t bit = 0;
+
                 for (; pos < max_offset; ++pos)
                 {
-                    uint8_t one_bit = static_cast<uint8_t>(mapped->getBool(pos));
+                    uint64_t one_bit = static_cast<uint64_t>(mapped->getBool(pos));
                     bit = bit << 1 | one_bit;
-                    if ((pos + 1) % pack_size == 0 || pos == max_offset - 1)
+                    if ((pos + 1) % pack_group_size == 0)
                     {
-                        bit64 = bit64 << 8 | bit;
+                        if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
+                        {
+                            result = result << 8 | bit;
+                        }
+                        else if constexpr (std::is_same_v<ResultType, ColumnString> || std::is_same_v<ResultType, ColumnFixedString>)
+                        {
+                            result += bit;
+                        }
                         bit = 0;
                     }
                 }
-                out_column->insert(bit64);
+                out_column->insert(result);
             }
         };
-        if constexpr (result_type == ArrayPackBitsResultType::uin64)
+
+
+        if constexpr (std::is_same_v<ResultType, ColumnUInt64> || std::is_same_v<ResultType, ColumnString>)
         {
-            auto out_column = ColumnUInt64::create();
+            auto out_column = ResultType::create();
             out_column->reserve(offsets.size());
-            process_offsets(out_column, 8ULL, 0);
+            process_offsets(out_column);
             return out_column;
         }
-        else if constexpr (result_type == ArrayPackBitsResultType::string)
-        {
-            auto out_column = ColumnString::create();
-            out_column->reserve(offsets.size());
-            process_offsets(out_column, 8ULL, 0);
-            return out_column;
-        }
-        else if constexpr (result_type == ArrayPackBitsResultType::fixed_string)
+        else if constexpr (std::is_same_v<ResultType, ColumnFixedString>)
         {
             const auto fixed_string_size = typeid_cast<const ColumnConst *>(arguments[1].column.get())->getValue<UInt64>();
-            auto out_column = ColumnFixedString::create(fixed_string_size);
+            auto out_column = ResultType::create(fixed_string_size);
             out_column->reserve(offsets.size());
-            process_offsets(out_column, 8ULL, fixed_string_size * 8);
+            process_offsets(out_column, fixed_string_size);
             return out_column;
         }
     }
@@ -134,43 +173,40 @@ struct NameArrayPackBitsToUInt64
 {
     static constexpr auto name = "arrayPackBitsToUInt64";
 };
-
-using FunctionArrayPackBitsToUInt64 = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::uin64>, NameArrayPackBitsToUInt64>;
-
-struct NameArrayPackBitsToFixedString
-{
-    static constexpr auto name = "arrayPackBitsToFixedString";
-};
-using FunctionArrayPackBitsToFixedString
-    = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::fixed_string>, NameArrayPackBitsToFixedString>;
+using FunctionArrayPackBitsToUInt64 = FunctionArrayMapped<ArrayPackBitsImpl<ColumnUInt64>, NameArrayPackBitsToUInt64>;
 
 struct NameArrayPackBitsToString
 {
     static constexpr auto name = "arrayPackBitsToString";
 };
-using FunctionArrayPackBitsToString = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::string>, NameArrayPackBitsToString>;
+using FunctionArrayPackBitsToString = FunctionArrayMapped<ArrayPackBitsImpl<ColumnString>, NameArrayPackBitsToString>;
+
+struct NameArrayPackBitsToFixedString
+{
+    static constexpr auto name = "arrayPackBitsToFixedString";
+};
+using FunctionArrayPackBitsToFixedString = FunctionArrayMapped<ArrayPackBitsImpl<ColumnFixedString>, NameArrayPackBitsToFixedString>;
+
 
 constexpr bool group_pack = true;
 struct NameArrayPackBitGroupsToUInt64
 {
     static constexpr auto name = "arrayPackBitGroupsToUInt64";
 };
-using FunctionArrayPackBitGroupsToUInt64
-    = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::uin64, group_pack>, NameArrayPackBitGroupsToUInt64>;
+using FunctionArrayPackBitGroupsToUInt64 = FunctionArrayMapped<ArrayPackBitsImpl<ColumnUInt64, group_pack>, NameArrayPackBitGroupsToUInt64>;
+
+struct NameArrayPackBitGroupsToString
+{
+    static constexpr auto name = "arrayPackBitGroupsToString";
+};
+using FunctionArrayPackBitGroupsToString = FunctionArrayMapped<ArrayPackBitsImpl<ColumnString, group_pack>, NameArrayPackBitGroupsToString>;
 
 struct NameArrayPackBitGroupsToFixedString
 {
     static constexpr auto name = "arrayPackBitGroupsToFixedString";
 };
 using FunctionArrayPackBitGroupsToFixedString
-    = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::fixed_string, group_pack>, NameArrayPackBitGroupsToFixedString>;
-
-struct NameArrayPackBitGroupsToString
-{
-    static constexpr auto name = "arrayPackBitGroupsToString";
-};
-using FunctionArrayPackBitGroupsToString
-    = FunctionArrayMapped<ArrayPackBitsImpl<ArrayPackBitsResultType::string, group_pack>, NameArrayPackBitGroupsToString>;
+    = FunctionArrayMapped<ArrayPackBitsImpl<ColumnFixedString, group_pack>, NameArrayPackBitGroupsToFixedString>;
 
 REGISTER_FUNCTION(ArrayPackBits)
 {
