@@ -167,9 +167,9 @@ user = 'myuser',
 password = 'mypass',
 host = '127.0.0.1',
 port = 3306,
-database = 'test'
-connection_pool_size = 8
-on_duplicate_clause = 1
+database = 'test',
+connection_pool_size = 8,
+on_duplicate_clause = 1,
 replace_query = 1
 ```
 
