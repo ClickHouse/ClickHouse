@@ -121,14 +121,15 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    try
-    {
-        finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("MergedBlockOutputStream");
-    }
+    /// ! #50274
+//    try
+//    {
+//        finish();
+//    }
+//    catch (...)
+//    {
+//        tryLogCurrentException("MergedBlockOutputStream");
+//    }
 }
 
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
