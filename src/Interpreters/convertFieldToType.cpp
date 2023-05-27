@@ -192,6 +192,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
     }
+    else if(which_type.isDateTime64() && which_from_type.isDate()) {
+        const auto value = static_cast<const DataTypeDateTime64 &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1);
+    }
+    else if(which_type.isDateTime64() && which_from_type.isDate()) {
+        const auto value = static_cast<const DataTypeDateTime64 &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1);
+    }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
