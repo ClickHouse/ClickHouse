@@ -734,10 +734,12 @@ private:
         const auto & column1 = arguments[1];
         const auto & column2 = arguments[2];
 
-        if (cond_is_true)
-            return castColumn(column1, result_type);
-        else if (cond_is_false || cond_is_null)
-            return castColumn(column2, result_type);
+        auto res = cond_is_true ? column1 : ((cond_is_false || cond_is_null) ? column2 : ColumnWithTypeAndName());
+        if (res.column)
+        {
+            res.column = materializeColumnIfConst(res.column);
+            return castColumn(res, result_type);
+        }
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
         {
