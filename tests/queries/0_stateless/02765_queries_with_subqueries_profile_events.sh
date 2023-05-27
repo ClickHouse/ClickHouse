@@ -21,7 +21,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 view,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -39,7 +39,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 subquery,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -56,7 +56,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -73,7 +73,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE_Multi,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -90,7 +90,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -107,7 +107,7 @@ for allow_experimental_analyzer in 0 1; do
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE_Multi,
-            Settings['allow_experimental_analyzer'] allow_experimental_analyzer,
+            $allow_experimental_analyzer allow_experimental_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
