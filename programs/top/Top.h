@@ -11,47 +11,43 @@ namespace DB
 class Top : public Client
 {
 public:
-
     void initNcurses();
-
-    void parseMetric(String & str);
-
-    void printLine(int ind, std::vector<int> & indents, bool is_header);
-
-    void printProcessTable();
-
-    void printTop();
 
     void printHelpBar();
 
-    void printLineDescription();
-
-    void setSortedQuery(char option);
-
-    void reformatProcessTable();
-
     void showHelpScreen();
-
 
     bool tryKeyboard();
 
     int sleepTryKeyboard();
 
-    String queryToString(String& query);
+    String queryToString(String & query);
 
     void addProgressbar();
 
-    
+    void parseMetric(String & str);
 
-    void parseTopQuery(String& str);
+    void reformatProcessTable();
+
+    void printLine(int ind, std::vector<int> & indents, bool is_header);
+
+    void printProcessTable();
+
+    void printLineDescription();
+
+    void setSortedQuery(char option);
+
+    void printTop();
+
+    void parseTopQuery(String & str);
 
     int makeProcessTable();
 
     int makeTop();
 
-    void go();
+    [[noreturn]] void go();
 
-    void start();
+    [[noreturn]] void start();
 
 private:
     WINDOW * top_win;

@@ -1,3 +1,5 @@
+// WORKING VERSION
+
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
@@ -11,6 +13,7 @@
 #include "AggregateFunctions/AggregateFunctionFactory.h"
 #include "AggregateFunctions/IAggregateFunction.h"
 #include "IO/WriteBuffer.h"
+#include "IO/WriteBufferFromFileDescriptor.h"
 #include "IO/WriteBufferFromString.h"
 #include "Top.h"
 #include "config.h"
@@ -74,7 +77,7 @@ const int TABLE_START_Y = 10;
         endwin();
         is_ncurses_mode = false;
     }
-    _exit(SIGINT);
+    _exit(signal);
 }
 
 
@@ -170,14 +173,31 @@ namespace Q
     //------------SORTING QUERIES---------------//
 
     String q_processes_ram_sort_inc = q_processes_base + " ORDER BY memory_usage" + epilogue;
-    String q_processes_ram_sort_dec = q_processes_base + "ORDER BY memory_usage DESC" + epilogue;
+    String q_processes_ram_sort_desc = q_processes_base + " ORDER BY memory_usage DESC" + epilogue;
 
     String q_processes_read_sort_inc = q_processes_base + " ORDER BY read_bytes" + epilogue;
-    String q_processes_read_sort_dec = q_processes_base + "ORDER BY read_bytes DESC" + epilogue;
+    String q_processes_read_sort_desc = q_processes_base + " ORDER BY read_bytes DESC" + epilogue;
 
-    int ram_sort = 0, read_sort = 0;
+    String q_processes_write_sort_inc = q_processes_base + " ORDER BY written_bytes" + epilogue;
+    String q_processes_write_sort_desc = q_processes_base + " ORDER BY written_bytes DESC" + epilogue;
 
-    std::unordered_map<char, int *> sort_options_map = {{'m', &ram_sort}, {'r', &read_sort}};
+    String q_processes_elapsed_sort_inc = q_processes_base + " ORDER BY elapsed" + epilogue;
+    String q_processes_elapsed_sort_desc = q_processes_base + " ORDER BY elapsed DESC" + epilogue;
+
+    int ram_sort = 0, read_sort = 0, write_sort = 0, elapsed_sort = 0;
+
+    struct SortingStrings
+    {
+        std::string_view inc;
+        std::string_view dec;
+    };
+
+    std::unordered_map<char, int *> sort_map_mods = {{'m', &ram_sort}, {'r', &read_sort}, {'w', &write_sort}, {'t', &elapsed_sort}};
+    std::unordered_map<char, SortingStrings> sort_map_queries
+        = {{'m', {q_processes_ram_sort_inc, q_processes_ram_sort_desc}},
+           {'r', {q_processes_read_sort_inc, q_processes_read_sort_desc}},
+           {'w', {q_processes_write_sort_inc, q_processes_write_sort_desc}},
+           {'t', {q_processes_elapsed_sort_inc, q_processes_elapsed_sort_desc}}};
 
     //-----------------------------------------//
 
@@ -208,7 +228,7 @@ namespace Q
     String q_top_metrics = q_top_metrics_base; // to be inited
     String q_top_async_metrics = q_top_async_metrics_base; // to be inited
 
-    String help_bar_str = "F1 Help";
+    String help_bar_str = "F1 Help  q Quit";
 
     void initQueries()
     // creates top window queries from vector of wanted metrics
@@ -249,6 +269,14 @@ namespace P
 
 //--------------GENERAL--------------------//
 
+/* I think it should be optimised by not using "INTO OUTFILE", but I can't change std_out field of clickhouse-client
+(= operator deleted) *. I tried reading from std.out.buffer() but for some reason on the end of it sometimes appear
+unwanted symbols. I suppose you shouldn't be iteratring through it's buffer and possibly mixing ncurses output and
+iostream is a bad idea. Maybe I should play with ncurses output descriptor.
+
+Function processes query and gets result in a signle String. (could be optimised by finding all ASTs at the beginning)
+(TabSeparated)
+*/
 
 String Top::queryToString(String & query)
 {
@@ -271,6 +299,7 @@ String Top::queryToString(String & query)
     return str;
 }
 
+/* Help bar at the bottom of screen */
 void Top::printHelpBar()
 {
     wmove(bottom_win, 0, 0);
@@ -280,21 +309,30 @@ void Top::printHelpBar()
     wrefresh(bottom_win);
 }
 
-void Top::showHelpScreen() // can be done in different window and just refreshing
+void Top::showHelpScreen() // can be done in different window and just refreshing to show
 {
     resetWin(stdscr);
 
-    wprintw(stdscr, "We are trying to help.\n Press any key to return.");
+    wprintw(
+        stdscr,
+        "Pressing next keys sorts process table, press again to switch from"
+        "\nincreasing to decreasing order and vice versa:"
+        "\n'm' by RAM usage."
+        "\n'r' by amount of read bytes."
+        "\n'w' by amount of written bytes."
+        "\n't' by time elapsed."
+        "\n\nUse arrow keys to navigate through process table."
+        "\nUse enter to show full information for selected query."
+        "\n\nPress any key to return.");
 
     wrefresh(stdscr);
 
     wgetch(stdscr);
 
     printHelpBar();
-
 }
 
-
+/* Allows user to control the app*/
 bool Top::tryKeyboard()
 {
     int ch = wgetch(bottom_win);
@@ -304,9 +342,9 @@ bool Top::tryKeyboard()
             printLineDescription();
             return true;
         case 'm':
-            setSortedQuery(ch);
-            return true;
         case 'r':
+        case 'w':
+        case 't':
             setSortedQuery(ch);
             return true;
         case KEY_F(1):
@@ -318,14 +356,17 @@ bool Top::tryKeyboard()
         case KEY_DOWN:
             ++highlight;
             return true;
+        case 'q':
+            handler_sigint(0);
         default:
             return false;
     }
 }
 
+/* Needed so we would'nt update the screen to often */
 int Top::sleepTryKeyboard()
 {
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < 10; ++i)
     {
         if (tryKeyboard())
         {
@@ -385,7 +426,7 @@ void parseKill(String & data)
         data = "NO";
     }
 }
-
+/* Fills progress bar with '|' symbols and append spaces on the remaining part */
 void Top::addProgressbar()
 {
     int length = static_cast<int>(COLS * 0.2);
@@ -426,7 +467,7 @@ void Top::reformatProcessTable()
     }
 }
 
-
+/* Turns system.processes query result (string) into 2d vector (table) */
 void Top::parseMetric(String & str)
 {
     process_table.clear();
@@ -463,6 +504,7 @@ void Top::parseMetric(String & str)
     reformatProcessTable();
 }
 
+/* Prints one row of table (which is 2d vector)*/
 void Top::printLine(int ind, std::vector<int> & indents, bool is_header)
 {
     std::vector<String> vec = process_table[ind];
@@ -489,7 +531,7 @@ void Top::printLine(int ind, std::vector<int> & indents, bool is_header)
             wprintw(table_win, str.data());
         }
 
-        int xdif = (indents[j] + 1 - static_cast<int>(str.size())); // + 1 for a delimeter
+        int xdif = (indents[j] + 1 - static_cast<int>(str.size())); // + 1 for a delimeter (a space)
         if (is_header && j == P::MEMORY_USAGE_PERCENT)
         { // fixes %% problem in RAM%%
             ++xdif;
@@ -506,6 +548,7 @@ void Top::printLine(int ind, std::vector<int> & indents, bool is_header)
     wmove(table_win, getcury(table_win) + 1, 0);
 }
 
+/* Calculates column indents so table would look as expected no matter lengths of values */
 std::vector<int> get_indents(std::vector<std::vector<String>> & a)
 {
     if (a.empty())
@@ -532,7 +575,8 @@ std::vector<int> get_indents(std::vector<std::vector<String>> & a)
     return indents;
 }
 
-
+/* We print only those rows which fit on screen but alwo allow scrolling:
+  highlighted row helps understand what part of table we want to show */
 void Top::printProcessTable()
 {
     resetWin(table_win);
@@ -581,6 +625,8 @@ void Top::printProcessTable()
     }
 }
 
+/* Print full info from system.processes about highlighted query 
+(Could be improved by formatting query output)*/
 void Top::printLineDescription()
 {
     resetWin(stdscr);
@@ -603,12 +649,10 @@ void Top::printLineDescription()
     wgetch(stdscr); // press any key to return
 }
 
-
+/* Allows user to sort table by some columns in both orders */
 void Top::setSortedQuery(char option)
 {
-    int * cur_val = Q::sort_options_map[option];
-
-    for (auto & elem : Q::sort_options_map)
+    for (auto & elem : Q::sort_map_mods)
     {
         if (elem.first != option)
         {
@@ -616,14 +660,15 @@ void Top::setSortedQuery(char option)
         }
     }
 
+    int * cur_val = Q::sort_map_mods[option];
     if (*cur_val != 1)
     {
-        this->process_query = Q::q_processes_ram_sort_dec;
+        this->process_query = Q::sort_map_queries[option].inc;
         *cur_val = 1;
     }
     else
     {
-        this->process_query = Q::q_processes_read_sort_inc;
+        this->process_query = Q::sort_map_queries[option].dec;
         *cur_val = -1;
     }
 }
@@ -633,6 +678,7 @@ void Top::setSortedQuery(char option)
 
 //-------------TOP-TABLE------------------//
 
+/* Prints some impornant metrics (should add some more metrics)*/
 void Top::printTop()
 {
     resetWin(top_win);
@@ -650,8 +696,9 @@ void Top::printTop()
     }
 }
 
+/* Processes only "metric, value". Could be extended to description and then description should be shown with F1 key */
 void Top::parseTopQuery(String & str)
-{ // processes only "metric, value". could be extended to description
+{
     String cur_str;
     String cur_metric;
     for (auto sym : str)
@@ -729,16 +776,12 @@ int Top::makeTop()
 
 //---------------RUNNING-------------------//
 
-void Top::go()
+[[noreturn]] void Top::go()
 {
     initNcurses();
     Q::initQueries();
-    int a;
-    (void)a;
     printHelpBar();
     this->process_query = Q::q_processes;
-
-    int cnt = 0;
 
     while (true)
     {
@@ -755,25 +798,16 @@ void Top::go()
         wrefresh(top_win);
 
         sleepTryKeyboard();
-
-        if (cnt == 50000)
-        {
-            break;
-        }
-        ++cnt;
     }
-
-    endwin();
-    is_ncurses_mode = false;
 }
 
 
-void Top::start()
+[[noreturn]] void Top::start()
 {
     // part of rewritten client function
     initialize(*this);
 
-    UseSSL use_ssl;
+    UseSSL uqse_ssl;
     MainThreadStatus::getInstance();
     setupSignalHandler();
 
@@ -801,5 +835,4 @@ int mainEntryClickHouseTop(int argc, char ** argv)
     DB::Top client;
     client.init(argc, argv);
     client.start();
-    return 0;
 }
