@@ -1429,6 +1429,8 @@ private:
     FunctionPtr array_function;
 };
 
+extern FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
+
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
@@ -1441,6 +1443,14 @@ extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
+
+struct DotProduct
+{
+    static constexpr auto name = "dotProduct";
+
+    static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
+};
 
 struct L1NormTraits
 {
@@ -1530,6 +1540,8 @@ struct CosineDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
 };
 
+using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
+
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
 using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
@@ -1615,8 +1627,8 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
 
-    factory.registerFunction<FunctionDotProduct>();
-    factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
+    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();
