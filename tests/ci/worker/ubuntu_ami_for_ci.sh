@@ -3,26 +3,26 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-# export RUNNER_VERSION=2.298.2
-# export RUNNER_HOME=/home/ubuntu/actions-runner
+export RUNNER_VERSION=2.298.2
+export RUNNER_HOME=/home/ubuntu/actions-runner
 
-# deb_arch() {
-#   case $(uname -m) in
-#     x86_64 )
-#       echo amd64;;
-#     aarch64 )
-#       echo arm64;;
-#   esac
-# }
+deb_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo amd64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
 
-# runner_arch() {
-#   case $(uname -m) in
-#     x86_64 )
-#       echo x64;;
-#     aarch64 )
-#       echo arm64;;
-#   esac
-# }
+runner_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo x64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
 
 # We have test for cgroups, and it's broken with cgroups v2
 # Ubuntu 22.04 has it enabled by default
