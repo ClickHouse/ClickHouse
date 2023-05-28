@@ -1,5 +1,3 @@
-SET output_format_pretty_squash_ms = 0;
-
 SELECT * FROM numbers(10) FORMAT Pretty;
 SELECT * FROM numbers(10) FORMAT PrettyCompact;
 SELECT * FROM numbers(10) FORMAT PrettyCompactMonoBlock;
