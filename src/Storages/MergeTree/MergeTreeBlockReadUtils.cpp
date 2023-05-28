@@ -142,7 +142,7 @@ MergeTreeReadTask::MergeTreeReadTask(
     const NameSet & column_name_set_,
     const MergeTreeReadTaskColumns & task_columns_,
     MergeTreeBlockSizePredictorPtr size_predictor_,
-    int64_t priority_,
+    Priority priority_,
     std::future<MergeTreeReaderPtr> reader_,
     std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
     : data_part{data_part_}
