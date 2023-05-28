@@ -4668,6 +4668,7 @@ void StorageReplicatedMergeTree::read(
         /// reset them to avoid holding them.
         auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
         snapshot_data.parts = {};
+        snapshot_data.alter_conversions = {};
     });
 
     /** The `select_sequential_consistency` setting has two meanings:
@@ -8115,7 +8116,6 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 {
     return std::make_unique<MergeTreeSettings>(getContext()->getReplicatedMergeTreeSettings());
 }
-
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {

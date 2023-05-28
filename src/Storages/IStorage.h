@@ -661,6 +661,12 @@ public:
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
+    /// Creates a storage snapshot but without holding a data specific to storage.
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
     /// A helper to implement read()
     static void readFromPipe(
         QueryPlan & query_plan,

@@ -36,12 +36,14 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & /* avg_value_size_hints */,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
+
     return std::make_unique<MergeTreeReaderInMemory>(
         read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
