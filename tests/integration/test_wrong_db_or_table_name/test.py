@@ -25,9 +25,9 @@ def test_wrong_database_name(started_cluster):
     )
 
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Database tes doesn't exist. Maybe you wanted to "
-                  "type \\['test'\\]?",
+        QueryRuntimeException,
+        match="DB::Exception: Database tes doesn't exist. Maybe you wanted to "
+        "type \\['test'\\]?",
     ):
         node.query("SELECT * FROM tes.table_test1 LIMIT 1;")
     assert int(node.query("SELECT count() FROM test.table_test;")) == 1
@@ -43,9 +43,9 @@ def test_wrong_table_name(started_cluster):
         """
     )
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Table test.table_test2 doesn't exist. Maybe you "
-                  "wanted to type \\['test.table_test1'\\]?",
+        QueryRuntimeException,
+        match="DB::Exception: Table test.table_test2 doesn't exist. Maybe you "
+        "wanted to type \\['test.table_test1'\\]?",
     ):
         node.query(
             """
