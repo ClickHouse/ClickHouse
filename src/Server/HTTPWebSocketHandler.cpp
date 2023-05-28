@@ -102,29 +102,29 @@ namespace ErrorCodes
 
 using Poco::IOException;
 
-//static std::chrono::steady_clock::duration parseSessionTimeout(
-//    const Poco::Util::AbstractConfiguration & config,
-//    const HTMLForm & params)
-//{
-//    unsigned session_timeout = config.getInt("default_session_timeout", 60);
-//
-//    if (params.has("session_timeout"))
-//    {
-//        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
-//        std::string session_timeout_str = params.get("session_timeout");
-//
-//        ReadBufferFromString buf(session_timeout_str);
-//        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-//            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
-//
-//        if (session_timeout > max_session_timeout)
-//            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
-//                                                                 "Maximum session timeout could be modified in configuration file.",
-//                            session_timeout_str, max_session_timeout);
-//    }
-//
-//    return std::chrono::seconds(session_timeout);
-//}
+static std::chrono::steady_clock::duration parseSessionTimeout(
+    const Poco::Util::AbstractConfiguration & config,
+    const HTMLForm & params)
+{
+    unsigned session_timeout = config.getInt("default_session_timeout", 60);
+
+    if (params.has("session_timeout"))
+    {
+        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+        std::string session_timeout_str = params.get("session_timeout");
+
+        ReadBufferFromString buf(session_timeout_str);
+        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
+
+        if (session_timeout > max_session_timeout)
+            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                                                                 "Maximum session timeout could be modified in configuration file.",
+                            session_timeout_str, max_session_timeout);
+    }
+
+    return std::chrono::seconds(session_timeout);
+}
 
 static String base64Encode(const String & decoded)
 {
@@ -363,19 +363,37 @@ void HTTPWebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
     session = std::make_shared<Session>(server.context(), ClientInfo::Interface::WEB_SOCKET, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    std::optional<CurrentThread::QueryScope> query_scope;
 
-    String session_id;
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     Application& app = Application::instance();
     try
     {
         HTMLForm params(default_settings, request);
-        app.logger().information("Request URI: %s", request.getURI());
 
         if (!authenticateUser(request, params, response)) {
             return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
         }
+
+        String session_id;
+        std::chrono::steady_clock::duration session_timeout;
+        bool session_is_set = params.has("session_id");
+        const auto & config = server.config();
+
+        if (session_is_set)
+        {
+            session_id = params.get("session_id");
+            session_timeout = parseSessionTimeout(config, params);
+            std::string session_check = params.get("session_check", "");
+            session->makeSessionContext(session_id, session_timeout, session_check == "1");
+        }
+        else
+        {
+            /// We should create it even if we don't have a session_id
+            session->makeSessionContext();
+        }
+
+        app.logger().information("Request URI: %s", request.getURI());
 
         WebSocket ws(request, response);
         auto connection = WebSocketServerConnection(server, ws, session, app.logger());

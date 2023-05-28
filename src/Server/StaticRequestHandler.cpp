@@ -21,6 +21,9 @@
 #include <filesystem>
 
 
+#include <Access/Credentials.h>
+
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -91,6 +94,15 @@ static inline void trySendExceptionToClient(
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
+
+    if (request.has("Connection") && request.get("Connection") == "Upgrade")
+    {
+        auto WSHandler = HTTPWebSocketHandler(server);
+        WSHandler.handleRequest(request, response);
+        return;
+    }
+
+
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try
