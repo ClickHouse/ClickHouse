@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB
@@ -35,7 +36,6 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
-
 struct MergeTreeReadTaskColumns
 {
     /// column names to read during WHERE
@@ -49,8 +49,10 @@ struct MergeTreeReadTaskColumns
 /// A batch of work for MergeTreeThreadSelectProcessor
 struct MergeTreeReadTask
 {
-    /// data part which should be read while performing this task
+    /// Data part which should be read while performing this task
     DataPartPtr data_part;
+    /// Alter converversionss that should be applied on-fly for part.
+    AlterConversionsPtr alter_conversions;
     /// Ranges to read from `data_part`.
     MarkRanges mark_ranges;
     /// for virtual `part_index` virtual column
@@ -77,6 +79,7 @@ struct MergeTreeReadTask
 
     MergeTreeReadTask(
         const DataPartPtr & data_part_,
+        const AlterConversionsPtr & alter_conversions_,
         const MarkRanges & mark_ranges_,
         size_t part_index_in_query_,
         const NameSet & column_name_set_,
