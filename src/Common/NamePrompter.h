@@ -99,14 +99,14 @@ template <size_t MaxNumHints, typename Self>
 class IHints
 {
 public:
-    virtual std::vector<String> getAllRegisteredNames() const;
+    virtual std::vector<String> getAllRegisteredNames() const = 0;
 
     std::vector<String> getHints(const String & name) const
     {
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings)
+    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings) const
     {
         return prompter.getHints(name, prompting_strings);
     }

@@ -91,7 +91,6 @@ public:
         , database_name(database_name_)
     {
     }
-private:
     Names getAllRegisteredNames() const override
     {
         Names result;
@@ -106,6 +105,7 @@ private:
         }
         return result;
     }
+private:
     const DatabaseCatalog & database_catalog;
     ContextPtr context;
     String database_name;
@@ -139,6 +139,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
+
 
 TemporaryTableHolder::TemporaryTableHolder(
     ContextPtr context_,
@@ -405,7 +406,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             if (exception)
             {
-                TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+                TableNameHints hints(*this, getContext(), table_id.database_name);
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 std::string suggested_name = names[0];
                 /// There is two options: first is to print just the name of the table
@@ -418,6 +419,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     ErrorCodes::UNKNOWN_TABLE,
                     "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), suggested_name
                 ));
+                //exception->emplace(ErrorCodes::UNKNOWN_TABLE,
+                //"Table {} doesn't exist. Maybe you wanted to type {}?", "table_id.getNameForLogs()", "suggested_name"
+                //);
             }
             return {};
         }
@@ -429,16 +433,18 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         std::string exception_message;
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
-        std::vector<String> names = hints.getHints(table_id.getTableName());
-        std::string suggested_name = names[0];
+        std::vector<String> names = hints.getHints(table_id.getTableName(), hints.getAllRegisteredNames());
         /// There is two options: first is to print just the name of the table
-        exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + suggested_name + "?";
         /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below.
         /// I also leave possibility to print several suggestions
 //        Names names_with_db_name;
 //        std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
 //        std::string exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
-        exception->emplace(ErrorCodes::UNKNOWN_TABLE, "exception_message");
+        if(names.empty()) exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table does not exist"));
+        else {
+            std::string suggested_name = names[0];
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), suggested_name));
+        }
     }
     if (!table)
         database = nullptr;
@@ -534,6 +540,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
             addUUIDMapping(db_uuid, database, nullptr);
     });
 }
+
 
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
@@ -1498,7 +1505,7 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     }
 }
 
-static void maybeUnlockUUID(UUID uuid)
+void maybeUnlockUUID(UUID uuid)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
