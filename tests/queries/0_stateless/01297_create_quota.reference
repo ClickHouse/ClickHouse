@@ -64,3 +64,40 @@ q4_01297	604800	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 -- query_selects query_inserts
 CREATE QUOTA q1_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_selects = 1 TO r1_01297
 CREATE QUOTA q2_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_inserts = 1 TO r1_01297
+-- size suffix
+-- functional test
+CREATE QUOTA q1_01297 FOR INTERVAL 1 minute MAX query_selects = 12000
+CREATE QUOTA q2_01297 FOR INTERVAL 1 minute MAX query_selects = 12288
+CREATE QUOTA q3_01297 FOR INTERVAL 1 minute MAX query_selects = 12000000
+CREATE QUOTA q4_01297 FOR INTERVAL 1 minute MAX query_selects = 12582912
+CREATE QUOTA q5_01297 FOR INTERVAL 1 minute MAX query_selects = 12000000000
+CREATE QUOTA q6_01297 FOR INTERVAL 1 minute MAX query_selects = 12884901888
+CREATE QUOTA q7_01297 FOR INTERVAL 1 minute MAX query_selects = 12000000000000
+CREATE QUOTA q8_01297 FOR INTERVAL 1 minute MAX query_selects = 13194139533312
+CREATE QUOTA q9_01297 FOR INTERVAL 1 minute MAX execution_time = 12000
+CREATE QUOTA q10_01297 FOR INTERVAL 1 minute MAX execution_time = 12288
+CREATE QUOTA q11_01297 FOR INTERVAL 1 minute MAX execution_time = 12000000
+CREATE QUOTA q12_01297 FOR INTERVAL 1 minute MAX execution_time = 12582912
+CREATE QUOTA q13_01297 FOR INTERVAL 1 minute MAX execution_time = 12000000000
+CREATE QUOTA q14_01297 FOR INTERVAL 1 minute MAX execution_time = 12884901888
+CREATE QUOTA q15_01297 FOR INTERVAL 1 minute MAX query_selects = 1
+CREATE QUOTA q16_01297 FOR INTERVAL 1 minute MAX execution_time = 1.5
+-- overflow test
+CREATE QUOTA q1_01297 FOR INTERVAL 1 minute MAX query_selects = 18446744073709551615
+CREATE QUOTA q2_01297 FOR INTERVAL 1 minute MAX execution_time = 18446744073
+-- zero test
+CREATE QUOTA q1_01297 FOR INTERVAL 1 minute MAX query_selects = 0
+CREATE QUOTA q2_01297 FOR INTERVAL 1 minute MAX execution_time = 0
+-- underflow test
+-- syntax test
+CREATE QUOTA q1_01297 FOR INTERVAL 1 minute MAX query_selects = 12
+CREATE QUOTA q2_01297 FOR INTERVAL 1 minute MAX execution_time = 12
+CREATE QUOTA q3_01297 FOR INTERVAL 1 minute MAX query_selects = 12000
+CREATE QUOTA q4_01297 FOR INTERVAL 1 minute MAX execution_time = 12000
+CREATE QUOTA q5_01297 FOR INTERVAL 1 minute MAX execution_time = 0
+CREATE QUOTA q6_01297 FOR INTERVAL 1 minute MAX execution_time = 0
+CREATE QUOTA q7_01297 FOR INTERVAL 1 minute MAX execution_time = 0
+CREATE QUOTA q8_01297 FOR INTERVAL 1 minute MAX execution_time = 0
+CREATE QUOTA q9_01297 FOR INTERVAL 1 minute MAX execution_time = 123000
+CREATE QUOTA q10_01297 FOR INTERVAL 1 minute MAX execution_time = 123000
+-- bad syntax test

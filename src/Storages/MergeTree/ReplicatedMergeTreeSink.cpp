@@ -275,7 +275,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
+    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
@@ -989,8 +989,10 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             /// here lambda capture part name, it's ok since we'll not generate new one for this insert,
             /// see comments around 'part_committed_locally_but_zookeeper' flag
             retries_ctl.actionAfterLastFailedRetry(
-                [&storage = storage, part_name = part->name]()
-                { storage.enqueuePartForCheck(part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER); });
+                [&my_storage = storage, part_name = part->name]
+                {
+                    my_storage.enqueuePartForCheck(part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+                });
 
             /// We do not know whether or not data has been inserted.
             retries_ctl.setUserError(
