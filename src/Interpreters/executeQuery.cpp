@@ -1,3 +1,4 @@
+#include "Common/MemorySanitizer.h"
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -386,13 +387,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         #if USE_PRQL
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            char * prql_query = new char[max_query_size];
-            if (prql_query == nullptr)
-            {
-                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough ram");
-            }
-            memcpy(prql_query, begin, end - begin);
-            char * sql_query = new char[max_query_size];
+            char * sql_query = new char[max_query_size + 1];
             if (sql_query == nullptr)
             {
                 throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough ram");
@@ -403,6 +398,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 delete[] sql_query;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
+            __msan_unpoison(sql_query, max_query_size + 1);
             size_t idx = 0;
             char * sql_query_end = sql_query;
             while (idx < max_query_size && *sql_query_end)
