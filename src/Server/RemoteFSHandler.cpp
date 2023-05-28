@@ -96,6 +96,8 @@ RemoteFSHandler::~RemoteFSHandler()
 {
     try
     {
+        if (out)
+            out->next();
         // TODO
     }
     catch (...)
@@ -130,6 +132,7 @@ void RemoteFSHandler::run()
     }
     catch (const Exception & e)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
             LOG_INFO(log, "Client has gone away.");
@@ -173,16 +176,18 @@ void RemoteFSHandler::run()
         }
         catch (const Exception & e)
         {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
             sendException(e);
         }
         catch (const fs::filesystem_error & e)
         {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
             sendException(Exception(Exception::CreateFromSTDTag{}, e));
         }
         catch (...)
         {
             // TODO: split on different cases
-            LOG_ERROR(log, "Got exception {}", getCurrentExceptionMessage(false));
+            tryLogCurrentException(__PRETTY_FUNCTION__);
             throw;
         }
     }
@@ -232,7 +237,7 @@ void RemoteFSHandler::receiveRequest()
     switch (packet_type)
     {
         case RemoteFSProtocol::Hello:
-            receiveUnexpectedHello();
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
         case RemoteFSProtocol::Ping:
             writeVarUInt(RemoteFSProtocol::Pong, *out);
             out->next();
@@ -422,15 +427,6 @@ void RemoteFSHandler::receivePath(std::string & path)
     LOG_TRACE(log, "Received path {}", path);
 }
 
-void RemoteFSHandler::receiveUnexpectedHello()
-{
-    String skip_string;
-
-    readStringBinary(skip_string, *in);
-
-    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
-}
-
 void RemoteFSHandler::iterateDirectory()
 {
     std::string path;
@@ -485,17 +481,17 @@ void RemoteFSHandler::readFile()
 
 void RemoteFSHandler::writeFile()
 {
-    std::string str_data;
+    std::string path;
     size_t buf_size;
     uint mode_raw;
-    receivePath(str_data);
+    receivePath(path);
     readVarUInt(buf_size, *in);
     LOG_TRACE(log, "Received buf_size {}", buf_size);
     readVarUInt(mode_raw, *in);
     WriteMode mode = WriteMode(mode_raw);
     LOG_TRACE(log, "Received mode {}", mode);
 
-    auto write_buf = disk->writeFile(str_data, buf_size, mode);
+    auto write_buf = disk->writeFile(path, buf_size, mode);
     writeVarUInt(RemoteFSProtocol::StartWriteFile, *out);
     out->next();
     LOG_TRACE(log, "Sent {}", RemoteFSProtocol::StartWriteFile);
@@ -507,9 +503,9 @@ void RemoteFSHandler::writeFile()
         switch (packet_type)
         {
             case RemoteFSProtocol::DataPacket:
-                readStringBinary(str_data, *in);
-                LOG_TRACE(log, "Received data of size {}", str_data.size());
-                writeString(str_data, *write_buf);
+                readVarUInt(buf_size, *in);
+                LOG_TRACE(log, "Receiving data of size {}", buf_size);
+                copyData(*in, *write_buf, buf_size);
                 write_buf->next(); // TODO maybe remove this line
                 writeVarUInt(RemoteFSProtocol::DataPacket, *out);
                 out->next();

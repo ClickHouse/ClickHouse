@@ -19,12 +19,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class DiskRemote : public IDisk
+class DiskRemoteFSOverClickHouseServer : public IDisk
 {
 public:
-    friend class DiskRemoteReservation;
+    friend class DiskRemoteFSOverClickHouseServerReservation;
 
-    DiskRemote(const String & name, const String & host, UInt16 port, const String & remote_disk_name, unsigned max_connections_ = 20);
+    DiskRemoteFSOverClickHouseServer(const String & name, const String & host, UInt16 port, const String & remote_disk_name, unsigned max_connections_ = 20);
 
     const String & getPath() const override;
 

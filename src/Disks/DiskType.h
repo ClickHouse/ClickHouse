@@ -16,7 +16,7 @@ enum class DataSourceType
     WebServer,
     AzureBlobStorage,
     LocalBlobStorage,
-    Remote,
+    RemoteFSOverClickHouseServer,
 };
 
 inline String toString(DataSourceType data_source_type)
@@ -39,8 +39,8 @@ inline String toString(DataSourceType data_source_type)
             return "azure_blob_storage";
         case DataSourceType::LocalBlobStorage:
             return "local_blob_storage";
-        case DataSourceType::Remote:
-            return "remote";
+        case DataSourceType::RemoteFSOverClickHouseServer:
+            return "remote_fs_over_clickhouse_server";
     }
     UNREACHABLE();
 }

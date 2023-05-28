@@ -4,7 +4,7 @@
 #include <iostream>
 #include <memory>
 
-#include <Disks/DiskRemote.h>
+#include <Disks/DiskRemoteFSOverClickHouseServer.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
@@ -25,7 +25,7 @@ try
         Poco::Timespan(1000000) /// Receive timeout.
     );
 
-    DiskPtr disk = std::make_shared<DiskRemote>("test", "localhost", 9012, "test_disk");
+    DiskPtr disk = std::make_shared<DiskRemoteFSOverClickHouseServer>("test", "localhost", 9012, "test_disk");
     auto buf = disk->writeFile("file1", 5, WriteMode::Rewrite, {});
     buf->write("1234567890", 10);
     buf->next();
