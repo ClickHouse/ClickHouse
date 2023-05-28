@@ -1,5 +1,4 @@
 #include <Core/SettingsEnums.h>
-#include "SettingsEnums.h"
 
 
 namespace DB
