@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
-#include "base/defines.h"
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
