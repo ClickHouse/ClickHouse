@@ -595,6 +595,7 @@ if (TARGET ch_rust::skim)
 endif()
 
 if (TARGET ch_rust::prql_lib)
+    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::prql_lib,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::prql_lib)
 endif ()
 
