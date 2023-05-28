@@ -121,29 +121,39 @@ struct ArrayPackBitsImpl
             size_t pos = 0;
             for (uint64_t offset : offsets)
             {
-                if constexpr (std::is_same_v<ResultType, ColumnUInt64> || std::is_same_v<ResultType, ColumnString>)
+                if constexpr (std::is_same_v<ResultType, ColumnString>)
                 {
                     max_result_size = static_cast<uint64_t>(std::ceil(static_cast<double>(offset) / pack_group_size));
                 }
-                uint64_t max_offset = std::min(max_result_size * 8, offset);
+                else if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
+                {
+                    max_result_size = std::min(static_cast<uint64_t>(std::ceil(static_cast<double>(offset) / pack_group_size)), 8ULL);
+                }
+
+                uint64_t max_offset = std::min(max_result_size * pack_group_size, offset);
                 typename ArrayAggregatePackImpl<ResultType>::PackType result = {};
-                uint8_t bit = 0;
+                uint8_t bit_group = 0;
 
                 for (; pos < max_offset; ++pos)
                 {
                     uint64_t one_bit = static_cast<uint64_t>(mapped->getBool(pos));
-                    bit = bit << 1 | one_bit;
-                    if ((pos + 1) % pack_group_size == 0)
+                    bit_group = bit_group << 1 | one_bit;
+
+                    if (((pos + 1) % pack_group_size == 0 || pos + 1 == max_offset))
                     {
+                        uint8_t bit_shift = 8 - ((pos + 1) % pack_group_size);
                         if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
                         {
-                            result = result << 8 | bit;
+                            result = result << bit_shift | bit_group;
                         }
                         else if constexpr (std::is_same_v<ResultType, ColumnString> || std::is_same_v<ResultType, ColumnFixedString>)
                         {
-                            result += bit;
+                            if (bit_shift == 8)
+                                result += bit_group;
+                            else
+                                result += bit_group << bit_shift;
                         }
-                        bit = 0;
+                        bit_group = 0;
                     }
                 }
                 out_column->insert(result);
