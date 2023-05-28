@@ -1,0 +1,3 @@
+<test>
+    <query>SELECT uniqExactIf(number, ) FROM numbers_mt(1e7)</query>
+</test>
