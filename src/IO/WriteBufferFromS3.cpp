@@ -182,7 +182,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
-    if (std::uncaught_exception())
+    if (std::uncaught_exceptions())
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw Exception(
