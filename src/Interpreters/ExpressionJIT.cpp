@@ -545,7 +545,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     for (const auto & node : nodes)
     {
         auto & node_data = node_to_data[&node];
-        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation;
 
         for (const auto & child : node.children)
             node_to_data[child].all_parents_compilable &= node_is_valid_for_compilation;
@@ -563,7 +563,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     {
         auto & node_data = node_to_data[&node];
 
-        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation;
 
         /// If all parents are compilable then this node should not be standalone compiled
         bool should_compile = node_is_valid_for_compilation && !node_data.all_parents_compilable;
