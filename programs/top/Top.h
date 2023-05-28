@@ -11,7 +11,6 @@ namespace DB
 class Top : public Client
 {
 public:
-    void start();
 
     void initNcurses();
 
@@ -25,9 +24,14 @@ public:
 
     void printHelpBar();
 
-    void showLineDescription();
+    void printLineDescription();
 
-    void setMemorySortedQuery();
+    void setSortedQuery(char option);
+
+    void reformatProcessTable();
+
+    void showHelpScreen();
+
 
     bool tryKeyboard();
 
@@ -35,17 +39,24 @@ public:
 
     String queryToString(String& query);
 
+    void addProgressbar();
+
+    
+
+    void parseTopQuery(String& str);
+
     int makeProcessTable();
 
     int makeTop();
 
-    void parseTopQuery(String& str);
-
     void go();
+
+    void start();
 
 private:
     WINDOW * top_win;
     std::unordered_map<String, String> top_data;
+    int top_y;
 
     WINDOW * table_win;
     std::vector<std::vector<String>> process_table;
