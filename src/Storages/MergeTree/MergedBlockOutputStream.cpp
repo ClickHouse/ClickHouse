@@ -119,22 +119,11 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
-MergedBlockOutputStream::Finalizer::~Finalizer()
-{
-    /// ! #50274
-//    try
-//    {
-//        finish();
-//    }
-//    catch (...)
-//    {
-//        tryLogCurrentException("MergedBlockOutputStream");
-//    }
-}
-
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
+
+MergedBlockOutputStream::Finalizer::~Finalizer() {}
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,

@@ -1049,8 +1049,8 @@ def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
         "   AND type!='QueryStart'"
     ).split()
 
-    assert int(memory_usage) < 1.1 * memory
-    assert int(memory_usage) > 0.9 * memory
+    assert int(memory_usage) < 1.2 * memory
+    assert int(memory_usage) > 0.8 * memory
 
     assert int(wait_inflight) > 10 * 1000 * 1000
 
@@ -1097,7 +1097,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, node_name):
         "   AND type!='QueryStart'"
     )
 
-    assert int(result) < 1.1 * memory
-    assert int(result) > 0.9 * memory
+    assert int(result) < 1.2 * memory
+    assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)

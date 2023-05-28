@@ -73,7 +73,6 @@ std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 
 WriteBufferToFileSegment::~WriteBufferToFileSegment()
 {
-    /// ! #50274
     try
     {
         finalize();
