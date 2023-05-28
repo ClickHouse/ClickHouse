@@ -56,55 +56,75 @@ public:
                 arguments[0]->getName(), getName());
         }
 
-        if (!isString(arguments[1]) /* Тут еще нужно проверить, что это не колонка строк */) {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument of function {}. Must be String or Column of Strings.",
-                arguments[1]->getName(), getName());
-        }
+        // if (!isString(arguments[1]) /* Тут еще нужно проверить, что это не колонка строк */) {
+        //     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        //         "Illegal type {} of argument of function {}. Must be String or Column of Strings.",
+        //         arguments[1]->getName(), getName());
+        // }
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
     {
         std::cout << "\nExecute Implementation started\n";
 
-        using ResultType = typename Impl::ResultType;
+        // using ResultType = typename Impl::ResultType;
 
         const ColumnPtr & slice_name = arguments[0].column;
         const ColumnPtr & texts = arguments[1].column;
 
         const ColumnConst * slice_name_const = typeid_cast<const ColumnConst *>(&*slice_name);
-        const ColumnConst * texts_const = typeid_cast<const ColumnConst *>(&*texts);
+        const ColumnConst * texts_const = typeid_cast<const ColumnConst *>(&*slice_name);
+        
+        const ColumnString * texts_vector = checkAndGetColumn<ColumnString>(&*texts);
 
         if (!slice_name_const) { // пока что мы поддерживаем только классивикацию одного одним или многих одним, но НЕ многих многими. Чуть позже добавлю это
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of fist argument of function. Must be String.", arguments[0].column->getName());
+            return nullptr;
         }
 
         if (texts_const) {
             // нужно вызывать имплементацию, когда надо проклассифицировать только одно слово одним срезом
             const String &text = texts_const->getValue<String>();
             const String &slice = slice_name_const->getValue<String>();
-            ResultType res{};
-            // Impl::constant(text, slice, res);
+            String res{implementation->classify(slice, text)};
             std::cout << "Constant Constant\n";
+            std::cout << texts_const->size() << '\n';
+            std::cout << res << '\n';
             return result_type->createColumnConst(texts_const->size(), toField(res));
         }
 
-        auto col_res = ColumnString::create();
+        const String & slice_name_string = slice_name_const->getValue<String>();
 
-        // const ColumnString * col_vector = checkAndGetColumn<ColumnString>(&*arguments[1].column);
+        std::cout << "Slice name in executeImpl: " << slice_name_string << '\n';
 
-        // const auto &chars = col_vector->getChars();
-        // const auto &offsets = col_vector->getOffsets();
+        if (!texts_vector) {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of fist argument of function. Must be String or Vector of Strings.", arguments[0].column->getName());
+            return nullptr;
+        }
 
-        // const String &slice = slice_name_const->getValue<String>();
+        std::cout << "All Checks Passed. Ready to execute implementation\n";
 
-        // Impl::vector(chars, offsets, slice, col_res->getChars(), col_res->getOffsets());
-        return col_res;
+        auto result = ColumnString::create();
+
+        const auto & chars = texts_vector->getChars();
+        const auto & offsets = texts_vector->getOffsets();
+
+        IColumn::Offset current_offset = 0;
+
+        for (size_t index = 0; index < (*texts_vector).size(); ++index) {
+            String text = String(reinterpret_cast<const char *>(&chars[current_offset]));
+            result->insert(implementation->classify(slice_name_string, text));
+            current_offset = offsets[index];
+        }
+        return result;
+
     }
-
+private:
+    std::shared_ptr<Impl> implementation{new Impl()};
 };
 
 

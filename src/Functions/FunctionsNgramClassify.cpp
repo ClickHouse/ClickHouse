@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <Functions/FunctionsStringSimilarity.h>
@@ -56,7 +57,7 @@ namespace fs = std::filesystem;
 */
 
 
-static const String model_path = "~/ClickHouse/opt/NgramModels/";
+static const String model_path = "../../opt/NgramModels/";
 
 namespace DB
 {
@@ -84,26 +85,44 @@ template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
 class NaiveBayes {
 public:
     void learn(const std::string &text) {
-        std::unique_ptr<NgramCount[]> map(new NgramCount[map_size]);
+        map = std::shared_ptr<NgramCount[]>(new NgramCount[map_size]);
+        std::memset(static_cast<NgramCount*>(map[0]), 0, map_size * sizeof(NgramCount));
         dispatchSearcher(calculateNeedleStats, text.data(), text.size(), map.get());
+        
+        for (size_t index = 0; index < map_size; ++index) {
+            if (map[index] != 0) {
+                std::cout << "map[" << index << "] is nonzero (=" << map[index] << ")\n";
+            }
+        }
+
+
         map_normalized = std::shared_ptr<Float64[]>(new Float64[map_size]);
         if (text.size() < N) {
             // BOOM
         }
-        Float64 total = static_cast<Float64>(text.size()) - static_cast<Float64>(N);
+        Float64 total = static_cast<Float64>(text.size()) - static_cast<Float64>(N - 1);
         for (size_t index = 0; index < map_size; ++index) {
-            map_normalized[index] = log(map[index] / total);
+            if (map[index]) {
+                map_normalized[index] = log(map[index] / total);
+            }
         }
     }
 
-    std::shared_ptr<Float64[]> getmap() {
+    std::shared_ptr<NgramCount[]> getmap() {
+        return map;
+    }
+
+    std::shared_ptr<Float64[]> getmapNorm() {
         return map_normalized;
     }
 
-    Float64 score(std::unique_ptr<Float64[]> text_map_normalized) const {
+    Float64 score(std::shared_ptr<NgramCount[]> text_map) const {
         Float64 result = 0.;
         for (size_t index = 0; index < map_size; ++index) {
-            result += text_map_normalized[index] * map_normalized[index];
+            if (text_map[index] == 0 || map_normalized[index] == 0) {
+                continue;
+            }
+            result += static_cast<Float64>(text_map[index]) * map_normalized[index];
         }
         return result;
     }
@@ -112,6 +131,7 @@ private:
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
     std::shared_ptr<Float64[]> map_normalized;
+    std::shared_ptr<NgramCount[]> map;
 
     static ALWAYS_INLINE UInt16 calculateASCIIHash(const CodePoint * code_points)
     {
@@ -293,7 +313,7 @@ private:
             iter = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
 
-        /// Return the state of hash map to its initial.
+        // Return the state of hash map to its initial.
         if constexpr (reuse_stats)
         {
             for (size_t i = 0; i < ngram_cnt; ++i)
@@ -301,6 +321,7 @@ private:
         }
         return ngram_cnt;
     }
+    
 
     template <class Callback, class... Args>
     static inline auto dispatchSearcher(Callback callback, Args &&... args)
@@ -308,7 +329,7 @@ private:
         if constexpr (!UTF8)
             return callback(std::forward<Args>(args)..., readASCIICodePoints, calculateASCIIHash);
         else
-            return callback(std::forward<Args>(args)..., readUTF8CodePoints, calculateUTF8Hash);
+            return callback(std::forward<Args>(args)..., readUTF8CodePoints, calculateUTF8Hash); // UTF8!
     }
 };
 
@@ -325,7 +346,7 @@ public:
     std::unordered_map<String, Float64> score(const String &text) const {
         NaiveBayes<CodePoint, N, UTF8, case_insensitive> text_model;
         text_model.learn(text);
-        std::shared_ptr<Float64[]> text_map = text_model.getmap();
+        std::shared_ptr<NgramCount[]> text_map = text_model.getmap();
         std::unordered_map<String, Float64> result;
         result.reserve(models.size());
         for (const auto &[name, model] : models) {
@@ -342,16 +363,16 @@ template<class Section>
 class NgramStorage {
 public:
 
-    String classify(const String &name, const String &text) {
+    String classify(const String &name, const String &text) const {
         if (map.find(name) == map.end()) {
             // BOOM
         }
         std::unordered_map<String, Float64> scoring = map.at(name).score(text);
-
-        Float64 best_score = 0.;
+        Float64 best_score = std::numeric_limits<Float64>::min();
         std::string_view result;
 
         for (auto &[sub_name, score] : scoring) {
+            std::cout << "tmp SCORE = " << score << " for string " << sub_name << '\n';
             if (score > best_score) {
                 best_score = score;
                 result = sub_name;
@@ -364,27 +385,35 @@ public:
 
     explicit NgramStorage() 
     {
+        std::cout << "Storage INIT\n";
         reload();
-        t_reload = ThreadFromGlobalPool([this] { reloadPeriodically(); });
+        // t_reload = ThreadFromGlobalPool([this] { reloadPeriodically(); });
     }
 
 
     ~NgramStorage() 
     {
         destroy.set();
-        t_reload.join();
+        // t_reload.join();
     }
 
 
-    [[noreturn]] void reload() {
+    void reload() {
         for (const auto &entry : fs::directory_iterator(model_path)) {
             if (!entry.is_directory()) {
                 // BOOM
             }
             const String &section_name = entry.path().filename().string();
+
+            std::cout << "Section name is " << section_name << '\n';
+
+
             std::unordered_map<String, String> section_models;
             for (const auto &model: fs::directory_iterator(entry.path())) {
                 const String &model_name = model.path().filename().string();
+
+                std::cout << "Model name is " << model_name << '\n';
+
                 // here we need to load model
                 if (!model.is_regular_file()) {
                     // BOOM
@@ -398,20 +427,20 @@ public:
         }
     }
 
-    [[noreturn]] void reloadPeriodically()
-    {
-        setThreadName("Ngram Storage Reload");
+    // void reloadPeriodically()
+    // {
+    //     setThreadName("Ngram Storage Reload");
 
-        while (true)
-        {
-            destroy.tryWait(cur_reload_period * 1000);
-            reload();
-        }
-    }
-    static constexpr Int64 cur_reload_period = 100;
+    //     while (true)
+    //     {
+    //         destroy.tryWait(cur_reload_period * 1000);
+    //         reload();
+    //     }
+    // }
+    // static constexpr Int64 cur_reload_period = 10;
     Poco::Event destroy;
     std::unordered_map<String, Section> map;
-    ThreadFromGlobalPool t_reload;
+    // ThreadFromGlobalPool t_reload;
 };
 
 
@@ -421,15 +450,20 @@ template <class Storage>
 class NgramTextClassificationImpl
 {
 public:
+    NgramTextClassificationImpl() {
+        checkload();
+    }
     using ResultType = String;
-    String classify(const String &name, const String &text) {
-        if (!storage) {
-            storage = new Storage();
-        }
+    String classify(const String &name, const String &text) const {
         return storage->classify(name, text);
     }
 private:
-    std::unique_ptr<Storage> storage = nullptr;
+    void checkload() {
+        if (!storage) {
+            storage.reset(new Storage());
+        }
+    }
+    std::shared_ptr<Storage> storage = nullptr;
 };
 
 
@@ -438,8 +472,8 @@ using NgramSlice = Slice<UInt8, 5, false, true>;
 using Storage = NgramStorage<NgramSlice>;
 
 
-using BayesUTF8 = NaiveBayes<UInt8, 5, true, true>;
-using NgramSliceUTF8 = Slice<UInt8, 5, true, true>;
+using BayesUTF8 = NaiveBayes<UInt32, 3, true, true>;
+using NgramSliceUTF8 = Slice<UInt32, 3, true, true>;
 using StorageUTF8 = NgramStorage<NgramSliceUTF8>;
     
 
