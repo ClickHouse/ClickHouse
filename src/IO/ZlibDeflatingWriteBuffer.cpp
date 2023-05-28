@@ -74,7 +74,6 @@ void ZlibDeflatingWriteBuffer::nextImpl()
 
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
-    /// ! #50274
     try
     {
         finalize();

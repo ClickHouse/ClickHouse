@@ -538,7 +538,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     if (multipart_tags.empty())
         throw Exception(
-                ErrorCodes::S3_ERROR,
+                ErrorCodes::LOGICAL_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
     for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -546,7 +546,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         const auto tag = multipart_tags.at(i);
         if (tag.empty())
             throw Exception(
-                    ErrorCodes::S3_ERROR,
+                    ErrorCodes::LOGICAL_ERROR,
                     "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
     }
 

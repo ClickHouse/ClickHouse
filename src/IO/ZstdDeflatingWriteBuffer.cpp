@@ -33,7 +33,6 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
-    /// ! #50274
     finalize();
 }
 

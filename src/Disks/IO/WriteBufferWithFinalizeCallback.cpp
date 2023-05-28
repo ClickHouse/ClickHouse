@@ -13,20 +13,6 @@ WriteBufferWithFinalizeCallback::WriteBufferWithFinalizeCallback(
 {
 }
 
-
-WriteBufferWithFinalizeCallback::~WriteBufferWithFinalizeCallback()
-{
-    /// ! #50274
-//    try
-//    {
-//        finalize();
-//    }
-//    catch (...)
-//    {
-//        tryLogCurrentException(__PRETTY_FUNCTION__);
-//    }
-}
-
 void WriteBufferWithFinalizeCallback::finalizeImpl()
 {
     WriteBufferFromFileDecorator::finalizeImpl();

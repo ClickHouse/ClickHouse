@@ -106,7 +106,6 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    /// ! #50274
     finalize();
 }
 

@@ -184,7 +184,6 @@ struct TemporaryFileStream::OutputWriter
 
     ~OutputWriter()
     {
-        /// ! #50274
         try
         {
             finalize();
