@@ -1,3 +1,10 @@
+option (ENABLE_MAXMINDDB "Enable maxminddb library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_MAXMINDDB)
+  message (STATUS "Not using maxminddb")
+  return()
+endif()
+
 set(LIBMAXMINDDB_VERSION "1.7.1")
 
 include(GNUInstallDirs)
