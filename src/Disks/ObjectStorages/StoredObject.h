@@ -29,4 +29,6 @@ struct StoredObject
 
 using StoredObjects = std::vector<StoredObject>;
 
+size_t getTotalSize(const StoredObjects & objects);
+
 }

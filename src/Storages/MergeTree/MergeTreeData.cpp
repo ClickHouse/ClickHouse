@@ -1,4 +1,3 @@
-#include "Storages/MergeTree/MergeTreeDataPartBuilder.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -76,6 +75,8 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MutationCommands.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -1967,7 +1968,7 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, 0));
+        }, Priority{}));
     }
 
     /// Wait for every scheduled task
@@ -7204,9 +7205,17 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
 
-    if (query_context->canUseParallelReplicasOnInitiator()
-        && to_stage >= QueryProcessingStage::WithMergeableState)
-        return QueryProcessingStage::Enum::WithMergeableState;
+    /// Parallel replicas
+    if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+    {
+        /// ReplicatedMergeTree
+        if (supportsReplication())
+            return QueryProcessingStage::Enum::WithMergeableState;
+
+        /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
+        if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            return QueryProcessingStage::Enum::WithMergeableState;
+    }
 
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
@@ -7980,25 +7989,14 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
+AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
 {
-    std::map<int64_t, MutationCommands> commands_map = getAlterMutationCommandsForPart(part);
+    auto commands_map = getAlterMutationCommandsForPart(part);
 
-    AlterConversions result{};
-    auto & rename_map = result.rename_map;
-    for (const auto & [version, commands] : commands_map)
-    {
+    auto result = std::make_shared<AlterConversions>();
+    for (const auto & [_, commands] : commands_map)
         for (const auto & command : commands)
-        {
-            /// Currently we need explicit conversions only for RENAME alter
-            /// all other conversions can be deduced from diff between part columns
-            /// and columns in storage.
-            if (command.type == MutationCommand::Type::RENAME_COLUMN)
-            {
-                rename_map.emplace_back(AlterConversions::RenamePair{command.rename_to, command.column_name});
-            }
-        }
-    }
+            result->addMutationCommand(command);
 
     return result;
 }
@@ -8329,13 +8327,22 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
+    ColumnsDescription object_columns_copy;
 
-    auto lock = lockParts();
-    snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+    {
+        auto lock = lockParts();
+        snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+        object_columns_copy = object_columns;
+    }
+
+    snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
+    for (const auto & part : snapshot_data->parts)
+        snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
     auto lock = lockParts();
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
