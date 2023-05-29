@@ -375,6 +375,20 @@ TEST(TarArchiveReaderTest, ReadTwoFiles) {
     fs::remove(archive_path);
 }
 
+
+TEST(TarArchiveReaderTest, CheckFileInfo) {
+    String archive_path = "archive.tar";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = create_tar_with_file(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto info = reader->getFileInfo(filename);
+    EXPECT_EQ(info.uncompressed_size, contents.size());
+    EXPECT_GT(info.compressed_size, 0);
+    fs::remove(archive_path);
+}
+
 TEST(SevenZipArchiveReaderTest, FileExists) {
     String archive_path = "archive.7z";
     String filename = "file.txt";
@@ -397,6 +411,19 @@ TEST(SevenZipArchiveReaderTest, ReadFile) {
     String str;
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, CheckFileInfo) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = create_7z_with_file(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto info = reader->getFileInfo(filename);
+    EXPECT_EQ(info.uncompressed_size, contents.size());
+    EXPECT_GT(info.compressed_size, 0);
     fs::remove(archive_path);
 }
 
