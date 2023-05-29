@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <mutex>
 
@@ -164,7 +166,6 @@ private:
 class MergeTreeReadPoolParallelReplicas : public IMergeTreeReadPool
 {
 public:
-
     MergeTreeReadPoolParallelReplicas(
         StorageSnapshotPtr storage_snapshot_,
         size_t threads_,
