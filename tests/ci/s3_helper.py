@@ -50,7 +50,7 @@ class S3Helper:
     def __init__(self):
         config = botocore.config.Config(max_pool_connections=self.max_pool_size)
         self.session = boto3.session.Session(region_name=S3_REGION)
-        self.client = self.session.client("s3", endpoint_url=S3_ENDPOINT, config=config)
+        self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
         self.host = S3_URL
         self.download_host = S3_DOWNLOAD
 
