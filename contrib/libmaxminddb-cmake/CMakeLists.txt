@@ -30,8 +30,13 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif()
 
 set(LIBMAXMINDDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libmaxminddb")
-configure_file(${LIBMAXMINDDB_SOURCE_DIR}/include/maxminddb_config.h.cmake.in 
-               ${LIBMAXMINDDB_SOURCE_DIR}/include/maxminddb_config.h)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/maxminddb_config.h.in 
+               ${CMAKE_CURRENT_BINARY_DIR}/include/maxminddb_config.h)
+configure_file(
+    "${LIBMAXMINDDB_SOURCE_DIR}/include/maxminddb.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/maxminddb.h"
+    COPYONLY
+)
 
 add_library(_maxminddb
   ${LIBMAXMINDDB_SOURCE_DIR}/src/maxminddb.c
@@ -70,7 +75,7 @@ endif()
 
 target_include_directories(_maxminddb PUBLIC
   ${LIBMAXMINDDB_SOURCE_DIR}
-  ${LIBMAXMINDDB_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
 if(NOT MSVC)
