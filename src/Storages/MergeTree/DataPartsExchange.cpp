@@ -130,12 +130,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
     auto report_broken_part = [&]()
     {
-        if (part && part->isProjectionPart())
-        {
-            auto parent_part = part->getParentPart()->shared_from_this();
-            data.reportBrokenPart(parent_part);
-        }
-        else if (part)
+        if (part)
             data.reportBrokenPart(part);
         else
             LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
@@ -374,6 +369,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
+    const String & zookeeper_name,
     const String & replica_path,
     const String & host,
     int port,
@@ -406,13 +402,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
+    String endpoint_id = getEndpointId(
+        data_settings->enable_the_endpoint_id_with_zookeeper_name_prefix ?
+        zookeeper_name + ":" + replica_path :
+        replica_path);
+
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(
     {
-        {"endpoint",                getEndpointId(replica_path)},
+        {"endpoint",                endpoint_id},
         {"part",                    part_name},
         {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
@@ -635,7 +636,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
-            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchSelectedPart(
+                metadata_snapshot,
+                context,
+                part_name,
+                zookeeper_name,
+                replica_path,
+                host,
+                port,
+                timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }

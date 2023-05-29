@@ -142,8 +142,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
                 {
                     result_layers.back().emplace_back(
                         parts[part_idx].data_part,
+                        parts[part_idx].alter_conversions,
                         parts[part_idx].part_index_in_query,
                         MarkRanges{{current_part_range_begin[part_idx], current.range.end}});
+
                     current_part_range_begin.erase(part_idx);
                     current_part_range_end.erase(part_idx);
                     continue;
@@ -170,8 +172,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
         {
             result_layers.back().emplace_back(
                 parts[part_idx].data_part,
+                parts[part_idx].alter_conversions,
                 parts[part_idx].part_index_in_query,
                 MarkRanges{{current_part_range_begin[part_idx], last_mark + 1}});
+
             current_part_range_begin[part_idx] = current_part_range_end[part_idx];
         }
     }

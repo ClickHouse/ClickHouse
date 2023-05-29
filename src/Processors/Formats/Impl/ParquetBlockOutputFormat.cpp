@@ -155,12 +155,19 @@ void ParquetBlockOutputFormat::write(Chunk chunk, size_t row_group_size)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
-        auto props = builder.build();
+
+        parquet::ArrowWriterProperties::Builder writer_props_builder;
+        if (format_settings.parquet.output_compliant_nested_types)
+            writer_props_builder.enable_compliant_nested_types();
+        else
+            writer_props_builder.disable_compliant_nested_types();
+
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
             arrow::default_memory_pool(),
             sink,
-            props);
+            builder.build(),
+            writer_props_builder.build());
         if (!result.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", result.status().ToString());
         file_writer = std::move(result.ValueOrDie());
