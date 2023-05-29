@@ -638,7 +638,7 @@ TEST(AsyncLoader, StaticPriorities)
 
     t.loader.start();
     t.loader.wait();
-    ASSERT(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3" );
+    ASSERT(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3");
 }
 
 TEST(AsyncLoader, SimplePrioritization)
