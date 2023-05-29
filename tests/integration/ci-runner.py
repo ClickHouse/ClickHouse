@@ -11,6 +11,7 @@ import shlex
 import shutil
 import string
 import subprocess
+import sys
 import time
 import zlib  # for crc32
 from collections import defaultdict
@@ -196,7 +197,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker kill excepted: " + str(err))
+        logging.info("docker kill excepted: %s", str(err))
 
     try:
         logging.info("Removing all docker containers")
@@ -205,7 +206,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker rm excepted: " + str(err))
+        logging.info("docker rm excepted: %s", str(err))
 
     # don't restart docker if it's disabled
     if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", "1") == "1":
@@ -213,7 +214,7 @@ def clear_ip_tables_and_restart_daemons():
             logging.info("Stopping docker daemon")
             subprocess.check_output("service docker stop", shell=True)
         except subprocess.CalledProcessError as err:
-            logging.info("docker stop excepted: " + str(err))
+            logging.info("docker stop excepted: %s", str(err))
 
         try:
             for i in range(200):
@@ -228,7 +229,7 @@ def clear_ip_tables_and_restart_daemons():
             else:
                 raise Exception("Docker daemon doesn't responding")
         except subprocess.CalledProcessError as err:
-            logging.info("Can't reload docker: " + str(err))
+            logging.info("Can't reload docker: %s", str(err))
 
     iptables_iter = 0
     try:
@@ -276,13 +277,14 @@ class ClickhouseIntegrationTestsRunner:
     def base_path(self):
         return os.path.join(str(self.result_path), "../")
 
-    def should_skip_tests(self):
+    @staticmethod
+    def should_skip_tests():
         return []
 
     def get_image_with_version(self, name):
         if name in self.image_versions:
             return name + ":" + self.image_versions[name]
-        logging.warn(
+        logging.warning(
             "Cannot find image %s in params list %s", name, self.image_versions
         )
         if ":" not in name:
@@ -292,7 +294,7 @@ class ClickhouseIntegrationTestsRunner:
     def get_image_version(self, name: str):
         if name in self.image_versions:
             return self.image_versions[name]
-        logging.warn(
+        logging.warning(
             "Cannot find image %s in params list %s", name, self.image_versions
         )
         return "latest"
@@ -322,13 +324,14 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 return
             except subprocess.CalledProcessError as err:
-                logging.info("docker-compose pull failed: " + str(err))
+                logging.info("docker-compose pull failed: %s", str(err))
                 continue
         logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
-        exit(13)
+        sys.exit(13)
 
-    def _can_run_with(self, path, opt):
+    @staticmethod
+    def _can_run_with(path, opt):
         with open(path, "r") as script:
             for line in script:
                 if opt in line:
@@ -358,7 +361,9 @@ class ClickhouseIntegrationTestsRunner:
                         if retcode == 0:
                             logging.info("Installation of %s successfull", full_path)
                         else:
-                            raise Exception("Installation of %s failed", full_path)
+                            raise Exception(
+                                "Installation of {} failed".format(full_path)
+                            )
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
@@ -387,10 +392,11 @@ class ClickhouseIntegrationTestsRunner:
             os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"),
         )
 
-    def _compress_logs(self, dir, relpaths, result_path):
+    @staticmethod
+    def _compress_logs(directory, relpaths, result_path):
         retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "tar --use-compress-program='zstd --threads=0' -cf {} -C {} {}".format(
-                result_path, dir, " ".join(relpaths)
+                result_path, directory, " ".join(relpaths)
             ),
             shell=True,
         )
@@ -443,7 +449,8 @@ class ClickhouseIntegrationTestsRunner:
 
         return list(sorted(all_tests))
 
-    def _get_parallel_tests_skip_list(self, repo_path):
+    @staticmethod
+    def _get_parallel_tests_skip_list(repo_path):
         skip_list_file_path = "{}/tests/integration/parallel_skip.json".format(
             repo_path
         )
@@ -462,7 +469,8 @@ class ClickhouseIntegrationTestsRunner:
             skip_list_tests = json.load(skip_list_file)
         return list(sorted(skip_list_tests))
 
-    def group_test_by_file(self, tests):
+    @staticmethod
+    def group_test_by_file(tests):
         result = {}
         for test in tests:
             test_file = test.split("::")[0]
@@ -471,7 +479,8 @@ class ClickhouseIntegrationTestsRunner:
             result[test_file].append(test)
         return result
 
-    def _update_counters(self, main_counters, current_counters, broken_tests):
+    @staticmethod
+    def _update_counters(main_counters, current_counters, broken_tests):
         for test in current_counters["PASSED"]:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
@@ -525,7 +534,8 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Cannot run with custom docker image version :(")
         return image_cmd
 
-    def _find_test_data_dirs(self, repo_path, test_names):
+    @staticmethod
+    def _find_test_data_dirs(repo_path, test_names):
         relpaths = {}
         for test_name in test_names:
             if "/" in test_name:
@@ -543,7 +553,8 @@ class ClickhouseIntegrationTestsRunner:
                     relpaths[relpath] = mtime
         return relpaths
 
-    def _get_test_data_dirs_difference(self, new_snapshot, old_snapshot):
+    @staticmethod
+    def _get_test_data_dirs_difference(new_snapshot, old_snapshot):
         res = set()
         for path in new_snapshot:
             if (path not in old_snapshot) or (old_snapshot[path] != new_snapshot[path]):
@@ -569,7 +580,7 @@ class ClickhouseIntegrationTestsRunner:
                 broken_tests,
             )
         except Exception as e:
-            logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
+            logging.info("Failed to run %s:\n%s", str(test_group), str(e))
             counters = {
                 "ERROR": [],
                 "PASSED": [],
