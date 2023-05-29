@@ -1,4 +1,3 @@
-#include "Common/MemorySanitizer.h"
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -398,7 +397,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 delete[] sql_query;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
-            __msan_unpoison(sql_query, max_query_size + 1);
             size_t idx = 0;
             char * sql_query_end = sql_query;
             while (idx < max_query_size && *sql_query_end)
