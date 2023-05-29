@@ -425,7 +425,7 @@ def main():
             # If the event does not contain diff, nothing will be built
             pass
 
-    changed_images = get_changed_docker_images(pr_info, images_dict)
+    changed_images = get_changed_docker_images(pr_info, images_dict, DOCKER_REPO)
     if changed_images:
         logging.info(
             "Has changed images: %s", ", ".join([im.path for im in changed_images])
