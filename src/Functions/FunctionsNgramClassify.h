@@ -56,12 +56,6 @@ public:
                 arguments[0]->getName(), getName());
         }
 
-        // if (!isString(arguments[1]) /* Тут еще нужно проверить, что это не колонка строк */) {
-        //     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-        //         "Illegal type {} of argument of function {}. Must be String or Column of Strings.",
-        //         arguments[1]->getName(), getName());
-        // }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -75,20 +69,21 @@ public:
         const ColumnPtr & texts = arguments[1].column;
 
         const ColumnConst * slice_name_const = typeid_cast<const ColumnConst *>(&*slice_name);
-        const ColumnConst * texts_const = typeid_cast<const ColumnConst *>(&*slice_name);
+        const ColumnConst * texts_const = typeid_cast<const ColumnConst *>(&*texts);
         
         const ColumnString * texts_vector = checkAndGetColumn<ColumnString>(&*texts);
 
-        if (!slice_name_const) { // пока что мы поддерживаем только классивикацию одного одним или многих одним, но НЕ многих многими. Чуть позже добавлю это
+        if (!slice_name_const) {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of fist argument of function. Must be String.", arguments[0].column->getName());
             return nullptr;
         }
 
         if (texts_const) {
-            // нужно вызывать имплементацию, когда надо проклассифицировать только одно слово одним срезом
             const String &text = texts_const->getValue<String>();
+            std::cout << "text is: " << text << '\n';
             const String &slice = slice_name_const->getValue<String>();
+            std::cout << "slice is: " << slice << '\n';
             String res{implementation->classify(slice, text)};
             std::cout << "Constant Constant\n";
             std::cout << texts_const->size() << '\n';
@@ -102,7 +97,7 @@ public:
 
         if (!texts_vector) {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of fist argument of function. Must be String or Vector of Strings.", arguments[0].column->getName());
+                "Illegal type {} of fist argument of function. Must be String or Column of Strings.", arguments[0].column->getName());
             return nullptr;
         }
 

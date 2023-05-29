@@ -85,26 +85,29 @@ template <class CodePoint, size_t N, bool UTF8, bool case_insensitive>
 class NaiveBayes {
 public:
     void learn(const std::string &text) {
-        map = std::shared_ptr<NgramCount[]>(new NgramCount[map_size]);
-        std::memset(static_cast<NgramCount*>(map[0]), 0, map_size * sizeof(NgramCount));
+        
+        std::cout << "In Function LEARN\n";
+        
+        map = std::shared_ptr<NgramCount[]>(static_cast<NgramCount*>(calloc(map_size, sizeof(NgramCount))));
+        
         dispatchSearcher(calculateNeedleStats, text.data(), text.size(), map.get());
         
-        for (size_t index = 0; index < map_size; ++index) {
-            if (map[index] != 0) {
-                std::cout << "map[" << index << "] is nonzero (=" << map[index] << ")\n";
-            }
-        }
+        // for (size_t index = 0; index < map_size; ++index) {
+        //     if (map.get()[index] != 0) {
+        //         std::cout << "map[" << index << "] is nonzero (=" << map[index] << ")\n";
+        //     }
+        // }
 
 
-        map_normalized = std::shared_ptr<Float64[]>(new Float64[map_size]);
+        map_normalized = std::shared_ptr<Float64[]>(static_cast<Float64*>(calloc(map_size, sizeof(Float64))));
         if (text.size() < N) {
             // BOOM
         }
+
+        model_size = text.size() + 1 - N;
         Float64 total = static_cast<Float64>(text.size()) - static_cast<Float64>(N - 1);
         for (size_t index = 0; index < map_size; ++index) {
-            if (map[index]) {
-                map_normalized[index] = log(map[index] / total);
-            }
+                map_normalized.get()[index] = log((map.get()[index] + 1) / (total + map_size));
         }
     }
 
@@ -112,18 +115,23 @@ public:
         return map;
     }
 
+    size_t getsize() {
+        return model_size;
+    }
+
     std::shared_ptr<Float64[]> getmapNorm() {
         return map_normalized;
     }
 
-    Float64 score(std::shared_ptr<NgramCount[]> text_map) const {
+    Float64 score(std::shared_ptr<NgramCount[]> text_map, size_t text_size) const {
+
         Float64 result = 0.;
         for (size_t index = 0; index < map_size; ++index) {
-            if (text_map[index] == 0 || map_normalized[index] == 0) {
-                continue;
-            }
-            result += static_cast<Float64>(text_map[index]) * map_normalized[index];
+            result += static_cast<Float64>(text_map.get()[index]) * map_normalized.get()[index];
         }
+        result /= static_cast<Float64>(text_size);
+        // result /= static_cast<Float64>(model_size);
+        
         return result;
     }
 private:
@@ -132,6 +140,8 @@ private:
 
     std::shared_ptr<Float64[]> map_normalized;
     std::shared_ptr<NgramCount[]> map;
+
+    size_t model_size = 1;
 
     static ALWAYS_INLINE UInt16 calculateASCIIHash(const CodePoint * code_points)
     {
@@ -274,6 +284,7 @@ private:
             }
             i = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
+        std::cout << "len = " << len << '\n';
         return len;
     }
 
@@ -341,16 +352,20 @@ public:
         models.reserve(slice.size());
         for (const auto &[slice_name, slice_text] : slice) {
             models[slice_name].learn(slice_text);
+            std::cout << "learning text is: " << slice_text << '\n';
         }
     }
     std::unordered_map<String, Float64> score(const String &text) const {
         NaiveBayes<CodePoint, N, UTF8, case_insensitive> text_model;
         text_model.learn(text);
+
+        std::cout << "text iS: " << text << '\n';
         std::shared_ptr<NgramCount[]> text_map = text_model.getmap();
         std::unordered_map<String, Float64> result;
         result.reserve(models.size());
+        
         for (const auto &[name, model] : models) {
-            result[name] = model.score(text_map);
+            result[name] = model.score(text_map, text_model.getsize());
         }
         return result;
     }
@@ -367,8 +382,11 @@ public:
         if (map.find(name) == map.end()) {
             // BOOM
         }
+
+        std::cout << "TEXT IS: " << text << '\n';
         std::unordered_map<String, Float64> scoring = map.at(name).score(text);
-        Float64 best_score = std::numeric_limits<Float64>::min();
+        Float64 best_score = std::numeric_limits<Float64>::lowest();
+        std::cout << "current best score is " << best_score << '\n';
         std::string_view result;
 
         for (auto &[sub_name, score] : scoring) {
@@ -427,20 +445,20 @@ public:
         }
     }
 
-    // void reloadPeriodically()
-    // {
-    //     setThreadName("Ngram Storage Reload");
+    void reloadPeriodically()
+    {
+        setThreadName("Ngram Storage Reload");
 
-    //     while (true)
-    //     {
-    //         destroy.tryWait(cur_reload_period * 1000);
-    //         reload();
-    //     }
-    // }
-    // static constexpr Int64 cur_reload_period = 10;
+        while (true)
+        {
+            destroy.tryWait(cur_reload_period * 1000);
+            reload();
+        }
+    }
+    static constexpr Int64 cur_reload_period = 10;
     Poco::Event destroy;
     std::unordered_map<String, Section> map;
-    // ThreadFromGlobalPool t_reload;
+    ThreadFromGlobalPool t_reload;
 };
 
 
@@ -467,13 +485,16 @@ private:
 };
 
 
-using Bayes = NaiveBayes<UInt8, 5, false, true>;
-using NgramSlice = Slice<UInt8, 5, false, true>;
+constexpr size_t bigN = 3;
+
+
+using Bayes = NaiveBayes<UInt8, bigN, false, true>;
+using NgramSlice = Slice<UInt8, bigN, false, true>;
 using Storage = NgramStorage<NgramSlice>;
 
 
-using BayesUTF8 = NaiveBayes<UInt32, 3, true, true>;
-using NgramSliceUTF8 = Slice<UInt32, 3, true, true>;
+using BayesUTF8 = NaiveBayes<UInt32, bigN, true, true>;
+using NgramSliceUTF8 = Slice<UInt32, bigN, true, true>;
 using StorageUTF8 = NgramStorage<NgramSliceUTF8>;
     
 
