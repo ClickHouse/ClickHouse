@@ -1348,12 +1348,11 @@ private:
                 typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
                 bool nested_is_first = true;
                 executeForArgument(key, nested_type, &nested_col, vec_temp, nested_is_first);
-                size_t j = 0;
                 for (size_t i = 0; i < vec_to.size(); ++i)
                 {
                     ToType h{null_magic_number};
                     if (!col_from->isNullAt(i))
-                        h = vec_temp[j++];
+                        h = vec_temp[i];
                     if constexpr (first)
                         vec_to[i] = h;
                     else
