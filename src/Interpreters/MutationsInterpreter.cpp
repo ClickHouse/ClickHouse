@@ -38,6 +38,7 @@
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
@@ -1015,7 +1016,7 @@ struct VirtualColumns
             }
             else if (columns_to_read[i] == BlockNumberColumn.name)
             {
-                LoadedMergeTreeDataPartInfoForReader part_info_reader(part);
+                LoadedMergeTreeDataPartInfoForReader part_info_reader(part, /* alter_conversions */ {});
                 if (!part_info_reader.getColumns().contains(BlockNumberColumn.name))
                 {
                     ColumnWithTypeAndName mask_column;
