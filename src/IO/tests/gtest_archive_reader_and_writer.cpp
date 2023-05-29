@@ -5,7 +5,7 @@
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
-#include <IO/Archives/util/tar_archive_writer.h>
+#include <IO/Archives/util/archive_writers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -360,6 +360,53 @@ TEST(TarArchiveReaderTest, ReadTwoFiles) {
     String file2 = "file2.txt";
     String contents2 = "test2";
     bool created = create_tar_with_file(archive_path, {{file1, contents1}, {file2, contents2}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(file1), true);
+    EXPECT_EQ(reader->fileExists(file2), true);
+    auto in = reader->readFile(file1);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents1);
+    in = reader->readFile(file2);
+    
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents2);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, FileExists) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = create_7z_with_file(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(filename), true);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, ReadFile) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = create_7z_with_file(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto in = reader->readFile(filename);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, ReadTwoFiles) {
+    String archive_path = "archive.7z";
+    String file1 = "file1.txt";
+    String contents1 = "test1";
+    String file2 = "file2.txt";
+    String contents2 = "test2";
+    bool created = create_7z_with_file(archive_path, {{file1, contents1}, {file2, contents2}});
     EXPECT_EQ(created, true);
     auto reader = createArchiveReader(archive_path);
     EXPECT_EQ(reader->fileExists(file1), true);
