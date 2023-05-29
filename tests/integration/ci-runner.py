@@ -11,6 +11,7 @@ import re
 import shutil
 import string
 import subprocess
+import sys
 import time
 import shlex
 import zlib  # for crc32
@@ -195,7 +196,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker kill excepted: " + str(err))
+        logging.info("docker kill excepted: ", str(err))
 
     try:
         logging.info("Removing all docker containers")
@@ -204,7 +205,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker rm excepted: " + str(err))
+        logging.info("docker rm excepted: ", str(err))
 
     # don't restart docker if it's disabled
     if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", "1") == "1":
@@ -212,7 +213,7 @@ def clear_ip_tables_and_restart_daemons():
             logging.info("Stopping docker daemon")
             subprocess.check_output("service docker stop", shell=True)
         except subprocess.CalledProcessError as err:
-            logging.info("docker stop excepted: " + str(err))
+            logging.info("docker stop excepted: ", str(err))
 
         try:
             for i in range(200):
@@ -227,7 +228,7 @@ def clear_ip_tables_and_restart_daemons():
             else:
                 raise Exception("Docker daemon doesn't responding")
         except subprocess.CalledProcessError as err:
-            logging.info("Can't reload docker: " + str(err))
+            logging.info("Can't reload docker: ", str(err))
 
     iptables_iter = 0
     try:
@@ -277,13 +278,14 @@ class ClickhouseIntegrationTestsRunner:
     def base_path(self):
         return os.path.join(str(self.result_path), "../")
 
-    def should_skip_tests(self):
+    @staticmethod
+    def should_skip_tests():
         return []
 
     def get_image_with_version(self, name):
         if name in self.image_versions:
             return name + ":" + self.image_versions[name]
-        logging.warn(
+        logging.warning(
             "Cannot find image %s in params list %s", name, self.image_versions
         )
         if ":" not in name:
@@ -293,7 +295,7 @@ class ClickhouseIntegrationTestsRunner:
     def get_image_version(self, name: str):
         if name in self.image_versions:
             return self.image_versions[name]
-        logging.warn(
+        logging.warning(
             "Cannot find image %s in params list %s", name, self.image_versions
         )
         return "latest"
@@ -340,13 +342,14 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 return
             except subprocess.CalledProcessError as err:
-                logging.info("docker-compose pull failed: " + str(err))
+                logging.info("docker-compose pull failed: ", str(err))
                 continue
         logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
-        exit(13)
+        sys.exit(13)
 
-    def _can_run_with(self, path, opt):
+    @staticmethod
+    def _can_run_with(path, opt):
         with open(path, "r") as script:
             for line in script:
                 if opt in line:
