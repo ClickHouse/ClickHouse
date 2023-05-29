@@ -632,11 +632,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
 
-    if (table_join->kind() == JoinKind::Cross)
-    {
-        return std::make_shared<CrossJoin>(planner_context->getQueryContext(), table_join, right_table_expression_header);
-    }
-
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
@@ -651,6 +646,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
             table_join->setRename(*source_column_name, result_column.name);
         }
         return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+    }
+
+
+    if (table_join->kind() == JoinKind::Cross)
+    {
+        return std::make_shared<CrossJoin>(planner_context->getQueryContext(), table_join, right_table_expression_header);
     }
 
     /** JOIN with constant.

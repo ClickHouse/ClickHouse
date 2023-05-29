@@ -1076,6 +1076,12 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     std::vector<String> tried_algorithms;
 
+    if (analyzed_join->kind() == JoinKind::Cross)
+    {
+        tried_algorithms.push_back(toString(JoinAlgorithm::CROSS));
+        return std::make_shared<CrossJoin>(context, analyzed_join, right_sample_block);
+    }
+
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::DIRECT));
@@ -1102,10 +1108,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
-        if (analyzed_join->kind() == JoinKind::Cross)
-        {
-            return std::make_shared<CrossJoin>(context, analyzed_join, right_sample_block);
-        }
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
