@@ -631,14 +631,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 request_for_session->digest = state_machine->getNodesDigest();
 
-                using enum KeeperStateMachine::ZooKeeperLogSerializationVersion;
-
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
-                if (serialization_version < WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     bytes_missing += sizeof(request_for_session->time);
 
-                if (serialization_version < WITH_ZXID_DIGEST)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
                 if (bytes_missing != 0)
@@ -652,14 +650,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 size_t write_buffer_header_size
                     = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
 
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
 
                 WriteBuffer write_buf(buffer_start, write_buffer_header_size);
 
-                if (serialization_version < WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
