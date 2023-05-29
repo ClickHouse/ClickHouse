@@ -1183,13 +1183,13 @@ inline void writeBinaryEndian(T x, WriteBuffer & buf)
 }
 
 template <typename T>
-inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+inline void writeBinaryLittleEndian(const T & x, WriteBuffer & buf)
 {
     writeBinaryEndian<std::endian::little>(x, buf);
 }
 
 template <typename T>
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
+inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)
 {
     writeBinaryEndian<std::endian::big>(x, buf);
 }
