@@ -616,6 +616,15 @@ TEST(AsyncLoader, StaticPriorities)
         schedule += fmt::format("{}{}", self->name, self->pool());
     };
 
+    // Job DAG with priorities. After priority inheritance from H9, jobs D9 and E9 can be
+    // executed in undefined order (Tested further in DynamicPriorities)
+    // A0(9) -+-> B3
+    //        |
+    //        `-> C4
+    //        |
+    //        `-> D1(9) -.
+    //        |          +-> F0(9) --> G0(9) --> H9
+    //        `-> E2(9) -'
     std::vector<LoadJobPtr> jobs;
     jobs.push_back(makeLoadJob({}, 0, "A", job_func)); // 0
     jobs.push_back(makeLoadJob({ jobs[0] }, 3, "B", job_func)); // 1
@@ -629,8 +638,7 @@ TEST(AsyncLoader, StaticPriorities)
 
     t.loader.start();
     t.loader.wait();
-
-    ASSERT_EQ(schedule, "A9E9D9F9G9H9C4B3");
+    ASSERT(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3");
 }
 
 TEST(AsyncLoader, SimplePrioritization)
