@@ -655,6 +655,7 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
+space
 splitByChar
 splitByNonAlpha
 splitByRegexp

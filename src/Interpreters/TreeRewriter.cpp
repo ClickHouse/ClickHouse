@@ -455,7 +455,11 @@ void executeScalarSubqueries(
     ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze, bool is_create_parameterized_view)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, local_scalars, only_analyze, is_create_parameterized_view};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{
+        WithContext{context}, subquery_depth, scalars,
+        local_scalars, only_analyze, is_create_parameterized_view,
+        /*replace_only_to_literals=*/ false, /*max_literal_size=*/ std::nullopt};
+
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
