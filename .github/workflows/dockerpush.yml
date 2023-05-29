@@ -1,4 +1,4 @@
-name: DockerHubPush
+name: DockerHubpush
 
 env:
   # Force the stdout and stderr streams to be unbuffered
