@@ -219,7 +219,7 @@ public:
     static constexpr auto name = "prepareTrainEntropyLearnedHash";
     static FunctionPtr create(ContextPtr context)
     {
-        if(!context->getSettings().allow_experimental_hash_functions)
+        if (!context->getSettings().allow_experimental_hash_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Entropy-learned hashing is experimental. Set `allow_experimental_hash_functions` setting to enable it");
 
@@ -274,7 +274,7 @@ public:
     static constexpr auto name = "trainEntropyLearnedHash";
     static FunctionPtr create(ContextPtr context)
     {
-        if(!context->getSettings().allow_experimental_hash_functions)
+        if (!context->getSettings().allow_experimental_hash_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Entropy-learned hashing is experimental. Set `allow_experimental_hash_functions` setting to enable it");
         return std::make_shared<FunctionTrainEntropyLearnedHash>(context->getUserName());
@@ -325,7 +325,7 @@ public:
     static constexpr auto name = "entropyLearnedHash";
     static FunctionPtr create(ContextPtr context)
     {
-        if(!context->getSettings().allow_experimental_hash_functions)
+        if (!context->getSettings().allow_experimental_hash_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Entropy-learned hashing experimental. Set `allow_experimental_hash_functions` setting to enable it");
         return std::make_shared<FunctionEntropyLearnedHash>(context->getUserName());
