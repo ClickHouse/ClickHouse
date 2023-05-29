@@ -2,6 +2,7 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 
@@ -399,6 +400,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
             }
             int res = to_sql(prql_query, sql_query);
+            __msan_unpoison(sql_query, max_query_size + 1);
             if (res == -1)
             {
                 delete[] prql_query;
