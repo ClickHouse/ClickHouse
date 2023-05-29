@@ -5,7 +5,8 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:
-  workflow_dispatch
+  push
+  # workflow_dispatch
 
 jobs:
   DockerHubPushAarch64:
