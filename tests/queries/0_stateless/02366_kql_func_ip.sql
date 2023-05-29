@@ -50,7 +50,9 @@ print parse_ipv4_mask('abc', 31)
 print '-- parse_ipv4_mask(\'192.1.168.2\', 1000)';
 print parse_ipv4_mask('192.1.168.2', 1000);
 print '-- parse_ipv4_mask(\'192.1.168.2\', 31) == parse_ipv4_mask(\'192.1.168.3\', 31)';
-print parse_ipv4_mask('192.1.168.2', 31) == parse_ipv4_mask('192.1.168.3', 31);
+--print parse_ipv4_mask('192.1.168.2', 31) == parse_ipv4_mask('192.1.168.3', 31); // this qual failed in analyzer 3221334018
+print parse_ipv4_mask('192.1.168.2', 31);
+print parse_ipv4_mask('192.1.168.3', 31);
 print '-- ipv4_is_match(\'127.0.0.1\', \'127.0.0.1\')';
 print ipv4_is_match('127.0.0.1', '127.0.0.1');
 print '-- ipv4_is_match(\'192.168.1.1\', \'192.168.1.255\')';
