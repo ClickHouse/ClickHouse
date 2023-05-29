@@ -1076,7 +1076,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     std::vector<String> tried_algorithms;
 
-    if (analyzed_join->kind() == JoinKind::Cross)
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::CROSS) && 
+        analyzed_join->kind() == JoinKind::Cross)
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::CROSS));
         return std::make_shared<CrossJoin>(context, analyzed_join, right_sample_block);

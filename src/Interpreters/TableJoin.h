@@ -223,7 +223,8 @@ public:
         /// It's behaviour that was initially supported by clickhouse.
         bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
                                   || val == JoinAlgorithm::HASH
-                                  || val == JoinAlgorithm::DIRECT;
+                                  || val == JoinAlgorithm::DIRECT
+                                  || val == JoinAlgorithm::CROSS;
         if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
             return true;
         return join_algorithm.isSet(val);
