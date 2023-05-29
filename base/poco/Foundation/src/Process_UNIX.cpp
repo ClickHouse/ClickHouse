@@ -25,11 +25,6 @@
 #include <sys/wait.h>
 
 
-#if defined(__QNX__)
-#include <process.h>
-#include <spawn.h>
-#include <cstring>
-#endif
 
 
 namespace Poco {
@@ -90,59 +85,7 @@ void ProcessImpl::timesImpl(long& userTime, long& kernelTime)
 
 ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const ArgsImpl& args, const std::string& initialDirectory, Pipe* inPipe, Pipe* outPipe, Pipe* errPipe, const EnvImpl& env)
 {
-#if defined(__QNX__)
-	if (initialDirectory.empty())
-	{
-		/// use QNX's spawn system call which is more efficient than fork/exec.
-		char** argv = new char*[args.size() + 2];
-		int i = 0;
-		argv[i++] = const_cast<char*>(command.c_str());
-		for (ArgsImpl::const_iterator it = args.begin(); it != args.end(); ++it) 
-			argv[i++] = const_cast<char*>(it->c_str());
-		argv[i] = NULL;
-		struct inheritance inherit;
-		std::memset(&inherit, 0, sizeof(inherit));
-		inherit.flags = SPAWN_ALIGN_DEFAULT | SPAWN_CHECK_SCRIPT | SPAWN_SEARCH_PATH;
-		int fdmap[3];
-		fdmap[0] = inPipe  ? inPipe->readHandle()   : 0;
-		fdmap[1] = outPipe ? outPipe->writeHandle() : 1;
-		fdmap[2] = errPipe ? errPipe->writeHandle() : 2;
-	
-		char** envPtr = 0;
-		std::vector<char> envChars;
-		std::vector<char*> envPtrs;
-		if (!env.empty())
-		{
-			envChars = getEnvironmentVariablesBuffer(env);
-			envPtrs.reserve(env.size() + 1);
-			char* p = &envChars[0];
-			while (*p)
-			{
-				envPtrs.push_back(p);
-				while (*p) ++p;
-				++p;
-			}
-			envPtrs.push_back(0);
-			envPtr = &envPtrs[0];
-		}
-	
-		int pid = spawn(command.c_str(), 3, fdmap, &inherit, argv, envPtr);
-		delete [] argv;
-		if (pid == -1) 
-			throw SystemException("cannot spawn", command);
-
-		if (inPipe)  inPipe->close(Pipe::CLOSE_READ);
-		if (outPipe) outPipe->close(Pipe::CLOSE_WRITE);
-		if (errPipe) errPipe->close(Pipe::CLOSE_WRITE);
-		return new ProcessHandleImpl(pid);
-	}
-	else
-	{
-		return launchByForkExecImpl(command, args, initialDirectory, inPipe, outPipe, errPipe, env);
-	}
-#else
 	return launchByForkExecImpl(command, args, initialDirectory, inPipe, outPipe, errPipe, env);
-#endif
 }
 
 

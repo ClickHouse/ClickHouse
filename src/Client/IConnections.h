@@ -13,12 +13,6 @@ namespace DB
 class IConnections : boost::noncopyable
 {
 public:
-    struct DrainCallback
-    {
-        Poco::Timespan drain_timeout;
-        void operator()(int fd, Poco::Timespan, const std::string & fd_description = "") const;
-    };
-
     /// Send all scalars to replicas.
     virtual void sendScalarsData(Scalars & data) = 0;
     /// Send all content of external tables to replicas.
@@ -40,7 +34,7 @@ public:
     virtual Packet receivePacket() = 0;
 
     /// Version of `receivePacket` function without locking.
-    virtual Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) = 0;
+    virtual Packet receivePacketUnlocked(AsyncCallback async_callback) = 0;
 
     /// Break all active connections.
     virtual void disconnect() = 0;
@@ -78,6 +72,8 @@ public:
     virtual bool hasActiveConnections() const = 0;
 
     virtual ~IConnections() = default;
+
+    virtual void setAsyncCallback(AsyncCallback) {}
 };
 
 }

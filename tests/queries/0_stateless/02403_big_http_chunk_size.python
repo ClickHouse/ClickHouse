@@ -8,8 +8,8 @@ TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
 
 
 def main():
-    host = os.environ['CLICKHOUSE_HOST']
-    port = int(os.environ['CLICKHOUSE_PORT_HTTP'])
+    host = os.environ["CLICKHOUSE_HOST"]
+    port = int(os.environ["CLICKHOUSE_PORT_HTTP"])
 
     sock = socket(AF_INET, SOCK_STREAM)
     sock.connect((host, port))
@@ -47,4 +47,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

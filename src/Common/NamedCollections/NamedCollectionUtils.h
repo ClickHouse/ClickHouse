@@ -35,6 +35,8 @@ void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr conte
 /// Update definition of already existing collection from AST and update result in `context->getPath() / named_collections /`.
 void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context);
 
+void loadIfNot();
+
 }
 
 }

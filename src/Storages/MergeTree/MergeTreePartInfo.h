@@ -121,7 +121,7 @@ struct MergeTreePartInfo
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
     static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
     static std::optional<MergeTreePartInfo> tryParsePartName(
         std::string_view part_name, MergeTreeDataFormatVersion format_version);

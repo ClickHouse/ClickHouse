@@ -12,7 +12,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -84,7 +84,15 @@ namespace
         }
         void operator() (const UUID & x) const
         {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            auto tmp_x = x.toUnderType();
+            char * start = reinterpret_cast<char *>(&tmp_x);
+            char * end = start + sizeof(tmp_x);
+            std::reverse(start, end);
+            operator()(tmp_x);
+#else
             operator()(x.toUnderType());
+#endif
         }
         void operator() (const IPv4 & x) const
         {
@@ -261,8 +269,11 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     hash.get128(hash_data);
     result.resize(32);
     for (size_t i = 0; i < 16; ++i)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        writeHexByteLowercase(hash_data[16 - 1 - i], &result[2 * i]);
+#else
         writeHexByteLowercase(hash_data[i], &result[2 * i]);
-
+#endif
     return result;
 }
 

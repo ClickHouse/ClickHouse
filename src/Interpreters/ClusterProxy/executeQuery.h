@@ -37,6 +37,7 @@ class SelectStreamFactory;
 ContextMutablePtr updateSettingsForCluster(
     const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info = nullptr, Poco::Logger * log = nullptr);
 
+using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
 /// (currently SELECT, DESCRIBE).
@@ -50,7 +51,8 @@ void executeQuery(
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster);
+    const ClusterPtr & not_optimized_cluster,
+    AdditionalShardFilterGenerator shard_filter_generator = {});
 
 
 void executeQueryWithParallelReplicas(

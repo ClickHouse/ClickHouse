@@ -18,57 +18,59 @@
 #define MongoDB_BSONWriter_INCLUDED
 
 
-#include "Poco/MongoDB/MongoDB.h"
 #include "Poco/BinaryWriter.h"
+#include "Poco/MongoDB/MongoDB.h"
 
 
-namespace Poco {
-namespace MongoDB {
-
-
-class MongoDB_API BSONWriter
-	/// Class for writing BSON using a Poco::BinaryWriter.
+namespace Poco
 {
-public:
-	BSONWriter(const Poco::BinaryWriter& writer): 
-		_writer(writer)
-		/// Creates the BSONWriter.
-	{
-	}
-
-	virtual ~BSONWriter()
-		/// Destroys the BSONWriter.
-	{
-	}
-
-	template<typename T>
-	void write(T& t)
-		/// Writes the value to the writer. The default implementation uses
-		/// the << operator. Special types can write their own version.
-	{
-		_writer << t;
-	}
-
-	void writeCString(const std::string& value);
-		/// Writes a cstring to the writer. A cstring is a string
-		/// terminated a null character.
-
-private:
-	Poco::BinaryWriter _writer;
-};
-
-
-//
-// inlines
-//
-inline void BSONWriter::writeCString(const std::string& value)
+namespace MongoDB
 {
-	_writer.writeRaw(value);
-	_writer << (unsigned char) 0x00;
+
+
+    class MongoDB_API BSONWriter
+    /// Class for writing BSON using a Poco::BinaryWriter.
+    {
+    public:
+        BSONWriter(const Poco::BinaryWriter & writer) : _writer(writer)
+        /// Creates the BSONWriter.
+        {
+        }
+
+        virtual ~BSONWriter()
+        /// Destroys the BSONWriter.
+        {
+        }
+
+        template <typename T>
+        void write(T & t)
+        /// Writes the value to the writer. The default implementation uses
+        /// the << operator. Special types can write their own version.
+        {
+            _writer << t;
+        }
+
+        void writeCString(const std::string & value);
+        /// Writes a cstring to the writer. A cstring is a string
+        /// terminated a null character.
+
+    private:
+        Poco::BinaryWriter _writer;
+    };
+
+
+    //
+    // inlines
+    //
+    inline void BSONWriter::writeCString(const std::string & value)
+    {
+        _writer.writeRaw(value);
+        _writer << (unsigned char)0x00;
+    }
+
+
 }
-
-
-} } // namespace Poco::MongoDB
+} // namespace Poco::MongoDB
 
 
 #endif // MongoDB_BSONWriter_INCLUDED

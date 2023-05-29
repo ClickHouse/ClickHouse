@@ -18,16 +18,8 @@
 #include <cstdio> // sprintf()
 
 
-#if defined(POCO_VXWORKS)
-#include "Environment_VX.cpp"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
 #include "Environment_UNIX.cpp"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#if defined(_WIN32_WCE)
-#include "Environment_WINCE.cpp"
-#else
-#include "Environment_WIN32.cpp"
-#endif
 #endif
 
 
@@ -149,11 +141,7 @@ bool Environment::isUnix()
 
 bool Environment::isWindows()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-	return true;
-#else
 	return false;
-#endif
 }
 
 

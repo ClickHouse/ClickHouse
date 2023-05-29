@@ -18,18 +18,21 @@
 #define JSON_JSONException_INCLUDED
 
 
-#include "Poco/JSON/JSON.h"
 #include "Poco/Exception.h"
+#include "Poco/JSON/JSON.h"
 
 
-namespace Poco {
-namespace JSON {
+namespace Poco
+{
+namespace JSON
+{
 
 
-POCO_DECLARE_EXCEPTION(JSON_API, JSONException, Poco::Exception)
+    POCO_DECLARE_EXCEPTION(JSON_API, JSONException, Poco::Exception)
 
 
-} } // namespace Poco::JSON
+}
+} // namespace Poco::JSON
 
 
 #endif // JSON_JSONException_INCLUDED

@@ -32,17 +32,17 @@ enum class GroupByKind
     GROUPING_SETS
 };
 
-class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitor<GroupingFunctionResolveVisitor>
+class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitorWithContext<GroupingFunctionResolveVisitor>
 {
 public:
     GroupingFunctionResolveVisitor(GroupByKind group_by_kind_,
         QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index_,
         ColumnNumbersList grouping_sets_keys_indices_,
         ContextPtr context_)
-        : group_by_kind(group_by_kind_)
+        : InDepthQueryTreeVisitorWithContext(std::move(context_))
+        , group_by_kind(group_by_kind_)
         , aggregation_key_to_index(std::move(aggregation_key_to_index_))
         , grouping_sets_keys_indexes(std::move(grouping_sets_keys_indices_))
-        , context(std::move(context_))
     {
     }
 
@@ -71,7 +71,7 @@ public:
         FunctionOverloadResolverPtr grouping_function_resolver;
         bool add_grouping_set_column = false;
 
-        bool force_grouping_standard_compatibility = context->getSettingsRef().force_grouping_standard_compatibility;
+        bool force_grouping_standard_compatibility = getSettings().force_grouping_standard_compatibility;
         size_t aggregation_keys_size = aggregation_key_to_index.size();
 
         switch (group_by_kind)
@@ -132,7 +132,6 @@ private:
     GroupByKind group_by_kind;
     QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index;
     ColumnNumbersList grouping_sets_keys_indexes;
-    ContextPtr context;
 };
 
 void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
@@ -149,8 +148,9 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
         if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1)
         {
-            auto & grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front()->as<ListNode &>();
-            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node.getNodes());
+            auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
+            auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
+            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
             query_node_typed.setIsGroupByWithGroupingSets(false);
         }
 
@@ -163,12 +163,17 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
                 grouping_sets_used_aggregation_keys_list.emplace_back();
                 auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.back();
 
+                QueryTreeNodePtrWithHashSet used_keys_in_set;
+
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
+                    if (used_keys_in_set.contains(grouping_set_key_node))
+                        continue;
+                    used_keys_in_set.insert(grouping_set_key_node);
+                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
+
                     if (aggregation_key_to_index.contains(grouping_set_key_node))
                         continue;
-
-                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
                     aggregation_key_to_index.emplace(grouping_set_key_node, aggregation_node_index);
                     ++aggregation_node_index;
                 }

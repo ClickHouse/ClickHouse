@@ -53,6 +53,10 @@ struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
+    static inline UInt16 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt16>(time_zone.toDayNum(t.whole));
+    }
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return UInt16(time_zone.toDayNum(t));
@@ -68,6 +72,10 @@ struct ToDateImpl
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
         return d;
+    }
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toDayNum(t.whole), 0};
     }
 
     using FactorTransform = ZeroTransform;

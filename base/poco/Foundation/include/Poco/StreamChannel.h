@@ -18,38 +18,39 @@
 #define Foundation_StreamChannel_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Channel.h"
-#include "Poco/Mutex.h"
 #include <ostream>
+#include "Poco/Channel.h"
+#include "Poco/Foundation.h"
+#include "Poco/Mutex.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API StreamChannel: public Channel
-	/// A channel that writes to an ostream.
-	///
-	/// Only the message's text is written, followed
-	/// by a newline.
-	///
-	/// Chain this channel to a FormattingChannel with an
-	/// appropriate Formatter to control what is contained 
-	/// in the text.
+class Foundation_API StreamChannel : public Channel
+/// A channel that writes to an ostream.
+///
+/// Only the message's text is written, followed
+/// by a newline.
+///
+/// Chain this channel to a FormattingChannel with an
+/// appropriate Formatter to control what is contained
+/// in the text.
 {
 public:
-	StreamChannel(std::ostream& str);
-		/// Creates the channel.
+    StreamChannel(std::ostream & str);
+    /// Creates the channel.
 
-	void log(const Message& msg);
-		/// Logs the given message to the channel's stream.
-		
+    void log(const Message & msg);
+    /// Logs the given message to the channel's stream.
+
 protected:
-	virtual ~StreamChannel();
+    virtual ~StreamChannel();
 
 private:
-	std::ostream& _str;
-	FastMutex     _mutex;
+    std::ostream & _str;
+    FastMutex _mutex;
 };
 
 

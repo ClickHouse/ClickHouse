@@ -83,7 +83,6 @@ static ITransformingStep::Traits getStorageJoinTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,

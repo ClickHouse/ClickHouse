@@ -155,13 +155,13 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
         std::is_floating_point_v<Arithmetic>,
         Arithmetic,
         std::conditional_t<
-            sizeof(Arithmetic) < Bits * sizeof(long),
+            sizeof(Arithmetic) * 8 < Bits,
             wide::integer<Bits, Signed>,
             std::conditional_t<
-                Bits * sizeof(long) < sizeof(Arithmetic),
+                Bits < sizeof(Arithmetic) * 8,
                 Arithmetic,
                 std::conditional_t<
-                    Bits * sizeof(long) == sizeof(Arithmetic) && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
+                    Bits == sizeof(Arithmetic) * 8 && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
                     Arithmetic,
                     wide::integer<Bits, Signed>>>>>;
 };
@@ -314,7 +314,14 @@ struct integer<Bits, Signed>::_impl
 
         const T alpha = t / static_cast<T>(max_int);
 
-        if (alpha <= static_cast<T>(max_int))
+        /** Here we have to use strict comparison.
+          * The max_int is 2^64 - 1.
+          * When casted to floating point type, it will be rounded to the closest representable number,
+          * which is 2^64.
+          * But 2^64 is not representable in uint64_t,
+          * so the maximum representable number will be strictly less.
+          */
+        if (alpha < static_cast<T>(max_int))
             self = static_cast<uint64_t>(alpha);
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, static_cast<double>(alpha));
@@ -360,7 +367,7 @@ struct integer<Bits, Signed>::_impl
         constexpr const unsigned to_copy = min_bits / base_bits;
 
         for (unsigned i = 0; i < to_copy; ++i)
-            self.items[little(i)] = rhs.items[little(i)];
+            self.items[little(i)] = rhs.items[integer<Bits2, Signed2>::_impl::little(i)];
 
         if constexpr (Bits > Bits2)
         {
@@ -732,9 +739,10 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(rhs, big(i));
+                base_type rhs_item = get_item(t, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] > rhs_item;
@@ -757,9 +765,10 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(rhs, big(i));
+                base_type rhs_item = get_item(t, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] < rhs_item;
@@ -779,9 +788,10 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(rhs, any(i));
+                base_type rhs_item = get_item(t, any(i));
 
                 if (lhs.items[any(i)] != rhs_item)
                     return false;
@@ -1239,7 +1249,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     for (unsigned i = 0; i < _impl::item_count; ++i)
     {
         long double t = res;
-        res *= std::numeric_limits<base_type>::max();
+        res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
         res += tmp.items[_impl::big(i)];
     }

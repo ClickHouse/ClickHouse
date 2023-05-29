@@ -43,7 +43,7 @@ When creating an `AggregatingMergeTree` table the same [clauses](../../../engine
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
@@ -122,3 +122,7 @@ FROM test.mv_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

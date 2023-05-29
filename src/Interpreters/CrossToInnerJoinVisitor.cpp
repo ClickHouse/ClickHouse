@@ -189,7 +189,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
         if (t.hasUsing())
         {
             if (has_using)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple USING statements are not supported");
             has_using = true;
         }
 
