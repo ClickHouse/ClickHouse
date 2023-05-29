@@ -490,8 +490,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
         available_columns_set.insert(LightweightDeleteDescription::FILTER_COLUMN.name);
     }
-    else if (this->source.getMergeTreeData() && !all_columns.contains(BlockNumberColumn.name))
+    if (this->source.getMergeTreeData() && !all_columns.contains(BlockNumberColumn.name))
+    {
         all_columns.push_back({BlockNumberColumn});
+        available_columns_set.insert(BlockNumberColumn.name);
+    }
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
