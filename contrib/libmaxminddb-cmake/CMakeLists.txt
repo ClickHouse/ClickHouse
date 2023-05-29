@@ -1,3 +1,5 @@
+set(LIBMAXMINDDB_VERSION "1.7.1")
+
 include(GNUInstallDirs)
 include(CheckTypeSize)
 check_type_size("unsigned __int128" UINT128)
@@ -30,7 +32,7 @@ add_library(_maxminddb
 )
 add_library(ch_contrib::maxminddb ALIAS _maxminddb)
 
-target_compile_definitions(_maxminddb PRIVATE PACKAGE_VERSION="1.7.1")
+target_compile_definitions(_maxminddb PRIVATE PACKAGE_VERSION="${LIBMAXMINDDB_VERSION}")
 
 if(NOT IS_BIG_ENDIAN)
   target_compile_definitions(_maxminddb PRIVATE MMDB_LITTLE_ENDIAN=1)
@@ -49,12 +51,12 @@ if(WIN32)
     #
     # Adapted from https://gitlab.kitware.com/cmake/community/-/wikis/FAQ#make-override-files
     if(MSVC)
-        target_compile_options(my_target PRIVATE
-          $<$<CONFIG:Debug>:/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1>
-          $<$<CONFIG:MinSizeRel>:/MT /O1 /Ob1 /D NDEBUG>
-          $<$<CONFIG:Release>:/MT /O2 /Ob2 /D NDEBUG>
-          $<$<CONFIG:RelWithDebInfo>:/MT /Zi /O2 /Ob1 /D NDEBUG>
-        )
+      target_compile_options(my_target PRIVATE
+        $<$<CONFIG:Debug>:/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1>
+        $<$<CONFIG:MinSizeRel>:/MT /O1 /Ob1 /D NDEBUG>
+        $<$<CONFIG:Release>:/MT /O2 /Ob2 /D NDEBUG>
+        $<$<CONFIG:RelWithDebInfo>:/MT /Zi /O2 /Ob1 /D NDEBUG>
+      )
     endif()
   endif()
 endif()
@@ -68,8 +70,9 @@ if(NOT MSVC)
   add_executable(mmdblookup
     ${LIBMAXMINDDB_SOURCE_DIR}/bin/mmdblookup.c
   )
+  target_compile_definitions(mmdblookup PRIVATE PACKAGE_VERSION="${LIBMAXMINDDB_VERSION}")
 
-# Otherwise 'undefined reference to WinMain' linker error happen due to wmain()
+  # Otherwise 'undefined reference to WinMain' linker error happen due to wmain()
   if(MINGW)
     target_link_options(mmdblookup PRIVATE "-municode")
   endif()
