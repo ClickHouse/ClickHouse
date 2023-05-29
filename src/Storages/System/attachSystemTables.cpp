@@ -80,6 +80,7 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemZooKeeperConnection.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -186,7 +187,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
 
     if (has_zookeeper)
+    {
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
+        attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection");
+    }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions");
