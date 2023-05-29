@@ -649,7 +649,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     }
 
 
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::CROSS) && 
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::CROSS) &&
         table_join->kind() == JoinKind::Cross)
     {
         return std::make_shared<CrossJoin>(planner_context->getQueryContext(), table_join, right_table_expression_header);
