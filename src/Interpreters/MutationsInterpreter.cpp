@@ -563,7 +563,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const auto & column : source.getStorage()->getVirtuals())
             all_columns.push_back(column);
     }
-    else if (this->source.getMergeTreeData())
+    else if (this->source.getMergeTreeData() && !all_columns.contains(BlockNumberColumn.name))
         all_columns.push_back({BlockNumberColumn});
 
     NameSet updated_columns;
@@ -935,7 +935,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
-    if (this->source.getMergeTreeData())
+    if (this->source.getMergeTreeData() && !all_columns.contains(BlockNumberColumn.name))
         all_columns.push_back({BlockNumberColumn});
 
     /// Next, for each stage calculate columns changed by this and previous stages.

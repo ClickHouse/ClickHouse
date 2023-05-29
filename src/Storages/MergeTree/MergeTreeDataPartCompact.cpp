@@ -57,11 +57,14 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
 {
     NamesAndTypesList ordered_columns_list;
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
-        [this](const auto & column) { return (getColumnPosition(column.name) != std::nullopt || column.name == BlockNumberColumn.name); });
+        [this](const auto & column) { return (getColumnPosition(column.name) != std::nullopt); });
 
     /// Order of writing is important in compact format
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
+
+    if (columns_list.contains(BlockNumberColumn.name) && !ordered_columns_list.contains(BlockNumberColumn.name))
+        ordered_columns_list.emplace_back(BlockNumberColumn);
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
