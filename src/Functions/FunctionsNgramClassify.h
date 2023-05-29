@@ -27,7 +27,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int MODEL_DIRECTORY_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int SUPPORT_IS_DISABLED;
@@ -100,7 +99,7 @@ public:
         if (!texts_vector)
         {
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                ErrorCodes::SUPPORT_IS_DISABLED,
                 "Illegal type {} of fist argument of function. Must be String or Column of Strings.",
                 arguments[0].column->getName());
             return nullptr;

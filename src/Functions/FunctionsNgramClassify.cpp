@@ -46,14 +46,14 @@ namespace fs = std::filesystem;
 1. Schema: we have lots of slices, each slice contains some texts (models), which are going to be scored for a query.
 A query contains name of a slice to be classified with, and a text [column of texts also available].
 
-2. The naive bayes algorithm for chosing the class is implemented:
+2. The naive bayes algorithm for choosing the class is implemented:
     2.1 We make a mapcount (using hash functions for better performance time) of all substrings of the text with len=N.
     2.2 The same is done for all the model texts we eant to classify with.
     2.3 Then we consider P(text | model) = P(ngram_1 | model) * P(ngram_2 | model) * ...
     2.4 We will take a logarithm so that we will have sums.
     2.5 To keep the lengths of texts and models in mind, precalculations would be done
         2.5.1 All the maps of models would be normalized
-        2.5.2 After scoring the ligatithms of texts, they will be devided by the text's length.
+        2.5.2 After scoring the ligatithms of texts, they will be divided by the text's length.
 
 3. class NaiveBayes contains the classifier
 
@@ -426,7 +426,7 @@ public:
             if (!entry.is_directory())
             {
                 throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "Something strange indide models directory"
+                ErrorCodes::SUPPORT_IS_DISABLED, "Something strange inside models directory"
                 );
             }
             const String & section_name = entry.path().filename().string();

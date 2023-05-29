@@ -15,5 +15,5 @@ SELECT
 SUM(col_count) as total_quotes, 
 author
 FROM frequent_phrases
-GROUP BY ngramClassifyUTF8('songs-ru', col_phrase) as author
-
+GROUP BY ngramClassifyUTF8('songs-ru', col_phrase) as author;
+SELECT ngramClassify('spam', 'Congratulations!');
