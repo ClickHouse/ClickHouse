@@ -1068,7 +1068,7 @@ void TCPHandler::sendTimezone()
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
         return;
 
-    const String & tz = query_context->getSettingsRef().session_timezone.toString();
+    const String & tz = query_context->getSettingsRef().session_timezone.value;
 
     LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
     writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
