@@ -3,7 +3,7 @@ CREATE TABLE datetime_date_table (
     col_datetime DateTime,
     col_datetime64 DateTime64(3),
     col_date_string String,
-    col_datetime_string String,
+    col_datetime_string Strдыing,
     col_datetime64_string DateTime64,
     col_date_lc LowCardinality(String),
     col_datetime_lc LowCardinality(String),
