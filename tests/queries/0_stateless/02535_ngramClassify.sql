@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 CREATE TABLE frequent_phrases (
     col_phrase String,
     col_count int

@@ -64,11 +64,16 @@ A query contains name of a slice to be classified with, and a text [column of te
 6. The data is kept in ClickHouse/opt/NgramModels/...
 */
 
-
-static const String model_path = "../../opt/NgramModels/";
+static const String model_path = "opt/NgramModels/";
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 
 /// map_size for ngram difference.
