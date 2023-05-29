@@ -82,7 +82,7 @@ MergeTreeReadPool::MergeTreeReadPool(
             const auto min_bytes_per_task = settings.merge_tree_min_bytes_per_task_for_remote_reading;
             const auto avg_mark_bytes = std::max<size_t>(total_compressed_bytes / total_marks, 1);
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
-            const auto heuristic_min_marks = std::min(total_marks / threads_, min_bytes_per_task / avg_mark_bytes);
+            const auto heuristic_min_marks = std::min<size_t>(total_marks / threads_, min_bytes_per_task / avg_mark_bytes);
             if (heuristic_min_marks > min_marks_for_concurrent_read)
             {
                 min_marks_for_concurrent_read = heuristic_min_marks;
