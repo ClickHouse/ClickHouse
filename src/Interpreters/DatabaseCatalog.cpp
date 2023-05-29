@@ -64,7 +64,6 @@ public:
         : database_catalog(database_catalog_)
     {
     }
-
 private:
     Names getAllRegisteredNames() const override
     {
@@ -78,7 +77,6 @@ private:
         }
         return result;
     }
-
     const DatabaseCatalog & database_catalog;
 };
 
@@ -414,11 +412,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 //                Names names_with_db_name;
 //                std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
 //                exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
-            if(names.empty()) exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table does not exist"));
-            else {
+                if(names.empty()) exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table does not exist"));
+                else {
                 std::string suggested_name = names[0];
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), suggested_name));
-            }
+                }
             }
             return {};
         }
@@ -506,16 +504,8 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name) const
 {
     assert(!database_name.empty());
-    if (databases.end() == databases.find(database_name)){
-        Names prompting_names;
-        auto getter = [] (const auto & e) { return e.first; };
-        std::transform(databases.begin(), databases.end(), std::back_inserter(prompting_names), getter);
-        DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name, prompting_names);
-        /// I also leave possibility to print several suggestions
-        std::string prompting_name = names[0];
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(prompting_name));
-    }
+    if (databases.end() == databases.find(database_name))
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
