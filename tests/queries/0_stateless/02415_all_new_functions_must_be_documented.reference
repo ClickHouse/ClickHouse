@@ -784,6 +784,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
@@ -815,6 +816,7 @@ toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
+toStartOfWeek
 toStartOfYear
 toString
 toStringCutToZero
