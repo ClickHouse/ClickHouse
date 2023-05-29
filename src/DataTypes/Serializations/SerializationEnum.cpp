@@ -1,10 +1,11 @@
 #include <DataTypes/Serializations/SerializationEnum.h>
 
+#include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {

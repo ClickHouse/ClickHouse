@@ -96,8 +96,11 @@ def test_read_after_cache_is_wiped(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
-    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
-
+    # We insert into different partitions, so do it separately to avoid
+    # test flakyness when retrying the query in case of retriable exception.
+    values = "('2021-11-13',3,'hello')"
+    azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
+    values = "('2021-11-14',4,'heyo')"
     azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
 
     # Wipe cache
@@ -108,8 +111,10 @@ def test_read_after_cache_is_wiped(cluster):
 
     # After cache is populated again, only .bin files should be accessed from Blob Storage.
     assert (
-        azure_query(node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values")
-        == values
+        azure_query(
+            node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values"
+        ).strip()
+        == "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
     )
 
 
@@ -198,7 +203,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
     node.query(f"SYSTEM START MERGES {TABLE_NAME}")
 
     # Wait for merges and old parts deletion
-    for attempt in range(0, 10):
+    for attempt in range(0, 60):
         parts_count = azure_query(
             node,
             f"SELECT COUNT(*) FROM system.parts WHERE table = '{TABLE_NAME}' FORMAT Values",
@@ -206,7 +211,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if parts_count == "(1)":
             break
 
-        if attempt == 9:
+        if attempt == 59:
             assert parts_count == "(1)"
 
         time.sleep(1)
@@ -456,7 +461,7 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(512)"
     )
 
-    azure_query(node, f"DROP TABLE {table_clone_name} NO DELAY")
+    azure_query(node, f"DROP TABLE {table_clone_name} SYNC")
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
@@ -465,7 +470,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE")
 
-    azure_query(node, f"DROP TABLE {TABLE_NAME} NO DELAY")
+    azure_query(node, f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 def test_freeze_unfreeze(cluster):

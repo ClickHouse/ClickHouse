@@ -22,7 +22,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -127,7 +128,27 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
             try
             {
-                socket->connect(*it, connection_timeout);
+                if (async_callback)
+                {
+                    socket->connectNB(*it);
+                    while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                        async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+
+                    if (auto err = socket->impl()->socketError())
+                        socket->impl()->error(err); // Throws an exception
+
+                    socket->setBlocking(true);
+
+#if USE_SSL
+                    if (static_cast<bool>(secure))
+                        static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->completeHandshake();
+#endif
+                }
+                else
+                {
+                    socket->connect(*it, connection_timeout);
+                }
+
                 current_resolved_address = *it;
                 break;
             }
@@ -162,10 +183,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
+        in->setAsyncCallback(async_callback);
 
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-
+        out->setAsyncCallback(async_callback);
         connected = true;
 
         sendHello();
@@ -216,6 +237,7 @@ void Connection::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
+    nonce.reset();
 }
 
 
@@ -323,6 +345,14 @@ void Connection::receiveHello()
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
+        }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+        {
+            chassert(!nonce.has_value());
+
+            UInt64 read_nonce;
+            readIntBinary(read_nonce, *in);
+            nonce.emplace(read_nonce);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -506,7 +536,7 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -584,6 +614,9 @@ void Connection::sendQuery(
         {
 #if USE_SSL
             std::string data(salt);
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -593,8 +626,8 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
         else

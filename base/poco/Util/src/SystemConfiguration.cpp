@@ -19,9 +19,7 @@
 #include "Poco/DateTimeFormatter.h"
 #include "Poco/DateTimeFormat.h"
 #include "Poco/NumberFormatter.h"
-#if !defined(POCO_VXWORKS)
 #include "Poco/Process.h"
-#endif
 #include "Poco/Exception.h"
 #include <cstdio>
 
@@ -48,9 +46,7 @@ const std::string SystemConfiguration::TEMPHOMEDIR    = "system.tempHomeDir";
 const std::string SystemConfiguration::TEMPDIR        = "system.tempDir";
 const std::string SystemConfiguration::CONFIGDIR      = "system.configDir";
 const std::string SystemConfiguration::DATETIME       = "system.dateTime";
-#if !defined(POCO_VXWORKS)
 const std::string SystemConfiguration::PID            = "system.pid";
-#endif
 const std::string SystemConfiguration::ENV            = "system.env.";
 
 
@@ -142,13 +138,11 @@ bool SystemConfiguration::getRaw(const std::string& key, std::string& value) con
 	{
 		value = Poco::DateTimeFormatter::format(Poco::DateTime(), Poco::DateTimeFormat::ISO8601_FORMAT);
 	}
-#if !defined(POCO_VXWORKS)
 	else if (key == PID)
 	{
 		value = "0";
 		value = Poco::NumberFormatter::format(Poco::Process::id());
 	}
-#endif
 	else if (key.compare(0, ENV.size(), ENV) == 0)
 	{
 		return getEnv(key.substr(ENV.size()), value);
@@ -186,9 +180,7 @@ void SystemConfiguration::enumerate(const std::string& key, Keys& range) const
 		range.push_back("tempDir");
 		range.push_back("configDir");
 		range.push_back("dateTime");
-#if !defined(POCO_VXWORKS)
 		range.push_back("pid");
-#endif
 		range.push_back("env");
 	}
 }

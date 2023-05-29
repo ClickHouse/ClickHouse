@@ -4,5 +4,4 @@ collapsible: true
 collapsed: true
 link:
   type: generated-index
-  title: Database & Table Engines
   slug: /en/engines

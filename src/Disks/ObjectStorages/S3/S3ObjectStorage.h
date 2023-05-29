@@ -9,7 +9,6 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -98,7 +97,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
@@ -144,8 +142,6 @@ public:
         ContextPtr context) override;
 
     std::string getObjectsNamespace() const override { return bucket; }
-
-    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return true; }
 

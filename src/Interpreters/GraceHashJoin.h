@@ -13,7 +13,6 @@
 
 namespace DB
 {
-
 class TableJoin;
 class HashJoin;
 
@@ -79,7 +78,7 @@ public:
     bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
@@ -91,7 +90,8 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin();
+    /// reserve_num for reserving space in hash table.
+    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(Block block);
@@ -139,6 +139,7 @@ private:
     mutable SharedMutex rehash_mutex;
 
     FileBucket * current_bucket = nullptr;
+
     mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;

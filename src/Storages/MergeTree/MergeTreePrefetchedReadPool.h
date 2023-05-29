@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <IO/AsyncReadCounters.h>
+#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB
@@ -25,6 +26,7 @@ public:
         RangesInDataParts && parts_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
         size_t preferred_block_size_bytes_,
@@ -33,8 +35,6 @@ public:
         bool use_uncompressed_cache_,
         bool is_remote_read_,
         const MergeTreeSettings & storage_settings_);
-
-    ~MergeTreePrefetchedReadPool() override;
 
     MergeTreeReadTaskPtr getTask(size_t thread) override;
 
@@ -53,12 +53,12 @@ private:
     using ThreadTasks = std::deque<MergeTreeReadTaskPtr>;
     using ThreadsTasks = std::map<size_t, ThreadTasks>;
 
-    /// smaller `priority` means more priority
     std::future<MergeTreeReaderPtr> createPrefetchedReader(
         const IMergeTreeDataPart & data_part,
         const NamesAndTypesList & columns,
+        const AlterConversionsPtr & alter_conversions,
         const MarkRanges & required_ranges,
-        int64_t priority) const;
+        Priority priority) const;
 
     void createPrefetchedReaderForTask(MergeTreeReadTask & task) const;
 
@@ -80,24 +80,34 @@ private:
     Block header;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
-    MergeTreeReaderSettings reader_settings;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     size_t index_granularity_bytes;
     size_t fixed_index_granularity;
+
+    StorageSnapshotPtr storage_snapshot;
+    const Names column_names;
+    const Names virtual_column_names;
+    PrewhereInfoPtr prewhere_info;
+    const ExpressionActionsSettings actions_settings;
+    const MergeTreeReaderSettings reader_settings;
+    RangesInDataParts parts_ranges;
+
     [[ maybe_unused ]] const bool is_remote_read;
     ThreadPool & prefetch_threadpool;
 
     PartsInfos parts_infos;
 
     ThreadsTasks threads_tasks;
+    std::mutex mutex;
 
     struct TaskHolder
     {
-        explicit TaskHolder(MergeTreeReadTask * task_) : task(task_) {}
+        explicit TaskHolder(MergeTreeReadTask * task_, size_t thread_id_) : task(task_), thread_id(thread_id_) {}
         MergeTreeReadTask * task;
+        size_t thread_id;
         bool operator <(const TaskHolder & other) const;
     };
-    mutable boost::heap::priority_queue<TaskHolder> prefetch_queue;
+    mutable std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
 
     /// A struct which allows to track max number of tasks which were in the

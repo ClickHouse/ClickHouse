@@ -27,7 +27,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
     : TemporaryFileOnDisk(disk_, "")
 {}
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope)
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
     sub_metric_increment.emplace(metric_scope);

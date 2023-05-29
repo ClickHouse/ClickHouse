@@ -98,7 +98,7 @@ public:
         ASTPtr clone() const override
         {
             auto replacement = std::make_shared<Replacement>(*this);
-            replacement->expr = expr->clone();
+            replacement->cloneChildren();
             return replacement;
         }
 
@@ -106,7 +106,6 @@ public:
         void updateTreeHashImpl(SipHash & hash_state) const override;
 
         String name;
-        ASTPtr expr;
 
     protected:
         void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

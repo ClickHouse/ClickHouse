@@ -18,11 +18,6 @@ public:
     /// They are specified in constructor and cannot be changed.
     struct DataStreamTraits
     {
-        /// Keep distinct_columns unchanged.
-        /// Examples: true for LimitStep, false for ExpressionStep with ARRAY JOIN
-        /// It some columns may be removed from result header, call updateDistinctColumns
-        bool preserves_distinct_columns;
-
         /// True if pipeline has single output port after this step.
         /// Examples: MergeSortingStep, AggregatingStep
         bool returns_single_stream;
@@ -69,8 +64,6 @@ public:
         input_streams.emplace_back(std::move(input_stream));
 
         updateOutputStream();
-
-        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
     }
 
     void describePipeline(FormatSettings & settings) const override;
@@ -83,9 +76,6 @@ public:
     }
 
 protected:
-    /// Clear distinct_columns if res_header doesn't contain all of them.
-    static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
-
     /// Create output stream from header and traits.
     static DataStream createOutputStream(
             const DataStream & input_stream,

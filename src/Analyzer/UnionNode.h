@@ -143,7 +143,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;

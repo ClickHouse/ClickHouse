@@ -10,8 +10,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wgnu-statement-expression"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-statement-expression"
 #define HANDLE_EINTR(x) ({ \
     decltype(x) eintr_wrapper_result; \
     do { \
@@ -41,9 +41,11 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__aarch64__)
         #define SYS_pidfd_open 434
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define SYS_pidfd_open 434
     #elif defined(__riscv)
+        #define SYS_pidfd_open 434
+    #elif defined(__s390x__)
         #define SYS_pidfd_open 434
     #else
         #error "Unsupported architecture"
@@ -200,4 +202,4 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
 }
 
 }
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop

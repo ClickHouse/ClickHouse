@@ -74,7 +74,9 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    String query = transformQueryForExternalDatabase(query_info,
+    String query = transformQueryForExternalDatabase(
+        query_info,
+        column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,

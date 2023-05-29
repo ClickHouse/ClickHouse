@@ -31,6 +31,12 @@ public:
         return query_context;
     }
 
+    /// Get query context settings
+    const Settings & getSettings() const
+    {
+        return query_context->getSettingsRef();
+    }
+
     /** Get block with constants.
       * Valid only for AST tree.
       */
@@ -71,6 +77,12 @@ public:
 
     /// Construct RPNBuilderTreeNode with non null ast node and tree context
     explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
+
+    /// Get AST node
+    const IAST * getASTNode() const { return ast_node; }
+
+    /// Get DAG node
+    const ActionsDAG::Node * getDAGNode() const { return dag_node; }
 
     /// Get column name
     std::string getColumnName() const;

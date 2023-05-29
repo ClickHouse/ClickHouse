@@ -14,11 +14,7 @@
 
 #include "Poco/FileStream.h"
 #include "Poco/Exception.h"
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "FileStream_WIN32.cpp"
-#else
 #include "FileStream_POSIX.cpp"
-#endif
 
 
 namespace Poco {

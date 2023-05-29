@@ -94,7 +94,8 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             parts_ranges_queue.push(
                 {index_access->getValue(part_idx, range.begin), {range, part_idx}, PartsRangesIterator::EventType::RangeStart});
             const auto & index_granularity = parts[part_idx].data_part->index_granularity;
-            if (index_granularity.hasFinalMark() && range.end + 1 == index_granularity.getMarksCount())
+            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            if (value_is_defined_at_end_mark)
                 parts_ranges_queue.push(
                     {index_access->getValue(part_idx, range.end), {range, part_idx}, PartsRangesIterator::EventType::RangeEnd});
         }
@@ -141,8 +142,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
                 {
                     result_layers.back().emplace_back(
                         parts[part_idx].data_part,
+                        parts[part_idx].alter_conversions,
                         parts[part_idx].part_index_in_query,
                         MarkRanges{{current_part_range_begin[part_idx], current.range.end}});
+
                     current_part_range_begin.erase(part_idx);
                     current_part_range_end.erase(part_idx);
                     continue;
@@ -169,8 +172,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
         {
             result_layers.back().emplace_back(
                 parts[part_idx].data_part,
+                parts[part_idx].alter_conversions,
                 parts[part_idx].part_index_in_query,
                 MarkRanges{{current_part_range_begin[part_idx], last_mark + 1}});
+
             current_part_range_begin[part_idx] = current_part_range_end[part_idx];
         }
     }

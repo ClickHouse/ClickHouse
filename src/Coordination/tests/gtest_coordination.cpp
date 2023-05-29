@@ -1579,6 +1579,113 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 }
 
 
+TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
+    state_machine->init();
+
+    String user_auth_data = "test_user:test_password";
+    String digest = KeeperStorage::generateDigest(user_auth_data);
+
+    std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = user_auth_data;
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+
+    // Create a node with 'auth' scheme for ACL
+    String node_path = "/hello";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req = std::make_shared<ZooKeeperCreateRequest>();
+    create_req->path = node_path;
+    // When 'auth' scheme is used the creator must have been authenticated by the server (for example, using 'digest' scheme) before it can
+    // create nodes with this ACL.
+    create_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
+    auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
+    state_machine->pre_commit(2, create_entry->get_buf());
+
+    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+
+    // commit log entries
+    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->commit(2, create_entry->get_buf());
+
+    auto node = uncommitted_state.getNode(node_path);
+    ASSERT_NE(node, nullptr);
+    auto acls = uncommitted_state.getACLs(node_path);
+    ASSERT_EQ(acls.size(), 1);
+    EXPECT_EQ(acls[0].scheme, "digest");
+    EXPECT_EQ(acls[0].id, digest);
+    EXPECT_EQ(acls[0].permissions, 31);
+}
+
+TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
+    state_machine->init();
+
+    String user_auth_data = "test_user:test_password";
+    String digest = KeeperStorage::generateDigest(user_auth_data);
+
+    std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = user_auth_data;
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+
+    // Create a node
+    String node_path = "/hello";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req = std::make_shared<ZooKeeperCreateRequest>();
+    create_req->path = node_path;
+    auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
+    state_machine->pre_commit(2, create_entry->get_buf());
+
+    // Set ACL with 'auth' scheme for ACL
+    std::shared_ptr<ZooKeeperSetACLRequest> set_acl_req = std::make_shared<ZooKeeperSetACLRequest>();
+    set_acl_req->path = node_path;
+    // When 'auth' scheme is used the creator must have been authenticated by the server (for example, using 'digest' scheme) before it can
+    // set this ACL.
+    set_acl_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
+    auto set_acl_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_acl_req);
+    state_machine->pre_commit(3, set_acl_entry->get_buf());
+
+    // commit all entries
+    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->commit(2, create_entry->get_buf());
+    state_machine->commit(3, set_acl_entry->get_buf());
+
+    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    auto node = uncommitted_state.getNode(node_path);
+
+    ASSERT_NE(node, nullptr);
+    auto acls = uncommitted_state.getACLs(node_path);
+    ASSERT_EQ(acls.size(), 1);
+    EXPECT_EQ(acls[0].scheme, "digest");
+    EXPECT_EQ(acls[0].id, digest);
+    EXPECT_EQ(acls[0].permissions, 31);
+}
+
+
 TEST_P(CoordinationTest, TestRotateIntervalChanges)
 {
     using namespace Coordination;
@@ -2344,6 +2451,78 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
 
 }
 
+TEST_P(CoordinationTest, TestCheckNotExistsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    KeeperStorage storage{500, "", keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto create_path = [&](const auto & path)
+    {
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        int new_zxid = ++zxid;
+        create_request->path = path;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto check_request = std::make_shared<ZooKeeperCheckRequest>();
+    check_request->path = "/test_node";
+    check_request->not_exists = true;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    create_path("/test_node");
+    auto node_it = storage.container.find("/test_node");
+    ASSERT_NE(node_it, storage.container.end());
+    auto node_version = node_it->value.stat.version;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS for same version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK for different version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version + 1;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+}
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,

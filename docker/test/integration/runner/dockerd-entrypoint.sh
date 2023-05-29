@@ -16,7 +16,9 @@ echo '{
 # and on hung you can simply press Ctrl-C and it will spawn a python pdb,
 # but on SIGINT dockerd will exit, so ignore it to preserve the daemon.
 trap '' INT
-dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
+# Binding to an IP address without --tlsverify is deprecated. Startup is intentionally being slowed
+# unless --tls=false or --tlsverify=false is set
+dockerd --host=unix:///var/run/docker.sock --tls=false --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
 set +e
 reties=0
@@ -36,6 +38,12 @@ set -e
     docker ps --all --quiet | xargs --no-run-if-empty docker kill || true
     docker ps --all --quiet | xargs --no-run-if-empty docker rm || true
 }
+
+java_path="$(update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p')"
+export JAVA_PATH=$java_path
+export SPARK_HOME="/spark-3.3.2-bin-hadoop3"
+export PATH=$SPARK_HOME/bin:$PATH
+export JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
