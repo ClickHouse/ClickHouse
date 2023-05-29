@@ -10,7 +10,7 @@
 #include <Formats/NativeReader.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache.h>
-
+#include <IO/ReadBufferFromFile.h>
 
 namespace CurrentMetrics
 {
