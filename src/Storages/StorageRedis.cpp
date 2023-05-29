@@ -75,9 +75,8 @@ Pipe StorageRedis::read(
 
     if (all_scan)
     {
+        /// TODO use scan to avoid performance issue
         RedisCommand command_for_keys("KEYS");
-        /// generate keys by table name prefix
-//        command_for_keys << table_id.getTableName() + ":" + serializeStorageType(configuration.storage_type) + ":*";
         command_for_keys << "*";
 
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
@@ -136,7 +135,16 @@ Pipe StorageRedis::read(
 
             RedisArray keys;
             for (size_t pos=begin; pos<std::min(end, num_keys); pos++)
-                keys.add(fields->at(pos).get<String>());
+            {
+                if (WhichDataType(*primary_key_data_type).isStringOrFixedString())
+                {
+                    keys.add(fields->at(pos).get<String>());
+                }
+                else
+                {
+                    keys.add(toString(fields->at(pos))); /// TODO redis source deserialize
+                }
+            }
 
             if (configuration.storage_type == RedisStorageType::HASH_MAP)
             {

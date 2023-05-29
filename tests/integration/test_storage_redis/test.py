@@ -181,3 +181,4 @@ def test_create_table(started_cluster):
             """
         )
 
+

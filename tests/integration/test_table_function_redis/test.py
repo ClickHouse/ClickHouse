@@ -157,3 +157,63 @@ def test_customized_table_structure(started_cluster):
             FROM 
                 redis('{address}', 0, 'clickhouse', "simple", 10, "k Ss, v String") 
             """)
+
+
+def test_data_type(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+
+    # string
+    client.flushall()
+    client.set('0', '0')
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT
+            *
+        FROM
+            redis('{address}', 0, 'clickhouse', 'simple', 10, "k String, v UInt8")
+        WHERE
+            k='0'
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 1)
+    assert (response[0] == ['0', '0'])
+
+    # number
+    client.flushall()
+    client.set('0', '0')
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT
+            *
+        FROM
+            redis('{address}', 0, 'clickhouse', 'simple', 10, "k UInt8, v UInt8")
+        WHERE
+            k=0
+        FORMAT TSV
+        """))
+
+    assert (len(response) == 1)
+    assert (response[0] == ['0', '0'])
+
+    # datetime
+    client.flushall()
+    client.set('2023-06-01 00:00:00', '0')
+
+    response = TSV.toMat(node.query(
+        f"""
+        SELECT
+            *
+        FROM
+            redis('{address}', 0, 'clickhouse', 'simple', 10, "k DateTime, v UInt8")
+        WHERE
+            k='2023-06-01 00:00:00'
+        FORMAT TSV
+        """))
+
+    # TODO open
+    # assert (len(response) == 1)
+    # assert (response[0] == ['2023-06-01 00:00:00', '0'])

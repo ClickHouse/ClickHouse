@@ -27,14 +27,18 @@ namespace DB
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
         size_t max_block_size_)
-        : ISource(sample_block), max_block_size(max_block_size_)// TODO
+        : ISource(sample_block)
+        , connection(std::move(connection_))
+        , keys(keys_)
+        , storage_type(storage_type_)
+        , max_block_size{max_block_size_}
     {
             RedisColumnTypes columns_types_;
             if (storage_type_ == RedisStorageType::HASH_MAP)
                 columns_types_ = REDIS_HASH_MAP_COLUMN_TYPES;
             else
                 columns_types_ = REDIS_SIMPLE_COLUMN_TYPES;
-            RedisSource(std::move(connection_), keys_, storage_type_, sample_block, columns_types_, max_block_size_);
+            description.init(sample_block);
     }
 
     RedisSource::RedisSource(
