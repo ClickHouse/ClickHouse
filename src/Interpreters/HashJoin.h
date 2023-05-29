@@ -143,6 +143,7 @@ public:
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
+ /// TODO: Add Preliminary Filter for left table
 class HashJoin : public IJoin
 {
 public:
