@@ -69,7 +69,7 @@ bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) con
 float ApproximateNearestNeighborCondition::getComparisonDistanceForWhereQuery() const
 {
     if (index_is_useful && query_information.has_value()
-        && query_information->query_type == ApproximateNearestNeighborInformation::Type::Where)
+        && query_information->type == ApproximateNearestNeighborInformation::Type::Where)
         return query_information->distance;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
@@ -119,7 +119,7 @@ float ApproximateNearestNeighborCondition::getPValueForLpDistance() const
 ApproximateNearestNeighborInformation::Type ApproximateNearestNeighborCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
-        return query_information->query_type;
+        return query_information->type;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
 }
 
@@ -326,7 +326,7 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
 bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
-    ann_info.query_type = ApproximateNearestNeighborInformation::Type::Where;
+    ann_info.type = ApproximateNearestNeighborInformation::Type::Where;
 
     /// WHERE section must have at least 5 expressions
     /// Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(ReferenceVector(floats))
@@ -381,7 +381,7 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
 bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
     /// Fill query type field
-    ann_info.query_type = ApproximateNearestNeighborInformation::Type::OrderBy;
+    ann_info.type = ApproximateNearestNeighborInformation::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)

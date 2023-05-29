@@ -42,7 +42,7 @@ struct ApproximateNearestNeighborInformation
         OrderBy,
         Where
     };
-    Type query_type;
+    Type type;
 
     float p_for_lp_dist = -1.0;
     float distance = -1.0;
@@ -150,7 +150,11 @@ private:
         };
 
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
-        : function(function_), func_name("Unknown"), float_literal(std::nullopt), identifier(std::nullopt) {}
+            : function(function_)
+            , func_name("Unknown")
+            , float_literal(std::nullopt)
+            , identifier(std::nullopt)
+        {}
 
         Function function;
         String func_name;
@@ -200,8 +204,10 @@ private:
 
     // Get from settings ANNIndex parameters
     const UInt64 index_granularity;
+
     /// only queries with a lower limit can be considered to avoid memory overflow
     const UInt64 max_limit_for_ann_queries;
+
     bool index_is_useful = false;
 };
 
