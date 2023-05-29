@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,9 +11,8 @@ class Context;
 
 /** Information about configurations.
   */
-class StorageSystemConfigs final : public shared_ptr_helper<StorageSystemConfigs>, public IStorageSystemOneBlock<StorageSystemConfigs>
+class StorageSystemConfigs final : public IStorageSystemOneBlock<StorageSystemConfigs>
 {
-    friend struct shared_ptr_helper<StorageSystemConfigs>;
 public:
     std::string getName() const override { return "SystemConfigs"; }
 

@@ -34,7 +34,7 @@ BlockIO InterpreterSetConfigQuery::execute()
     ConfigParamKVPtr temp = getMetadataConfigFromQuery(query);
     if (!getContext()->hasMetadataStoreFoundationDB())
     {
-        throw Exception("There is no FoundationDB", ErrorCodes::NO_FDB);
+        throw Exception(ErrorCodes::NO_FDB, "There is no FoundationDB");
     }
     std::shared_ptr<MetadataStoreFoundationDB> meta_store = getContext()->getMetadataStoreFoundationDB();
 
@@ -63,7 +63,7 @@ BlockIO InterpreterSetConfigQuery::execute()
             if (!query.is_none)
                 meta_store->addConfigParamMeta(*temp,temp->name());
             else
-                throw Exception("Key '" + query.name +"' doesn't exist in FoundationDB", ErrorCodes::FDB_META_EXCEPTION);
+                throw Exception(ErrorCodes::FDB_META_EXCEPTION, "Key '" + query.name +"' doesn't exist in FoundationDB");
         }
         global_context->reloadConfig();
     }

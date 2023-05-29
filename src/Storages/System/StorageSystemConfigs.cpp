@@ -5,6 +5,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FoundationDB/protos/MetadataConfigParam.pb.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
