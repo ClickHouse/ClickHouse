@@ -9,8 +9,7 @@ on:
 
 jobs:
   DockerHubPushAarch64:
-    needs: CheckLabels
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
