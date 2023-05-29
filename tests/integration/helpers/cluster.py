@@ -223,6 +223,21 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
     return p.returncode == 0
 
 
+def check_ldap_is_available(ldap_id, ldap_port=389):
+    p = subprocess.Popen(
+        (
+            "docker", "exec", "-i", ldap_id,
+            "ldapsearch", "-x", "-H", 
+            f"ldap://localhost:{ldap_port}", 
+            "-b", "dc=company,dc=com", "-D", "cn=admin,dc=company,dc=com", "-w", "admin",
+        ),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
@@ -398,6 +413,7 @@ class ClickHouseCluster:
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_kerberos_kdc_cmd = []
+        self.base_ldap_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_nats_cmd = []
         self.base_cassandra_cmd = []
@@ -417,6 +433,7 @@ class ClickHouseCluster:
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
+        self.with_ldap = False
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
@@ -493,6 +510,10 @@ class ClickHouseCluster:
         # available when with_kerberos_kdc == True
         self.kerberos_kdc_host = "kerberoskdc"
         self.keberos_kdc_docker_id = self.get_instance_docker_id(self.kerberos_kdc_host)
+
+        #available when with_ldap == True
+        self.ldap_host = "openldap"
+        self.ldap_docker_id = self.get_instance_docker_id(self.ldap_host)
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
@@ -1215,6 +1236,26 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
         ]
         return self.base_kerberos_kdc_cmd
+    
+    def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ldap = True    
+        env_variables["LDAP_DIR"] = self.instances_dir + "/"    
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
+            ]
+        )
+        self.base_ldap_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
+        ]
+        return self.base_ldap_cmd
 
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
@@ -1488,6 +1529,7 @@ class ClickHouseCluster:
         with_kafka=False,
         with_kerberized_kafka=False,
         with_kerberos_kdc=False,
+        with_ldap=False,
         with_rabbitmq=False,
         with_nats=False,
         clickhouse_path_dir=None,
@@ -1581,6 +1623,7 @@ class ClickHouseCluster:
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_kerberos_kdc=with_kerberos_kdc,
+            with_ldap=with_ldap,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
@@ -1726,6 +1769,11 @@ class ClickHouseCluster:
         if with_kerberos_kdc and not self.with_kerberos_kdc:
             cmds.append(
                 self.setup_kerberos_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_ldap and not self.with_ldap:
+            cmds.append(
+                self.setup_ldap_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_rabbitmq and not self.with_rabbitmq:
@@ -2342,6 +2390,18 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
 
+    def wait_ldap_is_available(self, ldap_docker_id, max_retries=50):
+        retries = 0
+        while True:
+            if check_ldap_is_available(ldap_docker_id):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("LDAP is not available")
+                logging.debug("Waiting for LDAP to start up")
+                time.sleep(1)
+
     def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
         while time.time() - start < timeout:
@@ -2716,6 +2776,14 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
+
+            if self.with_ldap and self.base_ldap_cmd:
+                logging.debug("Setup LDAP")
+                run_and_check(
+                    self.base_ldap_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_ldap_is_available(self.ldap_docker_id)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug("Setup RabbitMQ")
@@ -3124,6 +3192,7 @@ class ClickHouseInstance:
         with_kafka,
         with_kerberized_kafka,
         with_kerberos_kdc,
+        with_ldap,
         with_rabbitmq,
         with_nats,
         with_nginx,
@@ -3209,6 +3278,7 @@ class ClickHouseInstance:
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
+        self.with_ldap = with_ldap
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
         self.with_nginx = with_nginx
@@ -4286,6 +4356,9 @@ class ClickHouseInstance:
 
         if self.with_kerberos_kdc:
             depends_on.append("kerberoskdc")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
