@@ -79,19 +79,24 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
+    size_t buf_size_,
     const S3Settings::RequestSettings & request_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
-    : bucket(bucket_)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
     , upload_settings(request_settings.getUploadSettings())
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(request_settings_.getUploadSettings()))
-    , task_tracker(std::make_unique<WriteBufferFromS3::TaskTracker>(std::move(schedule_)))
+    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , task_tracker(
+          std::make_unique<WriteBufferFromS3::TaskTracker>(
+              std::move(schedule_),
+              upload_settings.max_inflight_parts_for_one_file))
 {
     LOG_TRACE(log, "Create WriteBufferFromS3, {}", getLogDetails());
 
@@ -107,8 +112,11 @@ void WriteBufferFromS3::nextImpl()
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
-    /// Make sense to call to before adding new async task to check if there is an exception
-    task_tracker->waitReady();
+    /// Make sense to call waitIfAny before adding new async task to check if there is an exception
+    /// The faster the exception is propagated the lesser time is spent for cancellation
+    /// Despite the fact that `task_tracker->add()` collects tasks statuses and propagates their exceptions
+    /// that call is necessary for the case when the is no in-flight limitation and therefore `task_tracker->add()` doesn't wait anything
+    task_tracker->waitIfAny();
 
     hidePartialData();
 
@@ -132,7 +140,8 @@ void WriteBufferFromS3::preFinalize()
 
     LOG_TRACE(log, "preFinalize WriteBufferFromS3. {}", getLogDetails());
 
-    task_tracker->waitReady();
+    /// This function should not be run again if an exception has occurred
+    is_prefinalized = true;
 
     hidePartialData();
 
@@ -164,8 +173,6 @@ void WriteBufferFromS3::preFinalize()
     {
         writeMultipartUpload();
     }
-
-    is_prefinalized = true;
 }
 
 void WriteBufferFromS3::finalizeImpl()
@@ -210,8 +217,8 @@ String WriteBufferFromS3::getLogDetails() const
         multipart_upload_details = fmt::format(", upload id {}, upload has finished {}"
                                        , multipart_upload_id, multipart_upload_finished);
 
-    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, finalized {}{}",
-                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), finalized, multipart_upload_details);
+    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}{}",
+                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), is_prefinalized, finalized, multipart_upload_details);
 }
 
 void WriteBufferFromS3::tryToAbortMultipartUpload()
@@ -232,7 +239,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(log, "Close WriteBufferFromS3. {}.", getLogDetails());
 
-    // That descructor could be call with finalized=false in case of exceptions
+    // That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
     {
         LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It could be if an exception occurs. File is not written to S3. {}.", getLogDetails());
