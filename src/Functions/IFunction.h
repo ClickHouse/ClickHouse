@@ -175,15 +175,6 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** If function isSuitableForConstantFolding then, this method will be called during query analysis
-      * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
-      * return they result based on some constant arguments.
-      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
-      * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
-      */
-    virtual ColumnPtr getConstantResultForNonConstArguments(
-        const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
-
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
       *
@@ -461,7 +452,6 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }

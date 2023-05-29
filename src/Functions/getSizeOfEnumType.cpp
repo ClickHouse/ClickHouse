@@ -56,11 +56,6 @@ public:
         return getSizeOfEnumType(arguments[0].type, input_rows_count);
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
-    {
-        return getSizeOfEnumType(arguments[0].type, 1);
-    }
-
 private:
 
     ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const

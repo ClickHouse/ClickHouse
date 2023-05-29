@@ -181,8 +181,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
-
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 

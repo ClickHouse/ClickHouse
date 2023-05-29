@@ -46,11 +46,6 @@ public:
     {
         return DataTypeString().createColumnConst(input_rows_count, arguments[0].column->getName());
     }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
-    {
-        return DataTypeString().createColumnConst(1, arguments[0].type->createColumn()->getName());
-    }
 };
 
 }

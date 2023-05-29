@@ -394,8 +394,7 @@ private:
         NodeRawConstPtrs children,
         ColumnsWithTypeAndName arguments,
         std::string result_name,
-        DataTypePtr result_type,
-        bool all_const);
+        DataTypePtr result_type);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

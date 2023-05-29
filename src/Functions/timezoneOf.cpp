@@ -55,14 +55,6 @@ public:
         return DataTypeString().createColumnConst(input_rows_count,
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
-    {
-        DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
-
-        return DataTypeString().createColumnConst(1,
-            dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
-    }
 };
 
 }
