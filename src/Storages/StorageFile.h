@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 
 #include <Common/logger_useful.h>
 
@@ -14,7 +14,7 @@ namespace DB
 
 class StorageFile final : public IStorage
 {
-friend class partitionedstoragefilesink;
+    friend class partitionedstoragefilesink;
 
 public:
     struct CommonArguments : public WithContext
@@ -51,10 +51,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void truncate(
         const ASTPtr & /*query*/,
@@ -69,7 +66,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+    static Strings
+    getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
@@ -122,8 +120,8 @@ private:
     std::vector<std::string> paths;
     std::vector<std::string> paths_to_archive;
 
-    bool is_db_table = true;        /// Table is stored in real database, not user's file
-    bool use_table_fd = false;      /// Use table_fd instead of path
+    bool is_db_table = true; /// Table is stored in real database, not user's file
+    bool use_table_fd = false; /// Use table_fd instead of path
 
     mutable std::shared_timed_mutex rwlock;
 
