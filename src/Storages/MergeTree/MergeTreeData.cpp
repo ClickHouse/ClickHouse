@@ -1,4 +1,3 @@
-#include "Storages/MergeTree/MergeTreeDataPartBuilder.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -77,6 +76,8 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MutationCommands.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -507,52 +508,48 @@ void MergeTreeData::checkProperties(
 
     auto all_columns = new_metadata.columns.getAllPhysical();
 
-    /// Order by check AST
-    if (old_metadata.hasSortingKey())
+    /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
+    /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
+
+    Names new_primary_key_columns = new_primary_key.column_names;
+    Names new_sorting_key_columns = new_sorting_key.column_names;
+
+    ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+    const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
+    for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
     {
-        /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
-        /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
-
-        Names new_primary_key_columns = new_primary_key.column_names;
-        Names new_sorting_key_columns = new_sorting_key.column_names;
-
-        ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
-        const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
-        for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
+        if (old_i < old_sorting_key_columns.size())
         {
-            if (old_i < old_sorting_key_columns.size())
-            {
-                if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
-                    added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
-                else
-                    ++old_i;
-            }
-            else
+            if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
                 added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+            else
+                ++old_i;
         }
+        else
+            added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+    }
 
-        if (!added_key_column_expr_list->children.empty())
+    if (!added_key_column_expr_list->children.empty())
+    {
+        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
+        Names used_columns = syntax->requiredSourceColumns();
+
+        NamesAndTypesList deleted_columns;
+        NamesAndTypesList added_columns;
+        old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+
+        for (const String & col : used_columns)
         {
-            auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = syntax->requiredSourceColumns();
+            if (!added_columns.contains(col) || deleted_columns.contains(col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Existing column {} is used in the expression that was added to the sorting key. "
+                                "You can add expressions that use only the newly added columns",
+                                backQuoteIfNeed(col));
 
-            NamesAndTypesList deleted_columns;
-            NamesAndTypesList added_columns;
-            old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
-
-            for (const String & col : used_columns)
-            {
-                if (!added_columns.contains(col) || deleted_columns.contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Existing column {} is used in the expression that was added to the sorting key. "
-                                    "You can add expressions that use only the newly added columns",
-                                    backQuoteIfNeed(col));
-
-                if (new_metadata.columns.getDefaults().contains(col))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Newly added column {} has a default expression, so adding expressions that use "
-                                    "it to the sorting key is forbidden", backQuoteIfNeed(col));
-            }
+            if (new_metadata.columns.getDefaults().contains(col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Newly added column {} has a default expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
         }
     }
 
@@ -1082,7 +1079,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             else if (!prev_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects previous part {}. It is a bug!",
+                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, prev->second->name);
             }
         }
@@ -1099,7 +1096,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             else if (!next_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects next part {}. It is a bug!",
+                    "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, it->second->name);
             }
         }
@@ -1972,7 +1969,7 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, 0));
+        }, Priority{}));
     }
 
     /// Wait for every scheduled task
@@ -5821,11 +5818,10 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         ActiveDataPartSet active_parts(format_version);
 
         auto detached_parts = getDetachedParts();
-        auto new_end_it = std::remove_if(detached_parts.begin(), detached_parts.end(), [&partition_id](const DetachedPartInfo & part_info)
+        std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & part_info)
         {
             return !part_info.valid_name || !part_info.prefix.empty() || part_info.partition_id != partition_id;
         });
-        detached_parts.resize(std::distance(detached_parts.begin(), new_end_it));
 
         for (const auto & part_info : detached_parts)
         {
@@ -7204,9 +7200,17 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
 
-    if (query_context->canUseParallelReplicasOnInitiator()
-        && to_stage >= QueryProcessingStage::WithMergeableState)
-        return QueryProcessingStage::Enum::WithMergeableState;
+    /// Parallel replicas
+    if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+    {
+        /// ReplicatedMergeTree
+        if (supportsReplication())
+            return QueryProcessingStage::Enum::WithMergeableState;
+
+        /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
+        if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            return QueryProcessingStage::Enum::WithMergeableState;
+    }
 
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
@@ -7421,8 +7425,14 @@ Strings MergeTreeData::getDataPaths() const
 }
 
 
-void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const
+void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
 {
+    if (!data_part)
+        return;
+
+    if (data_part->isProjectionPart())
+        data_part = data_part->getParentPart()->shared_from_this();
+
     if (data_part->getDataPartStorage().isBroken())
     {
         auto parts = getDataPartsForInternalUsage();
@@ -7434,7 +7444,7 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part && data_part->getState() == MergeTreeDataPartState::Active)
+    else if (data_part->getState() == MergeTreeDataPartState::Active)
         broken_part_callback(data_part->name);
     else
         LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
@@ -7974,25 +7984,14 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
+AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
 {
-    std::map<int64_t, MutationCommands> commands_map = getAlterMutationCommandsForPart(part);
+    auto commands_map = getAlterMutationCommandsForPart(part);
 
-    AlterConversions result{};
-    auto & rename_map = result.rename_map;
-    for (const auto & [version, commands] : commands_map)
-    {
+    auto result = std::make_shared<AlterConversions>();
+    for (const auto & [_, commands] : commands_map)
         for (const auto & command : commands)
-        {
-            /// Currently we need explicit conversions only for RENAME alter
-            /// all other conversions can be deduced from diff between part columns
-            /// and columns in storage.
-            if (command.type == MutationCommand::Type::RENAME_COLUMN)
-            {
-                rename_map.emplace_back(AlterConversions::RenamePair{command.rename_to, command.column_name});
-            }
-        }
-    }
+            result->addMutationCommand(command);
 
     return result;
 }
@@ -8324,13 +8323,22 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
+    ColumnsDescription object_columns_copy;
 
-    auto lock = lockParts();
-    snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+    {
+        auto lock = lockParts();
+        snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
+        object_columns_copy = object_columns;
+    }
+
+    snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
+    for (const auto & part : snapshot_data->parts)
+        snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
     auto lock = lockParts();
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
