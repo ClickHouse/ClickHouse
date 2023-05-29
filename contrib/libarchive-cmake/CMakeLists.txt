@@ -127,7 +127,7 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_write_set_format_ustar.c"
     "${LIBRARY_DIR}/libarchive/archive_write_set_format_v7tar.c"
     "${LIBRARY_DIR}/libarchive/archive_write_set_format_warc.c"
-    # "${LIBRARY_DIR}/libarchive/archive_write_set_format_xar.c"
+    "${LIBRARY_DIR}/libarchive/archive_write_set_format_xar.c"
     "${LIBRARY_DIR}/libarchive/archive_write_set_format_zip.c"
     "${LIBRARY_DIR}/libarchive/archive_write_set_options.c"
     "${LIBRARY_DIR}/libarchive/archive_write_set_passphrase.c"
