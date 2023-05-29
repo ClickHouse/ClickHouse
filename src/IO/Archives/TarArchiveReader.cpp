@@ -3,31 +3,36 @@
 #include <Common/quoteString.h>
 
 
-namespace DB{
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_UNPACK_ARCHIVE;
-        extern const int LOGICAL_ERROR;
-        extern const int SEEK_POSITION_OUT_OF_BOUND;
-    }
-class TarArchiveReader::Handle {
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int LOGICAL_ERROR;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+class TarArchiveReader::Handle
+{
 public:
-    Handle(const String & path_to_archive_) 
-    : path_to_archive(path_to_archive_) {
+    Handle(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+    {
         archive = archive_read_new();
         archive_read_support_filter_all(archive);
         archive_read_support_format_all(archive);
-        if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK) {
+        if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
+        {
             throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open tar archive {}", quoteString(path_to_archive));
         }
         entry = archive_entry_new();
     }
-    ~Handle() {
+    ~Handle()
+    {
         archive_read_close(archive);
         archive_read_free(archive);
     }
 
-    bool locateFile(const String &filename) {
+    bool locateFile(const String & filename)
+    {
         while (archive_read_next_header(archive, &entry) == ARCHIVE_OK)
         {
             if (archive_entry_pathname(entry) == filename)
@@ -36,8 +41,8 @@ public:
         return false;
     }
 
-struct archive* archive;
-struct archive_entry* entry;
+    struct archive * archive;
+    struct archive_entry * entry;
 
 private:
     const String path_to_archive;
@@ -47,7 +52,10 @@ class TarArchiveReader::ReadBufferFromTarArchive : public ReadBufferFromFileBase
 {
 public:
     explicit ReadBufferFromTarArchive(const String & path_to_archive_, const String & filename_)
-        : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), handle(path_to_archive_), path_to_archive(path_to_archive_), filename(filename_)
+        : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+        , handle(path_to_archive_)
+        , path_to_archive(path_to_archive_)
+        , filename(filename_)
     {
         handle.locateFile(filename_);
     }
@@ -87,10 +95,7 @@ public:
         return new_pos;
     }
 
-    off_t getPosition() override
-    {
-        return archive_entry_size(handle.entry) - available();
-    }
+    off_t getPosition() override { return archive_entry_size(handle.entry) - available(); }
 
     String getFileName() const override { return filename; }
 
@@ -112,54 +117,65 @@ private:
     const String filename;
 };
 
-    TarArchiveReader::TarArchiveReader(const String & path_to_archive_)
-    : path_to_archive(path_to_archive_) {}
+TarArchiveReader::TarArchiveReader(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+{
+}
 
-    TarArchiveReader::TarArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_): path_to_archive(path_to_archive_), archive_read_function(archive_read_function_), archive_size(archive_size_) {}
+TarArchiveReader::TarArchiveReader(
+    const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_)
+    : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_), archive_size(archive_size_)
+{
+}
 
-    TarArchiveReader::~TarArchiveReader() {}
-    bool TarArchiveReader::fileExists(const String& filename)
-    {
-        Handle handle(path_to_archive);
-        return handle.locateFile(filename);
-    }
+TarArchiveReader::~TarArchiveReader()
+{
+}
+bool TarArchiveReader::fileExists(const String & filename)
+{
+    Handle handle(path_to_archive);
+    return handle.locateFile(filename);
+}
 
-    TarArchiveReader::FileInfo TarArchiveReader::getFileInfo(const String & filename) {
-        
-        Handle handle(path_to_archive);
-        
-        handle.locateFile(filename);
-        FileInfo info;
-        info.uncompressed_size = archive_entry_size(handle.entry);
-        info.compressed_size = archive_entry_size(handle.entry);
-        info.is_encrypted = false;
+TarArchiveReader::FileInfo TarArchiveReader::getFileInfo(const String & filename)
+{
+    Handle handle(path_to_archive);
 
-        return info;
-    }
+    handle.locateFile(filename);
+    FileInfo info;
+    info.uncompressed_size = archive_entry_size(handle.entry);
+    info.compressed_size = archive_entry_size(handle.entry);
+    info.is_encrypted = false;
 
-    std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::firstFile() {
-        return nullptr;
-    }
+    return info;
+}
 
-    std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile(const String & filename) {
-        
-        Handle handle(path_to_archive);
-        handle.locateFile(filename);
+std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::firstFile()
+{
+    return nullptr;
+}
 
-        return std::make_unique<ReadBufferFromTarArchive>(path_to_archive, filename);
-    }
+std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile(const String & filename)
+{
+    Handle handle(path_to_archive);
+    handle.locateFile(filename);
 
-    std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile([[maybe_unused]] std::unique_ptr<FileEnumerator> enumerator) {
-        return nullptr;
-    }
+    return std::make_unique<ReadBufferFromTarArchive>(path_to_archive, filename);
+}
 
-    std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::nextFile([[maybe_unused]] std::unique_ptr<ReadBuffer> read_buffer) {
-        return nullptr;
-    }
+std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile([[maybe_unused]] std::unique_ptr<FileEnumerator> enumerator)
+{
+    return nullptr;
+}
+
+std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::nextFile([[maybe_unused]] std::unique_ptr<ReadBuffer> read_buffer)
+{
+    return nullptr;
+}
 
 
-    void TarArchiveReader::setPassword([[maybe_unused]] const String & password_) {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to .tar archive");
-    }
+void TarArchiveReader::setPassword([[maybe_unused]] const String & password_)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to .tar archive");
+}
 
 }

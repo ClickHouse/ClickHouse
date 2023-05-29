@@ -2,9 +2,9 @@
 
 #include <IO/Archives/IArchiveReader.h>
 
+#include <iostream>
 #include <archive.h>
 #include <archive_entry.h>
-#include <iostream>
 
 
 namespace DB
@@ -17,7 +17,6 @@ class SeekableReadBuffer;
 class SevenZipArchiveReader : public IArchiveReader
 {
 public:
-
     /// Constructs an archive's reader that will read from a file in the local filesystem.
     explicit SevenZipArchiveReader(const String & path_to_archive_);
 
@@ -49,7 +48,6 @@ public:
     void setPassword([[maybe_unused]] const String & password_) override;
 
 private:
-
     class ReadBufferFromSevenZipArchive;
     class Handle;
 

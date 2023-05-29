@@ -47,7 +47,6 @@ public:
     void setPassword([[maybe_unused]] const String & password_) override;
 
 private:
-
     class ReadBufferFromTarArchive;
     class Handle;
 
