@@ -4246,3 +4246,12 @@ Possible values:
 - false — Disallow.
 
 Default value: `false`.
+
+## zstd_window_log_max
+
+Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
+
+Type: Int64
+
+Default: 0
+
