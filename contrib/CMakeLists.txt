@@ -94,6 +94,7 @@ add_contrib (protobuf-cmake protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
+add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
 
