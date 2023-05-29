@@ -113,7 +113,7 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
 {
     LOG_TEST(log, "add, in queue {}", futures.size());
 
-    auto future = scheduler(std::move(func), 0);
+    auto future = scheduler(std::move(func), Priority{});
     auto exit_scope = scope_guard(
         [&future]()
         {
