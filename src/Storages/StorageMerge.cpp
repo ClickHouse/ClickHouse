@@ -732,9 +732,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
         {
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "ReadFromMergeTree detected");
             size_t filters_dags_size = filter_dags.size();
             for (size_t i = 0; i < filters_dags_size; ++i)
+            {
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "adding filter");
                 read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
+            }
         }
 
         builder = plan.buildQueryPipeline(

@@ -861,6 +861,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Add prewhere actions with alias columns and record needed columns from storage.
     if (storage)
     {
+        LOG_TRACE(log, "calling addPrewhereAliasActions");
+
         addPrewhereAliasActions();
         analysis_result.required_columns = required_columns;
     }
