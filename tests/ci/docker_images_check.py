@@ -94,7 +94,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
 
 
 def get_changed_docker_images(
-    pr_info: PRInfo, images_dict: ImagesDict, docker_repo
+    pr_info: PRInfo, images_dict: ImagesDict, DOCKER_REPO
 ) -> Set[DockerImage]:
     if not images_dict:
         return set()
@@ -113,7 +113,7 @@ def get_changed_docker_images(
     for dockerfile_dir, image_description in images_dict.items():
         for f in files_changed:
             if f.startswith(dockerfile_dir):
-                name = docker_repo + "/" + image_description["name"]
+                name = DOCKER_REPO + "/" + image_description["name"]
                 only_amd64 = image_description.get("only_amd64", False)
                 logging.info(
                     "Found changed file '%s' which affects "
@@ -138,7 +138,7 @@ def get_changed_docker_images(
                 image,
             )
             name = images_dict[dependent]["name"]
-            only_amd64 = docker_repo + "/" + images_dict[dependent].get("only_amd64", False)
+            only_amd64 = DOCKER_REPO + "/" + images_dict[dependent].get("only_amd64", False)
             changed_images.append(DockerImage(dependent, name, only_amd64, image))
         index += 1
         if index > 5 * len(images_dict):
