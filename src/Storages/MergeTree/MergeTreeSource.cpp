@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
 
 namespace DB
@@ -84,7 +84,7 @@ struct MergeTreeSource::AsyncReadingState
     {
         try
         {
-            callback_runner(std::move(job), 0);
+            callback_runner(std::move(job), Priority{});
         }
         catch (...)
         {

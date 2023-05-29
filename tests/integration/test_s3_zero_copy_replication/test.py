@@ -149,8 +149,8 @@ def test_s3_zero_copy_replication(started_cluster, policy):
     # Based on version 21.x - after cleanup - only one merged part
     wait_for_large_objects_count(cluster, 1, timeout=60)
 
-    node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node2.query("DROP TABLE IF EXISTS s3_test SYNC")
 
 
 @pytest.mark.skip(reason="Test is flaky (and never was stable)")
@@ -239,8 +239,8 @@ def test_s3_zero_copy_on_hybrid_storage(started_cluster):
         == "(0,'data'),(1,'data')"
     )
 
-    node1.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS hybrid_test SYNC")
+    node2.query("DROP TABLE IF EXISTS hybrid_test SYNC")
 
 
 def insert_data_time(node, table, number_of_mb, time, start=0):
@@ -275,8 +275,8 @@ def test_s3_zero_copy_with_ttl_move(
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+    node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
 
     for i in range(iterations):
         node1.query(
@@ -325,8 +325,8 @@ def test_s3_zero_copy_with_ttl_move(
                 == "(10),(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -340,8 +340,8 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+    node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
 
     for i in range(iterations):
         node1.query(
@@ -398,8 +398,8 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
                 == "(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
 
 
 def wait_mutations(node, table, seconds):
@@ -438,8 +438,8 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
 
     node1.query(
         """
@@ -489,8 +489,8 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
 
     check_objects_not_exisis(cluster, objects12)
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
 
 
 def test_s3_zero_copy_unfreeze_alter(started_cluster):
@@ -505,8 +505,8 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
+    node2.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
 
     node1.query(
         """
@@ -600,8 +600,8 @@ def test_s3_zero_copy_concurrent_merge(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
-    node2.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
+    node1.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
+    node2.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
 
     for node in (node1, node2):
         node.query(
@@ -647,8 +647,8 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
-    node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
+    node1.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
+    node2.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
 
     node1.query(
         """
