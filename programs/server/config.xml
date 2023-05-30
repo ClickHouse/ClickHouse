@@ -1142,6 +1142,16 @@
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
         -->
 
+        <!--
+            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
+            Example:
+                event_date, event_time
+                event_date, type, query_id
+                event_date, event_time, initial_query_id
+
+        <order_by>event_date, event_time, initial_query_id</order_by>
+        -->
+
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
           -->
