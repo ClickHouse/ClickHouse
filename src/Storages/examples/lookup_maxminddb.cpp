@@ -5,11 +5,20 @@
 #include <getopt.h>
 #include <maxminddb.h>
 #include "config.h"
+#include <Core/Types_fwd.h>
+#include <Core/Field.h>
+
 
 #if USE_MAXMINDDB
 
+using namespace DB;
+
 int main()
 {
+    IPv4 ip(2563684740);
+    Field fip(ip);
+    std::cout << toString(fip) << std::endl;
+
     const char * ip_address = "152.206.185.132";
     const char * db_file = "1.mmdb";
 
@@ -42,7 +51,7 @@ int main()
     }
 
     MMDB_entry_data_s entry_data;
-    int status2 = MMDB_get_value(&result.entry, &entry_data, "city", "names", "de");
+    int status2 = MMDB_get_value(&result.entry, &entry_data, "country", "names", "de");
     if (status2 != MMDB_SUCCESS)
     {
         fprintf(stderr, "Error getting country ISO code: %s\n", MMDB_strerror(status2));
