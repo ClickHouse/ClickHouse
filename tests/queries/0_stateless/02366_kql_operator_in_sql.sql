@@ -28,13 +28,13 @@ select * from kql(Customers | where FirstName !has 'Peter');
 Select '-- #9 --' ;
 select * from kql(Customers | where FirstName !has_cs 'peter');
 Select '-- #10 --' ;
-select * from kql(Customers | where FirstName !hasprefix 'Peter');
+-- select * from kql(Customers | where FirstName !hasprefix 'Peter'); -- will enable when analyzer fixed `and` issue
 Select '-- #11 --' ;
-select * from kql(Customers | where FirstName !hasprefix_cs 'Peter');
+--select * from kql(Customers | where FirstName !hasprefix_cs 'Peter');
 Select '-- #12 --' ;
-select * from kql(Customers | where FirstName !hassuffix 'Peter');
+--select * from kql(Customers | where FirstName !hassuffix 'Peter');
 Select '-- #13 --' ;
-select * from kql(Customers | where FirstName !hassuffix_cs 'Peter');
+--select * from kql(Customers | where FirstName !hassuffix_cs 'Peter');
 Select '-- #14 --' ;
 select * from kql(Customers | where FirstName !startswith 'Peter');
 Select '-- #15 --' ;

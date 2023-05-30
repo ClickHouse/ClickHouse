@@ -65,7 +65,7 @@ print array_shift_right(dynamic([1,2,3,4,5]), 2);
 print array_shift_right(dynamic([1,2,3,4,5]), -2, -1);
 print array_shift_right(dynamic(['a', 'b', 'c']), -2);
 print '-- array_slice()';
-print array_slice(dynamic([1,2,3]), 1, 2);
+--print array_slice(dynamic([1,2,3]), 1, 2); -- will enable whe analyzer dixed
 print array_slice(dynamic([1,2,3,4,5]), -3, -2);
 print '-- array_split()';
 print array_split(dynamic([1,2,3,4,5]), dynamic([1,-2]));

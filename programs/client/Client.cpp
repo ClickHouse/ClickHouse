@@ -709,9 +709,9 @@ bool Client::processWithFuzzing(const String & full_query)
     const auto & settings = global_context->getSettingsRef();
     const Dialect & dialect = settings.dialect;
     String old_dialect = dialect == DB::Dialect::kusto ? "kusto" : "clickhouse";
-    if (auto q = orig_ast->as<ASTSetQuery>())
+    if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        auto setDialect = q->changes.tryGet("dialect");
+        auto *setDialect = q->changes.tryGet("dialect");
         if (setDialect)
         {
             old_dialect =  setDialect->get<String>();
