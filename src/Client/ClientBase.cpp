@@ -2384,23 +2384,23 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    String text;
-    if (config().has("query"))
+    if (!queries.empty())
     {
-        text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+        for (const auto & query : queries)
+        {
+            bool result = query_fuzzer_runs ? processWithFuzzing(query) : processQueryText(query);
+            if (!result)
+                return;
+        }
     }
     else
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        String text;
         readStringUntilEOF(text, in);
     }
-
-    if (query_fuzzer_runs)
-        processWithFuzzing(text);
-    else
-        processQueryText(text);
 }
 
 
@@ -2601,7 +2601,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::string>(), "query")
+        ("query,q", po::value<std::vector<std::string>>(), R"(query; specifying --query multiple times are allowed(--query "SELECT 1;" --query "SELECT 2;"...))")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
@@ -2690,7 +2690,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("time"))
         print_time_to_stderr = true;
     if (options.count("query"))
-        config().setString("query", options["query"].as<std::string>());
+        queries = options["query"].as<std::vector<std::string>>();
     if (options.count("query_id"))
         config().setString("query_id", options["query_id"].as<std::string>());
     if (options.count("database"))
