@@ -969,6 +969,15 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     return select_query;
 }
 
+bool ExpressionAnalyzer::isRemoteStorage() const
+{
+    const Settings & csettings = getContext()->getSettingsRef();
+    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
+    const bool enable_parallel_processing_of_joins
+        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
+    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
+}
+
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
