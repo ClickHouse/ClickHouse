@@ -2332,8 +2332,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
     {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
     {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
-    {"IS NULL",       Operator("isNull",          6, 1, OperatorType::IsNull)},
-    {"IS NOT NULL",   Operator("isNotNull",       6, 1, OperatorType::IsNull)},
+    {"IS NULL",       Operator("isNull",          6,  1, OperatorType::IsNull)},
+    {"IS NOT NULL",   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {"BETWEEN",       Operator("",                7,  0, OperatorType::StartBetween)},
     {"NOT BETWEEN",   Operator("",                7,  0, OperatorType::StartNotBetween)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
@@ -2353,7 +2353,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"NOT IN",        Operator("notIn",           9,  2)},
     {"GLOBAL IN",     Operator("globalIn",        9,  2)},
     {"GLOBAL NOT IN", Operator("globalNotIn",     9,  2)},
-    {"||",            Operator("concat",          10,  2, OperatorType::Mergeable)},
+    {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"*",             Operator("multiply",        12, 2)},
@@ -2372,7 +2372,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::u
     {"-",             Operator("negate",          13, 1)}
 };
 
-const Operator ParserExpressionImpl::finish_between_operator("", 7, 0, OperatorType::FinishBetween);
+const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
 
 const std::array<std::string_view, 1> ParserExpressionImpl::overlapping_operators_to_skip
 {
@@ -2392,6 +2392,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         {
             if (!layers.back()->parse(pos, expected, next))
                 break;
+
             if (layers.back()->isFinished())
             {
                 if (layers.size() == 1)
