@@ -467,7 +467,7 @@ def main():
     if [r for r in test_results if r.status != "OK"]:
         status = "failure"
 
-    # url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
+    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     # print(f"::notice ::Report url: {url}")
 
