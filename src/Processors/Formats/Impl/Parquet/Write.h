@@ -42,6 +42,7 @@ struct ColumnChunkWriteState
 
     ColumnPtr primitive_column;
     CompressionMethod compression; // must match what's inside column_chunk
+    bool is_bool = false;
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.
