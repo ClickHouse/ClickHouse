@@ -201,7 +201,7 @@ protected:
 
     const ASTSelectQuery * getSelectQuery() const;
 
-    bool isRemoteStorage() const { return syntax->is_remote_storage; }
+    bool isRemoteStorage() const;
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);

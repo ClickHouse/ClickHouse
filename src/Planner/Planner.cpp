@@ -2,6 +2,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -72,6 +73,12 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event SelectQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -1155,6 +1162,9 @@ void Planner::buildPlanForUnionNode()
 
 void Planner::buildPlanForQueryNode()
 {
+    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1192,13 +1202,14 @@ void Planner::buildPlanForQueryNode()
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (planner_context->getTableExpressionNodeToData().size() > 1
-        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    /// Check support for JOIN for parallel replicas with custom key
+    if (planner_context->getTableExpressionNodeToData().size() > 1)
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
         {
-                    LOG_WARNING(
-            &Poco::Logger::get("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            LOG_WARNING(
+                &Poco::Logger::get("Planner"),
+                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));

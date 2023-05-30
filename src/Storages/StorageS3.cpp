@@ -356,7 +356,7 @@ private:
                 request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
             return outcome;
-        }, 0);
+        }, Priority{});
     }
 
     std::mutex mutex;
@@ -619,7 +619,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
 {
-    return create_reader_scheduler([this] { return createReader(); }, 0);
+    return create_reader_scheduler([this] { return createReader(); }, Priority{});
 }
 
 StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
@@ -1263,6 +1263,11 @@ void StorageS3::Configuration::connect(ContextPtr context)
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
 
+    client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
+
+    client_configuration.retryStrategy
+        = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
+
     auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
     client = S3::ClientFactory::instance().create(
         client_configuration,
@@ -1273,11 +1278,11 @@ void StorageS3::Configuration::connect(ContextPtr context)
         auth_settings.server_side_encryption_kms_config,
         std::move(headers),
         S3::CredentialsConfiguration{
-        auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),
-        auth_settings.use_insecure_imds_request.value_or(context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
-        auth_settings.expiration_window_seconds.value_or(
-            context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
-        auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
+            auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),
+            auth_settings.use_insecure_imds_request.value_or(context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+            auth_settings.expiration_window_seconds.value_or(
+                context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+                auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         });
 }
 
