@@ -26,8 +26,8 @@ def test_wrong_database_name(start):
     )
 
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Database tes doesn't exist. Maybe you wanted to type test?.",
+        QueryRuntimeException,
+        match="DB::Exception: Database tes doesn't exist. Maybe you wanted to type test?.",
     ):
         node.query("SELECT * FROM tes.table_test LIMIT 1;")
     assert int(node.query("SELECT count() FROM test.table_test;")) == 1
@@ -47,8 +47,8 @@ def test_drop_wrong_database_name(start):
     )
 
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Database tes doesn't exist. Maybe you wanted to type test?.",
+        QueryRuntimeException,
+        match="DB::Exception: Database tes doesn't exist. Maybe you wanted to type test?.",
     ):
         node.query("DROP DATABASE tes;")
     assert int(node.query("SELECT count() FROM test.table_test;")) == 1
@@ -65,8 +65,8 @@ def test_wrong_table_name(started_cluster):
         """
     )
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Table test.table_test1 doesn't exist. Maybe you wanted to type table_test?.",
+        QueryRuntimeException,
+        match="DB::Exception: Table test.table_test1 doesn't exist. Maybe you wanted to type table_test?.",
     ):
         node.query(
             """
@@ -92,8 +92,8 @@ def test_drop_wrong_table_name(start):
     )
 
     with pytest.raises(
-            QueryRuntimeException,
-            match="DB::Exception: Table test.table_tes doesn't exist. Maybe you wanted to type table_test?.",
+        QueryRuntimeException,
+        match="DB::Exception: Table test.table_tes doesn't exist. Maybe you wanted to type table_test?.",
     ):
         node.query("DROP TABLE test.table_tes;")
     assert int(node.query("SELECT count() FROM test.table_test;")) == 1
