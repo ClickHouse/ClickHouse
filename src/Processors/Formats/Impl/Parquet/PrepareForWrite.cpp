@@ -295,7 +295,17 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8:  types(T::INT32, C::UINT_8 , int_type(8 , false)); break;
+        case TypeIndex::UInt8:
+            if (isBool(type))
+            {
+                types(T::BOOLEAN);
+                state.is_bool = true;
+            }
+            else
+            {
+                types(T::INT32, C::UINT_8 , int_type(8 , false));
+            }
+            break;
         case TypeIndex::UInt16: types(T::INT32, C::UINT_16, int_type(16, false)); break;
         case TypeIndex::UInt32: types(T::INT32, C::UINT_32, int_type(32, false)); break;
         case TypeIndex::UInt64: types(T::INT64, C::UINT_64, int_type(64, false)); break;
@@ -588,7 +598,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
     root.__set_name("schema");
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
-    for (auto & c : sample)
+    for (const auto & c : sample)
         prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema);
 
     return schema;
@@ -598,7 +608,7 @@ void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema)
 {
-    if (column->size() == 0 && out_columns_to_write != nullptr)
+    if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
 
     ColumnChunkWriteStates states;

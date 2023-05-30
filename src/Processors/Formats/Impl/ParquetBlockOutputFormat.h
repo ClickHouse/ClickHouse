@@ -138,6 +138,7 @@ private:
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
     std::vector<parquet::format::RowGroup> row_groups_complete;
+    size_t base_offset = 0;
 
 
     std::mutex mutex;

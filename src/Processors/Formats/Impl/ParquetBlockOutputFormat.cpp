@@ -68,9 +68,8 @@ namespace
         if (method == FormatSettings::ParquetCompression::GZIP)
             return parquet::Compression::type::GZIP;
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported parquet compression method");
     }
-
 }
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
@@ -162,7 +161,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     if (staging_rows >= target_rows * 2)
     {
         /// Increase row group size slightly (by < 2x) to avoid a small row group at the end.
-        size_t num_row_groups = std::max(static_cast<UInt64>(1), staging_rows / target_rows);
+        size_t num_row_groups = std::max(static_cast<size_t>(1), staging_rows / target_rows);
         size_t row_group_size = (staging_rows - 1) / num_row_groups + 1; // round up
 
         Chunk concatenated = std::move(staging_chunks[0]);
@@ -222,7 +221,10 @@ void ParquetBlockOutputFormat::finalizeImpl()
         }
 
         if (row_groups_complete.empty())
+        {
+            base_offset = out.count();
             writeFileHeader(out);
+        }
         writeFileFooter(std::move(row_groups_complete), schema, options, out);
     }
     else
@@ -349,12 +351,15 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
             options, &columns_to_write);
 
     if (row_groups_complete.empty())
+    {
+        base_offset = out.count();
         writeFileHeader(out);
+    }
 
     std::vector<parquet::format::ColumnChunk> column_chunks;
     for (auto & s : columns_to_write)
     {
-        size_t offset = out.count();
+        size_t offset = out.count() - base_offset;
         writeColumnChunkBody(s, options, out);
         auto c = finalizeColumnChunkAndWriteFooter(offset, std::move(s), options, out);
         column_chunks.push_back(std::move(c));
@@ -413,14 +418,17 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
         lock.unlock();
 
         if (row_groups_complete.empty())
+        {
+            base_offset = out.count();
             writeFileHeader(out);
+        }
 
         std::vector<parquet::format::ColumnChunk> metadata;
         for (auto & cols : r.column_chunks)
         {
             for (ColumnChunk & col : cols)
             {
-                size_t offset = out.count();
+                size_t offset = out.count() - base_offset;
 
                 out.write(col.serialized.data(), col.serialized.size());
                 auto m = finalizeColumnChunkAndWriteFooter(offset, std::move(col.state), options, out);

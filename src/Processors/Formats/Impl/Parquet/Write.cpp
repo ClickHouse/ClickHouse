@@ -15,6 +15,10 @@
 #include <IO/WriteHelpers.h>
 #include "config_version.h"
 
+#if USE_SNAPPY
+#include <snappy.h>
+#endif
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
@@ -68,7 +72,7 @@ struct StatisticsNumeric
     }
 };
 
-struct StatisticsFixedString
+struct StatisticsFixedStringRef
 {
     size_t fixed_string_size = UINT64_MAX;
     const uint8_t * min = nullptr;
@@ -81,7 +85,7 @@ struct StatisticsFixedString
         addMax(a.ptr);
     }
 
-    void merge(const StatisticsFixedString & s)
+    void merge(const StatisticsFixedStringRef & s)
     {
         chassert(fixed_string_size == UINT64_MAX || fixed_string_size == s.fixed_string_size);
         fixed_string_size = s.fixed_string_size;
@@ -93,7 +97,7 @@ struct StatisticsFixedString
 
     void clear() { min = max = nullptr; }
 
-    parq::Statistics get(const WriteOptions & options)
+    parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min == nullptr || fixed_string_size > options.max_statistics_size)
@@ -115,7 +119,54 @@ struct StatisticsFixedString
     }
 };
 
-struct StatisticsString
+template<size_t S>
+struct StatisticsFixedStringCopy
+{
+    bool empty = true;
+    std::array<uint8_t, S> min {};
+    std::array<uint8_t, S> max {};
+
+    void add(parquet::FixedLenByteArray a)
+    {
+        addMin(a.ptr);
+        addMax(a.ptr);
+        empty = false;
+    }
+
+    void merge(const StatisticsFixedStringCopy<S> & s)
+    {
+        if (s.empty)
+            return;
+        addMin(&s.min[0]);
+        addMax(&s.max[0]);
+        empty = false;
+    }
+
+    void clear() { empty = true; }
+
+    parq::Statistics get(const WriteOptions &) const
+    {
+        parq::Statistics s;
+        if (empty)
+            return s;
+        s.__set_min_value(std::string(reinterpret_cast<const char *>(min.data()), S));
+        s.__set_max_value(std::string(reinterpret_cast<const char *>(max.data()), S));
+        return s;
+    }
+
+    void addMin(const uint8_t * p)
+    {
+        if (empty || memcmp(p, min.data(), S) < 0)
+            memcpy(min.data(), p, S);
+    }
+    void addMax(const uint8_t * p)
+    {
+        if (empty || memcmp(p, max.data(), S) > 0)
+            memcpy(max.data(), p, S);
+    }
+};
+
+struct StatisticsStringRef
 {
     parquet::ByteArray min;
     parquet::ByteArray max;
@@ -126,7 +177,7 @@ struct StatisticsString
         addMax(x);
     }
 
-    void merge(const StatisticsString & s)
+    void merge(const StatisticsStringRef & s)
     {
         if (s.min.ptr == nullptr)
             return;
@@ -136,7 +187,7 @@ struct StatisticsString
 
     void clear() { *this = {}; }
 
-    parq::Statistics get(const WriteOptions & options)
+    parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min.ptr == nullptr)
@@ -197,7 +248,7 @@ struct ConverterNumeric
         {
             buf.resize(count);
             for (size_t i = 0; i < count; ++i)
-                buf[i] = static_cast<To>(column.getData()[offset + i]);
+                buf[i] = static_cast<To>(column.getData()[offset + i]); // NOLINT
             return buf.data();
         }
     }
@@ -205,7 +256,7 @@ struct ConverterNumeric
 
 struct ConverterString
 {
-    using Statistics = StatisticsString;
+    using Statistics = StatisticsStringRef;
 
     const ColumnString & column;
     PODArray<parquet::ByteArray> buf;
@@ -226,7 +277,7 @@ struct ConverterString
 
 struct ConverterFixedString
 {
-    using Statistics = StatisticsFixedString;
+    using Statistics = StatisticsFixedStringRef;
 
     const ColumnFixedString & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -246,7 +297,7 @@ struct ConverterFixedString
 
 struct ConverterFixedStringAsString
 {
-    using Statistics = StatisticsString;
+    using Statistics = StatisticsStringRef;
 
     const ColumnFixedString & column;
     PODArray<parquet::ByteArray> buf;
@@ -267,7 +318,7 @@ struct ConverterNumberAsFixedString
 {
     /// Calculate min/max statistics for little-endian fixed strings, not numbers, because parquet
     /// doesn't know it's numbers.
-    using Statistics = StatisticsFixedString;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
 
     const ColumnVector<T> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -290,7 +341,7 @@ struct ConverterNumberAsFixedString
 template <typename T>
 struct ConverterDecimal
 {
-    using Statistics = StatisticsFixedString;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
 
     const ColumnDecimal<T> & column;
     PODArray<uint8_t> data_buf;
@@ -347,6 +398,24 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             scratch.resize(static_cast<size_t>(compressed_size));
             return scratch;
         }
+
+#if USE_SNAPPY
+        case CompressionMethod::Snappy:
+        {
+            size_t max_dest_size = snappy::MaxCompressedLength(source.size());
+
+            if (max_dest_size > std::numeric_limits<int>::max())
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
+
+            scratch.resize(max_dest_size);
+
+            size_t compressed_size;
+            snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
+
+            scratch.resize(static_cast<size_t>(compressed_size));
+            return scratch;
+        }
+#endif
 
         default:
         {
@@ -421,7 +490,7 @@ void writeColumnImpl(
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;
 
-    bool use_dictionary = options.use_dictionary_encoding;
+    bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
     if constexpr (std::is_same<ParquetDType, parquet::FLBAType>::value)
@@ -431,7 +500,8 @@ void writeColumnImpl(
             "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
             parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
 
-        page_statistics.fixed_string_size = converter.fixedStringSize();
+        if constexpr (std::is_same<typename Converter::Statistics, StatisticsFixedStringRef>::value)
+            page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
@@ -605,8 +675,16 @@ void writeColumnImpl(
                 data_offset = 0;
                 dict_encoded_pages.clear();
                 use_dictionary = false;
+
+#ifndef NDEBUG
+                /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
+                /// call it even though we don't need its output.
+                encoder->FlushValues();
+#endif
+
                 encoder = parquet::MakeTypedEncoder<ParquetDType>(
-                    static_cast<parquet::Encoding::type>(encoding));
+                    static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
+                    fixed_string_descr ? &*fixed_string_descr : nullptr);
                 break;
             }
 
@@ -668,7 +746,13 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 ConverterNumeric<ColumnVector<source_type>, parquet::parquet_dtype::c_type>( \
                     s.primitive_column))
 
-        case TypeIndex::UInt8  : N(UInt8 , Int32Type); break;
+        case TypeIndex::UInt8:
+            if (s.is_bool)
+                writeColumnImpl<parquet::BooleanType>(s, options, out,
+                    ConverterNumeric<ColumnVector<UInt8>, bool, bool>(s.primitive_column));
+            else
+                N(UInt8 , Int32Type);
+         break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt32 : N(UInt32, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
@@ -769,14 +853,14 @@ parq::ColumnChunk finalizeColumnChunkAndWriteFooter(
 
     serializeThriftStruct(s.column_chunk, out);
 
-    return std::move(s.column_chunk);
+    return s.column_chunk;
 }
 
 parq::RowGroup makeRowGroup(std::vector<parq::ColumnChunk> column_chunks, size_t num_rows)
 {
     parq::RowGroup r;
     r.__set_num_rows(num_rows);
-    r.__set_columns(std::move(column_chunks));
+    r.__set_columns(column_chunks);
     r.__set_total_compressed_size(0);
     for (auto & c : r.columns)
     {
