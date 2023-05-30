@@ -228,7 +228,9 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
        {"string", KQLFunctionValue::datatype_string},
        {"timespan", KQLFunctionValue::datatype_timespan},
        {"time", KQLFunctionValue::datatype_timespan},
-       {"decimal", KQLFunctionValue::datatype_decimal}};
+       {"decimal", KQLFunctionValue::datatype_decimal},
+       {"round", KQLFunctionValue::round}
+       };
 
 
 std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function)
@@ -808,6 +810,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
 
         case KQLFunctionValue::datatype_decimal:
             return std::make_unique<DatatypeDecimal>();
+
+        case KQLFunctionValue::round:
+            return std::make_unique<Round>();
     }
 }
 

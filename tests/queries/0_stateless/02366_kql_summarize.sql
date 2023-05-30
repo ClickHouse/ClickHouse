@@ -80,7 +80,7 @@ print '-- binary_all_xor --';
 Customers | project Age | where Age > 40 | summarize binary_all_xor(Age);
 
 Customers | project Age | summarize percentile(Age, 95);
-Customers | project Age | summarize percentiles(Age, 5, 50, 95);
+Customers | project Age | summarize percentiles(Age, 5, 50, 95)|project round(percentiles_Age[0],2),round(percentiles_Age[1],2),round(percentiles_Age[2],2);
 Customers | project Age | summarize percentiles(Age, 5, 50, 95)[1];
 Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew(AgeBucket, w, 75);
 Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9);
