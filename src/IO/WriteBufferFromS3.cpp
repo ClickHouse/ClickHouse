@@ -182,17 +182,6 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
-    if (std::uncaught_exceptions())
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Detected buffer finalization when an exception is unwinding the stack."
-            " Do not call finalize buffer in destructors or when exception thrown."
-            " Details {}",
-            getLogDetails());
-    }
-
     chassert(offset() == 0);
     chassert(hidden_size == 0);
 
