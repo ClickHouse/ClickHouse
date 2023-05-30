@@ -1187,6 +1187,36 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
 
 Default value: false.
 
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool size for PostgreSQL table engine and database engine.
+
+Default value: 16
+
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
+
+Default value: 5000
+
+## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
+
+Close connection before returning connection to the pool.
+
+Default value: true.
+
+## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
+
+Connection pool size for each connection settings string in ODBC bridge.
+
+Default value: 16
+
+## odbc_bridge_use_connection_pooling {#odbc-bridge-use-connection-pooling}
+
+Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
+
+Default value: true
+
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
@@ -3563,7 +3593,7 @@ SETTINGS index_granularity = 8192 │
 
 ## external_table_functions_use_nulls {#external-table-functions-use-nulls}
 
-Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
 
 Possible values:
 
@@ -4220,3 +4250,12 @@ Possible values:
 - false — Disallow.
 
 Default value: `false`.
+
+## zstd_window_log_max
+
+Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
+
+Type: Int64
+
+Default: 0
+

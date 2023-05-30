@@ -3,6 +3,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 
 

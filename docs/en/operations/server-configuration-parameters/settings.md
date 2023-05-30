@@ -1334,6 +1334,194 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 <max_open_files>262144</max_open_files>
 ```
 
+## max_table_size_to_drop {#max-table-size-to-drop}
+
+Restriction on deleting tables.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
+
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+
+Default value: 50 GB.
+
+The value 0 means that you can delete all tables without any restrictions.
+
+**Example**
+
+``` xml
+<max_table_size_to_drop>0</max_table_size_to_drop>
+```
+
+## max_partition_size_to_drop {#max-partition-size-to-drop}
+
+Restriction on dropping partitions.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+
+Default value: 50 GB.
+
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+:::
+
+**Example**
+
+``` xml
+<max_partition_size_to_drop>0</max_partition_size_to_drop>
+```
+
+## max_thread_pool_size {#max-thread-pool-size}
+
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10000`.
+
+**Example**
+
+``` xml
+<max_thread_pool_size>12000</max_thread_pool_size>
+```
+
+## max_thread_pool_free_size {#max-thread-pool-free-size}
+
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `1000`.
+
+**Example**
+
+``` xml
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+```
+
+## thread_pool_queue_size {#thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `10000`.
+
+**Example**
+
+``` xml
+<thread_pool_queue_size>12000</thread_pool_queue_size>
+```
+
+## max_io_thread_pool_size {#max-io-thread-pool-size}
+
+ClickHouse uses threads from the IO Thread pool to do some IO operations (e.g. to interact with S3). `max_io_thread_pool_size` limits the maximum number of threads in the pool.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `100`.
+
+## max_io_thread_pool_free_size {#max-io-thread-pool-free-size}
+
+If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `0`.
+
+## io_thread_pool_queue_size {#io-thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the IO Thread pool.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `10000`.
+
+## max_backups_io_thread_pool_size {#max-backups-io-thread-pool-size}
+
+ClickHouse uses threads from the Backups IO Thread pool to do S3 backup IO operations. `max_backups_io_thread_pool_size` limits the maximum number of threads in the pool.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `1000`.
+
+## max_backups_io_thread_pool_free_size {#max-backups-io-thread-pool-free-size}
+
+If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+Possible values:
+
+- Positive integer.
+- Zero.
+
+Default value: `0`.
+
+## backups_io_thread_pool_queue_size {#backups-io-thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the Backups IO Thread pool. It is recommended to keep this queue unlimited due to the current S3 backup logic.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `0`.
+
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as [number_of_free_entries_in_pool_to_lower_max_size_of_merge](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-lower-max-size-of-merge) and [number_of_free_entries_in_pool_to_execute_mutation](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-execute-mutation).
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 16.
+
+**Example**
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example, if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 2.
+
+**Example**
+
+```xml
+<background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
+```
+
 ## merges_mutations_memory_usage_soft_limit {#merges_mutations_memory_usage_soft_limit}
 
 Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.

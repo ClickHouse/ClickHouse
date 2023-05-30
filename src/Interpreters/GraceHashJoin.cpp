@@ -571,7 +571,13 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    hash_join = makeInMemoryJoin();
+    size_t prev_keys_num = 0;
+    // If there is only one bucket, don't take this check.
+    if (hash_join && buckets.size() > 1)
+    {
+        // Use previous hash_join's keys number to estimate next hash_join's size is reasonable.
+        prev_keys_num = hash_join->getTotalRowCount();
+    }
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -585,6 +591,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
+        hash_join = makeInMemoryJoin(prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -604,9 +611,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(size_t reserve_num)
 {
-    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
+    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row, reserve_num);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -646,6 +653,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
             if (!current_block.rows())
                 return;
         }
+        auto prev_keys_num = hash_join->getTotalRowCount();
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
@@ -654,7 +662,6 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         current_block = {};
 
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-        hash_join = nullptr;
 
         buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
@@ -674,7 +681,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin();
+        hash_join = makeInMemoryJoin(prev_keys_num);
 
         if (current_block.rows() > 0)
             hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
