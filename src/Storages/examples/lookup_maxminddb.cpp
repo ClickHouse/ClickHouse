@@ -15,10 +15,6 @@ using namespace DB;
 
 int main()
 {
-    IPv4 ip(2563684740);
-    Field fip(ip);
-    std::cout << toString(fip) << std::endl;
-
     const char * ip_address = "152.206.185.132";
     const char * db_file = "1.mmdb";
 

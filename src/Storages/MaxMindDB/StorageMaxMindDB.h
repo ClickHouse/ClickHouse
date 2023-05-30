@@ -8,6 +8,7 @@
 #    include <Core/ColumnsWithTypeAndName.h>
 #    include <Interpreters/IKeyValueEntity.h>
 #    include <Storages/IStorage.h>
+#    include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -25,6 +26,8 @@ public:
         ContextPtr context_,
         const String & primary_key_,
         String mmdb_file_path_);
+
+    ~StorageMaxMindDB() override;
 
     std::string getName() const override { return "MaxMindDB"; }
 
@@ -62,9 +65,14 @@ private:
     void checkColumns(const ColumnsDescription & columns) const;
     void initDB();
     bool lookupDB(const std::string & key, std::string & value) const;
+    void finalizeDB();
 
+    std::unique_ptr<MMDB_s> mmdb_ptr;
     const String primary_key;
     const String mmdb_file_path;
+
+    const FormatSettings format_settings;
+    JSONBuilder::FormatSettings json_format_settings;
 };
 }
 
