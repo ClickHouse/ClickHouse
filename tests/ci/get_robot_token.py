@@ -47,6 +47,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         assert secrets
 
         parameters = [secret for secret in secrets if secret.startswith(token_prefix_env_name)]
+        print(parameters)
     # else:
     #     client = boto3.client("ssm", region_name="us-east-1")
     #     parameters = client.describe_parameters(
@@ -56,26 +57,26 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     #     )["Parameters"]
     #     assert parameters
 
-    for token_name in [p["Name"] for p in parameters]:
-        # value = get_parameter_from_ssm(token_name, True, client)
-        value = client.secrets.kv.v2.read_secret_version(path=f"{path}/{token_name}")["data"]["data"]["value"]        
-        gh = Github(value, per_page=100)
-        # Do not spend additional request to API by accessin user.login unless
-        # the token is chosen by the remaining requests number
-        user = gh.get_user()
-        rest, _ = gh.rate_limiting
-        logging.info("Get token with %s remaining requests", rest)
-        if ROBOT_TOKEN is None:
-            ROBOT_TOKEN = Token(user, value, rest)
-            continue
-        if ROBOT_TOKEN.rest < rest:
-            ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
+    # for token_name in [p["Name"] for p in parameters]:
+    #     # value = get_parameter_from_ssm(token_name, True, client)
+    #     value = client.secrets.kv.v2.read_secret_version(path=f"{path}/{token_name}")["data"]["data"]["value"]        
+    #     gh = Github(value, per_page=100)
+    #     # Do not spend additional request to API by accessin user.login unless
+    #     # the token is chosen by the remaining requests number
+    #     user = gh.get_user()
+    #     rest, _ = gh.rate_limiting
+    #     logging.info("Get token with %s remaining requests", rest)
+    #     if ROBOT_TOKEN is None:
+    #         ROBOT_TOKEN = Token(user, value, rest)
+    #         continue
+    #     if ROBOT_TOKEN.rest < rest:
+    #         ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
 
-    assert ROBOT_TOKEN
-    logging.info(
-        "User %s with %s remaining requests is used",
-        ROBOT_TOKEN.user.login,
-        ROBOT_TOKEN.rest,
-    )
+    # assert ROBOT_TOKEN
+    # logging.info(
+    #     "User %s with %s remaining requests is used",
+    #     ROBOT_TOKEN.user.login,
+    #     ROBOT_TOKEN.rest,
+    # )
 
-    return ROBOT_TOKEN.value
+    # return ROBOT_TOKEN.value
