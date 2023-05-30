@@ -487,8 +487,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(settings, std::move(replica_addresses), false, current_shard_num,
-                     std::move(insert_paths), /* treat_local_as_remote */ weight, internal_replication);
+            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
+                     std::move(insert_paths), weight, internal_replication);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);

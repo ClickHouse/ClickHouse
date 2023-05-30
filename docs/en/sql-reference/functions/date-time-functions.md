@@ -357,14 +357,14 @@ Alias: `SECOND`.
 
 ## toUnixTimestamp
 
-For DateTime arguments: converts the value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+Converts a string, a date or a date with time to the [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time) in `UInt32` representation.
 
-For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+If the function is called with a string, it accepts an optional timezone argument.
 
 **Syntax**
 
 ``` sql
-toUnixTimestamp(datetime)
+toUnixTimestamp(date)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -377,15 +377,29 @@ Type: `UInt32`.
 **Example**
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+SELECT
+    '2017-11-05 08:07:47' AS dt_str,
+    toUnixTimestamp(dt_str) AS from_str,
+    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
+    toUnixTimestamp(toDate(dt_str)) AS from_date,
+    toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
 ```
 
 Result:
 
 ``` text
-┌─unix_timestamp─┐
-│     1509836867 │
-└────────────────┘
+Row 1:
+──────
+dt_str:          2017-11-05 08:07:47
+from_str:        1509869267
+from_str_tokyo:  1509836867
+from_datetime:   1509869267
+from_datetime64: 1509869267
+from_date:       1509840000
+from_date32:     1509840000
 ```
 
 :::note
@@ -1218,12 +1232,16 @@ Rounds the time to the half hour.
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-### example
-```sql
+**Example**
+
+``` sql
 SELECT
     toYYYYMM(now(), 'US/Eastern')
 ```
-```response
+
+Result:
+
+``` text
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
 │                        202303 │
 └───────────────────────────────┘
@@ -1233,11 +1251,15 @@ SELECT
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-### example
+**Example**
+
 ```sql
 SELECT
     toYYYYMMDD(now(), 'US/Eastern')
 ```
+
+Result:
+
 ```response
 ┌─toYYYYMMDD(now(), 'US/Eastern')─┐
 │                        20230302 │
@@ -1248,11 +1270,15 @@ SELECT
 
 Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-### example
+**Example**
+
 ```sql
 SELECT
     toYYYYMMDDhhmmss(now(), 'US/Eastern')
 ```
+
+Result:
+
 ```response
 ┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
 │                        20230302112209 │
