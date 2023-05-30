@@ -1,4 +1,5 @@
 #include "ZooKeeper.h"
+#include "Coordination/KeeperConstants.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
@@ -351,6 +352,32 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 void ZooKeeper::createAncestors(const std::string & path)
 {
     size_t pos = 1;
+
+    if (getApiVersion() >= DB::KeeperApiVersion::WITH_CREATE_IF_NOT_EXISTS)
+    {
+        Coordination::Requests create_ops;
+
+        while (true)
+        {
+            pos = path.find('/', pos);
+            if (pos == std::string::npos)
+                break;
+
+            auto request = makeCreateRequest(path.substr(0, pos), "", CreateMode::Persistent, true);
+            create_ops.emplace_back(request);
+
+            ++pos;
+        }
+
+        Coordination::Responses responses;
+        Coordination::Error code = multiImpl(create_ops, responses);
+
+        if (code == Coordination::Error::ZOK)
+            return;
+
+        throw KeeperException(code, path);
+    }
+
     while (true)
     {
         pos = path.find('/', pos);
@@ -1261,13 +1288,14 @@ void KeeperMultiException::check(
 }
 
 
-Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode)
+Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists)
 {
     auto request = std::make_shared<Coordination::CreateRequest>();
     request->path = path;
     request->data = data;
     request->is_ephemeral = create_mode == CreateMode::Ephemeral || create_mode == CreateMode::EphemeralSequential;
     request->is_sequential = create_mode == CreateMode::PersistentSequential || create_mode == CreateMode::EphemeralSequential;
+    request->not_exists = ignore_if_exists;
     return request;
 }
 
