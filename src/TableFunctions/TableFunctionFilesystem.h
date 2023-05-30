@@ -31,25 +31,29 @@ protected:
 private:
     const char * getStorageTypeName() const override { return "Directory"; }
 
-    ColumnsDescription structure {
-        {{"type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-         {"symlink", DataTypeFactory::instance().get("Bool")},
-         {"path", std::make_shared<DataTypeString>()},
-         {"size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
-         {"last_write_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
-         {"name", std::make_shared<DataTypeString>()},
-         {"owner_read", DataTypeFactory::instance().get("Bool")},
-         {"owner_write", DataTypeFactory::instance().get("Bool")},
-         {"owner_exec", DataTypeFactory::instance().get("Bool")},
-         {"group_read", DataTypeFactory::instance().get("Bool")},
-         {"group_write", DataTypeFactory::instance().get("Bool")},
-         {"group_exec", DataTypeFactory::instance().get("Bool")},
-         {"others_read", DataTypeFactory::instance().get("Bool")},
-         {"others_write", DataTypeFactory::instance().get("Bool")},
-         {"others_exec", DataTypeFactory::instance().get("Bool")},
-         {"set_gid", DataTypeFactory::instance().get("Bool")},
-         {"set_uid", DataTypeFactory::instance().get("Bool")},
-         {"sticky_bit", DataTypeFactory::instance().get("Bool")}}};
+    ColumnsDescription structure
+    {
+        {
+            {"type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+            {"symlink", DataTypeFactory::instance().get("Bool")},
+            {"path", std::make_shared<DataTypeString>()},
+            {"size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
+            {"modification_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+            {"name", std::make_shared<DataTypeString>()},
+            {"owner_read", DataTypeFactory::instance().get("Bool")},
+            {"owner_write", DataTypeFactory::instance().get("Bool")},
+            {"owner_exec", DataTypeFactory::instance().get("Bool")},
+            {"group_read", DataTypeFactory::instance().get("Bool")},
+            {"group_write", DataTypeFactory::instance().get("Bool")},
+            {"group_exec", DataTypeFactory::instance().get("Bool")},
+            {"others_read", DataTypeFactory::instance().get("Bool")},
+            {"others_write", DataTypeFactory::instance().get("Bool")},
+            {"others_exec", DataTypeFactory::instance().get("Bool")},
+            {"set_gid", DataTypeFactory::instance().get("Bool")},
+            {"set_uid", DataTypeFactory::instance().get("Bool")},
+            {"sticky_bit", DataTypeFactory::instance().get("Bool")}
+        }
+    };
 
     StoragePtr executeImpl(
         const ASTPtr & /* ast_function */,

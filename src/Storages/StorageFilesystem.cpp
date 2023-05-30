@@ -17,65 +17,10 @@ namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-String fileTypeToString(fs::file_type type)
-{
-    switch (type)
-    {
-        case fs::file_type::none:
-            return "none";
-        case fs::file_type::not_found:
-            return "not found";
-        case fs::file_type::regular:
-            return "regular file";
-        case fs::file_type::directory:
-            return "directory";
-        case fs::file_type::symlink:
-            return "symlink";
-        case fs::file_type::block:
-            return "block";
-        case fs::file_type::character:
-            return "character";
-        case fs::file_type::fifo:
-            return "fifo";
-        case fs::file_type::socket:
-            return "socket";
-        case fs::file_type::unknown:
-            return "unknown";
-    }
-}
-
-String permissionsToString(fs::perms perms)
-{
-    using permissions = fs::perms;
-    String result = "rwxrwxrwx";
-    for (uint32_t i = 0; i < 9; ++i)
-    {
-        if (!(static_cast<uint32_t>(perms) & (1 << i)))
-        {
-            result[8 - i] = '-';
-        }
-    }
-
-    if ((perms & permissions::set_uid) != permissions::none)
-    {
-        result[2] = 's';
-    }
-
-    if ((perms & permissions::set_gid) != permissions::none)
-    {
-        result[5] = 's';
-    }
-
-    if ((perms & permissions::sticky_bit) != permissions::none)
-    {
-        result[8] = 't';
-    }
-
-    return result;
-}
 
 class StorageFilesystemSource final : public ISource
 {
@@ -110,11 +55,16 @@ public:
             columns_map[name] = type->createColumn();
         }
 
-
         fs::directory_entry file;
-        while (current_block_size++ < max_block_size && path_info->queue.tryPop(file))
+        while (current_block_size < max_block_size)
         {
-            LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processing path {} remaining queue size {} ",
+            if(!path_info->queue.tryPop(file))
+            {
+                LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "No data read from queue, stop processing");
+                break;
+            }
+            current_block_size++;
+            LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processing path {} remaining queue size {}",
                 file.path().string(), path_info->queue.size());
 
             std::error_code ec;
@@ -133,7 +83,7 @@ public:
                         LOG_DEBUG(&Poco::Logger::get("StorageFilesystem"), "Path {} is not inside user_files {}",
                             file_path.string(),path_info->user_files_absolute_path_string);
                     }
-                    if(!path_info->queue.push(child))
+                    if (!path_info->queue.push(child))
                         LOG_WARNING(&Poco::Logger::get("StorageFilesystem"), "Too many files to process, skipping some from {}",
                             file.path().string());
                 }
@@ -147,7 +97,7 @@ public:
 
             if (columns_map.contains("type"))
             {
-                columns_map["type"]->insert(fileTypeToString(file.status().type()));
+                columns_map["type"]->insert(toString(file.status().type()));
             }
 
             if (columns_map.contains("symlink"))
@@ -174,7 +124,7 @@ public:
                 }
             }
 
-            if (columns_map.contains("last_write_time"))
+            if (columns_map.contains("modification_time"))
             {
                 auto file_time = fs::last_write_time(file.path().string(), ec);
                 auto sys_clock_file_time = std::chrono::file_clock::to_sys(file_time);
@@ -183,11 +133,11 @@ public:
 
                 if (ec.value() == 0)
                 {
-                    columns_map["last_write_time"]->insert(file_time_since_epoch);
+                    columns_map["modification_time"]->insert(file_time_since_epoch);
                 }
                 else
                 {
-                    columns_map["last_write_time"]->insertDefault();
+                    columns_map["modification_time"]->insertDefault();
                     ec.clear();
                 }
             }
@@ -205,7 +155,7 @@ public:
                 columns_map["name"]->insert(file.path().filename().string());
             }
             LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processed path {} columns_map. {} ", file.path().string(),
-                columns_map.empty() ? -1 : columns_map.begin()->second->size() );
+                columns_map.empty() ? -1 : columns_map.begin()->second->size());
         }
 
         auto num_rows = columns_map.begin() != columns_map.end() ? columns_map.begin()->second->size() : 0;
@@ -292,7 +242,7 @@ Pipe StorageFilesystem::read(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
 
     Pipes pipes;
-    for (unsigned i = 0; i < num_streams; ++i)
+    for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageFilesystemSource>(storage_snapshot, max_block_size, path_info, column_names));
     }
