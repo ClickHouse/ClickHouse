@@ -366,7 +366,7 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.") \
-    \
+    M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
