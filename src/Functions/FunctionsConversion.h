@@ -2882,6 +2882,13 @@ private:
                     return true;
                 }
 
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDateOrDateTime<RightDataType>)
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        arguments, result_type, input_rows_count);
+                    return true;
+                }
+
                 return false;
             });
 
