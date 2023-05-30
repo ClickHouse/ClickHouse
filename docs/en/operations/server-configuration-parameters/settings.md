@@ -353,11 +353,16 @@ Default: 0
 
 ## max_partition_size_to_drop
 
-Same as max_table_size_to_drop, but for the partitions.
+Restriction on dropping partitions.
 
-Type: UInt64
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+Default value: 50 GB.
+The value 0 means that you can drop partitions without any restrictions.
 
-Default: 50000000000
+:::note
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+:::
 
 ## max_remote_read_network_bandwidth_for_server
 
@@ -397,13 +402,18 @@ Default: 0.9
 
 ## max_table_size_to_drop
 
-If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query. The value 0 means that you can delete tables of any size.
+Restriction on deleting tables.
 
-If you need to delete a table without restarting the ClickHouse server, create a file named `<clickhouse-path>/flags/force_drop_table` and run the DROP query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-Type: UInt64
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
-Default: 50000000000
+Default value: 50 GB.
+The value 0 means that you can delete all tables without any restrictions.
+**Example**
+``` xml
+<max_table_size_to_drop>0</max_table_size_to_drop>
+```
 
 ## max_temporary_data_on_disk_size
 
@@ -1484,7 +1494,8 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
@@ -1561,7 +1572,8 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
@@ -1618,7 +1630,8 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
@@ -1647,7 +1660,8 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
@@ -1675,7 +1689,8 @@ Parameters:
 - `database` — Database name.
 - `table` — Table name.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
@@ -1704,7 +1719,8 @@ Parameters:
 - `database` — Database for storing a table.
 - `table` — Table name.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
