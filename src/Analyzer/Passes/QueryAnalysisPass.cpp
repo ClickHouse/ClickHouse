@@ -4059,6 +4059,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     if (scope.context->getSettingsRef().join_use_nulls)
     {
+        /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
+          * we need to convert joined column type to Nullable.
+          * We are taking the nearest JoinNode to check to which table column belongs,
+          * because for LEFT/RIGHT join, we convert only the corresponding side.
+          */
         const auto * nearest_query_scope = scope.getNearestQueryScope();
         const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
         const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
