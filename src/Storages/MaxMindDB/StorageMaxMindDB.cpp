@@ -79,17 +79,21 @@ public:
     MaxMindDBSource(
         const StorageMaxMindDB & storage_,
         const Block & header,
+        FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
         , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , keys(keys_)
         , begin(begin_)
         , end(end_)
         , it(begin)
         , max_block_size(max_block_size_)
     {
+        for (auto tmp = begin; tmp != end; ++tmp)
+            std::cout << "fieldnew:" << toString(*tmp) << std::endl;
     }
 
     String getName() const override { return storage.getName(); }
@@ -114,6 +118,7 @@ private:
     size_t primary_key_pos;
 
     /// Only for key scan, full scan is not supported for MaxMindDB
+    FieldVectorPtr keys;
     FieldVector::const_iterator begin;
     FieldVector::const_iterator end;
     FieldVector::const_iterator it;
@@ -174,6 +179,11 @@ Pipe StorageMaxMindDB::read(
     ::sort(keys->begin(), keys->end());
     keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
 
+    for (const auto & key: *keys)
+    {
+        std::cout << "key:" << toString(key) << std::endl;
+    }
+
     Pipes pipes;
 
     size_t num_keys = keys->size();
@@ -187,8 +197,8 @@ Pipe StorageMaxMindDB::read(
         size_t begin = num_keys * thread_idx / num_threads;
         size_t end = num_keys * (thread_idx + 1) / num_threads;
 
-        pipes.emplace_back(
-            std::make_shared<MaxMindDBSource>(*this, sample_block, keys->begin() + begin, keys->begin() + end, max_block_size));
+        pipes.emplace_back(std::make_shared<MaxMindDBSource>(
+            *this, sample_block, std::move(keys), keys->begin() + begin, keys->begin() + end, max_block_size));
     }
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -242,6 +252,13 @@ Chunk StorageMaxMindDB::getBySerializedKeys(const std::vector<std::string> & key
     return Chunk(std::move(columns), num_rows);
 }
 
+bool StorageMaxMindDB::lookupDB(const std::string & key, std::string & value) const
+{
+    /// TODO finsh lookup in maxmind db
+    value = key;
+    return true;
+}
+
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     auto engine_args = args.engine_args;
@@ -293,6 +310,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     return std::make_shared<StorageMaxMindDB>(args.table_id, metadata, args.getContext(), primary_key_names[0], std::move(mmdb_file_path));
 }
+
 
 
 void registerStorageMaxMindDB(StorageFactory & factory)
