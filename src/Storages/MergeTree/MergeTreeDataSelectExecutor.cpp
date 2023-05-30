@@ -979,7 +979,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
 
             auto index_helper = MergeTreeIndexFactory::instance().get(index);
-            if(!ignored_index_names.contains(index.name))
+            if (!ignored_index_names.contains(index.name))
             {
                 if (index_helper->isMergeable())
                 {
