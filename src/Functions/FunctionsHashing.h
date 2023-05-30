@@ -92,16 +92,25 @@ namespace impl
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
         {
-            const auto & key0col_data = key0col->getData();
-            ret.key0 = key0col_data[0];
+            if (!key0col->empty())
+            {
+                const auto & key0col_data = key0col->getData();
+                ret.key0 = key0col_data[0];
+            }
+            else ret.key0 = 0;
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
 
         if (const auto * key1col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(1))))
         {
-            const auto & key1col_data = key1col->getData();
-            ret.key1 = key1col_data[0];
+            if (!key1col->empty())
+            {
+                const auto & key1col_data = key1col->getData();
+                ret.key1 = key1col_data[0];
+            }
+            else
+                ret.key1 = 0;
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
