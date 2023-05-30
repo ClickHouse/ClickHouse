@@ -61,10 +61,14 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     #     assert parameters
 
     # for token_name in [p["Name"] for p in parameters]:
-    for token_name in parameters:
-        # value = get_parameter_from_ssm(token_name, True, client)
-        value = parameters[token_name]["value"]
-        print(value)       
+    # for token_name in parameters:
+    #     # value = get_parameter_from_ssm(token_name, True, client)
+    #     value = parameters[token_name]["value"]
+    #     print(value)
+    for token_name, parameter in parameters.items():
+        value = parameter["value"]
+        print(value)
+
     #     gh = Github(value, per_page=100)
     #     # Do not spend additional request to API by accessin user.login unless
     #     # the token is chosen by the remaining requests number
