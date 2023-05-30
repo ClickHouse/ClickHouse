@@ -7,7 +7,6 @@ description: This section contains descriptions of server settings that cannot b
 
 # Server Settings
 
-FROM TABLE
 ## allow_use_jemalloc_memory
 
 Allows to use jemalloc memory.
@@ -591,9 +590,6 @@ The uncompressed cache is advantageous for very short queries in individual case
 Type: UInt64
 
 Default: 0
-
-
-END FROM TABLE
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
