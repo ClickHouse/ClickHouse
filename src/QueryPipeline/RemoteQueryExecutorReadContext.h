@@ -58,7 +58,7 @@ private:
 
         RemoteQueryExecutorReadContext & read_context;
 
-        void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
     std::atomic_bool is_in_progress = false;
