@@ -41,17 +41,25 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     client = None
     if VAULT_URL:
         client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
-    else:
-        client = boto3.client("ssm", region_name="us-east-1")
-    parameters = client.describe_parameters(
-        ParameterFilters=[
-            {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
-        ]
-    )["Parameters"]
-    assert parameters
+        parameters = client.secrets.kv.v2.list_secrets(
+            path=token_prefix_env_name
+        )["data"]["keys"]
+        assert parameters
+    # else:
+    #     client = boto3.client("ssm", region_name="us-east-1")
+    #     parameters = client.describe_parameters(
+    #         ParameterFilters=[
+    #             {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
+    #         ]
+    #     )["Parameters"]
+    #     assert parameters
 
     for token_name in [p["Name"] for p in parameters]:
-        value = get_parameter_from_ssm(token_name, True, client)
+        # value = get_parameter_from_ssm(token_name, True, client)
+        value = client.secrets.kv.v2.read_secret_version(
+            mount_point=VAULT_MOUNT_POINT,
+            path=f"{VAULT_PATH}/{token_name}"
+        )["data"]["data"]["value"]        
         gh = Github(value, per_page=100)
         # Do not spend additional request to API by accessin user.login unless
         # the token is chosen by the remaining requests number
