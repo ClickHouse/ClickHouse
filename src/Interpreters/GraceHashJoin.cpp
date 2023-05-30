@@ -318,6 +318,9 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
+
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
+
     addJoinedBlockImpl(std::move(materialized));
     return true;
 }

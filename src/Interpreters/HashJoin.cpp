@@ -715,7 +715,7 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
 {
     if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "({}) Join data was released", fmt::ptr(this));
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
@@ -1753,7 +1753,7 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "({}) Cannot join after data has been released", fmt::ptr(this));
 
     for (const auto & onexpr : table_join->getClauses())
     {
@@ -1851,7 +1851,7 @@ public:
         : parent(parent_), max_block_size(max_block_size_), current_block_start(0)
     {
         if (parent.data == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "({}) Cannot join after data has been released", fmt::ptr(parent));
     }
 
     Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
