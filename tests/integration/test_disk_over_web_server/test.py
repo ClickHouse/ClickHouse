@@ -284,7 +284,10 @@ def test_unavailable_server(cluster):
 
 def test_replicated_database(cluster):
     node1 = cluster.instances["node2"]
-    node1.query("CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')", settings={"allow_experimental_database_replicated": 1})
+    node1.query(
+        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
 
     global uuids
     node1.query(
@@ -298,7 +301,10 @@ def test_replicated_database(cluster):
     )
 
     node2 = cluster.instances["node2"]
-    node2.query("CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')", settings={"allow_experimental_database_replicated": 1})
+    node2.query(
+        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
     node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
 
     assert node1.query("SELECT count() FROM rdb.table0") == "5000000\n"
