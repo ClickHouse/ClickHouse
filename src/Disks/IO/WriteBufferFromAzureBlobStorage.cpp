@@ -26,7 +26,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     size_t max_single_part_upload_size_,
     size_t buf_size_,
     const WriteSettings & write_settings_)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
