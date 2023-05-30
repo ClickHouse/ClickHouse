@@ -146,6 +146,8 @@ public:
     virtual bool supportsReplication() const { return false; }
 
     /// Returns true if the storage supports parallel insert.
+    /// If false, each INSERT query will call write() only once.
+    /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
@@ -377,7 +379,7 @@ private:
     /// This is enabled by default, but in some cases shouldn't be done.
     /// For example, when you read from system.numbers instead of system.numbers_mt,
     /// you still expect the data to be processed sequentially.
-    virtual bool parallelizeOutputAfterReading() const { return true; }
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return true; }
 
 public:
     /// Other version of read which adds reading step to query plan.
@@ -655,6 +657,12 @@ public:
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
     virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
+    /// Creates a storage snapshot but without holding a data specific to storage.
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }

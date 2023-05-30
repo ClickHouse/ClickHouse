@@ -51,6 +51,8 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <shared_mutex>
+#include <cmath>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -201,7 +203,19 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    /** But using mmap on server-side is unsafe for the following reasons:
+      * - concurrent modifications of a file will result in SIGBUS;
+      * - IO error from the device will result in SIGBUS;
+      * - recovery from this signal is not feasible even with the usage of siglongjmp,
+      *   as it might require stack unwinding from arbitrary place;
+      * - arbitrary slowdown due to page fault in arbitrary place in the code is difficult to debug.
+      *
+      * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
+      */
+
+    if (S_ISREG(file_stat.st_mode)
+        && context->getApplicationType() != Context::ApplicationType::SERVER
+        && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -412,6 +426,11 @@ bool StorageFile::prefersLargeBlocks() const
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
 }
 
+bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+}
+
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -611,8 +630,11 @@ public:
                 if (!read_buf)
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
+                const Settings & settings = context->getSettingsRef();
+                chassert(!storage->paths.empty());
+                const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));

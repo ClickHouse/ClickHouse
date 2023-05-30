@@ -661,7 +661,7 @@ def test_virtual_columns(started_cluster):
         time.sleep(0.5)
         result = instance.query("SELECT count() FROM test.postgresql_replica;")
 
-    # just check that it works, no check with `expected` becuase _version is taken as LSN, which will be different each time.
+    # just check that it works, no check with `expected` because _version is taken as LSN, which will be different each time.
     result = instance.query(
         "SELECT key, value, _sign, _version FROM test.postgresql_replica;"
     )

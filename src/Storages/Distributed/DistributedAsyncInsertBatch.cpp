@@ -201,6 +201,14 @@ void DistributedAsyncInsertBatch::sendBatch()
     {
         for (const auto & file : files)
         {
+            /// In case of recovery it is possible that some of files will be
+            /// missing, if server had been restarted abnormally
+            if (recovered && !fs::exists(file))
+            {
+                LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
+                continue;
+            }
+
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 

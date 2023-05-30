@@ -727,7 +727,7 @@ TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPR
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 ```
 
-Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
 ``` sql
 CREATE TABLE table_for_aggregation
@@ -1219,11 +1219,12 @@ Authentication parameters (the disk will try all available methods **and** Manag
 * `account_name` and `account_key` - For authentication using Shared Key.
 
 Limit parameters (mainly for internal usage):
-* `max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
+* `s3_max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
 * `min_bytes_for_seek` - Limits the size of a seekable region.
 * `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
 * `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
 * `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
+* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurenly for one object.
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
