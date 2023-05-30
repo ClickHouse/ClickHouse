@@ -15,4 +15,9 @@ bool IsNan::convertImpl(String & out, IParser::Pos & pos)
 
     return true;
 }
+
+bool Round::convertImpl(String & out, IParser::Pos & pos)
+{
+    return directMapping(out, pos, "round");
+}
 }

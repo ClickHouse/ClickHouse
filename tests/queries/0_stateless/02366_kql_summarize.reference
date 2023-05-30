@@ -65,7 +65,7 @@ Management abcd defg	['Bachelors']
 -- binary_all_xor --
 4
 43.8
-[25.55,30.5,43.8]
+25.55	30.5	43.8
 30.5
 35
 [25,35,45]
