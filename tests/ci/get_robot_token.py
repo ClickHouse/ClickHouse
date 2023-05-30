@@ -60,12 +60,11 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     #     )["Parameters"]
     #     assert parameters
 
-    # for token_name in [p["Name"] for p in parameters]:
-    for token_name in parameters:
+    for token_name in [p["Name"] for p in parameters]:
+    # for token_name in parameters:
         # value = get_parameter_from_ssm(token_name, True, client)
         value = token_name["value"]
-        print(value)
-    #     value = client.secrets.kv.v2.read_secret_version(path=f"{path}/{token_name}")["data"]["data"]["value"]        
+        print(value)       
     #     gh = Github(value, per_page=100)
     #     # Do not spend additional request to API by accessin user.login unless
     #     # the token is chosen by the remaining requests number
