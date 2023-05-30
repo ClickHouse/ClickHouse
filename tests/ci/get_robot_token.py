@@ -45,6 +45,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         # path=f"{VAULT_MOUNT_POINT}/{VAULT_PATH}"
         secrets = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"]
         assert secrets
+        print(secrets)
 
         parameters = [secret for secret in secrets if secret.startswith(token_prefix_env_name)]
         print(parameters)
@@ -60,6 +61,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     for token_name in [p["Name"] for p in parameters]:
         # value = get_parameter_from_ssm(token_name, True, client)
         value = secrets[token_name]["value"]
+        print(value)
     #     value = client.secrets.kv.v2.read_secret_version(path=f"{path}/{token_name}")["data"]["data"]["value"]        
     #     gh = Github(value, per_page=100)
     #     # Do not spend additional request to API by accessin user.login unless
