@@ -1386,6 +1386,20 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+void Context::addQueryAccessInfo(const Names & partition_names)
+{
+    if (isGlobalContext())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+    }
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    for (const auto & partition_name : partition_names)
+    {
+        query_access_info.partitions.emplace(partition_name);
+    }
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (isGlobalContext())
@@ -3541,9 +3555,9 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
@@ -4255,7 +4269,7 @@ ReadSettings Context::getReadSettings() const
     res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
-    res.priority = settings.read_priority;
+    res.priority = Priority{settings.read_priority};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
@@ -4310,7 +4324,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas
+    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
         && !settings_.use_hedged_requests)
         return READ_TASKS;
 

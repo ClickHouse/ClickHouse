@@ -275,7 +275,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
+    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
