@@ -82,7 +82,7 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
     else
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET or SEEK_CUR modes are allowed.");
 
-    impl->reset();
+    impl->seek(impl->file_offset_of_buffer_end, SEEK_SET);
     resetWorkingBuffer();
 
     file_offset_of_buffer_end = impl->file_offset_of_buffer_end;

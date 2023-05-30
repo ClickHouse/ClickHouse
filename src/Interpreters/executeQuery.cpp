@@ -666,9 +666,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
-            if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
-                context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+            const auto & query_settings = context->getSettingsRef();
+            if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+            {
+                if (!interpreter->supportsTransactions())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+            }
 
             if (!interpreter->ignoreQuota() && !quota_checked)
             {
@@ -837,6 +841,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
+                    elem.query_partitions = info.partitions;
                     elem.query_projections = info.projections;
                     elem.query_views = info.views;
                 }
@@ -901,6 +906,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
                 element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
                 element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+                element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
                 element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
                 element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
@@ -1003,6 +1009,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             ProcessorProfileLogElement processor_elem;
                             processor_elem.event_time = elem.event_time;
                             processor_elem.event_time_microseconds = elem.event_time_microseconds;
+                            processor_elem.initial_query_id = elem.client_info.initial_query_id;
                             processor_elem.query_id = elem.client_info.current_query_id;
 
                             auto get_proc_id = [](const IProcessor & proc) -> UInt64
