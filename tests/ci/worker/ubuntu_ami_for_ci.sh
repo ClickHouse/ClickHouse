@@ -56,7 +56,7 @@ echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring
 
 apt-get update
 
-apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io
+apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
 
 usermod -aG docker ubuntu
 
