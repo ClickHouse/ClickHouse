@@ -1420,11 +1420,14 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
             }
 
-            // std::cerr << ".... checking for " << identifier->getColumnName() << std::endl;
-            if (auto tmp_table = data.getContext()->findExternalTable(identifier->getColumnName()))
+            if (!data.getContext()->isGlobalContext())
             {
-                external_table_set = tmp_table->future_set;
-                // std::cerr << "Found " << reinterpret_cast<const void *>(tmp_table.get()) << " " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
+                // std::cerr << ".... checking for " << identifier->getColumnName() << std::endl;
+                if (auto tmp_table = data.getContext()->findExternalTable(identifier->getColumnName()))
+                {
+                    external_table_set = tmp_table->future_set;
+                    // std::cerr << "Found " << reinterpret_cast<const void *>(tmp_table.get()) << " " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
+                }
             }
         }
 
