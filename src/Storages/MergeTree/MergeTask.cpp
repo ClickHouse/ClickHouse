@@ -259,7 +259,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (!ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty())
     {
         if (!global_ctx->storage_columns.contains(BlockNumberColumn.name))
+        {
             global_ctx->storage_columns.emplace_back(BlockNumberColumn);
+            global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
+        }
 
         if (!global_ctx->gathering_columns.contains(BlockNumberColumn.name))
         {
