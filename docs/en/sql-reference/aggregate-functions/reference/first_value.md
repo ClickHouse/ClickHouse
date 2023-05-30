@@ -29,7 +29,7 @@ select first_value(b) from test_data
 ### example2
 The NULL value is ignored.
 ```sql
-select first_value(b) ignore nulls sfrom test_data
+select first_value(b) ignore nulls from test_data
 ```
 
 ```text
