@@ -849,7 +849,7 @@ private:
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
-QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
+TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
@@ -1019,17 +1019,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
+            temporary_table_expression_node->setAlias(temporary_table_expression_node->getTemporaryTableName());
 
-            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(query_context));
-            in_second_argument_query_node->setIsSubquery(true);
-            in_second_argument_query_node->getProjectionNode() = std::make_shared<ListNode>();
-            in_second_argument_query_node->getProjection().getNodes() = { std::make_shared<MatcherNode>() };
-            in_second_argument_query_node->getJoinTree() = std::move(temporary_table_expression_node);
-
-            QueryAnalysisPass query_analysis_pass;
-            query_analysis_pass.run(in_second_argument_query_node, query_context);
-
-            in_function_subquery_node = std::move(in_second_argument_query_node);
+            in_function_subquery_node = std::move(temporary_table_expression_node);
         }
         else
         {

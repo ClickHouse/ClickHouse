@@ -129,7 +129,8 @@ void PlannerContext::registerSet(const SetKey & key, PlannerSet planner_set)
         auto node_type = subquery_node->getNodeType();
 
         if (node_type != QueryTreeNodeType::QUERY &&
-            node_type != QueryTreeNodeType::UNION)
+            node_type != QueryTreeNodeType::UNION &&
+            node_type != QueryTreeNodeType::TABLE)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Invalid node for set table expression. Expected query or union. Actual {}",
                 subquery_node->formatASTForErrorMessage());
