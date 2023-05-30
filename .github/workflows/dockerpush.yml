@@ -27,7 +27,7 @@ jobs:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
-    needs: CheckLabels
+    # needs: CheckLabels
     runs-on: [self-hosted]
     steps:
       - name: Check out repository code
