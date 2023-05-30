@@ -1426,6 +1426,9 @@ public:
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
 
+        if (input_rows_count == 0)
+            return col_to;
+
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         /// If using a "keyed" algorithm, the first argument is the key and
@@ -1441,7 +1444,7 @@ public:
 
         KeyType key{};
         if constexpr (Keyed)
-            if (!arguments.empty() && input_rows_count != 0)
+            if (!arguments.empty())
                 key = Impl::parseKey(arguments[0]);
 
         /// The function supports arbitrary number of arguments of arbitrary types.
