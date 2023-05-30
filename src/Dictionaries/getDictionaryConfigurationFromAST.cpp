@@ -615,9 +615,10 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
-    /// If the pk size is 1 and pk's DataType is not native uint(UInt8~UInt64), we should convert to complex,
-    /// because the data type of Numeric key(simple layout) is UInt64.
-    if ((pk_attrs.size() > 1 || (pk_attrs.size() == 1 && !WhichDataType(DataTypeFactory::instance().get(all_attr_names_and_types.find(pk_attrs[0])->second.type)).isNativeUInt()))
+    /// If the pk size is 1 and pk's DataType is not number, we should convert to complex.
+    /// NOTE: the data type of Numeric key(simple layout) is UInt64, so if the type is not under UInt64, type casting will lead to precision loss.
+    DataTypePtr first_key_type = DataTypeFactory::instance().get(all_attr_names_and_types.find(pk_attrs[0])->second.type);
+    if ((pk_attrs.size() > 1 || (pk_attrs.size() == 1 && !isNumber(first_key_type)))
         && !complex
         && DictionaryFactory::instance().convertToComplex(dictionary_layout->layout_type))
     {
