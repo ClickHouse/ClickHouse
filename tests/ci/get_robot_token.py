@@ -42,8 +42,8 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     if VAULT_URL:
 
         client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
-        path=f"{VAULT_MOUNT_POINT}/{VAULT_PATH}"
-        secrets = client.secrets.kv.v2.read_secret_version(path=path)["data"]["data"]
+        # path=f"{VAULT_MOUNT_POINT}/{VAULT_PATH}"
+        secrets = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"]
         assert secrets
 
         parameters = [secret for secret in secrets if secret.startswith(token_prefix_env_name)]
