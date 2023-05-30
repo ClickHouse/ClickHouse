@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/* Implements Redis table function.
+ * Use redis(host:port, key, structure[, db_index[, password[, pool_size]]]);
+ */
 class TableFunctionRedis : public ITableFunction
 {
 public:
@@ -23,8 +26,9 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<RedisConfiguration> configuration;
+    RedisConfiguration configuration;
     String structure;
+    String primary_key;
 };
 
 }

@@ -8,6 +8,7 @@
 #include <base/BorrowedObjectPool.h>
 #include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -21,20 +22,6 @@ enum class RedisStorageType
     UNKNOWN
 };
 
-enum class RedisColumnType
-{
-    /// Redis key
-    KEY,
-    /// Redis hash field
-    FIELD,
-    /// Redis value
-    VALUE
-};
-
-using RedisColumnTypes = std::vector<RedisColumnType>;
-
-extern RedisColumnTypes REDIS_HASH_MAP_COLUMN_TYPES;
-extern RedisColumnTypes REDIS_SIMPLE_COLUMN_TYPES;
 
 /// storage type to Redis key type
 String storageTypeToKeyType(RedisStorageType type);
@@ -52,6 +39,10 @@ struct RedisConfiguration
     uint32_t pool_size;
 };
 
+static uint32_t DEFAULT_REDIS_DB_INDEX = 0;
+static uint32_t DEFAULT_REDIS_POOL_SIZE = 16;
+static String DEFAULT_REDIS_PASSWORD;
+
 using RedisArray = Poco::Redis::Array;
 using RedisArrayPtr = std::shared_ptr<RedisArray>;
 using RedisCommand = Poco::Redis::Command;
@@ -60,6 +51,9 @@ using RedisBulkString = Poco::Redis::BulkString;
 using RedisClientPtr = std::unique_ptr<Poco::Redis::Client>;
 using RedisPool = BorrowedObjectPool<RedisClientPtr>;
 using RedisPoolPtr = std::shared_ptr<RedisPool>;
+
+/// Redis scan interator
+using RedisIterator = int64_t;
 
 struct RedisConnection
 {
@@ -77,16 +71,5 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
 ///get all redis hash key array
 ///    eg: keys -> [key1, key2] and get [[key1, field1, field2], [key2, field1, field2]]
 RedisArrayPtr getRedisHashMapKeys(const RedisConnectionPtr & connection, RedisArray & keys);
-
-/// Get RedisColumnType of a column, If storage_type is
-///     SIMPLE: all_columns must have 2 items and the first one is Redis key the second one is value
-///     HASH_MAP: all_columns must have 2 items and the first one is Redis key the second is field, the third is value.
-RedisColumnType getRedisColumnType(RedisStorageType storage_type, const Names & all_columns, const String & column);
-
-/// parse redis table engine/function configuration from engine_args
-RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context);
-
-/// checking Redis table/table-function when creating
-void checkRedisTableStructure(const ColumnsDescription & columns, const RedisConfiguration & configuration);
 
 }
