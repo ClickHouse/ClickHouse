@@ -467,28 +467,28 @@ def main():
     if [r for r in test_results if r.status != "OK"]:
         status = "failure"
 
-    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
+    # url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
-    print(f"::notice ::Report url: {url}")
+    # print(f"::notice ::Report url: {url}")
 
-    if not args.reports:
-        return
+    # if not args.reports:
+    #     return
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    # gh = Github(get_best_robot_token(), per_page=100)
+    # commit = get_commit(gh, pr_info.sha)
+    # post_commit_status(commit, status, url, description, NAME, pr_info)
 
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        url,
-        NAME,
-    )
-    ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    # prepared_events = prepare_tests_results_for_clickhouse(
+    #     pr_info,
+    #     test_results,
+    #     status,
+    #     stopwatch.duration_seconds,
+    #     stopwatch.start_time_str,
+    #     url,
+    #     NAME,
+    # )
+    # ch_helper = ClickHouseHelper()
+    # ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if status == "failure":
         sys.exit(1)
