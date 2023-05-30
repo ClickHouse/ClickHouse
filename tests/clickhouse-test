@@ -1048,12 +1048,13 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
+                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
+                file = open(self.stdout_file, "rb")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="
