@@ -194,15 +194,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (which_type.isDateTime64() && which_from_type.isDate())
     {
-        const DataTypeDateTime64 & data_type_date_time64 = static_cast<const DataTypeDateTime64 &>(type);
-        const Int64 value = data_type_date_time64.getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, data_type_date_time64.getScaleMultiplier());
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.get<UInt16>()));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
     }
     else if (which_type.isDateTime64() && which_from_type.isDate32())
     {
-        const DataTypeDateTime64 & data_type_date_time64 = static_cast<const DataTypeDateTime64 &>(type);
-        const Int64 value = data_type_date_time64.getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, data_type_date_time64.getScaleMultiplier());
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.get<Int32>())));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
     }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
