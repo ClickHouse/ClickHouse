@@ -26,10 +26,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server endpoint.
--   `database` — PostgreSQL database name.
--   `user` — PostgreSQL user.
--   `password` — User password.
+- `host:port` — PostgreSQL server endpoint.
+- `database` — PostgreSQL database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Example of Use {#example-of-use}
 
@@ -120,9 +120,9 @@ Warning: for this case dots in table name are not allowed.
 
 2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
--   primary key (by default)
+- primary key (by default)
 
--   index
+- index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -145,7 +145,7 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::warning
+:::note
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
 
@@ -171,7 +171,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Possible values:
 
-    -   Positive integer.
+    - Positive integer.
 
     Default value: `65536`.
 

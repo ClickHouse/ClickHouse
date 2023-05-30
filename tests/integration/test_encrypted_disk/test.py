@@ -1,6 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+import os.path
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -9,9 +10,11 @@ FIRST_PART_NAME = "all_1_1_0"
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/storage.xml"],
+    main_configs=["configs/storage.xml", "configs/allow_backup_path.xml"],
     tmpfs=["/disk:size=100M"],
+    external_dirs=["/backups/"],
     with_minio=True,
+    stay_alive=True,
 )
 
 
@@ -29,7 +32,16 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node.query("DROP TABLE IF EXISTS encrypted_test NO DELAY")
+        node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
+
+
+backup_id_counter = 0
+
+
+def new_backup_name():
+    global backup_id_counter
+    backup_id_counter += 1
+    return f"backup{backup_id_counter}"
 
 
 @pytest.mark.parametrize(
@@ -269,3 +281,130 @@ def test_read_in_order():
     node.query(
         "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=0 FORMAT Null"
     )
+
+
+def test_restart():
+    for policy in ["disk_s3_encrypted_default_path", "encrypted_s3_cache"]:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS encrypted_test;
+            CREATE TABLE encrypted_test (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS disk='{policy}'
+            """
+        )
+
+        node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+        select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+        node.restart_clickhouse()
+
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+        node.query("DROP TABLE encrypted_test SYNC;")
+
+
+@pytest.mark.parametrize(
+    "backup_type,old_storage_policy,new_storage_policy,decrypt_files_from_encrypted_disks",
+    [
+        ("S3", "encrypted_policy", "encrypted_policy", False),
+        ("S3", "encrypted_policy", "s3_encrypted_default_path", False),
+        ("S3", "s3_encrypted_default_path", "s3_encrypted_default_path", False),
+        ("S3", "s3_encrypted_default_path", "encrypted_policy", False),
+        ("File", "s3_encrypted_default_path", "encrypted_policy", False),
+        ("File", "local_policy", "encrypted_policy", False),
+        ("File", "encrypted_policy", "local_policy", False),
+        ("File", "encrypted_policy", "local_policy", True),
+    ],
+)
+def test_backup_restore(
+    backup_type,
+    old_storage_policy,
+    new_storage_policy,
+    decrypt_files_from_encrypted_disks,
+):
+    node.query(
+        f"""
+        CREATE TABLE encrypted_test (
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='{old_storage_policy}'
+        """
+    )
+
+    node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+    select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
+    assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+    backup_name = new_backup_name()
+    if backup_type == "S3":
+        backup_destination = (
+            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'minio123')"
+        )
+    elif backup_type == "File":
+        backup_destination = f"File('/backups/{backup_name}/')"
+
+    node.query(
+        f"BACKUP TABLE encrypted_test TO {backup_destination} SETTINGS decrypt_files_from_encrypted_disks={int(decrypt_files_from_encrypted_disks)}"
+    )
+
+    storage_policy_changed = old_storage_policy != new_storage_policy
+    old_disk_encrypted = old_storage_policy.find("encrypted") != -1
+    new_disk_encrypted = new_storage_policy.find("encrypted") != -1
+
+    if backup_type == "File":
+        root_path = os.path.join(node.cluster.instances_dir, "backups", backup_name)
+        expect_encrypted_in_backup = (
+            old_disk_encrypted and not decrypt_files_from_encrypted_disks
+        )
+
+        with open(f"{root_path}/metadata/default/encrypted_test.sql") as file:
+            assert file.read().startswith("CREATE TABLE default.encrypted_test")
+
+        with open(f"{root_path}/.backup") as file:
+            found_encrypted_in_backup = (
+                file.read().find("<encrypted_by_disk>true</encrypted_by_disk>") != -1
+            )
+            assert found_encrypted_in_backup == expect_encrypted_in_backup
+
+        with open(
+            f"{root_path}/data/default/encrypted_test/all_1_1_0/data.bin", "rb"
+        ) as file:
+            found_encrypted_in_backup = file.read().startswith(b"ENC")
+            assert found_encrypted_in_backup == expect_encrypted_in_backup
+
+    node.query(f"DROP TABLE encrypted_test SYNC")
+
+    if storage_policy_changed:
+        node.query(
+            f"""
+            CREATE TABLE encrypted_test (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS storage_policy='{new_storage_policy}'
+            """
+        )
+
+    restore_command = f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def={int(storage_policy_changed)}"
+
+    expect_error = None
+    if (
+        old_disk_encrypted
+        and not new_disk_encrypted
+        and not decrypt_files_from_encrypted_disks
+    ):
+        expect_error = "can be restored only to an encrypted disk"
+
+    if expect_error:
+        assert expect_error in node.query_and_get_error(restore_command)
+    else:
+        node.query(restore_command)
+        assert node.query(select_query) == "(0,'data'),(1,'data')"

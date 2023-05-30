@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
+#include <Common/Arena.h>
+#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -20,6 +22,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -65,11 +69,17 @@ private:
         size_t old_size = state.dynamic_array_size;
         if (old_size < new_size)
         {
+            static constexpr size_t MAX_ARRAY_SIZE = 100_GiB;
+            if (new_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously large array size ({}) in -ForEach aggregate function", new_size);
+
+            size_t allocation_size = 0;
+            if (common::mulOverflow(new_size, nested_size_of_data, allocation_size))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Allocation size ({} * {}) overflows in -ForEach aggregate function, but it should've been prevented by previous checks", new_size, nested_size_of_data);
+
             char * old_state = state.array_of_aggregate_datas;
 
-            char * new_state = arena.alignedAlloc(
-                new_size * nested_size_of_data,
-                nested_func->alignOfData());
+            char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
             size_t i;
             try

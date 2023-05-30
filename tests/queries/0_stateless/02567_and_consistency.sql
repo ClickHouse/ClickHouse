@@ -42,31 +42,10 @@ SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT '=====';
 
-SELECT toBool(sin(SUM(number))) AS x
-FROM
-(
-    SELECT 1 AS number
-)
-GROUP BY number
-HAVING 1 AND sin(sum(number))
-SETTINGS enable_optimize_predicate_expression = 1; -- { serverError 59 }
-
-SELECT '=====';
-
 SELECT 1 and sin(1);
 
 SELECT '=====';
 
-SELECT toBool(sin(SUM(number))) AS x
-FROM
-(
-    SELECT 1 AS number
-)
-GROUP BY number
-HAVING x AND sin(1)
-SETTINGS enable_optimize_predicate_expression = 0; -- { serverError 59 }
-
-SELECT '=====';
 SELECT 'allow_experimental_analyzer';
 
 SET allow_experimental_analyzer = 1;

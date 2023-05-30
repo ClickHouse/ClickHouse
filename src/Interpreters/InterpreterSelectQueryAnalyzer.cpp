@@ -226,6 +226,12 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
     return result;
 }
 
+QueryPlan & InterpreterSelectQueryAnalyzer::getQueryPlan()
+{
+    planner.buildQueryPlanIfNeeded();
+    return planner.getQueryPlan();
+}
+
 QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
 {
     planner.buildQueryPlanIfNeeded();

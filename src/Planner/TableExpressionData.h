@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Interpreters/ActionsDAG.h>
+
 namespace DB
 {
 
@@ -63,9 +65,7 @@ public:
         if (hasColumn(column.name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
 
-        column_name_to_column.emplace(column.name, column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-        column_identifier_to_column_name.emplace(column_identifier, column.name);
+        addColumnImpl(column, column_identifier);
     }
 
     /** Add column if it does not exists in table expression data.
@@ -76,9 +76,7 @@ public:
         if (hasColumn(column.name))
             return;
 
-        column_name_to_column.emplace(column.name, column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-        column_identifier_to_column_name.emplace(column_identifier, column.name);
+        addColumnImpl(column, column_identifier);
     }
 
     /// Add alias column name
@@ -100,13 +98,18 @@ public:
     }
 
     /// Get column names
-    Names getColumnNames() const
+    const Names & getColumnNames() const
     {
-        Names result;
-        result.reserve(column_name_to_column.size());
+        return column_names;
+    }
 
-        for (const auto & [column_name, _] : column_name_to_column)
-            result.push_back(column_name);
+    NamesAndTypes getColumns() const
+    {
+        NamesAndTypes result;
+        result.reserve(column_names.size());
+
+        for (const auto & column_name : column_names)
+            result.push_back(column_name_to_column.at(column_name));
 
         return result;
     }
@@ -142,7 +145,6 @@ public:
         auto it = column_name_to_column.find(column_name);
         if (it == column_name_to_column.end())
         {
-            auto column_names = getColumnNames();
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column for column name {} does not exists. There are only column names: {}",
                 column_name,
@@ -172,7 +174,6 @@ public:
         auto it = column_name_to_column_identifier.find(column_name);
         if (it == column_name_to_column_identifier.end())
         {
-            auto column_names = getColumnNames();
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column identifier for column name {} does not exists. There are only column names: {}",
                 column_name,
@@ -239,7 +240,38 @@ public:
         is_remote = is_remote_value;
     }
 
+    const ActionsDAGPtr & getPrewhereFilterActions() const
+    {
+        return prewhere_filter_actions;
+    }
+
+    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    {
+        prewhere_filter_actions = std::move(prewhere_filter_actions_value);
+    }
+
+    const ActionsDAGPtr & getFilterActions() const
+    {
+        return filter_actions;
+    }
+
+    void setFilterActions(ActionsDAGPtr filter_actions_value)
+    {
+        filter_actions = std::move(filter_actions_value);
+    }
+
 private:
+    void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
+    {
+        column_names.push_back(column.name);
+        column_name_to_column.emplace(column.name, column);
+        column_name_to_column_identifier.emplace(column.name, column_identifier);
+        column_identifier_to_column_name.emplace(column_identifier, column.name);
+    }
+
+    /// Valid for table, table function, array join, query, union nodes
+    Names column_names;
+
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumn column_name_to_column;
 
@@ -251,6 +283,12 @@ private:
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
+
+    /// Valid for table, table function
+    ActionsDAGPtr filter_actions;
+
+    /// Valid for table, table function
+    ActionsDAGPtr prewhere_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

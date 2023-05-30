@@ -38,8 +38,8 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 -   `max_wait_time_when_mysql_unavailable` — 当MySQL不可用时重试间隔(毫秒)。负值禁止重试。默认值: `1000`.
 -   `allows_query_when_mysql_lost` — 当mysql丢失时，允许查询物化表。默认值: `0` (`false`).
 ```
-CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***') 
-     SETTINGS 
+CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***')
+     SETTINGS
         allows_query_when_mysql_lost=true,
         max_wait_time_when_mysql_unavailable=10000;
 ```
@@ -97,7 +97,7 @@ CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', 
 
 ### DDL查询 {#ddl-queries}
 
-MySQL DDL查询转换为相应的ClickHouse DDL查询([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md))。如果ClickHouse无法解析某个DDL查询，则该查询将被忽略。
+MySQL DDL查询转换为相应的ClickHouse DDL查询([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md))。如果ClickHouse无法解析某个DDL查询，则该查询将被忽略。
 
 ### Data Replication {#data-replication}
 
@@ -148,9 +148,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+ 
++---+------+------+
 | a |    b |    c |
-+---+------+------+ 
++---+------+------+
 | 2 |  222 | Wow! |
 +---+------+------+
 ```
@@ -177,9 +177,9 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬──b─┐ 
-│ 1 │ 11 │ 
-│ 2 │ 22 │ 
+┌─a─┬──b─┐
+│ 1 │ 11 │
+│ 2 │ 22 │
 └───┴────┘
 ```
 
@@ -190,7 +190,7 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬───b─┬─c────┐ 
-│ 2 │ 222 │ Wow! │ 
+┌─a─┬───b─┬─c────┐
+│ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```

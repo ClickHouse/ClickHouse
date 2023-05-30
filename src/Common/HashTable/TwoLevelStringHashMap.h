@@ -9,7 +9,7 @@ class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMap
 public:
     using Key = StringRef;
     using Self = TwoLevelStringHashMap;
-    using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, StringHashMap<TMapped, Allocator>>;
+    using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>>;
     using LookupResult = typename Base::LookupResult;
 
     using Base::Base;

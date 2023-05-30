@@ -99,7 +99,6 @@ QueryPipeline HTTPDictionarySource::loadAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -120,7 +119,6 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -150,7 +148,6 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -180,7 +177,6 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));

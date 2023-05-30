@@ -29,10 +29,11 @@ WriteBufferFromFile::WriteBufferFromFile(
     const std::string & file_name_,
     size_t buf_size,
     int flags,
+    ThrottlerPtr throttler_,
     mode_t mode,
     char * existing_memory,
     size_t alignment)
-    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_name_)
+    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -63,9 +64,10 @@ WriteBufferFromFile::WriteBufferFromFile(
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
+    ThrottlerPtr throttler_,
     char * existing_memory,
     size_t alignment)
-    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, original_file_name)
+    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name)
 {
     fd_ = -1;
 }

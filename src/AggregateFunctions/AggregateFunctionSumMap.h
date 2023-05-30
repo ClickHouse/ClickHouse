@@ -18,7 +18,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
-#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 
 

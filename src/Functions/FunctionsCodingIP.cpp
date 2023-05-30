@@ -1,7 +1,5 @@
 #include <functional>
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Functions/FunctionsCodingIP.h>
 
@@ -26,7 +24,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
@@ -247,8 +245,8 @@ public:
 private:
     static bool isIPv4Mapped(const UInt8 * address)
     {
-        return (unalignedLoadLE<UInt64>(address) == 0) &&
-               ((unalignedLoadLE<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (unalignedLoadLittleEndian<UInt64>(address) == 0) &&
+               ((unalignedLoadLittleEndian<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     static void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -578,10 +576,11 @@ private:
     static void mapIPv4ToIPv6(UInt32 in, UInt8 * buf)
     {
         unalignedStore<UInt64>(buf, 0);
+
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
+            unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
 #else
-            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(__builtin_bswap32(ntohl(in))) << 32));
+            unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(__builtin_bswap32(in))) << 32));
 #endif
     }
 };
@@ -1131,7 +1130,9 @@ public:
 
         for (size_t i = 0; i < vec_res.size(); ++i)
         {
-            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
+                                            reinterpret_cast<const char *>(&vec_src[offsets_src[i] - 1]),
+                                            reinterpret_cast<unsigned char *>(buffer));
             prev_offset = offsets_src[i];
         }
 

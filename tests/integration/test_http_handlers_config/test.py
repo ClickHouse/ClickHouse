@@ -147,6 +147,18 @@ def test_predefined_query_handler():
         assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
         assert "application/generic+one" == res2.headers["content-type"]
 
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
+        )
+        res3 = cluster.instance.http_request(
+            "test_predefined_handler_post_body?id=100",
+            method="POST",
+            data="TEST".encode("utf8"),
+        )
+        assert res3.status_code == 200
+        assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
+        cluster.instance.query("DROP TABLE test_table")
+
 
 def test_fixed_static_handler():
     with contextlib.closing(

@@ -18,6 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -61,6 +62,8 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
+                dag_nodes_dump += " ";
+                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
@@ -604,8 +607,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name)
+        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name_)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -655,7 +658,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -708,7 +711,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Can't execute any of specified algorithms for specified strictness/kind and right storage type");

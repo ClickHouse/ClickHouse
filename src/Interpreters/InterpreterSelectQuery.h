@@ -131,6 +131,8 @@ public:
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
+    static bool isQueryWithFinal(const SelectQueryInfo & info);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -214,6 +216,9 @@ private:
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
+
+    /// For "per replica" filter when multiple replicas are used
+    FilterDAGInfoPtr parallel_replicas_custom_filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

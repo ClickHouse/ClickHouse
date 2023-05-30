@@ -121,7 +121,7 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
-    for (topic, e) in result.topic_error_codes:
+    for topic, e in result.topic_error_codes:
         if e == 0:
             logging.debug(f"Topic {topic} deleted")
         else:
@@ -283,6 +283,78 @@ def avro_confluent_message(schema_registry_client, value):
 
 
 # Tests
+
+
+def test_kafka_column_types(kafka_cluster):
+    def assert_returned_exception(e):
+        assert e.value.returncode == 36
+        assert (
+            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns."
+            in str(e.value)
+        )
+
+    # check column with DEFAULT expression
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int DEFAULT 0)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check EPHEMERAL
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int EPHEMERAL)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check ALIAS
+    instance.query(
+        """
+                CREATE TABLE test.kafka (a Int, b String Alias toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                SETTINGS kafka_commit_on_select = 1;
+                """
+    )
+    messages = []
+    for i in range(5):
+        messages.append(json.dumps({"a": i}))
+    kafka_produce(kafka_cluster, "new", messages)
+    result = ""
+    expected = TSV(
+        """
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+                              """
+    )
+    retries = 50
+    while retries > 0:
+        result += instance.query("SELECT a, b FROM test.kafka", ignore_error=True)
+        if TSV(result) == expected:
+            break
+        retries -= 1
+
+    assert TSV(result) == expected
+
+    instance.query("DROP TABLE test.kafka SYNC")
+
+    # check MATERIALIZED
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b String MATERIALIZED toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
 
 
 def test_kafka_settings_old_syntax(kafka_cluster):
@@ -867,9 +939,7 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["client_id"] = client_id
         member_info["client_host"] = client_host
         member_topics_assignment = []
-        for (topic, partitions) in MemberAssignment.decode(
-            member_assignment
-        ).assignment:
+        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
             member_topics_assignment.append({"topic": topic, "partitions": partitions})
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
@@ -1487,7 +1557,6 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
 
 def test_kafka_materialized_view(kafka_cluster):
-
     instance.query(
         """
         DROP TABLE IF EXISTS test.view;
@@ -2265,7 +2334,6 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2394,7 +2462,6 @@ def test_kafka_insert_avro(kafka_cluster):
 
 
 def test_kafka_produce_consume_avro(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -3981,7 +4048,6 @@ def test_kafka_predefined_configuration(kafka_cluster):
 
 # https://github.com/ClickHouse/ClickHouse/issues/26643
 def test_issue26643(kafka_cluster):
-
     # for backporting:
     # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
     admin_client = KafkaAdminClient(
@@ -4263,7 +4329,6 @@ def test_row_based_formats(kafka_cluster):
         "RowBinaryWithNamesAndTypes",
         "MsgPack",
     ]:
-
         print(format_name)
 
         kafka_create_topic(admin_client, format_name)
@@ -4388,7 +4453,6 @@ def test_block_based_formats_2(kafka_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-
         kafka_create_topic(admin_client, format_name)
 
         instance.query(
