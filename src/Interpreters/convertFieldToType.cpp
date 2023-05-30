@@ -194,13 +194,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (which_type.isDateTime64() && which_from_type.isDate())
     {
-        const auto value = static_cast<const DataTypeDateTime64 &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1);
+        const DataTypeDateTime64 & data_type_date_time64 = static_cast<const DataTypeDateTime64 &>(type);
+        const Int64 value = data_type_date_time64.getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, data_type_date_time64.getScaleMultiplier());
     }
     else if (which_type.isDateTime64() && which_from_type.isDate32())
     {
-        const auto value = static_cast<const DataTypeDateTime64 &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1);
+        const DataTypeDateTime64 & data_type_date_time64 = static_cast<const DataTypeDateTime64 &>(type);
+        const Int64 value = data_type_date_time64.getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, data_type_date_time64.getScaleMultiplier());
     }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
