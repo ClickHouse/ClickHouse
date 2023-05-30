@@ -392,6 +392,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
             }
+            memset(prql_query, 0, max_query_size + 1);
             memcpy(prql_query, begin, end - begin);
             char * sql_query = new char[max_query_size + 1];
             if (sql_query == nullptr)
@@ -399,6 +400,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 delete[] prql_query;
                 throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
             }
+            memset(sql_query, 0, max_query_size + 1);
             __msan_unpoison(prql_query, max_query_size + 1);
             __msan_unpoison(sql_query, max_query_size + 1);
             int res = to_sql(prql_query, sql_query);
