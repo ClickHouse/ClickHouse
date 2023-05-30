@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -242,15 +243,16 @@ StorageURLSource::StorageURLSource(
     auto headers = getHeaders(headers_);
 
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
-    initialize = [=, this](const FailoverOptions & uri_options)
+    initialize = [=, this]()
     {
-        if (uri_options.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+        const auto current_uri_options = (*uri_iterator)();
+        if (current_uri_options.empty())
+            return false;
 
-        auto first_option = uri_options.begin();
+        auto first_option = current_uri_options.begin();
         auto [actual_uri, buf_factory] = getFirstAvailableURIAndReadBuffer(
             first_option,
-            uri_options.end(),
+            current_uri_options.end(),
             context,
             params,
             http_method,
@@ -259,7 +261,11 @@ StorageURLSource::StorageURLSource(
             credentials,
             headers,
             glob_url,
-            uri_options.size() == 1);
+            current_uri_options.size() == 1);
+
+        /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
+        if (context->getSettingsRef().engine_url_skip_empty_files && buf_factory->getFileSize() == 0)
+            return initialize();
 
         curr_uri = actual_uri;
 
@@ -292,6 +298,7 @@ StorageURLSource::StorageURLSource(
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+        return true;
     };
 }
 
@@ -306,14 +313,8 @@ Chunk StorageURLSource::generate()
             break;
         }
 
-        if (!reader)
-        {
-            auto current_uri = (*uri_iterator)();
-            if (current_uri.empty())
-                return {};
-
-            initialize(current_uri);
-        }
+        if (!reader && !initialize())
+            return {};
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -592,10 +593,16 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     if (context->getSettingsRef().schema_inference_use_cache_for_url)
         columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin(), first = true](ColumnsDescription & columns) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == urls_to_check.cend())
+        {
+            if (first)
+                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                            "Cannot extract table structure from {} format file, because all files are empty. "
+                            "You must specify table structure manually", format);
             return nullptr;
+        }
 
         auto [_, buf_factory] = StorageURLSource::getFirstAvailableURIAndReadBuffer(
             it,
@@ -609,7 +616,13 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             headers,
             false,
             false);
+
         ++it;
+
+        if (context->getSettingsRef().engine_url_skip_empty_files && buf_factory->getFileSize() == 0)
+            return read_buffer_iterator(columns);
+
+        first = false;
         return wrapReadBufferWithCompressionMethod(
             buf_factory->getReader(),
             compression_method,

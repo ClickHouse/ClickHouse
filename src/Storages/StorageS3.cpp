@@ -573,6 +573,11 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
         return {};
 
     size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id, request_settings);
+
+    /// If object is empty and s3_skip_empty_files=1, skip it and go to the next key.
+    if (getContext()->getSettingsRef().s3_skip_empty_files && object_size == 0)
+        return createReader();
+
     auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
     InputFormatPtr input_format;
@@ -1456,7 +1461,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto [key, _] = (*file_iterator)();
+        auto [key, info] = (*file_iterator)();
 
         if (key.empty())
         {
@@ -1464,10 +1469,13 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "Cannot extract table structure from {} format file, because there are no files with provided path "
-                    "in S3. You must specify table structure manually", configuration.format);
+                    "in S3 or all files are empty. You must specify table structure manually", configuration.format);
 
             return nullptr;
         }
+
+        if (ctx->getSettingsRef().s3_skip_empty_files && info->size == 0)
+            return read_buffer_iterator(cached_columns);
 
         /// S3 file iterator could get new keys after new iteration, check them in schema cache.
         if (ctx->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
