@@ -37,7 +37,7 @@ select toDateOrDefault(-1, '2000-01-01'::Date);
 
 select toDateTimeOrDefault('2023-05-30 14:38:20');
 select toDateTimeOrDefault('2023-05-30 14:38:20', 'UTC');
-select toDateTimeOrDefault('s2023', 'UTC', '2023-05-30 14:38:20'::DateTime('UTC'));
+select toString(toDateTimeOrDefault('s2023', 'Asia/Istanbul', '2023-05-30 14:38:20'::DateTime('Asia/Istanbul')), 'Asia/Istanbul');
 select toDateTimeOrDefault(1685457500);
 
 SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
