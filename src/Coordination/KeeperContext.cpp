@@ -43,6 +43,11 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
 
     snapshot_storage = getSnapshotsPathFromConfig(config);
 
+    if (config.has("keeper_server.latest_snapshot_storage_disk"))
+        latest_snapshot_storage = config.getString("keeper_server.latest_snapshot_storage_disk");
+    else
+        latest_snapshot_storage = snapshot_storage;
+
     state_file_storage = getStatePathFromConfig(config);
 }
 
@@ -107,6 +112,11 @@ void KeeperContext::setLogDisk(DiskPtr disk)
     latest_log_storage = std::move(disk);
 }
 
+DiskPtr KeeperContext::getLatestSnapshotDisk() const
+{
+    return getDisk(latest_snapshot_storage);
+}
+
 DiskPtr KeeperContext::getSnapshotDisk() const
 {
     return getDisk(snapshot_storage);
@@ -126,6 +136,7 @@ std::vector<DiskPtr> KeeperContext::getOldSnapshotDisks() const
 void KeeperContext::setSnapshotDisk(DiskPtr disk)
 {
     snapshot_storage = std::move(disk);
+    latest_snapshot_storage = snapshot_storage;
 }
 
 DiskPtr KeeperContext::getStateFileDisk() const

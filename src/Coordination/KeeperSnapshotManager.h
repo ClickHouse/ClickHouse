@@ -165,8 +165,10 @@ public:
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
+    void moveSnapshotsIfNeeded();
 
     DiskPtr getDisk() const;
+    DiskPtr getLatestSnapshotDisk() const;
 
     /// Checks first 4 buffer bytes to became sure that snapshot compressed with
     /// ZSTD codec.
@@ -184,6 +186,8 @@ private:
     size_t storage_tick_time;
 
     KeeperContextPtr keeper_context;
+
+    Poco::Logger * log = &Poco::Logger::get("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

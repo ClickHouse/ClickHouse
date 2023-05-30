@@ -468,15 +468,17 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                 {
                     latest_snapshot_meta = snapshot->snapshot_meta;
                     /// we rely on the fact that the snapshot disk cannot be changed during runtime
-                    if (isLocalDisk(*keeper_context->getSnapshotDisk()))
+                    if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
                     {
-                        latest_snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                        auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                        latest_snapshot_info = std::move(snapshot_info);
                         latest_snapshot_buf = nullptr;
                     }
                     else
                     {
                         auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                        latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                        auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                        latest_snapshot_info = std::move(snapshot_info);
                         latest_snapshot_buf = std::move(snapshot_buf);
                     }
 

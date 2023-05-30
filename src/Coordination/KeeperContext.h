@@ -39,6 +39,7 @@ public:
     std::vector<DiskPtr> getOldLogDisks() const;
     void setLogDisk(DiskPtr disk);
 
+    DiskPtr getLatestSnapshotDisk() const;
     DiskPtr getSnapshotDisk() const;
     std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
@@ -67,6 +68,7 @@ private:
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
+    Storage latest_snapshot_storage;
     Storage state_file_storage;
 
     std::vector<std::string> old_log_disk_names;
