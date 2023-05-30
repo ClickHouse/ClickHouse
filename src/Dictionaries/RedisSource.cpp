@@ -21,7 +21,7 @@ namespace DB
     }
 
 
-    RedisSource::RedisSource(
+        RedisSource::RedisSource(
         RedisConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
@@ -32,28 +32,6 @@ namespace DB
         , keys(keys_)
         , storage_type(storage_type_)
         , max_block_size{max_block_size_}
-    {
-            RedisColumnTypes columns_types_;
-            if (storage_type_ == RedisStorageType::HASH_MAP)
-                columns_types_ = REDIS_HASH_MAP_COLUMN_TYPES;
-            else
-                columns_types_ = REDIS_SIMPLE_COLUMN_TYPES;
-            description.init(sample_block);
-    }
-
-    RedisSource::RedisSource(
-        RedisConnectionPtr connection_,
-        const RedisArray & keys_,
-        const RedisStorageType & storage_type_,
-        const DB::Block & sample_block,
-        const RedisColumnTypes & columns_types_,
-        size_t max_block_size_)
-        : ISource(sample_block)
-        , connection(std::move(connection_))
-        , keys(keys_)
-        , storage_type(storage_type_)
-        , max_block_size{max_block_size_}
-        , columns_types(columns_types_)
     {
         description.init(sample_block);
     }
@@ -192,27 +170,15 @@ namespace DB
                 const auto & primary_key = keys_array.get<RedisBulkString>(0);
                 for (size_t i = 0; i < values.size(); ++i)
                 {
-                    const auto & value = values.get<RedisBulkString>(i);
                     const auto & secondary_key = keys_array.get<RedisBulkString>(i + 1);
+                    const auto & value = values.get<RedisBulkString>(i);
 
                     /// null string means 'no value for requested key'
                     if (!value.isNull())
                     {
-                        for (size_t idx=0; idx<description.types.size(); idx++)
-                        {
-                            switch (columns_types[idx])
-                            {
-                                case RedisColumnType::KEY:
-                                    insert_value_by_idx(idx, primary_key);
-                                    break;
-                                case RedisColumnType::FIELD:
-                                    insert_value_by_idx(idx, secondary_key);
-                                    break;
-                                case RedisColumnType::VALUE:
-                                    insert_value_by_idx(idx, value);
-                                    break;
-                            }
-                        }
+                        insert_value_by_idx(0, primary_key);
+                        insert_value_by_idx(1, secondary_key);
+                        insert_value_by_idx(2, value);
                         ++num_rows;
                     }
                 }
@@ -239,18 +205,8 @@ namespace DB
                 /// Null string means 'no value for requested key'
                 if (!value.isNull())
                 {
-                    for (size_t idx=0; idx<description.types.size(); idx++)
-                    {
-                        switch (columns_types[idx])
-                        {
-                            case RedisColumnType::KEY:
-                                insert_value_by_idx(idx, key);
-                                break;
-                            default:
-                                insert_value_by_idx(idx, value);
-                                break;
-                        }
-                    }
+                    insert_value_by_idx(0, key);
+                    insert_value_by_idx(1, value);
                 }
             }
             cursor += need_values;

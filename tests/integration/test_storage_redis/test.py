@@ -3,6 +3,8 @@ import time
 ## sudo -H pip install redis
 import redis
 import pytest
+import struct
+import sys
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -37,17 +39,50 @@ def drop_table(table):
     node.query(f"DROP TABLE IF EXISTS {table} SYNC");
 
 
-def test_storage_simple_select(started_cluster):
+# see SerializationString.serializeBinary
+def serialize_binary_for_string(x):
+    var_uint_max = (1 << 63) - 1
+    buf = bytearray()
+    # write length
+    length = len(x)
+    # length = (length << 1) ^ (length >> 63)
+    if length > var_uint_max:
+        raise ValueError("Value too large for varint encoding")
+    for i in range(9):
+        byte = length & 0x7F
+        if length > 0x7F:
+            byte |= 0x80
+        buf += (bytes([byte]))
+        length >>= 7
+        if not length:
+            break
+    # write data
+    buf += x.encode('utf-8')
+    return bytes(buf)
+
+
+# see SerializationNumber.serializeBinary
+def serialize_binary_for_uint32(x):
+    buf = bytearray()
+    packed_num = struct.pack('I', x)
+    buf += packed_num
+    if sys.byteorder != 'little':
+        buf.reverse()
+    return bytes(buf)
+
+
+def test_simple_select(started_cluster):
     client = get_redis_connection()
     address = get_address_for_ch()
 
     # clean all
     client.flushall()
-    drop_table('test_storage_simple_select')
+    drop_table('test_simple_select')
 
     data = {}
     for i in range(100):
-        data[str(i)] = str(i)
+        packed = serialize_binary_for_string(str(i))
+        data[packed] = packed
 
     client.mset(data)
     client.close()
@@ -55,56 +90,55 @@ def test_storage_simple_select(started_cluster):
     # create table
     node.query(
         f"""
-        CREATE TABLE test_storage_simple_select(
+        CREATE TABLE test_simple_select(
             k String, 
-            v UInt32
-        ) Engine=Redis('{address}', 0, 'clickhouse')
+            v String
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, v FROM test_storage_simple_select WHERE k='0' FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT k, v FROM test_simple_select WHERE k='0' FORMAT TSV"))
     assert (len(response) == 1)
     assert (response[0] == ['0', '0'])
 
-    response = TSV.toMat(node.query("SELECT * FROM test_storage_simple_select ORDER BY k FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT * FROM test_simple_select ORDER BY k FORMAT TSV"))
     assert (len(response) == 100)
     assert (response[0] == ['0', '0'])
 
 
-def test_storage_hash_map_select(started_cluster):
+def test_select_int(started_cluster):
     client = get_redis_connection()
     address = get_address_for_ch()
 
     # clean all
     client.flushall()
-    drop_table('test_storage_hash_map_select')
+    drop_table('test_select_int')
 
-    key = 'k'
     data = {}
     for i in range(100):
-        data[str(i)] = str(i)
+        packed = serialize_binary_for_uint32(i)
+        data[packed] = packed
 
-    client.hset(key, mapping=data)
+    client.mset(data)
     client.close()
 
     # create table
     node.query(
         f"""
-        CREATE TABLE test_storage_hash_map_select(
-            k String,
-            f String, 
+        CREATE TABLE test_select_int(
+            k UInt32, 
             v UInt32
-        ) Engine=Redis('{address}', 0, 'clickhouse','hash_map')
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, f, v FROM test_storage_hash_map_select WHERE f='0' FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT k, v FROM test_select_int WHERE k=0 FORMAT TSV"))
     assert (len(response) == 1)
-    assert (response[0] == ['k', '0', '0'])
+    assert (response[0] == ['0', '0'])
 
-    response = TSV.toMat(node.query("SELECT * FROM test_storage_hash_map_select ORDER BY f FORMAT TSV"))
+    response = TSV.toMat(node.query("SELECT * FROM test_select_int ORDER BY k FORMAT TSV"))
     assert (len(response) == 100)
-    assert (response[0] == ['k', '0', '0'])
+    assert (response[0] == ['0', '0'])
 
 
 def test_create_table(started_cluster):
@@ -117,7 +151,7 @@ def test_create_table(started_cluster):
         CREATE TABLE test_create_table(
             k String,
             v UInt32
-        ) Engine=Redis('{address}')
+        ) Engine=Redis('{address}') PRIMARY KEY (k)
         """
     )
 
@@ -128,7 +162,7 @@ def test_create_table(started_cluster):
         CREATE TABLE test_create_table(
             k String,
             v UInt32
-        ) Engine=Redis('{address}', 0, 'clickhouse','simple', 10)
+        ) Engine=Redis('{address}', 0, 'clickhouse', 10) PRIMARY KEY (k)
         """
     )
 
@@ -139,11 +173,10 @@ def test_create_table(started_cluster):
             k String,
             f String,
             v UInt32
-        ) Engine=Redis('{address}', 0, 'clickhouse','hash_map', 10)
+        ) Engine=Redis('{address}', 0, 'clickhouse', 10) PRIMARY KEY (k)
         """
     )
 
-    # illegal columns
     drop_table('test_create_table')
     with pytest.raises(QueryRuntimeException):
         node.query(
@@ -152,7 +185,7 @@ def test_create_table(started_cluster):
                 k String,
                 f String,
                 v UInt32
-            ) Engine=Redis('{address}', 0, 'clickhouse','simple', 10)
+            ) Engine=Redis('{address}', 0, 'clickhouse', 10) PRIMARY KEY ()
             """
         )
 
@@ -163,22 +196,8 @@ def test_create_table(started_cluster):
             CREATE TABLE test_create_table(
                 k String,
                 f String,
-                v UInt32,
-                n UInt32
-            ) Engine=Redis('{address}', 0, 'clickhouse','hash_map', 10)
-            """
-        )
-
-    # illegal storage type
-    drop_table('test_create_table')
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            f"""
-            CREATE TABLE test_create_table(
-                k String,
                 v UInt32
-            ) Engine=Redis('{address}', 0, 'clickhouse','not_exist', 10)
+            ) Engine=Redis('{address}', 0, 'clickhouse', 10)
             """
         )
-
 

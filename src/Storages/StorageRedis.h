@@ -2,27 +2,24 @@
 
 #include <Poco/Redis/Redis.h>
 #include <Storages/IStorage.h>
-#include <Dictionaries/RedisSource.h>
+#include <Storages/RedisCommon.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 /* Implements storage in the Redis.
- * Use ENGINE = Redis(host:port, db_index, password, storage_type, pool_size);
- * Read only.
- *
- * Note If storage_type is
- *      SIMPLE: there should be 2 columns and the first one is key in Redis, the second one is value.
- *      HASH_MAP: there should be 3 columns and the first one is key in Redis and the second is the field of Redis Map.
+ * Use ENGINE = Redis(host:port[, db_index[, password[, pool_size]]]) PRIMARY KEY(key);
  */
-class StorageRedis : public IStorage
+class StorageRedis : public IStorage, public IKeyValueEntity, WithContext
 {
 public:
     StorageRedis(
         const StorageID & table_id_,
         const RedisConfiguration & configuration_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment_);
+        ContextPtr context_,
+        const StorageInMemoryMetadata & storage_metadata,
+        const String & primary_key_);
 
     std::string getName() const override { return "Redis"; }
 
@@ -30,7 +27,7 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
@@ -40,12 +37,34 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
+    Names getPrimaryKey() const override { return {primary_key}; }
+
+    /// Return chunk with data for given serialized keys.
+    /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
+    /// If out_null_map is not passed. Not found rows excluded from result chunk.
+    Chunk getBySerializedKeys(
+        const std::vector<std::string> & keys,
+        PaddedPODArray<UInt8> * out_null_map) const;
+
+    Chunk getBySerializedKeys(
+        const RedisArray & keys,
+        PaddedPODArray<UInt8> * out_null_map) const;
+
+    std::pair<RedisIterator, RedisArray> scan(RedisIterator iterator, const String & pattern, const uint64_t max_count);
+
+    RedisArray multiGet(const RedisArray & keys) const;
+
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
+
+    Block getSampleBlock(const Names &) const override;
 private:
     StorageID table_id;
     RedisConfiguration configuration;
 
     Poco::Logger * log;
     RedisPoolPtr pool;
+
+    const String primary_key;
 };
 
 }
