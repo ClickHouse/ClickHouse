@@ -8,7 +8,7 @@
 namespace DB
 {
 
-bool checkSSLWantRead(ssize_t res)
+bool checkSSLWantRead([[maybe_unused]] ssize_t res)
 {
 #if USE_SSL
     return res == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ;
@@ -17,7 +17,7 @@ bool checkSSLWantRead(ssize_t res)
 #endif
 }
 
-bool checkSSLWantWrite(ssize_t res)
+bool checkSSLWantWrite([[maybe_unused]] ssize_t res)
 {
 #if USE_SSL
     return res == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE;
