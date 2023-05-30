@@ -53,7 +53,7 @@ DatabaseMySQL::DatabaseMySQL(
     const String & metadata_path_,
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
-    std::unique_ptr<ConnectionMySQLSettings> settings_,
+    std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
     bool attach)
     : IDatabase(database_name_)
@@ -61,13 +61,13 @@ DatabaseMySQL::DatabaseMySQL(
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
-    , database_settings(std::move(settings_))
+    , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
 {
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty();
+        empty(); // NOLINT(bugprone-standalone-empty)
     }
     catch (...)
     {
@@ -309,7 +309,7 @@ DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, C
             database_name_in_mysql,
             tables_name,
             settings,
-            database_settings->mysql_datatypes_support_level);
+            mysql_settings->mysql_datatypes_support_level);
 }
 
 void DatabaseMySQL::shutdown()

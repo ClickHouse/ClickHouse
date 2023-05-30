@@ -18,6 +18,6 @@ In order to run these queries correctly, each host must have the same cluster de
 
 The local version of the query will eventually be executed on each host in the cluster, even if some hosts are currently not available.
 
-:::warning    
+:::important    
 The order for executing queries within a single host is guaranteed.
 :::

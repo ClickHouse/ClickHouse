@@ -16,7 +16,50 @@ namespace ErrorCodes
 {
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int ILLEGAL_PREWHERE;
 }
+
+namespace
+{
+
+void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
+{
+    auto filter_node_result_type = filter_node->getResultType();
+    if (!filter_node_result_type->canBeUsedInBooleanContext())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Invalid type for filter in {}: {}. In query {}",
+            exception_place_message,
+            filter_node_result_type->getName(),
+            query_node->formatASTForErrorMessage());
+}
+
+}
+
+void validateFilters(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<QueryNode &>();
+    if (query_node_typed.hasPrewhere())
+    {
+        validateFilter(query_node_typed.getPrewhere(), "PREWHERE", query_node);
+
+        assertNoFunctionNodes(query_node_typed.getPrewhere(),
+            "arrayJoin",
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "ARRAY JOIN",
+            "in PREWHERE");
+    }
+
+    if (query_node_typed.hasWhere())
+        validateFilter(query_node_typed.getWhere(), "WHERE", query_node);
+
+    if (query_node_typed.hasHaving())
+        validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
+}
+
+namespace
+{
 
 class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
 {
@@ -55,7 +98,7 @@ public:
                 }
 
                 if (!found_argument_in_group_by_keys)
-                    throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "GROUPING function argument {} is not in GROUP BY keys. In query {}",
                         grouping_function_arguments_node->formatASTForErrorMessage(),
                         query_node->formatASTForErrorMessage());
@@ -105,7 +148,9 @@ private:
     const QueryTreeNodePtr & query_node;
 };
 
-void validateAggregates(const QueryTreeNodePtr & query_node)
+}
+
+void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
     auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
@@ -182,7 +227,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node)
                 if (grouping_set_key->as<ConstantNode>())
                     continue;
 
-                group_by_keys_nodes.push_back(grouping_set_key);
+                group_by_keys_nodes.push_back(grouping_set_key->clone());
+                if (params.group_by_use_nulls)
+                    group_by_keys_nodes.back()->convertToNullable();
             }
         }
         else
@@ -190,7 +237,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node)
             if (node->as<ConstantNode>())
                 continue;
 
-            group_by_keys_nodes.push_back(node);
+            group_by_keys_nodes.push_back(node->clone());
+            if (params.group_by_use_nulls)
+                group_by_keys_nodes.back()->convertToNullable();
         }
     }
 
@@ -277,6 +326,54 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
 {
     ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
     visitor.visit(node);
+}
+
+void validateTreeSize(const QueryTreeNodePtr & node,
+    size_t max_size,
+    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size)
+{
+    size_t tree_size = 0;
+    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
+    nodes_to_process.emplace_back(node, false);
+
+    while (!nodes_to_process.empty())
+    {
+        const auto [node_to_process, processed_children] = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (processed_children)
+        {
+            ++tree_size;
+            node_to_tree_size.emplace(node_to_process, tree_size);
+            continue;
+        }
+
+        auto node_to_size_it = node_to_tree_size.find(node_to_process);
+        if (node_to_size_it != node_to_tree_size.end())
+        {
+            tree_size += node_to_size_it->second;
+            continue;
+        }
+
+        nodes_to_process.emplace_back(node_to_process, true);
+
+        for (const auto & node_to_process_child : node_to_process->getChildren())
+        {
+            if (!node_to_process_child)
+                continue;
+
+            nodes_to_process.emplace_back(node_to_process_child, false);
+        }
+
+        auto * constant_node = node_to_process->as<ConstantNode>();
+        if (constant_node && constant_node->hasSourceExpression())
+            nodes_to_process.emplace_back(constant_node->getSourceExpression(), false);
+    }
+
+    if (tree_size > max_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Query tree is too big. Maximum: {}",
+            max_size);
 }
 
 }

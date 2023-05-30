@@ -62,7 +62,6 @@ SELECT * FROM numbers(10);
 SELECT * FROM numbers(10) LIMIT 3 OFFSET 2;
 3
 4
-5
 SELECT * FROM numbers(10) LIMIT 5 OFFSET 2;
 3
 4

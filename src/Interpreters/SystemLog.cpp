@@ -143,28 +143,58 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             "If 'engine' is specified for system table, PARTITION BY parameters should "
                             "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
         if (config.has(config_prefix + ".ttl"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, TTL parameters should "
+                            "be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+        if (config.has(config_prefix + ".order_by"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, ORDER BY parameters should "
+                            "be specified directly inside 'engine' and 'order_by' setting doesn't make sense");
         if (config.has(config_prefix + ".storage_policy"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
-                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS storage_policy = '...' should "
+                            "be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+        if (config.has(config_prefix + ".settings"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS parameters should "
+                            "be specified directly inside 'engine' and 'settings' setting doesn't make sense");
+
         engine = config.getString(config_prefix + ".engine");
     }
     else
     {
-        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        /// ENGINE expr is necessary.
         engine = "ENGINE = MergeTree";
+
+        /// PARTITION expr is not necessary.
+        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
+
+        /// TTL expr is not necessary.
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
             engine += " TTL " + ttl;
 
-        engine += " ORDER BY ";
-        engine += TSystemLog::getDefaultOrderBy();
+        /// ORDER BY expr is necessary.
+        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        engine += " ORDER BY (" + order_by + ")";
+
+        /// SETTINGS expr is not necessary.
+        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
+        ///
+        /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
-        if (!storage_policy.empty())
-            engine += " SETTINGS storage_policy = " + quoteString(storage_policy);
+        String settings = config.getString(config_prefix + ".settings", "");
+        if (!storage_policy.empty() || !settings.empty())
+        {
+            engine += " SETTINGS";
+            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+            if (!storage_policy.empty())
+                engine += " storage_policy = " + quoteString(storage_policy);
+            if (!settings.empty())
+                engine += (storage_policy.empty() ? " " : ", ") + settings;
+        }
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -426,6 +456,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -501,6 +533,9 @@ void SystemLog<LogElement>::prepareTable()
             rename->elements.emplace_back(std::move(elem));
 
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 

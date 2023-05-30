@@ -79,6 +79,8 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
+#include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemZooKeeperConnection.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -140,6 +142,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
+    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
@@ -184,7 +187,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
 
     if (has_zookeeper)
+    {
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
+        attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection");
+    }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions");

@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -30,7 +31,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
+static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
@@ -67,7 +68,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 
 using StepStack = std::vector<IQueryPlanStep*>;
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
@@ -119,7 +120,7 @@ using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -168,7 +169,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
     }
 }
 
-void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 {
     if (dag)
         dag->mergeInplace(std::move(*expression->clone()));
@@ -176,14 +177,14 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
         dag = expression->clone();
 }
 
-/// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
+/// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
 void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        if (const auto * prewhere_info = reading->getPrewhereInfo())
+        if (const auto prewhere_info = reading->getPrewhereInfo())
         {
             /// Should ignore limit if there is filtering.
             limit = 0;
@@ -519,8 +520,9 @@ AggregationInputOrder buildInputOrderInfo(
 
         enreachFixedColumns(sorting_key_dag, fixed_key_columns);
 
-        for (auto it = matches.cbegin(); it != matches.cend(); ++it)
+        for (const auto * output : dag->getOutputs())
         {
+            auto it = matches.find(output);
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
@@ -979,6 +981,10 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
+        return;
+
+    /// It just does not work, see 02515_projections_with_totals
+    if (aggregating->getParams().overflow_row)
         return;
 
     /// TODO: maybe add support for UNION later.

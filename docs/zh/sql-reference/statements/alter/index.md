@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/alter/
+slug: /zh/sql-reference/statements/alter/overview
 sidebar_position: 35
 sidebar_label: ALTER
 ---
@@ -17,8 +17,9 @@ sidebar_label: ALTER
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-!!! note "备注"
-    大多数 `ALTER TABLE` 查询只支持[\*MergeTree](../../../engines/table-engines/mergetree-family/index.md)表，以及[Merge](../../../engines/table-engines/special/merge.md)和[Distributed](../../../engines/table-engines/special/distributed.md)。
+:::note
+大多数 `ALTER TABLE` 查询只支持[\*MergeTree](../../../engines/table-engines/mergetree-family/index.md)表，以及[Merge](../../../engines/table-engines/special/merge.md)和[Distributed](../../../engines/table-engines/special/distributed.md)。
+:::
 
 这些 `ALTER` 语句操作视图:
 
