@@ -1236,6 +1236,15 @@ static void buildIndexes(
     if (!indexes->use_skip_indexes)
         return;
 
+    const SelectQueryInfo * info = &query_info;
+    std::optional<SelectQueryInfo> info_copy;
+    if (settings.allow_experimental_analyzer)
+    {
+        info_copy.emplace(query_info);
+        info_copy->filter_actions_dag = filter_actions_dag;
+        info = &*info_copy;
+    }
+
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
@@ -1249,14 +1258,14 @@ static void buildIndexes(
             if (inserted)
             {
                 skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(*info, metadata_snapshot);
             }
 
             skip_indexes.merged_indices[it->second].addIndex(index_helper);
         }
         else
         {
-            auto condition = index_helper->createIndexCondition(query_info, context);
+            auto condition = index_helper->createIndexCondition(*info, context);
             if (!condition->alwaysUnknownOrTrue())
                 skip_indexes.useful_indices.emplace_back(index_helper, condition);
         }
