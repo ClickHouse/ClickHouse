@@ -2736,11 +2736,19 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         }
     }
 
-    layers.back()->pushOperator(op);
-
     /// isNull & isNotNull are postfix unary operators
     if (op.type == OperatorType::IsNull)
+    {
+        ASTPtr function = makeASTFunction(op);
+
+        if (!layers.back()->popLastNOperands(function->children[0]->children, 1))
+            return Action::NONE;
+
+        layers.back()->pushOperand(std::move(function));
         return Action::OPERATOR;
+    }
+
+    layers.back()->pushOperator(op);
 
     if (op.type == OperatorType::Cast)
     {
