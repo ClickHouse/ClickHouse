@@ -46,9 +46,9 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         parameters = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"]
         parameters = {key: value for key, value in parameters.items() if key.startswith(token_prefix_env_name)}
         assert parameters
-        print(parameters)
+        # print(parameters)
         values = list(parameters.values())
-        print(values)
+        # print(values)
         # for value in parameters.values():
         #     values.append(value)
         #     print(value)
