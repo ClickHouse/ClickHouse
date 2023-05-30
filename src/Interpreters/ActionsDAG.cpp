@@ -535,6 +535,10 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
         case ActionsDAG::ActionType::FUNCTION:
         {
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
+            /// Ignore unexpected constants from function result.
+            /// It is always allowed to return a constant, but we don't want to have it in the header.
+            if (!node->column && isColumnConst(*res_column.column))
+                res_column.column = res_column.column->convertToFullColumnIfConst();
             break;
         }
 
