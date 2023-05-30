@@ -26,20 +26,20 @@ jobs:
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
-  # DockerHubPushAmd64:
-  #   needs: CheckLabels
-  #   runs-on: [self-hosted, style-checker]
-  #   steps:
-  #     - name: Check out repository code
-  #       uses: ClickHouse/checkout@v1
-  #       with:
-  #         clear-repository: true
-  #     - name: Images check
-  #       run: |
-  #         cd "$GITHUB_WORKSPACE/tests/ci"
-  #         python3 docker_images_check.py --suffix amd64
-  #     - name: Upload images files to artifacts
-  #       uses: actions/upload-artifact@v3
-  #       with:
-  #         name: changed_images_amd64
-  #         path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
+  DockerHubPushAmd64:
+    needs: CheckLabels
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_images_check.py --suffix amd64
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: changed_images_amd64
+          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
