@@ -199,9 +199,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     /// used only during restore from zookeeper log
     int32_t parent_cversion = -1;
 
-    /// should it succeed if node already exists
-    bool not_exists = false;
-
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
@@ -218,7 +215,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
+struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
 
@@ -229,6 +226,12 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
+{
+    OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
+    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
