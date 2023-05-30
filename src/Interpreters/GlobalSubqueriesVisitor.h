@@ -202,7 +202,7 @@ public:
                     external_storage_holder->future_set = std::move(future_set);
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "!!!!!!!!");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
                     //prepared_sets->addStorageToSubquery(key, std::move(external_storage));
             }
 
