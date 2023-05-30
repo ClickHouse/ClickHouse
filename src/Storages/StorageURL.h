@@ -197,7 +197,7 @@ public:
         bool delay_initialization);
 
 private:
-    using InitializeFunc = std::function<void(const FailoverOptions &)>;
+    using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
     String name;
