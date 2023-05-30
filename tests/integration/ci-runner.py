@@ -382,7 +382,9 @@ class ClickhouseIntegrationTestsRunner:
                         if retcode == 0:
                             logging.info("Installation of %s successfull", full_path)
                         else:
-                            raise Exception("Installation of {} failed".format(full_path))
+                            raise Exception(
+                                "Installation of {} failed".format(full_path)
+                            )
                     break
             else:
                 raise Exception("Package with {} not found".format(package))

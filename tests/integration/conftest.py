@@ -1,7 +1,9 @@
-from helpers.cluster import run_and_check
+#!/usr/bin/env python3
+
 import pytest
 import logging
 import os
+from helpers.cluster import run_and_check
 from helpers.test_tools import TSV
 from helpers.network import _NetworkManager
 
