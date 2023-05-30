@@ -65,7 +65,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     #     # value = get_parameter_from_ssm(token_name, True, client)
     #     value = parameters[token_name]["value"]
     #     print(value)
-    for token_name, parameter in parameters.values():
+    for parameter in parameters.values():
         value = parameter["value"]
         print(value)
 
