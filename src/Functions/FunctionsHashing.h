@@ -83,7 +83,12 @@ namespace impl
     {
         SipHashKey ret;
 
-        const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
+        const ColumnTuple * tuple = nullptr;
+        const auto * column = key.column.get();
+        if (isColumnConst(*column))
+            tuple = checkAndGetColumnConstData<ColumnTuple>(column);
+        else
+            tuple = checkAndGetColumn<ColumnTuple>(column);
         if (!tuple)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
 
