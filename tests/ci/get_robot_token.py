@@ -85,4 +85,3 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     )
 
     return ROBOT_TOKEN.value
-
