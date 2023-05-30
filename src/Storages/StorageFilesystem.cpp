@@ -58,7 +58,7 @@ public:
         fs::directory_entry file;
         while (current_block_size < max_block_size)
         {
-            if(!path_info->queue.tryPop(file))
+            if (!path_info->queue.tryPop(file))
             {
                 LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "No data read from queue, stop processing");
                 break;
