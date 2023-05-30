@@ -5469,6 +5469,7 @@ void StorageReplicatedMergeTree::alter(
     if (mutation_znode)
     {
         LOG_DEBUG(log, "Metadata changes applied. Will wait for data changes.");
+        merge_selecting_task->schedule();
         waitMutation(*mutation_znode, query_context->getSettingsRef().alter_sync);
         LOG_DEBUG(log, "Data changes applied.");
     }
@@ -6619,6 +6620,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         else
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
+
+    merge_selecting_task->schedule();
 
     waitMutation(mutation_entry.znode_name, query_context->getSettingsRef().mutations_sync);
 }
