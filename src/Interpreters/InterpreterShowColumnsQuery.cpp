@@ -42,12 +42,6 @@ SELECT
     if (default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
     '' AS extra )";
 
-    // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getVirtuals(). We can't easily do that via SQL.
-
-    // If connected via MySQL Compatibility mode, convert ClickHouse types to MySQL
-    if (getContext()->getClientInfo().interface == DB::ClientInfo::Interface::MYSQL)
-    {
         rewritten_query += getMySQLQuery();
     }
     else {
