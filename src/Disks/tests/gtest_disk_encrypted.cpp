@@ -257,7 +257,7 @@ TEST_F(DiskEncryptedTest, RandomIV)
 
     String bina = getBinaryRepresentation(getDirectory() + "a.txt");
     String binb = getBinaryRepresentation(getDirectory() + "b.txt");
-    constexpr size_t iv_offset = 0x17;
+    constexpr size_t iv_offset = 23; /// See the description of the format in the comment for FileEncryption::Header.
     constexpr size_t iv_size = FileEncryption::InitVector::kSize;
     EXPECT_EQ(bina.substr(0, iv_offset), binb.substr(0, iv_offset)); /// Part of the header before IV is the same.
     EXPECT_NE(bina.substr(iv_offset, iv_size), binb.substr(iv_offset, iv_size)); /// IV differs.

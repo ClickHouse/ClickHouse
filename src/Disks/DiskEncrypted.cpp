@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DISK_INDEX;
-    extern const int DATA_ENCRYPTION_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 

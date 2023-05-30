@@ -370,16 +370,21 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
 
 void Header::read(ReadBuffer & in)
 {
-    char signature[kHeaderSignature.length() + 1] = {};
+    char signature[kHeaderSignature.length()];
     in.readStrict(signature, kHeaderSignature.length());
-    if (kHeaderSignature != signature)
+    if (memcmp(signature, kHeaderSignature.data(), kHeaderSignature.length()) != 0)
         throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Wrong signature, this is not an encrypted file");
 
+    /// The endianness of how the header is written.
+    /// Starting from version 2 the header is always in little endian.
     std::endian endian = std::endian::little;
+
     readBinaryLittleEndian(version, in);
 
     if (version == 0x0100ULL)
     {
+        /// Version 1 could write the header of an encrypted file in either little-endian or big-endian.
+        /// So now if we read the version as little-endian and it's 256 that means two things: the version is actually 1 and the whole header is in big endian.
         endian = std::endian::big;
         version = 1;
     }

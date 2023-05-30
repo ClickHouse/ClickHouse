@@ -104,6 +104,19 @@ private:
 
 
 /// File header which is stored at the beginning of encrypted files.
+///
+/// The format of that header is following:
+/// +--------+------+--------------------------------------------------------------------------+
+/// | offset | size | description                                                              |
+/// +--------+------+--------------------------------------------------------------------------+
+/// |      0 |    3 | 'E', 'N', 'C' (file's signature)                                         |
+/// |      3 |    2 | version of this header (1..2)                                            |
+/// |      5 |    2 | encryption algorithm (0..2, 0=AES_128_CTR, 1=AES_192_CTR, 2=AES_256_CTR) |
+/// |      7 |   16 | fingerprint of encryption key (SipHash)                                  |
+/// |     23 |   16 | initialization vector (randomly generated)                               |
+/// |     39 |   25 | reserved for future use                                                  |
+/// +--------+------+--------------------------------------------------------------------------+
+///
 struct Header
 {
     /// Versions:
