@@ -5,7 +5,22 @@ env:
   PYTHONUNBUFFERED: 1
 
 on: 
-  workflow_dispatch
+  workflow_dispatch:
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+      - opened
+    branches:
+      - master
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'SECURITY.md'
+      - 'docker/docs/**'
+      - 'docs/**'
+      - 'utils/check-style/aspell-ignore/**'
+
 
 jobs:
   DockerHubPushAarch64:
