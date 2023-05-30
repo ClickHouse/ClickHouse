@@ -111,6 +111,25 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
+
+        Poco::Net::SocketAddress address = impl->getConnectedAddress();
+
+        connected_zk_host = address.host().toString();
+        connected_zk_port = address.port();
+
+        connected_zk_index = 0;
+
+        if (args.hosts.size() > 1)
+        {
+            for (size_t i = 0; i < args.hosts.size(); i++)
+            {
+                if (args.hosts[i] == address.toString())
+                {
+                    connected_zk_index = i;
+                    break;
+                }
+            }
+        }
     }
     else if (args.implementation == "testkeeper")
     {
