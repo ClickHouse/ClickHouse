@@ -25,13 +25,13 @@ def started_cluster():
 
 def get_redis_connection(db_id=0):
     client = redis.Redis(
-        host='localhost', port=cluster.redis_port, password="clickhouse", db=db_id
+        host="localhost", port=cluster.redis_port, password="clickhouse", db=db_id
     )
     return client
 
 
 def get_address_for_ch():
-    return cluster.redis_host + ':6379'
+    return cluster.redis_host + ":6379"
 
 
 # see SerializationString.serializeBinary
@@ -47,21 +47,21 @@ def serialize_binary_for_string(x):
         byte = length & 0x7F
         if length > 0x7F:
             byte |= 0x80
-        buf += (bytes([byte]))
+        buf += bytes([byte])
         length >>= 7
         if not length:
             break
     # write data
-    buf += x.encode('utf-8')
+    buf += x.encode("utf-8")
     return bytes(buf)
 
 
 # see SerializationNumber.serializeBinary
 def serialize_binary_for_uint32(x):
     buf = bytearray()
-    packed_num = struct.pack('I', x)
+    packed_num = struct.pack("I", x)
     buf += packed_num
-    if sys.byteorder != 'little':
+    if sys.byteorder != "little":
         buf.reverse()
     return bytes(buf)
 
@@ -92,8 +92,8 @@ def test_simple_select(started_cluster):
         FORMAT TSV
         """))
 
-    assert (len(response) == 1)
-    assert (response[0] == ['0', '0'])
+    assert len(response) == 1
+    assert response[0] == ["0", "0"]
 
     response = TSV.toMat(node.query(
         f"""
@@ -106,8 +106,8 @@ def test_simple_select(started_cluster):
         FORMAT TSV
         """))
 
-    assert (len(response) == 100)
-    assert (response[0] == ['0', '0'])
+    assert len(response) == 100
+    assert response[0] == ["0", "0"]
 
 
 def test_create_table(started_cluster):
@@ -153,7 +153,7 @@ def test_data_type(started_cluster):
 
     # string
     client.flushall()
-    value = serialize_binary_for_string('0')
+    value = serialize_binary_for_string("0")
     client.set(value, value)
 
     response = TSV.toMat(node.query(
@@ -167,8 +167,8 @@ def test_data_type(started_cluster):
         FORMAT TSV
         """))
 
-    assert (len(response) == 1)
-    assert (response[0] == ['0', '0'])
+    assert len(response) == 1
+    assert response[0] == ["0", "0"]
 
     # number
     client.flushall()
@@ -186,8 +186,8 @@ def test_data_type(started_cluster):
         FORMAT TSV
         """))
 
-    assert (len(response) == 1)
-    assert (response[0] == ['0', '0'])
+    assert len(response) == 1
+    assert response[0] == ["0", "0"]
 
     # datetime
     client.flushall()
@@ -208,5 +208,5 @@ def test_data_type(started_cluster):
         FORMAT TSV
         """))
 
-    assert (len(response) == 1)
-    assert (response[0] == ['2023-06-01 00:00:00', '2023-06-01 00:00:00'])
+    assert len(response) == 1
+    assert response[0] == ["2023-06-01 00:00:00", "2023-06-01 00:00:00"]

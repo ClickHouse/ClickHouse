@@ -16,16 +16,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 StoragePtr TableFunctionRedis::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const

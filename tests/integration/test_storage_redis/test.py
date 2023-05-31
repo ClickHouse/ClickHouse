@@ -24,17 +24,17 @@ def started_cluster():
 
 def get_redis_connection(db_id=0):
     client = redis.Redis(
-        host='localhost', port=cluster.redis_port, password="clickhouse", db=db_id
+        host="localhost", port=cluster.redis_port, password="clickhouse", db=db_id
     )
     return client
 
 
 def get_address_for_ch():
-    return cluster.redis_host + ':6379'
+    return cluster.redis_host + ":6379"
 
 
 def drop_table(table):
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC");
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 # see SerializationString.serializeBinary
@@ -50,21 +50,21 @@ def serialize_binary_for_string(x):
         byte = length & 0x7F
         if length > 0x7F:
             byte |= 0x80
-        buf += (bytes([byte]))
+        buf += bytes([byte])
         length >>= 7
         if not length:
             break
     # write data
-    buf += x.encode('utf-8')
+    buf += x.encode("utf-8")
     return bytes(buf)
 
 
 # see SerializationNumber.serializeBinary
 def serialize_binary_for_uint32(x):
     buf = bytearray()
-    packed_num = struct.pack('I', x)
+    packed_num = struct.pack("I", x)
     buf += packed_num
-    if sys.byteorder != 'little':
+    if sys.byteorder != "little":
         buf.reverse()
     return bytes(buf)
 
@@ -75,7 +75,7 @@ def test_simple_select(started_cluster):
 
     # clean all
     client.flushall()
-    drop_table('test_simple_select')
+    drop_table("test_simple_select")
 
     data = {}
     for i in range(100):
@@ -95,13 +95,17 @@ def test_simple_select(started_cluster):
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, v FROM test_simple_select WHERE k='0' FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['0', '0'])
+    response = TSV.toMat(
+        node.query("SELECT k, v FROM test_simple_select WHERE k='0' FORMAT TSV")
+    )
+    assert len(response) == 1
+    assert response[0] == ["0", "0"]
 
-    response = TSV.toMat(node.query("SELECT * FROM test_simple_select ORDER BY k FORMAT TSV"))
-    assert (len(response) == 100)
-    assert (response[0] == ['0', '0'])
+    response = TSV.toMat(
+        node.query("SELECT * FROM test_simple_select ORDER BY k FORMAT TSV")
+    )
+    assert len(response) == 100
+    assert response[0] == ["0", "0"]
 
 
 def test_select_int(started_cluster):
@@ -110,7 +114,7 @@ def test_select_int(started_cluster):
 
     # clean all
     client.flushall()
-    drop_table('test_select_int')
+    drop_table("test_select_int")
 
     data = {}
     for i in range(100):
@@ -130,20 +134,25 @@ def test_select_int(started_cluster):
         """
     )
 
-    response = TSV.toMat(node.query("SELECT k, v FROM test_select_int WHERE k=0 FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['0', '0'])
+    response = TSV.toMat(
+        node.query("SELECT k, v FROM test_select_int WHERE k=0 FORMAT TSV")
+    )
+    assert len(response) == 1
+    assert response[0] == ["0", "0"]
 
-    response = TSV.toMat(node.query("SELECT * FROM test_select_int ORDER BY k FORMAT TSV"))
-    assert (len(response) == 100)
-    assert (response[0] == ['0', '0'])
+    response = TSV.toMat(
+        node.query("SELECT * FROM test_select_int ORDER BY k FORMAT TSV")
+    )
+    assert len(response) == 100
+    assert response[0] == ["0", "0"]
+
 
 
 def test_create_table(started_cluster):
     address = get_address_for_ch()
 
     # simple creation
-    drop_table('test_create_table')
+    drop_table("test_create_table")
     node.query(
         f"""
         CREATE TABLE test_create_table(
@@ -154,7 +163,7 @@ def test_create_table(started_cluster):
     )
 
     # simple creation with full engine args
-    drop_table('test_create_table')
+    drop_table("test_create_table")
     node.query(
         f"""
         CREATE TABLE test_create_table(
@@ -164,7 +173,7 @@ def test_create_table(started_cluster):
         """
     )
 
-    drop_table('test_create_table')
+    drop_table("test_create_table")
     node.query(
         f"""
         CREATE TABLE test_create_table(
@@ -175,7 +184,7 @@ def test_create_table(started_cluster):
         """
     )
 
-    drop_table('test_create_table')
+    drop_table("test_create_table")
     with pytest.raises(QueryRuntimeException):
         node.query(
             f"""
@@ -187,7 +196,7 @@ def test_create_table(started_cluster):
             """
         )
 
-    drop_table('test_create_table')
+    drop_table("test_create_table")
     with pytest.raises(QueryRuntimeException):
         node.query(
             f"""
@@ -226,19 +235,27 @@ def test_simple_insert(started_cluster):
     )
 
     response = node.query("SELECT COUNT(*) FROM test_simple_insert FORMAT Values")
-    assert (response == '(2)')
+    assert response == "(2)"
 
-    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE k=1 FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+    response = TSV.toMat(
+        node.query("SELECT k, m, n FROM test_simple_insert WHERE k=1 FORMAT TSV")
+    )
+    assert len(response) == 1
+    assert response[0] == ["1", "2023-06-01 00:00:00", "lili"]
 
-    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE m='2023-06-01 00:00:00' FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+    response = TSV.toMat(
+        node.query(
+            "SELECT k, m, n FROM test_simple_insert WHERE m='2023-06-01 00:00:00' FORMAT TSV"
+        )
+    )
+    assert len(response) == 1
+    assert response[0] == ["1", "2023-06-01 00:00:00", "lili"]
 
-    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE n='lili' FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+    response = TSV.toMat(
+        node.query("SELECT k, m, n FROM test_simple_insert WHERE n='lili' FORMAT TSV")
+    )
+    assert len(response) == 1
+    assert response[0] == ["1", "2023-06-01 00:00:00", "lili"]
 
 
 def test_update(started_cluster):
@@ -246,7 +263,7 @@ def test_update(started_cluster):
     address = get_address_for_ch()
     # clean all
     client.flushall()
-    drop_table('test_update')
+    drop_table("test_update")
 
     node.query(
         f"""
@@ -271,11 +288,13 @@ def test_update(started_cluster):
         """
     )
 
-    print("update response: ",  response)
+    print("update response: ", response)
 
-    response = TSV.toMat(node.query("SELECT k, m, n FROM test_update WHERE k=1 FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['1', '2023-06-03 00:00:00', 'lili'])
+    response = TSV.toMat(
+        node.query("SELECT k, m, n FROM test_update WHERE k=1 FORMAT TSV")
+    )
+    assert len(response) == 1
+    assert response[0] == ["1", "2023-06-03 00:00:00", "lili"]
 
     # can not update key
     with pytest.raises(QueryRuntimeException):
@@ -292,7 +311,7 @@ def test_delete(started_cluster):
 
     # clean all
     client.flushall()
-    drop_table('test_delete')
+    drop_table("test_delete")
 
     node.query(
         f"""
@@ -317,11 +336,11 @@ def test_delete(started_cluster):
         """
     )
 
-    print("delete response: ",  response)
+    print("delete response: ", response)
 
     response = TSV.toMat(node.query("SELECT k, m, n FROM test_delete FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['2', '2023-06-02 00:00:00', 'lucy'])
+    assert len(response) == 1
+    assert response[0] == ["2", "2023-06-02 00:00:00", "lucy"]
 
     response = node.query(
         """
@@ -330,7 +349,7 @@ def test_delete(started_cluster):
     )
 
     response = TSV.toMat(node.query("SELECT k, m, n FROM test_delete FORMAT TSV"))
-    assert (len(response) == 0)
+    assert len(response) == 0
 
 
 def test_truncate(started_cluster):
@@ -338,7 +357,7 @@ def test_truncate(started_cluster):
     address = get_address_for_ch()
     # clean all
     client.flushall()
-    drop_table('test_truncate')
+    drop_table("test_truncate")
 
     node.query(
         f"""
@@ -363,9 +382,9 @@ def test_truncate(started_cluster):
         """
     )
 
-    print("truncate table response: ",  response)
+    print("truncate table response: ", response)
 
     response = TSV.toMat(node.query("SELECT COUNT(*) FROM test_truncate FORMAT TSV"))
-    assert (len(response) == 1)
-    assert (response[0] == ['0'])
+    assert len(response) == 1
+    assert esponse[0] == ["0"]
 

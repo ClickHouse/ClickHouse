@@ -54,7 +54,7 @@ using RedisClientPtr = std::unique_ptr<Poco::Redis::Client>;
 using RedisPool = BorrowedObjectPool<RedisClientPtr>;
 using RedisPoolPtr = std::shared_ptr<RedisPool>;
 
-/// Redis scan interator
+/// Redis scan iterator
 using RedisIterator = int64_t;
 
 struct RedisConnection
