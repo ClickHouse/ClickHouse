@@ -63,7 +63,7 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
+ThreadGroupStatus::ThreadGroupStatus()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
@@ -121,7 +121,7 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-ThreadGroupPtr ThreadStatus::getThreadGroup() const
+ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
 {
     return thread_group;
 }
@@ -141,7 +141,7 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
-void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);
     shared_data.logs_queue_ptr = logs_queue;

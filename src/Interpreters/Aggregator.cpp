@@ -2317,7 +2317,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
 
-    auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
+    auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
@@ -3045,7 +3045,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupPtr thread_group)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)

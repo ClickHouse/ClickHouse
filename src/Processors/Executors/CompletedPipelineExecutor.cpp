@@ -32,7 +32,7 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
