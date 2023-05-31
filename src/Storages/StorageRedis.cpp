@@ -520,14 +520,16 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             context_,
-            /*can_execute_*/ true,
-            /*return_all_columns_*/ true,
-            /*return_mutated_rows*/ true);
+            settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -561,14 +563,16 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
+    MutationsInterpreter::Settings settings(true);
+    settings.return_all_columns = true;
+    settings.return_mutated_rows = true;
+
     auto interpreter = std::make_unique<MutationsInterpreter>(
         storage_ptr,
         metadata_snapshot,
         commands,
         context_,
-        /*can_execute_*/ true,
-        /*return_all_columns*/ true,
-        /*return_mutated_rows*/ true);
+        settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
