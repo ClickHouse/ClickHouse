@@ -21,7 +21,7 @@ namespace DB
     }
 
 
-        RedisSource::RedisSource(
+    RedisSource::RedisSource(
         RedisConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
