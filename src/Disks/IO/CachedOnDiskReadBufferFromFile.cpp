@@ -925,16 +925,16 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         LOG_TEST(
             log,
-            "Read {} bytes, read type {}, position: {}, offset: {}, segment end: {}",
-            size, toString(read_type), implementation_buffer->getPosition(),
-            implementation_buffer->getFileOffsetOfBufferEnd(), file_segment.range().right);
+            "Read {} bytes, read type {}, file offset: {}, impl offset: {}/{}, segment: {}",
+            size, toString(read_type), file_offset_of_buffer_end,
+            implementation_buffer->getFileOffsetOfBufferEnd(), read_until_position, file_segment.range().toString());
 
         if (read_type == ReadType::CACHED)
         {
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-            chassert(file_offset_of_buffer_end + size <= file_segment.range().size());
+            chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
         }
         else
         {
