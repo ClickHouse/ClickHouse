@@ -1019,7 +1019,6 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
-            temporary_table_expression_node->setAlias(temporary_table_expression_node->getTemporaryTableName());
 
             in_function_subquery_node = std::move(temporary_table_expression_node);
         }
