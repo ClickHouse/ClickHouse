@@ -138,7 +138,7 @@ def get_changed_docker_images(
                 image,
             )
             name = images_dict[dependent]["name"]
-            only_amd64 = DOCKER_REPO + "/" + images_dict[dependent].get("only_amd64", False)
+            only_amd64 = DOCKER_REPO + "/" + str(images_dict[dependent].get("only_amd64", False))
             changed_images.append(DockerImage(dependent, name, only_amd64, image))
         index += 1
         if index > 5 * len(images_dict):
