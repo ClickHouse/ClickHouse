@@ -80,7 +80,8 @@ namespace DB
     M(UInt64, background_schedule_pool_size, 128, "The maximum number of threads that will be used for constantly executing some lightweight periodic operations.", 0) \
     M(UInt64, background_message_broker_schedule_pool_size, 16, "The maximum number of threads that will be used for executing background operations for message streaming.", 0) \
     M(UInt64, background_distributed_schedule_pool_size, 16, "The maximum number of threads that will be used for executing distributed sends.", 0) \
-    M(UInt64, async_loader_pool_size, 16, "The maximum number of threads that will be used for async loading of tables after server start.", 0) \
+    M(UInt64, async_loader_foreground_pool_size, 0, "The maximum number of threads that will be used for foreground (that is being waited for by a query) async loading of tables. Also used for synchronous loading of tables before the server start. Zero means use all CPUs.", 0) \
+    M(UInt64, async_loader_background_pool_size, 16, "The maximum number of threads that will be used for background async loading of tables. Zero means use all CPUs.", 0) \
     M(Bool, async_load_databases, false, "Enable asynchronous loading of databases and tables to speedup server startup. Queries to not yet loaded entity will be blocked until load is finished.", 0) \
     M(Bool, display_secrets_in_show_and_select, false, "Allow showing secrets in SHOW and SELECT queries via a format setting and a grant", 0)
 

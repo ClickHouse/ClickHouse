@@ -716,7 +716,6 @@ public:
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
-    size_t getAsyncLoaderPoolSize() const;
     AsyncLoader & getAsyncLoader() const;
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;

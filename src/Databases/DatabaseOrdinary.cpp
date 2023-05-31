@@ -200,7 +200,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
         fmt::format("startup table {}", name.getFullName()),
         [this, name] (const LoadJobPtr &)
         {
-            if (auto table = DatabaseOrdinary::tryGetTable(name.table, {}))
+            if (auto table = DatabaseOnDisk::tryGetTable(name.table, {}))
             {
                 /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
                 /// until startup finished.
@@ -228,6 +228,27 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
         DATABASE_STARTUP_PRIORITY,
         fmt::format("startup Ordinary database {}", database_name));
     return makeLoadTask(async_loader, {job});
+}
+
+DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+{
+    // TODO(serxa): implement
+}
+
+StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr context) const
+{
+    const LoadTaskPtr * startup_task = nullptr;
+    {
+        std::scoped_lock lock(mutex);
+        if (auto it = startup_table.find(name); it != startup_table.end())
+            startup_task = &it->second;
+    }
+
+    // TODO(serxa): prioritize always? what priority should be used?
+    if (startup_task)
+        waitLoad(*startup_task);
+
+    return DatabaseOnDisk::tryGetTable(name, context);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

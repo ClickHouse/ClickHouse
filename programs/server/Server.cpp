@@ -1226,7 +1226,10 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
-            global_context->getAsyncLoader().setMaxThreads(global_context->getAsyncLoaderPoolSize());
+            auto fg_pool_size = server_settings_.async_loader_foreground_pool_size;
+            auto bg_pool_size = server_settings_.async_loader_background_pool_size;
+            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPool::Foreground, fg_pool_size ? fg_pool_size : getNumberOfPhysicalCPUCores());
+            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPool::Background, bg_pool_size ? bg_pool_size : getNumberOfPhysicalCPUCores());
 
             if (config->has("resources"))
             {

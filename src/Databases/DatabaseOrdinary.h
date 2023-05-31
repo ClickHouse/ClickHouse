@@ -51,6 +51,10 @@ public:
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+
+    StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
+
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,

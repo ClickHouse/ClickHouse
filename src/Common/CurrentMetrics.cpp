@@ -97,8 +97,10 @@
     M(DiskObjectStorageAsyncThreadsActive, "Number of threads in the async thread pool for DiskObjectStorage running a task.") \
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
-    M(AsyncLoaderThreads, "Number of threads in the async loader thread pool.") \
-    M(AsyncLoaderThreadsActive, "Number of threads in the async loader thread pool running a task.") \
+    M(AsyncLoaderBackgroundThreads, "Number of threads in the async loader background thread pool.") \
+    M(AsyncLoaderBackgroundThreadsActive, "Number of threads in the async loader background thread pool running a task.") \
+    M(AsyncLoaderForegroundThreads, "Number of threads in the async loader foreground thread pool.") \
+    M(AsyncLoaderForegroundThreadsActive, "Number of threads in the async loader foreground thread pool running a task.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \

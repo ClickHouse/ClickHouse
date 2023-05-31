@@ -346,7 +346,8 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
-    <async_loader_pool_size>16</async_loader_pool_size>
+    <async_loader_foreground_pool_size>64</async_loader_foreground_pool_size>
+    <async_loader_background_pool_size>16</async_loader_background_pool_size>
     -->
 
     <!-- Enables asynchronous loading of databases and tables to speedup server startup.

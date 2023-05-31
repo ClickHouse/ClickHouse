@@ -177,9 +177,9 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
 StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
-    /// In otder to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
-    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
-    /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
+    /// In order to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
+    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query is modified.
+    /// Also if materialized_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
     /// replication_handler was shutdown.
     if (local_context->isInternalQuery() || materialized_tables.empty())
     {
