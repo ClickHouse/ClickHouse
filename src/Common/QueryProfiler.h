@@ -27,12 +27,28 @@ namespace DB
   * Destructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
+
+class Timer
+{
+public:
+    Timer(){ timer_id = std::optional<timer_t>(std::nullopt); }
+    ~Timer();
+
+    void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
+    void set(UInt32 period);
+    void tryStop();
+    void tryCleanup();
+
+private:
+    std::optional<timer_t> timer_id;
+};
+
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
     QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
-    virtual ~QueryProfilerBase();
+    ~QueryProfilerBase();
 
 private:
     void tryCleanup();
@@ -40,8 +56,7 @@ private:
     Poco::Logger * log;
 
 #if USE_UNWIND
-    /// Timer id from timer_create(2)
-    static thread_local std::optional<timer_t> timer_id;
+    inline static thread_local Timer timer = Timer();
 #endif
 
     /// Pause signal to interrupt threads to get traces
