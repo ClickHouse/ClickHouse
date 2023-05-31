@@ -240,6 +240,8 @@ Chain InterpreterInsertQuery::buildChain(
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
     return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, elapsed_counter_ms);
 }
