@@ -51,8 +51,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
-#ifndef NDEBUG
-    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
+#ifdef ABORT_ON_LOGICAL_ERROR
+    , log(&Poco::Logger::get(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile"))
 #endif
@@ -75,6 +75,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
     const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
 {
+    if (!cache_log)
+        return;
+
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
@@ -104,8 +107,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    if (cache_log)
-        cache_log->add(elem);
+    cache_log->add(elem);
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
@@ -411,7 +413,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     {
         case ReadType::CACHED:
         {
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
             size_t file_size = getFileSizeFromReadBuffer(*read_buffer_for_file_segment);
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
@@ -456,7 +458,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
             {
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
 
-                assert(read_buffer_for_file_segment->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end);
+                chassert(read_buffer_for_file_segment->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end);
             }
 
             const auto current_write_offset = file_segment.getCurrentWriteOffset(false);
@@ -887,28 +889,24 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (!result)
     {
-        auto debug_check = [&]()
+#ifdef ABORT_ON_LOGICAL_ERROR
+        if (read_type == ReadType::CACHED)
         {
-            if (read_type == ReadType::CACHED)
+            size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+            if (cache_file_size == 0)
             {
-                size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-                if (cache_file_size == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Attempt to read from an empty cache file: {} (just before actual read)",
-                        cache_file_size);
-                }
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Attempt to read from an empty cache file: {} (just before actual read)",
+                    cache_file_size);
             }
-            else
-            {
-                chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
-            }
-            chassert(!implementation_buffer->hasPendingData());
-            return true;
-        };
-
-        chassert(debug_check());
+        }
+        else
+        {
+            chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
+        }
+        chassert(!implementation_buffer->hasPendingData());
+#endif
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -1093,8 +1091,8 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos <= working_buffer.end());
             return new_pos;
         }
     }
