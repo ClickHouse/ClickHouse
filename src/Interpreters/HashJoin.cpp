@@ -1851,7 +1851,7 @@ public:
         : parent(parent_), max_block_size(max_block_size_), current_block_start(0)
     {
         if (parent.data == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "({}) Cannot join after data has been released", fmt::ptr(parent));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "({}) Cannot join after data has been released", fmt::ptr(&parent));
     }
 
     Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }

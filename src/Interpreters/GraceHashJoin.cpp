@@ -281,6 +281,8 @@ GraceHashJoin::GraceHashJoin(
 
 void GraceHashJoin::initBuckets()
 {
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
+
     if (!buckets.empty())
         return;
 
@@ -318,8 +320,6 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-
-    std::lock_guard current_bucket_lock(current_bucket_mutex);
 
     addJoinedBlockImpl(std::move(materialized));
     return true;
@@ -404,9 +404,14 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 
 void GraceHashJoin::initialize(const Block & sample_block)
 {
+    std::lock_guard lock(hash_join_mutex);
+    if (output_sample_block)
+        return;
+
     left_sample_block = sample_block.cloneEmpty();
     output_sample_block = left_sample_block.cloneEmpty();
     ExtraBlockPtr not_processed;
+
     hash_join->joinBlock(output_sample_block, not_processed);
     initBuckets();
 }
@@ -570,9 +575,13 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     std::lock_guard current_bucket_lock(current_bucket_mutex);
 
     if (current_bucket == nullptr)
+    {
+        LOG_TRACE(log, "All {} buckets are processed", buckets.size());
         return nullptr;
+    }
 
     size_t bucket_idx = current_bucket->idx;
+    LOG_TRACE(log, "Started to process {}/{} bucket", bucket_idx, buckets.size());
 
     size_t prev_keys_num = 0;
     // If there is only one bucket, don't take this check.
