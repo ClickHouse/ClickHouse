@@ -283,7 +283,7 @@ def test_unavailable_server(cluster):
 
 
 def test_replicated_database(cluster):
-    node1 = cluster.instances["node2"]
+    node1 = cluster.instances["node1"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
         settings={"allow_experimental_database_replicated": 1},
