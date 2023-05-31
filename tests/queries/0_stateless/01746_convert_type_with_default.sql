@@ -58,23 +58,23 @@ select toDateOrDefault(-1, '2000-01-01'::Date);
 
 select toDateTimeOrDefault('2023-05-30 14:38:20');
 select toDateTimeOrDefault('2023-05-30 14:38:20', 'UTC');
-select toString(toDateTimeOrDefault('1xxx', 'Asia/Istanbul', '2023-05-30 14:38:20'::DateTime('Asia/Istanbul')), 'Asia/Istanbul');
-select toDateTimeOrDefault(1685457500);
+select toDateTimeOrDefault('1xxx', 'UTC', '2023-05-30 14:38:20'::DateTime('UTC'));
+select toDateTimeOrDefault(1685457500, 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int8));
-select toDateTimeOrDefault(cast(19 as UInt8));
+select toDateTimeOrDefault(cast(19 as Int8), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt8), 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int16));
-select toDateTimeOrDefault(cast(19 as UInt16));
+select toDateTimeOrDefault(cast(19 as Int16), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt16), 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int32));
-select toDateTimeOrDefault(cast(19 as UInt32));
+select toDateTimeOrDefault(cast(19 as Int32), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt32), 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int64));
-select toDateTimeOrDefault(cast(19 as UInt64));
+select toDateTimeOrDefault(cast(19 as Int64), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt64), 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int128));
-select toDateTimeOrDefault(cast(19 as UInt128));
+select toDateTimeOrDefault(cast(19 as Int128), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt128), 'UTC');
 
-select toDateTimeOrDefault(cast(19 as Int256));
-select toDateTimeOrDefault(cast(19 as UInt256));
+select toDateTimeOrDefault(cast(19 as Int256), 'UTC');
+select toDateTimeOrDefault(cast(19 as UInt256), 'UTC');
