@@ -81,30 +81,36 @@ def test_simple_select(started_cluster):
     client.mset(data)
     client.close()
 
-    response = TSV.toMat(node.query(
-        f"""
-        SELECT 
-            key, value 
-        FROM 
-            redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
-        WHERE 
-            key='0' 
-        FORMAT TSV
-        """))
+    response = TSV.toMat(
+        node.query(
+            f"""
+            SELECT 
+                key, value 
+            FROM 
+                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
+            WHERE 
+                key='0' 
+            FORMAT TSV
+            """
+        )
+    )
 
     assert len(response) == 1
     assert response[0] == ["0", "0"]
 
-    response = TSV.toMat(node.query(
-        f"""
-        SELECT 
-            * 
-        FROM 
-            redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
-        ORDER BY 
-            key 
-        FORMAT TSV
-        """))
+    response = TSV.toMat(
+        node.query(
+            f"""
+            SELECT 
+                * 
+            FROM 
+                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
+            ORDER BY 
+                key 
+            FORMAT TSV
+            """
+        )
+    )
 
     assert len(response) == 100
     assert response[0] == ["0", "0"]
@@ -124,7 +130,8 @@ def test_create_table(started_cluster):
             *
         FROM 
             redis('{address}', 'k', 'k String, v UInt32', 0, 'clickhouse', 10) 
-        """)
+        """
+    )
 
     # illegal data type
     with pytest.raises(QueryRuntimeException):
@@ -134,7 +141,8 @@ def test_create_table(started_cluster):
                 *
             FROM 
                 redis('{address}', 'k', 'k not_exist_type, v String', 0, 'clickhouse', 10) 
-            """)
+            """
+        )
 
     # illegal key
     with pytest.raises(QueryRuntimeException):
@@ -156,16 +164,19 @@ def test_data_type(started_cluster):
     value = serialize_binary_for_string("0")
     client.set(value, value)
 
-    response = TSV.toMat(node.query(
-        f"""
-        SELECT
-            *
-        FROM
-            redis('{address}', 'k', 'k String, v String', 0, 'clickhouse', 10)
-        WHERE
-            k='0'
-        FORMAT TSV
-        """))
+    response = TSV.toMat(
+        node.query(
+            f"""
+            SELECT
+                *
+            FROM
+                redis('{address}', 'k', 'k String, v String', 0, 'clickhouse', 10)
+            WHERE
+                k='0'
+            FORMAT TSV
+            """
+        )
+    )
 
     assert len(response) == 1
     assert response[0] == ["0", "0"]
@@ -175,16 +186,19 @@ def test_data_type(started_cluster):
     value = serialize_binary_for_uint32(0)
     client.set(value, value)
 
-    response = TSV.toMat(node.query(
-        f"""
-        SELECT
-            *
-        FROM
-            redis('{address}', 'k', 'k UInt32, v UInt32', 0, 'clickhouse', 10)
-        WHERE
-            k=0
-        FORMAT TSV
-        """))
+    response = TSV.toMat(
+        node.query(
+            f"""
+            SELECT
+                *
+            FROM
+                redis('{address}', 'k', 'k UInt32, v UInt32', 0, 'clickhouse', 10)
+            WHERE
+                k=0
+            FORMAT TSV
+            """
+        )
+    )
 
     assert len(response) == 1
     assert response[0] == ["0", "0"]
@@ -197,16 +211,19 @@ def test_data_type(started_cluster):
     value = serialize_binary_for_uint32(int(seconds_since_epoch))
     client.set(value, value)
 
-    response = TSV.toMat(node.query(
-        f"""
-        SELECT
-            *
-        FROM
-            redis('{address}', 'k', 'k DateTime, v DateTime', 0, 'clickhouse', 10)
-        WHERE
-            k='2023-06-01 00:00:00'
-        FORMAT TSV
-        """))
+    response = TSV.toMat(
+        node.query(
+            f"""
+            SELECT
+                *
+            FROM
+                redis('{address}', 'k', 'k DateTime, v DateTime', 0, 'clickhouse', 10)
+            WHERE
+                k='2023-06-01 00:00:00'
+            FORMAT TSV
+            """
+        )
+    )
 
     assert len(response) == 1
     assert response[0] == ["2023-06-01 00:00:00", "2023-06-01 00:00:00"]
