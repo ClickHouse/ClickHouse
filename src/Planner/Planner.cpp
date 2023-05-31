@@ -2,6 +2,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -72,6 +73,12 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event SelectQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -1155,6 +1162,9 @@ void Planner::buildPlanForUnionNode()
 
 void Planner::buildPlanForQueryNode()
 {
+    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
