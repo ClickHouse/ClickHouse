@@ -50,7 +50,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
 #else
@@ -151,10 +151,8 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     /// Do not allow to use asynchronous version of LocalFSReadMethod.
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
-    // The buffer will unnecessarily allocate a Memory of size local_fs_buffer_size, which will then
-    // most likely be unused because we're swap()ping our own internal_buffer into
-    // implementation_buffer before each read. But we can't just set local_fs_buffer_size = 0 here
-    // because some buffer implementations actually use that memory (e.g. for prefetching).
+    if (use_external_buffer)
+        local_read_settings.local_fs_buffer_size = 0;
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
 
@@ -389,14 +387,6 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     auto read_buffer_for_file_segment = getReadBufferForFileSegment(file_segment);
 
     watch.stop();
-    current_file_segment_counters.increment(
-        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
-
-    [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    chassert(download_current_segment == file_segment.isDownloader());
-
-    chassert(file_segment.range() == range);
-    chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
     LOG_TEST(
         log,
@@ -405,6 +395,15 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
         file_offset_of_buffer_end,
         read_buffer_for_file_segment->getFileOffsetOfBufferEnd(),
         file_segment.getInfoForLog());
+
+    current_file_segment_counters.increment(
+        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
+
+    [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+    chassert(download_current_segment == file_segment.isDownloader());
+
+    chassert(file_segment.range() == range);
+    chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
