@@ -22,7 +22,10 @@ def cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
-            "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True, with_zookeeper=True
+            "node3",
+            main_configs=["configs/storage_conf_web.xml"],
+            with_nginx=True,
+            with_zookeeper=True,
         )
 
         cluster.add_instance(
