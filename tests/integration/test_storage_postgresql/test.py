@@ -62,6 +62,16 @@ def test_postgres_select_insert(started_cluster):
     # for i in range(1, 1000):
     #     assert (node1.query(check1)).rstrip() == '10000', f"Failed on {i}"
 
+    result = node1.query(
+        f"""
+        INSERT INTO TABLE FUNCTION {table}
+        SELECT number, concat('name_', toString(number)), 3 from numbers(1000000)"""
+    )
+    check1 = f"SELECT count() FROM {table}"
+    check2 = f"SELECT count() FROM (SELECT * FROM {table} LIMIT 10)"
+    assert (node1.query(check1)).rstrip() == "1010000"
+    assert (node1.query(check2)).rstrip() == "10"
+
     cursor.execute(f"DROP TABLE {table_name} ")
 
 
@@ -173,7 +183,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
 
-def test_non_default_scema(started_cluster):
+def test_non_default_schema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema_with_dots")
 
