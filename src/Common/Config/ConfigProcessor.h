@@ -92,7 +92,13 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
-    /// crypt nodes in config with specified encryption attributes
+    /// Encrypt text value
+    std::string encryptValue(const std::string & codec_name, const std::string & value);
+
+    /// Decrypt value
+    std::string decryptValue(const std::string & codec_name, const std::string & value);
+
+    /// Decrypt nodes in config with specified encryption attributes
     void decryptConfig(LoadedConfig & loaded_config);
 
     /// Save preprocessed config to specified directory.
