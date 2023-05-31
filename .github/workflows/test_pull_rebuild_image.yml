@@ -1,4 +1,4 @@
-name: check for pull request
+name: checkpullrequest
 
 env:
   # Force the stdout and stderr streams to be unbuffered
