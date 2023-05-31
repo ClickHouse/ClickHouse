@@ -125,10 +125,12 @@ ClusterDiscovery::ClusterDiscovery(
             ClusterInfo(
                 /* name_= */ key,
                 /* zk_root_= */ config.getString(prefix + ".path"),
+                /* host_name= */ config.getString(prefix + ".my_hostname", getFQDNOrHostName()),
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
+                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
+                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
             )
         );
     }
@@ -292,6 +294,12 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         registerInZk(zk, cluster_info);
         nodes_info.clear();
         return false;
+    }
+
+    if (cluster_info.current_cluster_is_invisible)
+    {
+        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
+        return true;
     }
 
     if (!needUpdate(node_uuids, nodes_info))
