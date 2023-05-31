@@ -90,7 +90,7 @@ close it.
         name: str,
         pr: PullRequest,
         repo: Repository,
-        backport_created_label: str = Labels.BACKPORTS_CREATED
+        backport_created_label: str = Labels.BACKPORTS_CREATED,
     ):
         self.name = name
         self.pr = pr
@@ -471,7 +471,8 @@ class Backport:
         pr_labels = [label.name for label in pr.labels]
         if self.must_create_backport_label in pr_labels:
             branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label) for br in self.release_branches
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
