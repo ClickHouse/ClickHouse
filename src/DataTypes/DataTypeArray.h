@@ -32,7 +32,7 @@ public:
     }
     const char * getMySQLName() const override
     {
-        return "string";
+        return "text";
     }
 
     bool canBeInsideNullable() const override
