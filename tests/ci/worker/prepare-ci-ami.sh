@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The script is downloaded the AWS image builder Task Orchestrator and Executor (AWSTOE)
+# We can't use `user data script` because cloud-init does not check the exit code
 set -xeuo pipefail
 
 echo "Running prepare script"
@@ -121,3 +123,6 @@ gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
 dpkg -i /tmp/amazon-cloudwatch-agent.deb
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl enable amazon-cloudwatch-agent.service
+
+# The following line is used in aws TOE check.
+touch /var/tmp/clickhouse-ci-ami.success
