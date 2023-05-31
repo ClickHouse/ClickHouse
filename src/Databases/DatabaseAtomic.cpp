@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/StorageMaterializedView.h>
@@ -447,7 +448,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
-        DATABASE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Atomic database {}", database_name),
         [this, mode] (const LoadJobPtr &)
         {

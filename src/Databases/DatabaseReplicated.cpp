@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -506,7 +507,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
-        DATABASE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Replicated database {}", database_name),
         [this] (const LoadJobPtr &)
         {

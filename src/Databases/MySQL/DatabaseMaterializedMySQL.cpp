@@ -10,6 +10,7 @@
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializedMySQL.h>
 #    include <Common/setThreadName.h>
+#    include <Common/AsyncLoaderPoolId.h>
 #    include <filesystem>
 
 namespace fs = std::filesystem;
@@ -69,7 +70,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
-        DATABASE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup MaterializedMySQL database {}", database_name),
         [this, mode] (const LoadJobPtr &)
         {

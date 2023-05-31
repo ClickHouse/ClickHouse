@@ -7,6 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -131,7 +132,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
     std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
-        DATABASE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup MaterializedMySQL database {}", database_name),
         [this] (const LoadJobPtr &)
         {

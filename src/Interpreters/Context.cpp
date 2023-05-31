@@ -7,7 +7,7 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
-#include <Common/AsyncLoaderPool.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/EventNotifier.h>
@@ -2004,20 +2004,27 @@ AsyncLoader & Context::getAsyncLoader() const
     size_t bg_max_threads = shared->server_settings.async_loader_background_pool_size;
     if (!shared->async_loader)
         shared->async_loader = std::make_unique<AsyncLoader>({
-                // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPool.h` to get the indices right.
-                {
+                // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
+                { // AsyncLoaderPoolId::Foreground
                     "FgLoad",
                     CurrentMetrics::AsyncLoaderForegroundThreads,
                     CurrentMetrics::AsyncLoaderForegroundThreadsActive,
                     .max_threads = fg_max_threads ? fg_max_threads : getNumberOfPhysicalCPUCores(),
                     .priority{0}
                 },
-                {
+                { // AsyncLoaderPoolId::BackgroundLoad
                     "BgLoad",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
                     .max_threads = bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
                     .priority{1}
+                },
+                { // AsyncLoaderPoolId::BackgroundStartup
+                    "BgStartup",
+                    CurrentMetrics::AsyncLoaderBackgroundThreads,
+                    CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
+                    .max_threads = bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
+                    .priority{2}
                 }
             },
             /* log_failures = */ true,

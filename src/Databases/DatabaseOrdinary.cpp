@@ -21,6 +21,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -169,7 +170,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
-        TABLE_LOAD_PRIORITY,
+        AsyncLoaderPoolId::BackgroundLoad,
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode] (const LoadJobPtr &)
         {
@@ -196,7 +197,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
 
     auto job = makeLoadJob(
         std::move(startup_after),
-        TABLE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup table {}", name.getFullName()),
         [this, name] (const LoadJobPtr &)
         {
@@ -225,7 +226,7 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
-        DATABASE_STARTUP_PRIORITY,
+        AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Ordinary database {}", database_name));
     return makeLoadTask(async_loader, {job});
 }

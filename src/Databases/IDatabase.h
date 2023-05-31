@@ -42,11 +42,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr auto TABLE_LOAD_PRIORITY = -1;       /// Initial priority for table loading jobs
-static constexpr auto TABLE_STARTUP_PRIORITY = -2;    /// Initial priority for table startup jobs
-static constexpr auto DATABASE_STARTUP_PRIORITY = -2; /// Initial priority for database startup jobs
-static constexpr auto TABLE_WAIT_PRIORITY = 0;        /// Prioritize load jobs that block queries
-
 class IDatabaseTablesIterator
 {
 public:
