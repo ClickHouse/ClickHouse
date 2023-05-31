@@ -13,8 +13,11 @@ ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS tab"
 ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde"
 ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde.tab"
 
+#${CLICKHOUSE_LOCAL} --query "SET allow_suspicious_low_cardinality_types = 1;"
 echo "Create tab table "
-${CLICKHOUSE_LOCAL} --query "
+${CLICKHOUSE_LOCAL} -n -q "
+    SET allow_suspicious_low_cardinality_types=1;
+    SET allow_experimental_object_type =1;
     CREATE TABLE tab
     (
         uint64 UInt64,
@@ -22,17 +25,19 @@ ${CLICKHOUSE_LOCAL} --query "
         float32 Float32,
         float64 Float64,
         decimal_value Decimal(10, 2),
-        boolean_value UInt8, -- Use 0 for false, 1 for true
+        boolean_value UInt8,
         string_value String,
         fixed_string_value FixedString(10),
         date_value Date,
         date32_value Date32,
         datetime_value DateTime,
         datetime64_value DateTime64(3),
-        json_value String, -- Store JSON as a string
+        json_value JSON,
         uuid_value UUID,
         enum_value Enum8('apple' = 1, 'banana' = 2, 'orange' = 3),
         low_cardinality LowCardinality(String),
+        low_cardinality_date LowCardinality(DateTime),
+        aggregate_function AggregateFunction(sum, Int32),
         array_value Array(Int32),
         map_value Map(String, Int32),
         tuple_value Tuple(Int32, String),
@@ -53,7 +58,9 @@ echo "Create pseudo-random database name"
 ${CLICKHOUSE_LOCAL} --query "CREATE DATABASE database_123456789abcde;"
 
 echo "Create tab duplicate table"
-${CLICKHOUSE_LOCAL} --query "
+${CLICKHOUSE_LOCAL} -n -q "
+    SET allow_suspicious_low_cardinality_types=1;
+    SET allow_experimental_object_type =1;
     CREATE TABLE database_123456789abcde.tab
     (
         uint64 UInt64,
@@ -61,17 +68,19 @@ ${CLICKHOUSE_LOCAL} --query "
         float32 Float32,
         float64 Float64,
         decimal_value Decimal(10, 2),
-        boolean_value UInt8, -- Use 0 for false, 1 for true
+        boolean_value UInt8,
         string_value String,
         fixed_string_value FixedString(10),
         date_value Date,
         date32_value Date32,
         datetime_value DateTime,
         datetime64_value DateTime64(3),
-        json_value String, -- Store JSON as a string
+        json_value JSON, 
         uuid_value UUID,
         enum_value Enum8('apple' = 1, 'banana' = 2, 'orange' = 3),
         low_cardinality LowCardinality(String),
+        low_cardinality_date LowCardinality(DateTime),
+        aggregate_function AggregateFunction(sum, Int32),
         array_value Array(Int32),
         map_value Map(String, Int32),
         tuple_value Tuple(Int32, String),
@@ -109,7 +118,7 @@ EOT
 
 # Now run the MySQL test script on the ClickHouse DB
 echo "Run MySQL test"
-mysql --user="$USER" --password="$PASSWORD" --host="$HOST" --port="$PORT" < $TEMP_FILE
+${MYSQL_CLIENT} --user="$USER" --password="$PASSWORD" --host="$HOST" --port="$PORT" < $TEMP_FILE
 
 # Clean up the temp file
 rm $TEMP_FILE

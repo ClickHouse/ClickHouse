@@ -28,7 +28,8 @@ namespace ErrorCodes
 }
 
 DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
-        : dictionary_type(std::move(dictionary_type_))
+        : dictionary_type(std::move(dictionary_type_)),
+          mysql_name(dictionary_type->getMySQLName())
 {
     auto inner_type = dictionary_type;
     if (dictionary_type->isNullable())

@@ -22,7 +22,7 @@ public:
     }
 
     // FIXME: string can contain arbitrary bytes, not only UTF-8 sequences
-    const char * getMySQLName() const override { return "text"; }
+    const char * getMySQLName() const override { return "blob"; }
 
     TypeIndex getTypeId() const override { return type_id; }
 
