@@ -36,7 +36,7 @@ If you change a setting and would like to revert it back to its default value, s
 SET setting_name = DEFAULT
 ```
 
-For example, the default value of `max_insert_block_size` is 1048449. Suppose you change its value to 100000:
+For example, the default value of `max_insert_block_size` is 1048576. Suppose you change its value to 100000:
 
 ```sql
 SET max_insert_block_size=100000;
@@ -64,7 +64,7 @@ The setting is now back to its default:
 
 ```response
 ┌─value───┐
-│ 1048449 │
+│ 1048576 │
 └─────────┘
 ```
 
