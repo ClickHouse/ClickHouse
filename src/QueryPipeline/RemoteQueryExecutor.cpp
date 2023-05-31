@@ -248,7 +248,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         if (extension && extension->parallel_reading_coordinator)
         {
             chassert(extension->replica_info);
-            extension->parallel_reading_coordinator->markReplicaAsUnavailble(extension->replica_info->number_of_current_replica);
+            extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
         }
 
         return;
@@ -371,7 +371,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             if (extension && extension->parallel_reading_coordinator)
             {
                 chassert(extension->parallel_reading_coordinator);
-                extension->parallel_reading_coordinator->markReplicaAsUnavailble(extension->replica_info->number_of_current_replica);
+                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
             }
 
             return ReadResult(Block());

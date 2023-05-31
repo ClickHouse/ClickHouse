@@ -87,7 +87,7 @@ public:
     virtual ~ImplInterface() = default;
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
-    virtual void markReplicaAsUnavailble(size_t replica_number) = 0;
+    virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
 };
 
 using Parts = std::set<Part>;
@@ -134,7 +134,7 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
-    void markReplicaAsUnavailble(size_t replica_number) override;
+    void markReplicaAsUnavailable(size_t replica_number) override;
 
     void updateReadingState(const InitialAllRangesAnnouncement & announcement);
     void finalizeReadingState();
@@ -206,7 +206,7 @@ void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement &
     }
 }
 
-void DefaultCoordinator::markReplicaAsUnavailble(size_t replica_number)
+void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
@@ -363,7 +363,7 @@ public:
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
-    void markReplicaAsUnavailble(size_t replica_number) override;
+    void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
 
@@ -371,7 +371,7 @@ public:
 };
 
 template <CoordinationMode mode>
-void InOrderCoordinator<mode>::markReplicaAsUnavailble(size_t replica_number)
+void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
@@ -514,7 +514,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
     if (!pimpl)
     {
-        setMode(announcement.mode);
+        mode = announcement.mode;
         initialize();
     }
 
@@ -528,19 +528,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
     if (!pimpl)
     {
-        setMode(request.mode);
+        mode = request.mode;
         initialize();
     }
 
     return pimpl->handleRequest(std::move(request));
 }
 
-void ParallelReplicasReadingCoordinator::setMode(CoordinationMode mode_)
-{
-    mode = mode_;
-}
-
-void ParallelReplicasReadingCoordinator::markReplicaAsUnavailble(size_t replica_number)
+void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     std::lock_guard lock(mutex);
 
@@ -549,7 +544,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailble(size_t replica_
         initialize();
     }
 
-    return pimpl->markReplicaAsUnavailble(replica_number);
+    return pimpl->markReplicaAsUnavailable(replica_number);
 }
 
 void ParallelReplicasReadingCoordinator::initialize()
