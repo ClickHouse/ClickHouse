@@ -102,7 +102,7 @@ chown -R ubuntu:ubuntu $RUNNER_HOME
 
 cd /home/ubuntu
 curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
-unzip awscliv2.zip
+unzip -q awscliv2.zip
 ./aws/install
 
 rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
