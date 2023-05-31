@@ -177,7 +177,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--user, -u` – The username. Default value: default.
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
-- `--query, -q` – The query to process when using non-interactive mode. Specifying `--query` multiple times are allowed(`--query "SELECT 1;" --query "SELECT 2;"...`). Cannot be used simultaneously with `--queries-file`.
+- `--query, -q` – The query to process when using non-interactive mode. Specifying `--query` multiple times is allowed (`--query "SELECT 1;" --query "SELECT 2;"...`). Cannot be used simultaneously with `--queries-file`.
 - `--queries-file` – file path with queries to execute. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).

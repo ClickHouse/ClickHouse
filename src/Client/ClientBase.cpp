@@ -2601,7 +2601,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>(), R"(query; specifying --query multiple times are allowed(--query "SELECT 1;" --query "SELECT 2;"...))")
+        ("query,q", po::value<std::vector<std::string>>(), R"(query; can be specified multiple times (--query "SELECT 1;" --query "SELECT 2;"...))")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
