@@ -13,9 +13,12 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/KeyDescription.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -23,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int INTERNAL_REDIS_ERROR;
 }
 
 class RedisDataSource : public ISource
@@ -132,6 +136,64 @@ private:
 
     const size_t max_block_size;
 };
+
+
+class RedisSink : public SinkToStorage
+{
+public:
+    RedisSink(
+        StorageRedis & storage_,
+        const StorageMetadataPtr & metadata_snapshot_);
+
+    void consume(Chunk chunk) override;
+    String getName() const override { return "RedisSink"; }
+
+private:
+    StorageRedis & storage;
+    StorageMetadataPtr metadata_snapshot;
+    size_t primary_key_pos = 0;
+};
+
+RedisSink::RedisSink(
+    StorageRedis & storage_,
+    const StorageMetadataPtr & metadata_snapshot_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    , storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+{
+    for (const auto & column : getHeader())
+    {
+        if (column.name == storage.getPrimaryKey()[0])
+            break;
+        ++primary_key_pos;
+    }
+}
+
+void RedisSink::consume(Chunk chunk)
+{
+    auto rows = chunk.getNumRows();
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+    WriteBufferFromOwnString wb_key;
+    WriteBufferFromOwnString wb_value;
+
+    RedisArray data;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        wb_key.restart();
+        wb_value.restart();
+
+        size_t idx = 0;
+        for (const auto & elem : block)
+        {
+            elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
+            ++idx;
+        }
+        data.add(wb_key.str());
+        data.add(wb_value.str());
+    }
+    storage.multiSet(data);
+}
 
 StorageRedis::StorageRedis(
     const StorageID & table_id_,
@@ -336,7 +398,7 @@ Chunk StorageRedis::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
-std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, const String & pattern, const uint64_t max_count)
+std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, const String & pattern, uint64_t max_count)
 {
     auto connection = getRedisConnection(pool, configuration);
     RedisCommand scan("SCAN");
@@ -357,6 +419,36 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
     return connection->client->execute<RedisArray>(cmd_mget);
+}
+
+void StorageRedis::multiSet(const RedisArray & data) const
+{
+    auto connection = getRedisConnection(pool, configuration);
+
+    RedisCommand cmd_mget("MSET");
+    for (size_t i = 0; i < data.size(); ++i)
+        cmd_mget.add(data.get<RedisBulkString>(i));
+
+    auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
+    if (ret != "OK")
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}",
+                        table_id.getFullNameNotQuoted(), ret);
+}
+
+RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
+{
+    auto connection = getRedisConnection(pool, configuration);
+
+    RedisCommand cmd("DEL");
+    for (size_t i = 0; i < keys.size(); ++i)
+        cmd.add(keys.get<RedisBulkString>(i));
+
+    auto ret = connection->client->execute<RedisInteger>(cmd);
+    if (ret != static_cast<RedisInteger>(keys.size()))
+        LOG_DEBUG(log, "Try to delete {} rows but actually deleted {} rows from redis table {}.",
+                  keys.size(), ret, table_id.getFullNameNotQuoted());
+
+    return ret;
 }
 
 Chunk StorageRedis::getByKeys(
@@ -382,10 +474,110 @@ Block StorageRedis::getSampleBlock(const Names &) const
 
 SinkToStoragePtr StorageRedis::write(
     const ASTPtr & /*query*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is unsupported for StorageRedis");
+    return std::make_shared<RedisSink>(*this, metadata_snapshot);
+}
+
+/// TODO use scan to reduce latency
+void StorageRedis::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+{
+    auto connection = getRedisConnection(pool, configuration);
+
+    RedisCommand cmd_flush_db("FLUSHDB");
+    cmd_flush_db << toString(configuration.db_index);
+    auto ret = connection->client->execute<RedisBulkString>(cmd_flush_db);
+
+    if (ret.isNull() || ret.value() != "OK")
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret.value());
+}
+
+void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    if (commands.empty())
+        return;
+
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations cannot be combined for StorageRedis");
+
+    const auto command_type = commands.front().type;
+    if (command_type != MutationCommand::Type::UPDATE && command_type != MutationCommand::Type::DELETE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for StorageRedis");
+}
+
+void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_)
+{
+    if (commands.empty())
+        return;
+
+    assert(commands.size() == 1);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
+
+    if (commands.front().type == MutationCommand::Type::DELETE)
+    {
+        auto interpreter = std::make_unique<MutationsInterpreter>(
+            storage_ptr,
+            metadata_snapshot,
+            commands,
+            context_,
+            /*can_execute_*/ true,
+            /*return_all_columns_*/ true,
+            /*return_mutated_rows*/ true);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto sink = std::make_shared<RedisSink>(*this, metadata_snapshot);
+
+        auto header = interpreter->getUpdatedHeader();
+        auto primary_key_pos = header.getPositionByName(primary_key);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            auto & column_type_name = block.getByPosition(primary_key_pos);
+
+            auto column = column_type_name.column;
+            auto size = column->size();
+
+            RedisArray keys;
+            WriteBufferFromOwnString wb_key;
+            for (size_t i = 0; i < size; ++i)
+            {
+                wb_key.restart();
+                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                keys.add(wb_key.str());
+            }
+            multiDelete(keys);
+        }
+        return;
+    }
+
+    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    if (commands.front().column_to_update_expression.contains(primary_key))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(
+        storage_ptr,
+        metadata_snapshot,
+        commands,
+        context_,
+        /*can_execute_*/ true,
+        /*return_all_columns*/ true,
+        /*return_mutated_rows*/ true);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    auto sink = std::make_shared<RedisSink>(*this, metadata_snapshot);
+
+    Block block;
+    while (executor.pull(block))
+    {
+        sink->consume(Chunk{block.getColumns(), block.rows()});
+    }
 }
 
 void registerStorageRedis(StorageFactory & factory)

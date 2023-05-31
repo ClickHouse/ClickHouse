@@ -5,6 +5,7 @@
 #include <Storages/RedisCommon.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MutationCommands.h>
 
 namespace DB
 {
@@ -37,6 +38,14 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
+    void truncate(const ASTPtr &,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr,
+        TableExclusiveLockHolder &) override;
+
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands &, ContextPtr) override;
+
     Names getPrimaryKey() const override { return {primary_key}; }
 
     /// Return chunk with data for given serialized keys.
@@ -50,13 +59,16 @@ public:
         const RedisArray & keys,
         PaddedPODArray<UInt8> * out_null_map) const;
 
-    std::pair<RedisIterator, RedisArray> scan(RedisIterator iterator, const String & pattern, const uint64_t max_count);
+    std::pair<RedisIterator, RedisArray> scan(RedisIterator iterator, const String & pattern, uint64_t max_count);
 
     RedisArray multiGet(const RedisArray & keys) const;
+    void multiSet(const RedisArray & data) const;
+    RedisInteger multiDelete(const RedisArray & keys) const;
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
 
     Block getSampleBlock(const Names &) const override;
+
 private:
     StorageID table_id;
     RedisConfiguration configuration;
