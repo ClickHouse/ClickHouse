@@ -231,12 +231,11 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     return makeLoadTask(async_loader, {job});
 }
 
-DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
-{
-    // TODO(serxa): implement
-}
+// TODO(serxa): implement
+// DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+// }
 
-StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr context) const
+StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr local_context) const
 {
     const LoadTaskPtr * startup_task = nullptr;
     {
@@ -245,11 +244,11 @@ StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr context
             startup_task = &it->second;
     }
 
-    // TODO(serxa): prioritize always? what priority should be used?
+    // Prioritize jobs (load and startup) to be executed in foreground pool and wait for them synchronously
     if (startup_task)
-        waitLoad(*startup_task);
+        waitLoad(AsyncLoaderPoolId::Foreground, *startup_task);
 
-    return DatabaseOnDisk::tryGetTable(name, context);
+    return DatabaseOnDisk::tryGetTable(name, local_context);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

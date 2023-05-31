@@ -9,6 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -323,8 +324,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
-            scheduleAndWaitLoad(loader.loadTablesAsync());
-            scheduleAndWaitLoad(loader.startupTablesAsync());
+            scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, loader.loadTablesAsync(), loader.startupTablesAsync());
         }
     }
     catch (...)

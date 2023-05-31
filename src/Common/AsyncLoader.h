@@ -144,6 +144,7 @@ LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String n
     return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, std::forward<Func>(func));
 }
 
+
 // Represents a logically connected set of LoadJobs required to achieve some goals (final LoadJob in the set).
 class LoadTask : private boost::noncopyable
 {
@@ -168,10 +169,11 @@ public:
     //   auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);
     const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
 
+    AsyncLoader & loader;
+
 private:
     friend class AsyncLoader;
 
-    AsyncLoader & loader;
     LoadJobSet jobs;
     LoadJobSet goal_jobs;
 };
@@ -181,91 +183,6 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
     return std::make_shared<LoadTask>(loader, std::move(jobs), std::move(goals));
 }
 
-inline void scheduleLoad(const LoadTaskPtr & task)
-{
-    task->schedule();
-}
-
-inline void scheduleLoad(const LoadTaskPtrs & tasks)
-{
-    for (const auto & task : tasks)
-        task->schedule();
-}
-
-template <class... Args>
-inline void scheduleLoadAll(Args && ... args)
-{
-    (scheduleLoad(std::forward<Args>(args)), ...);
-}
-
-inline void waitLoad(const LoadJobSet & jobs)
-{
-    for (const auto & job : jobs)
-        job->wait();
-}
-
-inline void waitLoad(const LoadTaskPtr & task)
-{
-    waitLoad(task->goals());
-}
-
-inline void waitLoad(const LoadTaskPtrs & tasks)
-{
-    for (const auto & task : tasks)
-        waitLoad(task->goals());
-}
-
-template <class... Args>
-inline void waitLoadAll(Args && ... args)
-{
-    (waitLoad(std::forward<Args>(args)), ...);
-}
-
-template <class... Args>
-inline void scheduleAndWaitLoadAll(Args && ... args)
-{
-    scheduleLoadAll(std::forward<Args>(args)...);
-    waitLoadAll(std::forward<Args>(args)...);
-}
-
-inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
-{
-    LoadJobSet result;
-    for (const auto & task : tasks)
-        result.insert(task->goals().begin(), task->goals().end());
-    return result;
-}
-
-inline LoadJobSet getGoalsOr(const LoadTaskPtrs & tasks, const LoadJobSet & alternative)
-{
-    LoadJobSet result;
-    for (const auto & task : tasks)
-        result.insert(task->goals().begin(), task->goals().end());
-    return result.empty() ? alternative : result;
-}
-
-inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
-{
-    LoadJobSet result;
-    if (!jobs1.empty())
-        result.insert(jobs1.begin(), jobs1.end());
-    if (!jobs2.empty())
-        result.insert(jobs2.begin(), jobs2.end());
-    return result;
-}
-
-inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & tasks2)
-{
-    if (tasks1.empty())
-        return tasks2;
-    if (tasks2.empty())
-        return tasks1;
-    LoadTaskPtrs result;
-    result.reserve(tasks1.size() + tasks2.size());
-    result.insert(result.end(), tasks1.begin(), tasks1.end());
-    result.insert(result.end(), tasks2.begin(), tasks2.end());
-    return result;
-}
 
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks job dependencies and priorities.
 // Basic usage example:
@@ -287,7 +204,7 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 //     task.schedule();
 //
 //     // Another thread may prioritize a job by changing its pool and wait for it:
-//     async_loader->prioritize(job3, /* pool_id = */ 0); // Increase priority: 1 -> 0 (lower is better)
+//     async_loader.prioritize(job3, /* pool_id = */ 0); // Increase priority: 1 -> 0 (lower is better)
 //     job3->wait(); // Blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // Every job has a pool associated with it. AsyncLoader starts every job in its thread pool.
@@ -462,5 +379,124 @@ private:
     size_t old_jobs = 0; // Number of jobs that were finished in previous busy period (for correct progress indication)
     std::chrono::system_clock::time_point busy_period_start_time;
 };
+
+
+inline void scheduleLoad(const LoadTaskPtr & task)
+{
+    task->schedule();
+}
+
+inline void scheduleLoad(const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        task->schedule();
+}
+
+template <class... Args>
+inline void scheduleLoadAll(Args && ... args)
+{
+    (scheduleLoad(std::forward<Args>(args)), ...);
+}
+
+inline void waitLoad(const LoadJobSet & jobs)
+{
+    for (const auto & job : jobs)
+        job->wait();
+}
+
+inline void waitLoad(const LoadTaskPtr & task)
+{
+    waitLoad(task->goals());
+}
+
+inline void waitLoad(const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        waitLoad(task->goals());
+}
+
+inline void waitLoad(AsyncLoader & async_loader, size_t pool_id, const LoadJobSet & jobs)
+{
+    for (const auto & job : jobs)
+        async_loader.prioritize(job, pool_id);
+    for (const auto & job : jobs)
+        job->wait();
+}
+
+inline void waitLoad(size_t pool_id, const LoadTaskPtr & task)
+{
+    waitLoad(task->loader, pool_id, task->goals());
+}
+
+inline void waitLoad(size_t pool_id, const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        waitLoad(task->loader, pool_id, task->goals());
+}
+
+template <class... Args>
+inline void waitLoadAll(Args && ... args)
+{
+    (waitLoad(std::forward<Args>(args)), ...);
+}
+
+template <class... Args>
+inline void waitLoadAllIn(size_t pool_id, Args && ... args)
+{
+    (waitLoad(pool_id, std::forward<Args>(args)), ...);
+}
+
+template <class... Args>
+inline void scheduleAndWaitLoadAll(Args && ... args)
+{
+    scheduleLoadAll(std::forward<Args>(args)...);
+    waitLoadAll(std::forward<Args>(args)...);
+}
+
+template <class... Args>
+inline void scheduleAndWaitLoadAllIn(size_t pool_id, Args && ... args)
+{
+    scheduleLoadAll(std::forward<Args>(args)...);
+    waitLoadAllIn(pool_id, std::forward<Args>(args)...);
+}
+
+inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
+{
+    LoadJobSet result;
+    for (const auto & task : tasks)
+        result.insert(task->goals().begin(), task->goals().end());
+    return result;
+}
+
+inline LoadJobSet getGoalsOr(const LoadTaskPtrs & tasks, const LoadJobSet & alternative)
+{
+    LoadJobSet result;
+    for (const auto & task : tasks)
+        result.insert(task->goals().begin(), task->goals().end());
+    return result.empty() ? alternative : result;
+}
+
+inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
+{
+    LoadJobSet result;
+    if (!jobs1.empty())
+        result.insert(jobs1.begin(), jobs1.end());
+    if (!jobs2.empty())
+        result.insert(jobs2.begin(), jobs2.end());
+    return result;
+}
+
+inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & tasks2)
+{
+    if (tasks1.empty())
+        return tasks2;
+    if (tasks2.empty())
+        return tasks1;
+    LoadTaskPtrs result;
+    result.reserve(tasks1.size() + tasks2.size());
+    result.insert(result.end(), tasks1.begin(), tasks1.end());
+    result.insert(result.end(), tasks2.begin(), tasks2.end());
+    return result;
+}
 
 }

@@ -2003,28 +2003,28 @@ AsyncLoader & Context::getAsyncLoader() const
     size_t fg_max_threads = shared->server_settings.async_loader_foreground_pool_size;
     size_t bg_max_threads = shared->server_settings.async_loader_background_pool_size;
     if (!shared->async_loader)
-        shared->async_loader = std::make_unique<AsyncLoader>({
+        shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
                 { // AsyncLoaderPoolId::Foreground
                     "FgLoad",
                     CurrentMetrics::AsyncLoaderForegroundThreads,
                     CurrentMetrics::AsyncLoaderForegroundThreadsActive,
-                    .max_threads = fg_max_threads ? fg_max_threads : getNumberOfPhysicalCPUCores(),
-                    .priority{0}
+                    fg_max_threads ? fg_max_threads : getNumberOfPhysicalCPUCores(),
+                    Priority{0}
                 },
                 { // AsyncLoaderPoolId::BackgroundLoad
                     "BgLoad",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    .max_threads = bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
-                    .priority{1}
+                    bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
+                    Priority{1}
                 },
                 { // AsyncLoaderPoolId::BackgroundStartup
                     "BgStartup",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    .max_threads = bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
-                    .priority{2}
+                    bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
+                    Priority{2}
                 }
             },
             /* log_failures = */ true,
