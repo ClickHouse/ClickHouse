@@ -397,17 +397,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             char * sql_query = new char[max_query_size + 1];
             if (sql_query == nullptr)
             {
-                delete[] prql_query;
                 throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
             }
             memset(sql_query, 0, max_query_size + 1);
-            __msan_unpoison(prql_query, max_query_size + 1);
-            __msan_unpoison(sql_query, max_query_size + 1);
             int res = to_sql(prql_query, sql_query);
             __msan_unpoison(sql_query, max_query_size + 1);
             if (res == -1)
             {
-                delete[] sql_query;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
             size_t idx = 0;
@@ -419,7 +415,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
             ParserQuery parser(sql_query_end, settings.allow_settings_after_format_in_insert);
             ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
-            delete[] sql_query;
         }
         #endif
         else
