@@ -40,7 +40,7 @@ uint64_t getMemoryAmountOrZero()
     }
     else
     {
-        // v1
+        // CGroups v1
         std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
         if (cgroup_limit.is_open())
         {
