@@ -25,13 +25,6 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
-void CurrentThread::updatePerformanceCountersIfNeeded()
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->updatePerformanceCountersIfNeeded();
-}
-
 bool CurrentThread::isInitialized()
 {
     return current_thread;

@@ -219,20 +219,6 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::updatePerformanceCountersIfNeeded()
-{
-    if (last_rusage->thread_id == 0)
-        return; // Performance counters are not initialized, so there is no need to update them
-
-    constexpr UInt64 performance_counters_update_period_microseconds = 10 * 1000; // 10 milliseconds
-    UInt64 total_elapsed_microseconds = stopwatch.elapsedMicroseconds();
-    if (last_performance_counters_update_time + performance_counters_update_period_microseconds < total_elapsed_microseconds)
-    {
-        updatePerformanceCounters();
-        last_performance_counters_update_time = total_elapsed_microseconds;
-    }
-}
-
 void ThreadStatus::onFatalError()
 {
     if (fatal_error_callback)

@@ -59,7 +59,6 @@ public:
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
-    static void updatePerformanceCountersIfNeeded();
 
     static ProfileEvents::Counters & getProfileEvents();
     inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()

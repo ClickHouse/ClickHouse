@@ -5,7 +5,6 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
@@ -203,8 +202,6 @@ private:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> taskstats;
-    Stopwatch stopwatch{CLOCK_MONOTONIC_COARSE};
-    UInt64 last_performance_counters_update_time = 0;
 
     /// See setInternalThread()
     bool internal_thread = false;
@@ -268,7 +265,6 @@ public:
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();
-    void updatePerformanceCountersIfNeeded();
 
     /// Update ProfileEvents and dumps info to system.query_thread_log
     void finalizePerformanceCounters();

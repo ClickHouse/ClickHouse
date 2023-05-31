@@ -18,7 +18,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
         CurrentThread::attachToGroup(thread_group);
 
     setThreadName("Segmentator");
-
     try
     {
         while (!parsing_finished)
@@ -51,9 +50,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             if (!have_more_data)
                 break;
-
-            // Segmentator thread can be long-living, so we have to manually update performance counters for CPU progress to be correct
-            CurrentThread::updatePerformanceCountersIfNeeded();
         }
     }
     catch (...)
