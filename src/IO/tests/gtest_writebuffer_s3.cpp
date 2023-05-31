@@ -606,7 +606,7 @@ protected:
 
     void SetUp() override
     {
-	    test_with_pool = GetParam();
+        test_with_pool = GetParam();
         client = MockS3::Client::CreateClient(bucket);
         if (test_with_pool)
         {
