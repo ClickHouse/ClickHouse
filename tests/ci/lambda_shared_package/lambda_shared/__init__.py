@@ -15,6 +15,7 @@ RUNNER_TYPE_LABELS = [
     "func-tester",
     "func-tester-aarch64",
     "fuzzer-unit-tester",
+    "limited-tester",
     "stress-tester",
     "style-checker",
     "style-checker-aarch64",
