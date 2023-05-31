@@ -65,6 +65,10 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
         # 10. I am trying 7 now.
         # UPDATE THE COMMENT ON CHANGES
         scale_up = 7
+    elif runner_type == "limited-tester":
+        # The limited runners should inflate and deflate faster
+        scale_down = 1
+        scale_up = 2
     return scale_down, scale_up
 
 
