@@ -111,6 +111,10 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
     node3.query("DETACH TABLE mt1")  # stop being leader
+    # Flush logs before restart to avoid trash from system tables which are on database ordindary
+    # (We could be in process of creating some system table, which will leave empty directory on restart,
+    # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
+    node3.query("SYSTEM FLUSH LOGS")
     node3.restart_with_latest_version(signal=9, fix_metadata=True)
 
     # checks for readonly

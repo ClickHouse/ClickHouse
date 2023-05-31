@@ -16,11 +16,11 @@ contingency(column1, column2)
 
 **Arguments**
 
--   `column1` and `column2` are the columns to be compared
+- `column1` and `column2` are the columns to be compared
 
 **Returned value**
 
--  a value between 0 to 1. The larger the result, the closer the association of the two columns.
+- a value between 0 to 1. The larger the result, the closer the association of the two columns.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

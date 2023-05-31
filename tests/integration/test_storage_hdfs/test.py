@@ -788,6 +788,7 @@ def test_schema_inference_cache(started_cluster):
 
 
 def test_hdfsCluster_skip_unavailable_shards(started_cluster):
+    # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
     hdfs_api = started_cluster.hdfs_api
     node = started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
@@ -801,16 +802,18 @@ def test_hdfsCluster_skip_unavailable_shards(started_cluster):
     )
 
 
-def test_hdfsCluster_unskip_unavailable_shards(started_cluster):
+def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node = started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/unskip_unavailable_shards", data)
-    error = node.query_and_get_error(
-        "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
-    )
 
-    assert "NETWORK_ERROR" in error
+    assert (
+        node1.query(
+            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
+        )
+        == data
+    )
 
 
 if __name__ == "__main__":

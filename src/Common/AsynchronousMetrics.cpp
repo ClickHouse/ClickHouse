@@ -67,8 +67,15 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
-    openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
+    /// CGroups v2
+    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_limit_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
+
+    /// CGroups v1
+    if (!cgroupmem_limit_in_bytes)
+        openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
+    if (!cgroupmem_usage_in_bytes)
+        openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
@@ -683,6 +690,12 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+
+            /// A slight improvement for the rare case when ClickHouse is run inside LXC and LXCFS is used.
+            /// The LXCFS has an issue: sometimes it returns an error "Transport endpoint is not connected" on reading from the file inside `/proc`.
+            /// This error was correctly logged into ClickHouse's server log, but it was a source of annoyance to some users.
+            /// We additionally workaround this issue by reopening a file.
+            openFileIfExists("/proc/loadavg", loadavg);
         }
     }
 
@@ -700,6 +713,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/uptime", uptime);
         }
     }
 
@@ -887,38 +901,31 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/stat", proc_stat);
         }
     }
 
     if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
     {
-        try {
+        try
+        {
             cgroupmem_limit_in_bytes->rewind();
             cgroupmem_usage_in_bytes->rewind();
 
-            uint64_t cgroup_mem_limit_in_bytes = 0;
-            uint64_t cgroup_mem_usage_in_bytes = 0;
+            uint64_t limit = 0;
+            uint64_t usage = 0;
 
-            readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
-            readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
+            tryReadText(limit, *cgroupmem_limit_in_bytes);
+            tryReadText(usage, *cgroupmem_usage_in_bytes);
 
-            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
-            {
-                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
-                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
-                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
-            }
+            new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-
     if (meminfo)
     {
         try
@@ -1007,6 +1014,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/meminfo", meminfo);
         }
     }
 
@@ -1033,18 +1041,16 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 // It doesn't read the EOL itself.
                 ++cpuinfo->position();
 
-                if (s.rfind("processor", 0) == 0)
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
                 {
                     /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
                     /// non s390x example: processor : 0
-                    if (auto colon = s.find_first_of(':'))
-                    {
-#ifdef __s390x__
-                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
-#else
-                        core_id = std::stoi(s.substr(colon + 2));
-#endif
-                    }
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)
                 {
@@ -1059,6 +1065,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/cpuinfo", cpuinfo);
         }
     }
 
@@ -1076,6 +1083,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/sys/fs/file-nr", file_nr);
         }
     }
 
@@ -1308,6 +1316,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/net/dev", net_dev);
         }
     }
 

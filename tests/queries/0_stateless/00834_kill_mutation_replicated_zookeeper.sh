@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug, no-parallel
+# Tags: replica, no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

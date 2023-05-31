@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
+    : IInputFormat(header_, &in_), stream{stream_}, format_settings(format_settings_)
 {
 }
 

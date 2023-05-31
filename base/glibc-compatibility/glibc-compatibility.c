@@ -235,6 +235,17 @@ ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+/* Structure for scatter/gather I/O.  */
+struct iovec
+{
+    void *iov_base;    /* Pointer to data.  */
+    size_t iov_len;    /* Length of data.  */
+};
+
+ssize_t preadv(int __fd, const struct iovec *__iovec, int __count, __off_t __offset)
+{
+    return syscall(SYS_preadv, __fd, __iovec, __count, (long)(__offset), (long)(__offset>>32));
+}
 
 #include <errno.h>
 #include <limits.h>

@@ -33,7 +33,7 @@ size_t HTTPChunkedReadBuffer::readChunkHeader()
     } while (!in->eof() && isHexDigit(*in->position()));
 
     if (res > max_chunk_size)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit");
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit (max size: {})", max_chunk_size);
 
     /// NOTE: If we want to read any chunk extensions, it should be done here.
 
