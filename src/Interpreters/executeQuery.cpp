@@ -404,11 +404,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             __msan_unpoison(prql_query, max_query_size + 1);
             __msan_unpoison(sql_query, max_query_size + 1);
             int res = to_sql(prql_query, sql_query);
-            __msan_unpoison(prql_query, max_query_size + 1);
             __msan_unpoison(sql_query, max_query_size + 1);
             if (res == -1)
             {
-                delete[] prql_query;
                 delete[] sql_query;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
             }
@@ -421,7 +419,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
             ParserQuery parser(sql_query_end, settings.allow_settings_after_format_in_insert);
             ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
-            delete[] prql_query;
             delete[] sql_query;
         }
         #endif
