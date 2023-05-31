@@ -152,7 +152,8 @@ def test_create_table(started_cluster):
                 *
             FROM 
                 redis('{address}', 'not_exist_key', 'k not_exist_type, v String', 0, 'clickhouse', 10) 
-            """)
+            """
+        )
 
 
 def test_data_type(started_cluster):
