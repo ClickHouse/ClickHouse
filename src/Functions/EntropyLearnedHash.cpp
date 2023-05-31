@@ -14,7 +14,6 @@
 
 /// TODOs for future work:
 /// - allow to specify an arbitrary hash function (currently always CityHash is used)
-/// - allow function chaining a la entropyLearnedHash(trainEntropyLearnedHash())
 /// - support more datatypes for data (besides String)
 
 
@@ -32,7 +31,6 @@ namespace
 {
 
 using PartialKeyPositions = std::vector<size_t>;
-using Entropies = std::vector<size_t>;
 
 void getPartialKey(std::string_view key, const PartialKeyPositions & partial_key_positions, String & result)
 {
@@ -71,10 +69,20 @@ std::pair<size_t, size_t> nextByte(const std::vector<std::string_view> & keys, s
 
     String partial_key;
 
-    for (size_t i = 0; i < max_len; ++i)
+    /// Optimization: assume here that partial_key_positions is sorted
+    /// and use two pointers technique to avoid checking already taken positions.
+    for (size_t i = 0, partial_key_positions_pos = 0; i < max_len; ++i)
     {
+        if (partial_key_positions_pos < partial_key_positions.size() && partial_key_positions[partial_key_positions_pos] == i)
+        {
+            ++partial_key_positions_pos;
+            continue;
+        }
+
         count_table.clear();
 
+        // It's not important here to insert i to partial_key_positions to keep it sorted,
+        // because in the end of the loop body it will still be popped.
         partial_key_positions.push_back(i);
         size_t collisions = 0;
         for (const auto & key : keys)
@@ -91,16 +99,17 @@ std::pair<size_t, size_t> nextByte(const std::vector<std::string_view> & keys, s
         partial_key_positions.pop_back();
     }
 
+    // Just return the best found position, partial_key_positions is not changed. best_position will be inserted to it later.
     return {best_position, min_collisions};
 }
 
-std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<std::string_view> & train_data)
+PartialKeyPositions chooseBytes(const std::vector<std::string_view> & train_data)
 {
     if (train_data.size() <= 1)
-        return {};
+            return {};
 
     PartialKeyPositions partial_key_positions;
-    Entropies entropies;
+    size_t last_entropy = 0;
 
     size_t max_len = 0; /// length of the longest key in training data
     for (const auto & key : train_data)
@@ -109,12 +118,15 @@ std::pair<PartialKeyPositions, Entropies> chooseBytes(const std::vector<std::str
     while (!allPartialKeysAreUnique(train_data, partial_key_positions))
     {
         auto [new_position, new_entropy] = nextByte(train_data, max_len, partial_key_positions);
-        if (!entropies.empty() && new_entropy == entropies.back())
+        if (last_entropy > 0 && new_entropy == last_entropy)
             break;
-        partial_key_positions.push_back(new_position);
-        entropies.push_back(new_entropy);
+
+        // Have to keep partial_key_positions sorted.
+        partial_key_positions.insert(
+            std::upper_bound(partial_key_positions.begin(), partial_key_positions.end(), new_position), new_position);
+        last_entropy = new_entropy;
     }
-    return {partial_key_positions, entropies};
+    return partial_key_positions;
 }
 
 /// Contains global state to convey information between SQL functions
@@ -170,7 +182,8 @@ public:
             training_data.emplace_back(string_view);
         }
 
-        PartialKeyPositions partial_key_positions = chooseBytes(training_data).first;
+        /// chooseBytes returns sorted vector
+        PartialKeyPositions partial_key_positions = chooseBytes(training_data);
 
         ids_for_user[id].partial_key_positions = partial_key_positions;
         training_samples.clear();
