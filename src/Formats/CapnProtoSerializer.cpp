@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int CAPN_PROTO_BAD_CAST;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
@@ -371,7 +370,7 @@ namespace
         {
             parent_struct_builder.getBuilderImpl().setDataField<UInt16>(slot_offset, getValue(column, row_num));
         }
-        
+
         void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
         {
             parent_list_builder.getBuilderImpl().setDataElement<UInt16>(array_index, getValue(column, row_num));
