@@ -2,6 +2,7 @@
 
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/Priority.h>
 
 #include <IO/ResourceRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -37,7 +38,7 @@ inline const Poco::Util::AbstractConfiguration & emptyConfig()
 struct SchedulerNodeInfo
 {
     double weight = 1.0; /// Weight of this node among it's siblings
-    Int64 priority = 0; /// Priority of this node among it's siblings (higher value means higher priority)
+    Priority priority; /// Priority of this node among it's siblings (lower value means higher priority)
 
     /// Arbitrary data accessed/stored by parent
     union {
@@ -65,7 +66,7 @@ struct SchedulerNodeInfo
 
     void setPriority(Int64 value)
     {
-        priority = value;
+        priority.value = value;
     }
 };
 

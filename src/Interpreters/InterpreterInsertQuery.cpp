@@ -34,7 +34,14 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event InsertQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -234,6 +241,9 @@ Chain InterpreterInsertQuery::buildChain(
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     ThreadGroupPtr running_group;
     if (current_thread)
         running_group = current_thread->getThreadGroup();
