@@ -934,7 +934,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-            chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
+            [[maybe_unused]] size_t new_file_offset = file_offset_of_buffer_end + size;
+            chassert(new_file_offset - 1 <= file_segment.range().right);
+            chassert(new_file_offset <= file_segment.getCurrentWriteOffset(true));
         }
         else
         {
