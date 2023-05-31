@@ -46,6 +46,17 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
 }
 
+/// Get method for string name. Throw exception for wrong name
+EncryptionMethod getEncryptionMethod(const std::string & name)
+{
+    if (name == "AES_128_GCM_SIV")
+        return AES_128_GCM_SIV;
+    else if (name == "AES_256_GCM_SIV")
+        return AES_256_GCM_SIV;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", name);
+}
+
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
@@ -175,57 +186,64 @@ static void mergeAttributes(Element & config_element, Element & with_element)
     with_element_attributes->release();
 }
 
+std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
+{
+    auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
+
+    DB::Memory<> memory1;
+    memory1.resize(value.size() + codec.getAdditionalSizeAtTheEndOfBuffer() + codec.getHeaderSize()+100);
+    auto bytes_written = codec.compress(value.data(), static_cast<DB::UInt32>(value.size()), memory1.data());
+    std::string encrypted_value = std::string(memory1.data(), bytes_written);
+    std::string hex_value;
+    boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
+    LOG_DEBUG(log, "Encrypted value: '{}'.", hex_value);
+    return hex_value;
+}
+
+std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
+{
+    auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
+
+    DB::Memory<> memory;
+    std::string encrypted_value;
+
+    try
+    {
+        boost::algorithm::unhex(value, std::back_inserter(encrypted_value));
+    }
+    catch (const std::exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text, check for valid characters [0-9a-fA-F] and length");
+    }
+
+    memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()) + codec.getAdditionalSizeAtTheEndOfBuffer());
+    codec.decompress(encrypted_value.data(), static_cast<DB::UInt32>(encrypted_value.size()), memory.data());
+    std::string decrypted_value = std::string(memory.data(), memory.size());
+    LOG_DEBUG(log, "Decrypted value '{}'", decrypted_value);
+    return decrypted_value;
+}
+
 void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 {
     for (Node * node = config_root->firstChild(); node;)
     {
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
-            // NamedNodeMapPtr attributes = node->attributes();
             Element & element = dynamic_cast<Element &>(*node);
             if (element.hasAttribute("encryption_codec"))
             {
                 LOG_DEBUG(log, "Encrypted node <{}>", node->nodeName());
-                // for (Node * child_node = node->firstChild(); child_node;)
-                // {
-                //     LOG_DEBUG(log, "   Child node {} value '{}'.", child_node->nodeName(),  child_node->getNodeValue());
-                //     child_node = child_node->nextSibling();
-                // }
+
+                const NodeListPtr children = element.childNodes();
+                if (children->length() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have only one text node", node->nodeName());
 
                 Node * text_node = node->firstChild();
-                auto codec_128 = DB::CompressionCodecEncrypted(DB::AES_128_GCM_SIV);
-                // DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
+                if (text_node->nodeType() != Node::TEXT_NODE)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have text node", node->nodeName());
 
-                /*
-                DB::Memory<> memory1;
-                std::string password="abcd";
-                memory1.resize(password.size() + codec_128.getAdditionalSizeAtTheEndOfBuffer() + codec_128.getHeaderSize()+100);
-                auto bytes_written = codec_128.compress(password.data(), static_cast<DB::UInt32>(password.size()), memory1.data());
-                // std::string encrypted_password = std::string(memory1.data(), memory1.size());
-                std::string encrypted_password = std::string(memory1.data(), bytes_written);
-                std::string password_hex;
-                boost::algorithm::hex(encrypted_password.begin(), encrypted_password.end(), std::back_inserter(password_hex));
-                LOG_DEBUG(log, "Encrypted password: '{}'.", password_hex);
-                */
-
-                DB::Memory<> memory;
-                std::string encrypted_value;
-
-                try
-                {
-                    boost::algorithm::unhex(text_node->getNodeValue(), std::back_inserter(encrypted_value));
-                    // boost::algorithm::unhex(password_hex, std::back_inserter(encrypted_value));
-                }
-                catch (const std::exception &)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text for {}, check for valid characters [0-9a-fA-F] and length", node->nodeName());
-                }
-
-                memory.resize(codec_128.readDecompressedBlockSize(encrypted_value.data()) + codec_128.getAdditionalSizeAtTheEndOfBuffer());
-                codec_128.decompress(encrypted_value.data(), static_cast<DB::UInt32>(encrypted_value.size()), memory.data());
-                std::string decrypted_value = std::string(memory.data(), memory.size());
-                LOG_DEBUG(log, "Decrypted value '{}'", decrypted_value);
-                text_node->setNodeValue(decrypted_value);
+                auto encryption_codec = element.getAttribute("encryption_codec");
+                text_node->setNodeValue(decryptValue(encryption_codec, text_node->getNodeValue()));
             }
         }
 
