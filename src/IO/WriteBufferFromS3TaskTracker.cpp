@@ -36,6 +36,8 @@ ThreadPoolCallbackRunner<void> WriteBufferFromS3::TaskTracker::syncRunner()
 
 void WriteBufferFromS3::TaskTracker::waitAll()
 {
+    LOG_TEST(log, "waitAll, in queue {}", futures.size());
+
     /// Exceptions are propagated
     for (auto & future : futures)
     {
@@ -49,6 +51,8 @@ void WriteBufferFromS3::TaskTracker::waitAll()
 
 void WriteBufferFromS3::TaskTracker::safeWaitAll()
 {
+    LOG_TEST(log, "safeWaitAll, wait in queue {}", futures.size());
+
     for (auto & future : futures)
     {
         if (future.valid())
@@ -72,6 +76,7 @@ void WriteBufferFromS3::TaskTracker::safeWaitAll()
 
 void WriteBufferFromS3::TaskTracker::waitIfAny()
 {
+    LOG_TEST(log, "waitIfAny, in queue {}", futures.size());
     if (futures.empty())
         return;
 
@@ -96,6 +101,8 @@ void WriteBufferFromS3::TaskTracker::waitIfAny()
 
     watch.stop();
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
+
+    LOG_TEST(log, "waitIfAny ended, in queue {}", futures.size());
 }
 
 void WriteBufferFromS3::TaskTracker::add(Callback && func)
@@ -140,6 +147,8 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
     if (!max_tasks_inflight)
         return;
 
+    LOG_TEST(log, "waitTilInflightShrink, in queue {}", futures.size());
+
     Stopwatch watch;
 
     /// Alternative approach is to wait until at least futures.size() - max_tasks_inflight element are finished
@@ -162,6 +171,8 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
 
     watch.stop();
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
+
+    LOG_TEST(log, "waitTilInflightShrink ended, in queue {}", futures.size());
 }
 
 bool WriteBufferFromS3::TaskTracker::isAsync() const
