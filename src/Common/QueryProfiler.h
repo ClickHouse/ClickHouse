@@ -28,20 +28,25 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
+#if USE_UNWIND
 class Timer
 {
 public:
-    Timer(){ timer_id = std::optional<timer_t>(std::nullopt); }
+    Timer();
+    Timer(const Timer &) = delete;
+    Timer & operator = (const Timer &) = delete;
     ~Timer();
 
     void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
     void set(UInt32 period);
-    void tryStop();
-    void tryCleanup();
+    void stop();
+    void cleanup();
 
 private:
+    Poco::Logger * log;
     std::optional<timer_t> timer_id;
 };
+#endif
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -51,7 +56,7 @@ public:
     ~QueryProfilerBase();
 
 private:
-    void tryCleanup();
+    void cleanup();
 
     Poco::Logger * log;
 

@@ -82,13 +82,15 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
-    extern const int CANNOT_DELETE_TIMER;
     extern const int NOT_IMPLEMENTED;
 }
 
+#if USE_UNWIND
+Timer::Timer():log(&Poco::Logger::get("Timer")){}
+
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
 {
-    if (timer_id.has_value() == false)
+    if (!timer_id)
     {
         struct sigevent sev {};
         sev.sigev_notify = SIGEV_THREAD_ID;
@@ -132,37 +134,42 @@ void Timer::set(UInt32 period)
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
-        throw Exception(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Failed to set thread timer period");
+        throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
 }
 
-void Timer::tryStop()
+void Timer::stop()
 {
-    if (timer_id.has_value())
+    if (timer_id)
     {
         struct timespec stop_timer{.tv_sec = 0, .tv_nsec = 0};
         struct itimerspec timer_spec = {.it_interval = stop_timer, .it_value = stop_timer};
         int err = timer_settime(*timer_id, 0, &timer_spec, nullptr);
         if (err)
-            throw Exception(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Failed to stop query profiler timer");
+            LOG_ERROR(log, "Failed to stop query profiler timer {}", errnoToString());
         chassert(!err && "Failed to stop query profiler timer");
     }
 }
 
 Timer::~Timer()
 {
-    tryCleanup();
+    try {
+        cleanup();
+    } catch(...) {}
 }
 
-void Timer::tryCleanup()
+void Timer::cleanup()
 {
-    if (timer_id.has_value())
+    if (timer_id)
     {
         int err = timer_delete(*timer_id);
-        throw Exception(ErrorCodes::CANNOT_DELETE_TIMER, "Failed to delete query profiler timer");
-            chassert(!err && "Failed to delete query profiler timer");
+        if (err)
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to delete query profiler timer");
+
         timer_id.reset();
     }
 }
+#endif
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
@@ -209,7 +216,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     }
     catch (...)
     {
-        timer.tryCleanup();
+        timer.cleanup();
         throw;
     }
 #endif
@@ -218,14 +225,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 {
-    tryCleanup();
+    try
+    {
+        cleanup();
+    }
+    catch(...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 template <typename ProfilerImpl>
-void QueryProfilerBase<ProfilerImpl>::tryCleanup()
+void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
 #if USE_UNWIND
-    timer.tryStop();
+    timer.stop();
     signal_handler_disarmed = true;
 #endif
 }
