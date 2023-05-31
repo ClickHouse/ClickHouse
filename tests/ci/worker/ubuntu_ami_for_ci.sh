@@ -77,50 +77,44 @@ EOT
 
 systemctl restart docker
 
-# # install buildx
-sudo -u ubuntu mkdir -p /home/ubuntu/.docker/cli-plugins/
-BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | jq -r '.tag_name')
-sudo -u ubuntu wget -q https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64 -O /home/ubuntu/.docker/cli-plugins/docker-buildx
-sudo -u ubuntu chmod a+x /home/ubuntu/.docker/cli-plugins/docker-buildx
-
 # buildx builder is user-specific
 sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx create --use --name default-builder
 
 pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory hvac
 
-# mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
+mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
 
-# RUNNER_ARCHIVE="actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz"
+RUNNER_ARCHIVE="actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz"
 
-# curl -O -L "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/$RUNNER_ARCHIVE"
+curl -O -L "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/$RUNNER_ARCHIVE"
 
-# tar xzf "./$RUNNER_ARCHIVE"
-# rm -f "./$RUNNER_ARCHIVE"
-# ./bin/installdependencies.sh
+tar xzf "./$RUNNER_ARCHIVE"
+rm -f "./$RUNNER_ARCHIVE"
+./bin/installdependencies.sh
 
-# chown -R ubuntu:ubuntu $RUNNER_HOME
+chown -R ubuntu:ubuntu $RUNNER_HOME
 
-# cd /home/ubuntu
-# curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
-# unzip awscliv2.zip
-# ./aws/install
+cd /home/ubuntu
+curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
 
-# rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
+rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
 
-# # SSH keys of core team
-# mkdir -p /home/ubuntu/.ssh
+# SSH keys of core team
+mkdir -p /home/ubuntu/.ssh
 
-# # ~/.ssh/authorized_keys is cleaned out, so we use deprecated but working  ~/.ssh/authorized_keys2
-# TEAM_KEYS_URL=$(aws ssm get-parameter --region us-east-1 --name team-keys-url --query 'Parameter.Value' --output=text)
-# curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
-# chown ubuntu: /home/ubuntu/.ssh -R
-# chmod 0700 /home/ubuntu/.ssh
+# ~/.ssh/authorized_keys is cleaned out, so we use deprecated but working  ~/.ssh/authorized_keys2
+TEAM_KEYS_URL=$(aws ssm get-parameter --region us-east-1 --name team-keys-url --query 'Parameter.Value' --output=text)
+curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
+chown ubuntu: /home/ubuntu/.ssh -R
+chmod 0700 /home/ubuntu/.ssh
 
-# # Download cloudwatch agent and install config for it
-# wget --directory-prefix=/tmp https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/"$(deb_arch)"/latest/amazon-cloudwatch-agent.deb{,.sig}
-# gpg --recv-key --keyserver keyserver.ubuntu.com D58167303B789C72
-# gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
-# dpkg -i /tmp/amazon-cloudwatch-agent.deb
-# aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-# systemctl enable amazon-cloudwatch-agent.service
+# Download cloudwatch agent and install config for it
+wget --directory-prefix=/tmp https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/"$(deb_arch)"/latest/amazon-cloudwatch-agent.deb{,.sig}
+gpg --recv-key --keyserver keyserver.ubuntu.com D58167303B789C72
+gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
+dpkg -i /tmp/amazon-cloudwatch-agent.deb
+aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+systemctl enable amazon-cloudwatch-agent.service

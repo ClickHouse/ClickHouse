@@ -16,7 +16,6 @@ from env_helper import (
     S3_TEST_REPORTS_BUCKET,
     S3_BUILDS_BUCKET,
     S3_REGION,
-    S3_ENDPOINT,
     RUNNER_TEMP,
     CI,
     S3_URL,

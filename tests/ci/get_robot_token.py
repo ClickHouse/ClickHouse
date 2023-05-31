@@ -5,7 +5,6 @@ from typing import Optional
 
 import boto3  # type: ignore
 import hvac
-import os
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
 
