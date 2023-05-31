@@ -141,8 +141,6 @@ struct MergeListElement : boost::noncopyable
 
     MergeListElement * ptr() { return this; }
 
-    ~MergeListElement();
-
     MergeListElement & ref() { return *this; }
 
     ~MergeListElement();

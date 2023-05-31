@@ -331,12 +331,12 @@ void PipelineExecutor::spawnThreads()
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
+                    CurrentThread::detachQueryIfNotDetached();
             );
             setThreadName("QueryPipelineEx");
 
             if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
+                CurrentThread::attachTo(thread_group);
 
             try
             {

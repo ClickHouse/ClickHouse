@@ -973,11 +973,11 @@ private:
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
 
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+            CurrentThread::attachTo(thread_group);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;

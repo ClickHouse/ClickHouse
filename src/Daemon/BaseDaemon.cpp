@@ -59,6 +59,8 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
+#include <Parsers/toOneLineQuery.h>
+
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
@@ -309,8 +311,12 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = thread_ptr->getQueryId();
-            query = thread_ptr->getQueryForLog();
+            query_id = std::string(thread_ptr->getQueryId());
+
+            if (auto thread_group = thread_ptr->getThreadGroup())
+            {
+                query = DB::toOneLineQuery(thread_group->query);
+            }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
             {

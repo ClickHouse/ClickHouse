@@ -276,7 +276,7 @@ Chain buildPushingToViewsChain(
         if (current_thread)
             running_group = current_thread->getThreadGroup();
         if (!running_group)
-            running_group = std::make_shared<ThreadGroupStatus>(context);
+            running_group = std::make_shared<ThreadGroupStatus>();
 
         /// We are creating a ThreadStatus per view to store its metrics individually
         /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
@@ -288,7 +288,12 @@ Chain buildPushingToViewsChain(
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();
-        view_thread_status_ptr->attachToGroup(running_group);
+        /// view_thread_status_ptr will be moved later (on and on), so need to capture raw pointer.
+        view_thread_status_ptr->deleter = [thread_status = view_thread_status_ptr.get(), running_group]
+        {
+            thread_status->detachQuery();
+        };
+        view_thread_status_ptr->attachQuery(running_group);
 
         auto * view_thread_status = view_thread_status_ptr.get();
         views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));

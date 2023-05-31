@@ -479,18 +479,13 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
 
         auto job = [&](bool async)
         {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
+            SCOPE_EXIT_SAFE(std::lock_guard lock{mutex}; if (!--num_active_jobs) event.notify_all();
+                            if (async) CurrentThread::detachQueryIfNotDetached(););
 
             try
             {
                 if (async && thread_group)
-                    CurrentThread::attachToGroup(thread_group);
+                    CurrentThread::attachTo(thread_group);
 
                 if (async)
                     setThreadName("BackupWorker");
@@ -771,18 +766,13 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 
         auto job = [&](bool async)
         {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
+            SCOPE_EXIT_SAFE(std::lock_guard lock{mutex}; if (!--num_active_jobs) event.notify_all();
+                            if (async) CurrentThread::detachQueryIfNotDetached(););
 
             try
             {
                 if (async && thread_group)
-                    CurrentThread::attachToGroup(thread_group);
+                    CurrentThread::attachTo(thread_group);
 
                 if (async)
                     setThreadName("RestoreWorker");

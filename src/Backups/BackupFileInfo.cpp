@@ -217,7 +217,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 if (!--num_active_jobs)
                     event.notify_all();
                 if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
+                    CurrentThread::detachQueryIfNotDetached();
             });
 
             try
@@ -226,7 +226,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 const auto & entry = backup_entries[i].second;
 
                 if (async && thread_group)
-                    CurrentThread::attachToGroup(thread_group);
+                    CurrentThread::attachTo(thread_group);
 
                 if (async)
                     setThreadName("BackupWorker");

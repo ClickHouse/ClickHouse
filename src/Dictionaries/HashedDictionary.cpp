@@ -73,7 +73,7 @@ public:
                 MemoryTrackerBlockerInThread memory_blocker;
 
                 if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
+                    CurrentThread::attachToIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
 
                 threadWorker(shard);
@@ -234,7 +234,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
             MemoryTrackerBlockerInThread memory_blocker;
 
             if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
+                CurrentThread::attachToIfDetached(thread_group);
             setThreadName("HashedDictDtor");
 
             clearContainer(container);

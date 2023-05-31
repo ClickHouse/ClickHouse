@@ -174,8 +174,8 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_idx)
         [this, row_group_idx, thread_group = CurrentThread::getGroup()]()
         {
             if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                CurrentThread::attachToIfDetached(thread_group);
+            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachQueryIfNotDetached(););
 
             try
             {

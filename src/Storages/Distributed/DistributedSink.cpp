@@ -304,12 +304,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+            CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;

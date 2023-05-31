@@ -100,11 +100,11 @@ namespace DB
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
         setThreadName("Collector");
         if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -161,11 +161,11 @@ namespace DB
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
         setThreadName("Formatter");
         if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {

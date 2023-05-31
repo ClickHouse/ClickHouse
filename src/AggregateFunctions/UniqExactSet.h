@@ -54,10 +54,10 @@ public:
                 {
                     SCOPE_EXIT_SAFE(
                         if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
+                            CurrentThread::detachQueryIfNotDetached();
                     );
                     if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                        CurrentThread::attachToIfDetached(thread_group);
                     setThreadName("UniqExactMerger");
 
                     while (true)
