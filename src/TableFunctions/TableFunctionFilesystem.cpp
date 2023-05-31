@@ -14,21 +14,21 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static const Documentation format_table_function_documentation =
+static const FunctionDocumentation format_table_function_documentation =
 {
-    R"(
+    .description=R"(
 Provides access to file system to list files and return its metadata and contents. Recursively iterates directories.
 This table function provides access to filesystem of a server that runs a query.)",
-    Documentation::Examples
+    .examples
     {
         {"Example", R"(Query:
 ```
 :) select * from filesystem('/var/lib/clickhouse/user_files')
 ```
-)"
+)", ""
         }
     },
-    Documentation::Categories{"format", "table-functions"}
+    .categories{"format", "table-functions"}
 };
 
 void registerTableFunctionFilesystem(TableFunctionFactory & factory)
