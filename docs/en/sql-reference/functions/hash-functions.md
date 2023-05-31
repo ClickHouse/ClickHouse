@@ -279,6 +279,8 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
+Note that Google changed the algorithm of CityHash after it has been added to ClickHouse. In other words, ClickHouse's cityHash64 and Google's upstream CityHash now produce different results. ClickHouse cityHash64 corresponds to CityHash v1.0.2.
+
 **Arguments**
 
 The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
@@ -556,6 +558,77 @@ Result:
 ┌─hiveHash('Hello, world!')─┐
 │                 267439093 │
 └───────────────────────────┘
+```
+
+## Entropy-learned hashing (experimental)
+
+Entropy-learned hashing is disabled by default, to enable: `SET allow_experimental_hash_functions=1`.
+
+Entropy-learned hashing is not a standalone hash function like `metroHash64`, `cityHash64`, `sipHash64` etc. Instead, it aims to preprocess
+the data to be hashed in a way that a standalone hash function can be computed more efficiently while not compromising the hash quality,
+i.e. the randomness of the hashes. For that, entropy-based hashing chooses a subset of the bytes in a training data set of Strings which has
+the same randomness (entropy) as the original Strings. For example, if the Strings are in average 100 bytes long, and we pick a subset of 5
+bytes, then a hash function will be 95% less expensive to evaluate. For details of the method, refer to [Entropy-Learned Hashing: Constant
+Time Hashing with Controllable Uniformity](https://doi.org/10.1145/3514221.3517894).
+
+Entropy-learned hashing has two phases:
+
+1. A training phase on a representative but typically small set of Strings to be hashed. Training consists of two steps:
+
+   - Function `prepareTrainEntropyLearnedHash(data, id)` caches the training data in a global state under a given `id`. It returns dummy
+     value `0` on every row.
+   - Function `trainEntropyLearnedHash(id)` computes a minimal partial sub-key of the training data stored stored under `id` in the global
+     state. The cached training data in the global state is replaced by the partial key. Dummy value `0` is returned on every row.
+
+2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
+   hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
+
+The reason that the training phase comprises two steps is that ClickHouse processes data at chunk granularity but entropy-learned hashing
+needs to process the entire training set at once.
+
+Since functions `prepareTrainEntropyLearnedHash()` and `trainEntropyLearnedHash()` access global state, they should not be called in
+parallel with the same `id`.
+
+**Syntax**
+
+``` sql
+prepareTrainEntropyLearnedHash(data, id);
+trainEntropyLearnedHash(id);
+entropyLearnedHash(data, id);
+```
+
+**Example**
+
+```sql
+SET allow_experimental_hash_functions=1;
+CREATE TABLE tab (col String) ENGINE=Memory;
+INSERT INTO tab VALUES ('aa'), ('ba'), ('ca');
+
+SELECT prepareTrainEntropyLearnedHash(col, 'id1') AS prepared FROM tab;
+SELECT trainEntropyLearnedHash('id1') AS trained FROM tab;
+SELECT entropyLearnedHash(col, 'id1') as hashes FROM tab;
+```
+
+Result:
+
+``` response
+┌─prepared─┐
+│        0 │
+│        0 │
+│        0 │
+└──────────┘
+
+┌─trained─┐
+│       0 │
+│       0 │
+│       0 │
+└─────────┘
+
+┌───────────────hashes─┐
+│  2603192927274642682 │
+│  4947675599669400333 │
+│ 10783339242466472992 │
+└──────────────────────┘
 ```
 
 ## metroHash64
