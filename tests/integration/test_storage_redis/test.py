@@ -147,7 +147,6 @@ def test_select_int(started_cluster):
     assert response[0] == ["0", "0"]
 
 
-
 def test_create_table(started_cluster):
     address = get_address_for_ch()
 
@@ -215,7 +214,7 @@ def test_simple_insert(started_cluster):
 
     # clean all
     client.flushall()
-    drop_table('test_simple_insert')
+    drop_table("test_simple_insert")
 
     node.query(
         f"""
@@ -386,5 +385,4 @@ def test_truncate(started_cluster):
 
     response = TSV.toMat(node.query("SELECT COUNT(*) FROM test_truncate FORMAT TSV"))
     assert len(response) == 1
-    assert esponse[0] == ["0"]
-
+    assert response[0] == ["0"]
