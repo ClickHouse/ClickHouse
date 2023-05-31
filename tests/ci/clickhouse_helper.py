@@ -5,8 +5,8 @@ import logging
 import time
 
 import requests  # type: ignore
-from env_helper import VAULT_URL
 from get_robot_token import get_parameter_from_ssm
+from env_helper import VAULT_URL
 from pr_info import PRInfo
 from report import TestResults
 
