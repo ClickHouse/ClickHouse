@@ -106,7 +106,7 @@ std::pair<size_t, size_t> nextByte(const std::vector<std::string_view> & keys, s
 PartialKeyPositions chooseBytes(const std::vector<std::string_view> & train_data)
 {
     if (train_data.size() <= 1)
-            return {};
+        return {};
 
     PartialKeyPositions partial_key_positions;
     size_t last_entropy = 0;
