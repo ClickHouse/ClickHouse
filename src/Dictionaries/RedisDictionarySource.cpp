@@ -41,7 +41,7 @@ namespace DB
                 .host = host,
                 .port = static_cast<UInt16>(port),
                 .db_index = config.getUInt(redis_config_prefix + ".db_index", DEFAULT_REDIS_DB_INDEX),
-                .password = config.getString(redis_config_prefix + ".password", ""),
+                .password = config.getString(redis_config_prefix + ".password", DEFAULT_REDIS_PASSWORD),
                 .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),
                 .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
             };

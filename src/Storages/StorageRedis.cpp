@@ -1,24 +1,25 @@
-#include <Storages/StorageRedis.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/KVStorageUtils.h>
-
 #include <unordered_set>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Storages/KVStorageUtils.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageRedis.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/KeyDescription.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -51,11 +52,7 @@ public:
     {
     }
 
-    RedisDataSource(
-        StorageRedis & storage_,
-        const Block & header,
-        const size_t max_block_size_,
-        const String & pattern_ = "*")
+    RedisDataSource(StorageRedis & storage_, const Block & header, const size_t max_block_size_, const String & pattern_ = "*")
         : ISource(header)
         , storage(storage_)
         , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
@@ -85,6 +82,7 @@ public:
 
         const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey().at(0)).type;
         auto raw_keys = serializeKeysToRawString(it, end, key_column_type, max_block_size);
+
         return storage.getBySerializedKeys(raw_keys, nullptr);
     }
 
@@ -109,11 +107,11 @@ public:
         MutableColumns columns = sample_block.cloneEmptyColumns();
 
         RedisArray values = storage.multiGet(scan_keys);
-        for (size_t i = 0; i<scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
+        for (size_t i = 0; i < scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
         {
             fillColumns(scan_keys.get<RedisBulkString>(i).value(),
-                values.get<RedisBulkString>(i).value(),
-                primary_key_pos, sample_block, columns
+                        values.get<RedisBulkString>(i).value(),
+                        primary_key_pos, sample_block, columns
             );
         }
 
@@ -143,9 +141,7 @@ private:
 class RedisSink : public SinkToStorage
 {
 public:
-    RedisSink(
-        StorageRedis & storage_,
-        const StorageMetadataPtr & metadata_snapshot_);
+    RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
 
     void consume(Chunk chunk) override;
     String getName() const override { return "RedisSink"; }
@@ -156,9 +152,7 @@ private:
     size_t primary_key_pos = 0;
 };
 
-RedisSink::RedisSink(
-    StorageRedis & storage_,
-    const StorageMetadataPtr & metadata_snapshot_)
+RedisSink::RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -194,6 +188,7 @@ void RedisSink::consume(Chunk chunk)
         data.add(wb_key.str());
         data.add(wb_value.str());
     }
+
     storage.multiSet(data);
 }
 
@@ -258,8 +253,8 @@ Pipe StorageRedis::read(
             size_t begin = num_keys * thread_idx / num_threads;
             size_t end = num_keys * (thread_idx + 1) / num_threads;
 
-            pipes.emplace_back(std::make_shared<RedisDataSource>(
-                *this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+            pipes.emplace_back(
+                std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
         }
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -272,7 +267,7 @@ namespace
     {
         RedisConfiguration configuration;
 
-        if (engine_args.size() < 1)
+        if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments count when creating Redis table engine");
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
@@ -336,18 +331,11 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
         }
 
-        return std::make_shared<StorageRedis>(
-            args.table_id,
-            configuration,
-            args.getContext(),
-            metadata,
-            primary_key_names[0]);
+        return std::make_shared<StorageRedis>(args.table_id, configuration, args.getContext(), metadata, primary_key_names[0]);
     }
 }
 
-Chunk StorageRedis::getBySerializedKeys(
-    const std::vector<std::string> & keys,
-    PaddedPODArray<UInt8> * null_map) const
+Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * null_map) const
 {
     RedisArray redis_keys;
     for (const auto & key : keys)
@@ -355,9 +343,7 @@ Chunk StorageRedis::getBySerializedKeys(
     return getBySerializedKeys(redis_keys, null_map);
 }
 
-Chunk StorageRedis::getBySerializedKeys(
-    const RedisArray & keys,
-    PaddedPODArray<UInt8> * null_map) const
+Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
@@ -379,8 +365,8 @@ Chunk StorageRedis::getBySerializedKeys(
         if (!values.get<RedisBulkString>(i).isNull())
         {
             fillColumns(keys.get<RedisBulkString>(i).value(),
-                values.get<RedisBulkString>(i).value(),
-                primary_key_pos, sample_block, columns
+                        values.get<RedisBulkString>(i).value(),
+                        primary_key_pos, sample_block, columns
             );
         }
         else /// key not found
@@ -433,8 +419,7 @@ void StorageRedis::multiSet(const RedisArray & data) const
 
     auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}",
-                        table_id.getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
@@ -447,16 +432,17 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
 
     auto ret = connection->client->execute<RedisInteger>(cmd);
     if (ret != static_cast<RedisInteger>(keys.size()))
-        LOG_DEBUG(log, "Try to delete {} rows but actually deleted {} rows from redis table {}.",
-                  keys.size(), ret, table_id.getFullNameNotQuoted());
+        LOG_DEBUG(
+            log,
+            "Try to delete {} rows but actually deleted {} rows from redis table {}.",
+            keys.size(),
+            ret,
+            table_id.getFullNameNotQuoted());
 
     return ret;
 }
 
-Chunk StorageRedis::getByKeys(
-    const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map,
-    const Names &) const
+Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
@@ -474,10 +460,7 @@ Block StorageRedis::getSampleBlock(const Names &) const
     return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
-SinkToStoragePtr StorageRedis::write(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr /*context*/)
+SinkToStoragePtr StorageRedis::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<RedisSink>(*this, metadata_snapshot);
 }
@@ -524,12 +507,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(
-            storage_ptr,
-            metadata_snapshot,
-            commands,
-            context_,
-            settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -567,12 +545,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     settings.return_all_columns = true;
     settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(
-        storage_ptr,
-        metadata_snapshot,
-        commands,
-        context_,
-        settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
