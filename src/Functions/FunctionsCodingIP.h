@@ -341,7 +341,11 @@ ColumnPtr convertIPv6ToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null
         {
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
             {
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 in column {} is not in IPv4 mapping block", column->getName());
+                char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+                char * paddr = addr;
+                formatIPv6(src, paddr);
+
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 {} in column {} is not in IPv4 mapping block", addr, column->getName());
             }
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
             {
