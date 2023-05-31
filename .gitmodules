@@ -39,6 +39,9 @@
 	path = contrib/protobuf
 	url = https://github.com/ClickHouse/protobuf
 	branch = v3.13.0.1
+[submodule "contrib/google-protobuf"]
+	path = contrib/google-protobuf
+	url = https://github.com/ClickHouse/google-protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -344,6 +347,3 @@
 [submodule "contrib/isa-l"]
 	path = contrib/isa-l
 	url = https://github.com/ClickHouse/isa-l.git
-[submodule "contrib/google-protobuf"]
-	path = contrib/google-protobuf
-	url = https://github.com/ClickHouse/google-protobuf.git
