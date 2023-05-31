@@ -5,7 +5,7 @@ sidebar_label: Reddit comments
 
 # Reddit comments dataset
 
-This dataset contains publicly-available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 7B rows of data. The raw data is in JSON format in compressed `.zst` files and the rows look like the following:
+This dataset contains publicly-available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 14B rows of data. The raw data is in JSON format in compressed files and the rows look like the following:
 
 ```json
 {"controversiality":0,"body":"A look at Vietnam and Mexico exposes the myth of market liberalisation.","subreddit_id":"t5_6","link_id":"t3_17863","stickied":false,"subreddit":"reddit.com","score":2,"ups":2,"author_flair_css_class":null,"created_utc":1134365188,"author_flair_text":null,"author":"frjo","id":"c13","edited":false,"parent_id":"t3_17863","gilded":0,"distinguished":null,"retrieved_on":1473738411}
@@ -78,22 +78,11 @@ The names of the files in S3 start with `RC_YYYY-MM` where `YYYY-MM` goes from `
 ```sql
 INSERT INTO reddit
     SELECT *
-    FROM s3Cluster(
-        'default',
-        'https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/reddit/original/RC_2017-12.xz',
-        'JSONEachRow'
-    );
-```
-
-If you do not have a cluster, use `s3` instead of `s3Cluster`:
-
-```sql
-INSERT INTO reddit
-    SELECT *
     FROM s3(
         'https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/reddit/original/RC_2017-12.xz',
         'JSONEachRow'
     );
+
 ```
 
 3. It will take a while depending on your resources, but when it's done verify it worked:
@@ -205,6 +194,18 @@ INSERT INTO reddit
 SELECT *
 FROM s3Cluster(
     'default',
+    'https://clickhouse-public-datasets.s3.amazonaws.com/reddit/original/RC*',
+    'JSONEachRow'
+    )
+SETTINGS zstd_window_log_max = 31;
+```
+
+If you do not have a cluster, use `s3` instead of `s3Cluster`:
+
+```sql
+INSERT INTO reddit
+SELECT *
+FROM s3(
     'https://clickhouse-public-datasets.s3.amazonaws.com/reddit/original/RC*',
     'JSONEachRow'
     )
