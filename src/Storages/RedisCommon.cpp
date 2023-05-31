@@ -8,10 +8,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_REDIS_TABLE_STRUCTURE;
     extern const int INTERNAL_REDIS_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int BAD_ARGUMENTS;
     extern const int INVALID_REDIS_STORAGE_TYPE;
 }
 
