@@ -5,7 +5,7 @@ import logging
 import time
 
 import requests  # type: ignore
-from env_helper import GITHUB_REPOSITORY
+from env_helper import VAULT_URL
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
@@ -142,12 +142,12 @@ def prepare_tests_results_for_clickhouse(
     check_name: str,
 ) -> List[dict]:
 
-    pull_request_url = "https://github.com/{}/commits/master".format(GITHUB_REPOSITORY)
+    # pull_request_url = "https://github.com/{}/commits/master".format(GITHUB_REPOSITORY)
     # pull_request_url = "https://github.com/ClibMouse/ClickHouse/commits/master"
-    # if VAULT_URL:
-    #     pull_request_url = "https://github.com/ClibMouse/ClickHouse/commits/master"
-    # else:
-    #     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    if VAULT_URL:
+        pull_request_url = "https://github.com/ClibMouse/ClickHouse/commits/master"
+    else:
+        pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
 
     base_ref = "master"
     head_ref = "master"
