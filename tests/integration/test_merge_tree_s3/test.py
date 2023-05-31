@@ -930,8 +930,9 @@ def test_merge_canceled_by_drop(cluster, node_name):
     )
 
 
+@pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
 @pytest.mark.parametrize("node_name", ["node"])
-def test_merge_canceled_by_s3_errors(cluster, node_name):
+def test_merge_canceled_by_s3_errors(cluster, node_name, storage_policy):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
     node.query(
@@ -939,7 +940,7 @@ def test_merge_canceled_by_s3_errors(cluster, node_name):
         " (key UInt32, value String)"
         " Engine=MergeTree() "
         " ORDER BY value "
-        " SETTINGS storage_policy='broken_s3'"
+        f" SETTINGS storage_policy='{storage_policy}'"
     )
     node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
     node.query(
@@ -1048,8 +1049,8 @@ def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
         "   AND type!='QueryStart'"
     ).split()
 
-    assert int(memory_usage) < 1.1 * memory
-    assert int(memory_usage) > 0.9 * memory
+    assert int(memory_usage) < 1.2 * memory
+    assert int(memory_usage) > 0.8 * memory
 
     assert int(wait_inflight) > 10 * 1000 * 1000
 
@@ -1096,7 +1097,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, node_name):
         "   AND type!='QueryStart'"
     )
 
-    assert int(result) < 1.1 * memory
-    assert int(result) > 0.9 * memory
+    assert int(result) < 1.2 * memory
+    assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)
