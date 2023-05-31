@@ -14,10 +14,8 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WithFileSize.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -29,7 +27,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -48,7 +45,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
