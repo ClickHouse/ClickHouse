@@ -644,7 +644,7 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
         metadata_snapshot->getColumns(),
         [](const auto & shard_num_and_columns) -> const auto & { return shard_num_and_columns.second; });
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
 namespace
