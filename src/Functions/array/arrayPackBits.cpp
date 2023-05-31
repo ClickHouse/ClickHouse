@@ -4,10 +4,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/FunctionArrayMapped.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT ;
+}
 
 template <typename ResultType>
 struct ArrayAggregatePackImpl;
@@ -127,7 +131,7 @@ struct ArrayPackBitsImpl
                 }
                 else if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
                 {
-                    max_result_size = std::min(static_cast<uint64_t>(std::ceil(static_cast<double>(offset) / pack_group_size)), 8ULL);
+                    max_result_size = std::min(static_cast<uint64_t>(std::ceil(static_cast<double>(offset) / pack_group_size)), 8UL);
                 }
 
                 uint64_t max_offset = std::min(max_result_size * pack_group_size, offset);
