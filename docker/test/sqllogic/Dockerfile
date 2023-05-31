@@ -14,6 +14,7 @@ RUN apt-get update --yes \
             unixodbc \
             unixodbc-dev \
             sudo \
+            curl \
     && apt-get clean
 
 RUN pip3 install \

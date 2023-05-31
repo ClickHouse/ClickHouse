@@ -8,7 +8,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
         python3-requests \
         nodejs \
-        # npm \
+        npm \
     && apt-get clean
 
 COPY s3downloader /s3downloader
