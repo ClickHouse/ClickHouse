@@ -12,7 +12,7 @@ DRY_RUN=${DRY_RUN:-}
 PY_VERSION=${PY_VERSION:-3.10}
 PY_EXEC="python${PY_VERSION}"
 # Image to build the lambda zip package
-DOCKER_IMAGE="python:${PY_VERSION}-slim"
+DOCKER_IMAGE="public.ecr.aws/lambda/python:${PY_VERSION}"
 # Rename the_lambda_name directory to the-lambda-name lambda in AWS
 LAMBDA_NAME=${DIR_NAME//_/-}
 # The name of directory with lambda code
@@ -23,9 +23,9 @@ cp app.py "$PACKAGE"
 if [ -f requirements.txt ]; then
   VENV=lambda-venv
   rm -rf "$VENV" lambda-package.zip
-  docker run --rm --user="${UID}" -e HOME=/tmp \
+  docker run --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash \
     --volume="${WORKDIR}/..:/ci" --workdir="/ci/${DIR_NAME}" "${DOCKER_IMAGE}" \
-    /bin/bash -exc "
+    -exc "
       '$PY_EXEC' -m venv '$VENV' &&
       source '$VENV/bin/activate' &&
       pip install -r requirements.txt

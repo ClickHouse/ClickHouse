@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "lambda_shared"
 version = "0.0.1"
 dependencies = [
-  "requests < 2.30",
+  "requests",
+  "urllib3 < 2"
 ]
 
 [project.optional-dependencies]
 token = [
   "PyJWT",
-  "cryptography<38",
+  "cryptography",
 ]
 dev = [
   "boto3",
