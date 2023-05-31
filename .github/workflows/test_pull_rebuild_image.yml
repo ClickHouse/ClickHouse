@@ -4,7 +4,8 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 
-on: 
+on:
+  push:
   pull_request:
     types:
       - synchronize
