@@ -158,7 +158,7 @@ Now let’s examine a query with IN:
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
--   Calculation of the intersection of audiences of two sites.
+- Calculation of the intersection of audiences of two sites.
 
 This query will be sent to all remote servers as
 

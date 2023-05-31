@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET allow_experimental_query_cache = true;
-
 SYSTEM DROP QUERY CACHE;
 DROP TABLE IF EXISTS t;
 
@@ -30,24 +28,24 @@ INSERT INTO t values ('abc') ('def') ('ghi') ('jkl');
 -- Run query which reads multiple chunks (small max_block_size), cache result in query cache, force squashing of partial results
 SELECT '-- insert with enabled squashing';
 SELECT * FROM t ORDER BY c
-SETTINGS max_block_size = 2, use_query_cache = true, query_cache_squash_partial_results = true;
+SETTINGS max_block_size = 3, use_query_cache = true, query_cache_squash_partial_results = true;
 
 -- Run again to check that no bad things happen and that the result is as expected
 SELECT '-- read from cache';
 SELECT * FROM t ORDER BY c
-SETTINGS max_block_size = 2, use_query_cache = true;
+SETTINGS max_block_size = 3, use_query_cache = true;
 
 SYSTEM DROP QUERY CACHE;
 
 -- Run query which reads multiple chunks (small max_block_size), cache result in query cache, but **disable** squashing of partial results
 SELECT '-- insert with disabled squashing';
 SELECT * FROM t ORDER BY c
-SETTINGS max_block_size = 2, use_query_cache = true, query_cache_squash_partial_results = false;
+SETTINGS max_block_size = 3, use_query_cache = true, query_cache_squash_partial_results = false;
 
 -- Run again to check that no bad things happen and that the result is as expected
 SELECT '-- read from cache';
 SELECT * FROM t ORDER BY c
-SETTINGS max_block_size = 2, use_query_cache = true;
+SETTINGS max_block_size = 3, use_query_cache = true;
 
 DROP TABLE t;
 SYSTEM DROP QUERY CACHE;

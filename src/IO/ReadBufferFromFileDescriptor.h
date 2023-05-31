@@ -25,7 +25,7 @@ protected:
     ThrottlerPtr throttler;
 
     bool nextImpl() override;
-    void prefetch(int64_t priority) override;
+    void prefetch(Priority priority) override;
 
     /// Name or some description of file.
     std::string getFileName() const override;
@@ -54,8 +54,6 @@ public:
     {
         return file_offset_of_buffer_end - (working_buffer.end() - pos);
     }
-
-    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 

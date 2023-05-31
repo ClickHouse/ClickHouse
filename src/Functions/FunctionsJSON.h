@@ -23,6 +23,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -1190,6 +1191,46 @@ struct JSONExtractTree
         std::unordered_map<std::string_view, size_t> name_to_index_map;
     };
 
+    class MapNode : public Node
+    {
+    public:
+        MapNode(std::unique_ptr<Node> key_, std::unique_ptr<Node> value_) : key(std::move(key_)), value(std::move(value_)) { }
+
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            if (!element.isObject())
+                return false;
+
+            ColumnMap & map_col = assert_cast<ColumnMap &>(dest);
+            auto & offsets = map_col.getNestedColumn().getOffsets();
+            auto & tuple_col = map_col.getNestedData();
+            auto & key_col = tuple_col.getColumn(0);
+            auto & value_col = tuple_col.getColumn(1);
+            size_t old_size = tuple_col.size();
+
+            auto object = element.getObject();
+            auto it = object.begin();
+            for (; it != object.end(); ++it)
+            {
+                auto pair = *it;
+
+                /// Insert key
+                key_col.insertData(pair.first.data(), pair.first.size());
+
+                /// Insert value
+                if (!value->insertResultToColumn(value_col, pair.second))
+                    value_col.insertDefault();
+            }
+
+            offsets.push_back(old_size + object.size());
+            return true;
+        }
+
+    private:
+        std::unique_ptr<Node> key;
+        std::unique_ptr<Node> value;
+    };
+
     static std::unique_ptr<Node> build(const char * function_name, const DataTypePtr & type)
     {
         switch (type->getTypeId())
@@ -1251,6 +1292,20 @@ struct JSONExtractTree
                 for (const auto & tuple_element : tuple_elements)
                     elements.emplace_back(build(function_name, tuple_element));
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
+            }
+            case TypeIndex::Map:
+            {
+                const auto & map_type = static_cast<const DataTypeMap &>(*type);
+                const auto & key_type = map_type.getKeyType();
+                if (!isString(removeLowCardinality(key_type)))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} doesn't support the return type schema: {} with key type not String",
+                        String(function_name),
+                        type->getName());
+
+                const auto & value_type = map_type.getValueType();
+                return std::make_unique<MapNode>(build(function_name, key_type), build(function_name, value_type));
             }
             default:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

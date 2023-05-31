@@ -314,7 +314,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         auto set = column_set->getData();
-        if (!set->isCreated())
+        if (!set || !set->isCreated())
             return;
 
         if (!set->hasExplicitSetElements())
