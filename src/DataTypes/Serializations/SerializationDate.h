@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/TimezoneMixin.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {
