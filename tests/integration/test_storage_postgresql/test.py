@@ -183,7 +183,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
 
-def test_non_default_scema(started_cluster):
+def test_non_default_schema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema_with_dots")
 
