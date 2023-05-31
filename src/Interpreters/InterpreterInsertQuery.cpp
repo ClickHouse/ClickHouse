@@ -33,7 +33,14 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event InsertQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
