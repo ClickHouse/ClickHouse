@@ -82,3 +82,6 @@ endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
 target_link_libraries (interval_tree PRIVATE dbms)
+
+clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
+target_link_libraries (encrypt_decrypt PRIVATE dbms)

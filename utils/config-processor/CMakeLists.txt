@@ -1,3 +1,2 @@
 clickhouse_add_executable (config-processor config-processor.cpp)
-target_link_libraries(config-processor PRIVATE dbms clickhouse_common_config_no_zookeeper_log)
-target_link_libraries(config-processor PUBLIC clickhouse_parsers clickhouse_common_io common ch_contrib::lz4)
+target_link_libraries(config-processor PRIVATE dbms)
