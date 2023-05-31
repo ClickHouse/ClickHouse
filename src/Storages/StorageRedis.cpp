@@ -87,6 +87,7 @@ public:
         return storage.getBySerializedKeys(raw_keys, nullptr);
     }
 
+    /// TODO scan may get duplicated keys
     Chunk generateFullScan()
     {
         /// redis scan ending
@@ -480,17 +481,16 @@ SinkToStoragePtr StorageRedis::write(
     return std::make_shared<RedisSink>(*this, metadata_snapshot);
 }
 
-/// TODO use scan to reduce latency
 void StorageRedis::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     auto connection = getRedisConnection(pool, configuration);
 
     RedisCommand cmd_flush_db("FLUSHDB");
-    cmd_flush_db << toString(configuration.db_index);
-    auto ret = connection->client->execute<RedisBulkString>(cmd_flush_db);
+    cmd_flush_db.add("ASYNC");
+    auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
-    if (ret.isNull() || ret.value() != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret.value());
+    if (ret != "OK")
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -580,6 +580,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 }
 
+/// TODO support ttl
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

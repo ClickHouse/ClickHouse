@@ -332,3 +332,40 @@ def test_delete(started_cluster):
     response = TSV.toMat(node.query("SELECT k, m, n FROM test_delete FORMAT TSV"))
     assert (len(response) == 0)
 
+
+def test_truncate(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+    # clean all
+    client.flushall()
+    drop_table('test_truncate')
+
+    node.query(
+        f"""
+        CREATE TABLE test_truncate(
+            k UInt32, 
+            m DateTime,
+            n String
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO test_truncate Values 
+        (1, '2023-06-01 00:00:00', 'lili'), (2, '2023-06-02 00:00:00', 'lucy')
+        """
+    )
+
+    response = node.query(
+        """
+        TRUNCATE TABLE test_truncate
+        """
+    )
+
+    print("truncate table response: ",  response)
+
+    response = TSV.toMat(node.query("SELECT COUNT(*) FROM test_truncate FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['0'])
+
