@@ -1093,18 +1093,16 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 // It doesn't read the EOL itself.
                 ++cpuinfo->position();
 
-                if (s.rfind("processor", 0) == 0)
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
                 {
                     /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
                     /// non s390x example: processor : 0
-                    if (auto colon = s.find_first_of(':'))
-                    {
-#ifdef __s390x__
-                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
-#else
-                        core_id = std::stoi(s.substr(colon + 2));
-#endif
-                    }
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)
                 {

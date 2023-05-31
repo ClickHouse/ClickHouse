@@ -255,6 +255,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         client,
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
+        DBMS_DEFAULT_BUFFER_SIZE,
         request_settings,
         std::nullopt,
         threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"),
