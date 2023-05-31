@@ -341,7 +341,10 @@ private:
         void finalize()
         {
             compressed.next();
+            compressed.finalize();
+
             plain->next();
+            plain->finalize();
         }
     };
 
