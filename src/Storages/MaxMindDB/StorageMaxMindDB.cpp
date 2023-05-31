@@ -251,6 +251,7 @@ bool StorageMaxMindDB::lookupDB(const std::string & key, std::string & value) co
 
     JSONBuilder::ItemPtr json;
     std::tie(json, std::ignore) = dumpMMDBEntryDataList(entry_data_list);
+    MMDB_free_entry_data_list(entry_data_list);
 
     WriteBufferFromString buf(value);
     JSONBuilder::FormatContext format_context{.out = buf};
