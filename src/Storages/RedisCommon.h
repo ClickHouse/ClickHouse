@@ -43,10 +43,12 @@ static uint32_t DEFAULT_REDIS_DB_INDEX = 0;
 static uint32_t DEFAULT_REDIS_POOL_SIZE = 16;
 static String DEFAULT_REDIS_PASSWORD;
 
+using RedisCommand = Poco::Redis::Command;
 using RedisArray = Poco::Redis::Array;
 using RedisArrayPtr = std::shared_ptr<RedisArray>;
-using RedisCommand = Poco::Redis::Command;
 using RedisBulkString = Poco::Redis::BulkString;
+using RedisSimpleString = String;
+using RedisInteger = Int64;
 
 using RedisClientPtr = std::unique_ptr<Poco::Redis::Client>;
 using RedisPool = BorrowedObjectPool<RedisClientPtr>;

@@ -1,5 +1,3 @@
-import time
-
 ## sudo -H pip install redis
 import redis
 import pytest
@@ -200,4 +198,137 @@ def test_create_table(started_cluster):
             ) Engine=Redis('{address}', 0, 'clickhouse', 10)
             """
         )
+
+
+def test_simple_insert(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+
+    # clean all
+    client.flushall()
+    drop_table('test_simple_insert')
+
+    node.query(
+        f"""
+        CREATE TABLE test_simple_insert(
+            k UInt32, 
+            m DateTime,
+            n String
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO test_simple_insert Values 
+        (1, '2023-06-01 00:00:00', 'lili'), (2, '2023-06-02 00:00:00', 'lucy')
+        """
+    )
+
+    response = node.query("SELECT COUNT(*) FROM test_simple_insert FORMAT Values")
+    assert (response == '(2)')
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE k=1 FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE m='2023-06-01 00:00:00' FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_simple_insert WHERE n='lili' FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['1', '2023-06-01 00:00:00', 'lili'])
+
+
+def test_update(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+    # clean all
+    client.flushall()
+    drop_table('test_update')
+
+    node.query(
+        f"""
+        CREATE TABLE test_update(
+            k UInt32, 
+            m DateTime,
+            n String
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO test_update Values 
+        (1, '2023-06-01 00:00:00', 'lili'), (2, '2023-06-02 00:00:00', 'lucy')
+        """
+    )
+
+    response = node.query(
+        """
+        ALTER TABLE test_update UPDATE m='2023-06-03 00:00:00' WHERE k=1
+        """
+    )
+
+    print("update response: ",  response)
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_update WHERE k=1 FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['1', '2023-06-03 00:00:00', 'lili'])
+
+    # can not update key
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            """
+            ALTER TABLE test_update UPDATE k=2 WHERE k=1
+            """
+        )
+
+
+def test_delete(started_cluster):
+    client = get_redis_connection()
+    address = get_address_for_ch()
+
+    # clean all
+    client.flushall()
+    drop_table('test_delete')
+
+    node.query(
+        f"""
+        CREATE TABLE test_delete(
+            k UInt32, 
+            m DateTime,
+            n String
+        ) Engine=Redis('{address}', 0, 'clickhouse') PRIMARY KEY (k)
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO test_delete Values 
+        (1, '2023-06-01 00:00:00', 'lili'), (2, '2023-06-02 00:00:00', 'lucy')
+        """
+    )
+
+    response = node.query(
+        """
+        ALTER TABLE test_delete DELETE WHERE k=1
+        """
+    )
+
+    print("delete response: ",  response)
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_delete FORMAT TSV"))
+    assert (len(response) == 1)
+    assert (response[0] == ['2', '2023-06-02 00:00:00', 'lucy'])
+
+    response = node.query(
+        """
+        ALTER TABLE test_delete DELETE WHERE m='2023-06-02 00:00:00'
+        """
+    )
+
+    response = TSV.toMat(node.query("SELECT k, m, n FROM test_delete FORMAT TSV"))
+    assert (len(response) == 0)
 
