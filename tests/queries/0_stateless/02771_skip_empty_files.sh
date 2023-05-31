@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,10 +16,5 @@ $CLICKHOUSE_LOCAL -q "select * from file('$FILE_PREFIX-*.parquet') settings engi
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_PREFIX-*.parquet', auto, 'number UInt64') settings engine_file_skip_empty_files=0" 2>&1 | grep -c "Exception"
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_PREFIX-*.parquet') settings engine_file_skip_empty_files=1"
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_PREFIX-*.parquet', auto, 'number UInt64') settings engine_file_skip_empty_files=1"
-
-
-
-
-
 
 rm $FILE_PREFIX-*
