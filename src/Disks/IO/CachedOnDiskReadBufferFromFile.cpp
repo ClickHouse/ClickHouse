@@ -365,8 +365,8 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                 else
                 {
                     LOG_TRACE(
-                        log,
-                        "Bypassing cache because file segment state is `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                        log, "Bypassing cache because file segment state is "
+                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     return getRemoteReadBuffer(file_segment, read_type);
                 }
@@ -466,8 +466,8 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, implementation buffer position: {}, "
-                    "implementation buffer end position: {}, file segment info: {}",
+                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, "
+                    "implementation buffer position: {}, implementation buffer end position: {}, file segment info: {}",
                     file_offset_of_buffer_end,
                     current_write_offset,
                     read_buffer_for_file_segment->getPosition(),
@@ -932,9 +932,18 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-            [[maybe_unused]] size_t new_file_offset = file_offset_of_buffer_end + size;
+#ifdef ABORT_ON_LOGICAL_ERROR
+            const size_t new_file_offset = file_offset_of_buffer_end + size;
             chassert(new_file_offset - 1 <= file_segment.range().right);
-            chassert(new_file_offset <= file_segment.getCurrentWriteOffset(true));
+            const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+            if (new_file_offset > file_segment_write_offset)
+            {
+                LOG_TRACE(
+                    log, "Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
+                    size, file_offset_of_buffer_end, file_segment.range().toString(), file_segment_write_offset);
+                chassert(false);
+            }
+#endif
         }
         else
         {
