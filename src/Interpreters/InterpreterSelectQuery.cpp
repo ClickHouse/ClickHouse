@@ -134,6 +134,9 @@ FilterDAGInfoPtr generateFilterActions(
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
 {
+    LOG_TRACE(&Poco::Logger::get("generateFilterActions"), "top of");
+
+
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
     const auto & db_name = table_id.getDatabaseName();
@@ -549,7 +552,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, table name: {}", (void*)this, table_id.getTableName());
+        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, table name: {}, calling getRowPolicyFilter", (void*)this, table_id.getTableName());
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     }
     else
@@ -2065,11 +2068,15 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     auto & expressions = analysis_result;
     if (expressions.filter_info)
     {
+        LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info", (void*)this);
+
         if (!expressions.prewhere_info)
         {
+            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1", (void*)this);
             const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
             if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
+                LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1.5", (void*)this);
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereInfo>(
                     std::move(expressions.filter_info->actions),
@@ -2082,6 +2089,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
         else
         {
+            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 2", (void*)this);
             /// Add row level security actions to prewhere.
             expressions.prewhere_info->row_level_filter = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);

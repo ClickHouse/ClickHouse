@@ -300,8 +300,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
         }
     }
 
-    // return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
-    return QueryProcessingStage::Complete;
+    return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    // return QueryProcessingStage::Complete;
 }
 
 void StorageMerge::read(
@@ -367,7 +367,8 @@ void StorageMerge::read(
     query_plan.addInterpreterContext(modified_context);
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, QueryProcessingStage::Complete /* processed_stage */);
+    // Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, QueryProcessingStage::Complete /* processed_stage */);
+    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage );
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
@@ -703,8 +704,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 modified_context,
                 storage,
                 storage->getInMemoryMetadataPtr(), // view->getInMemoryMetadataPtr(),
-                SelectQueryOptions(/* processed_stage*/));
-                // SelectQueryOptions(processed_stage));
+                // SelectQueryOptions(/* processed_stage*/));
+                SelectQueryOptions(processed_stage));
                 // SelectQueryOptions(QueryProcessingStage::WithMergeableState));
             interpreter.buildQueryPlan(plan);
         }
@@ -732,8 +733,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
         {
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "ReadFromMergeTree detected");
             size_t filters_dags_size = filter_dags.size();
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "ReadFromMergeTree detected, DAG size {}", filters_dags_size);
             for (size_t i = 0; i < filters_dags_size; ++i)
             {
                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "adding filter");
