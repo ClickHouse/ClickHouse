@@ -74,13 +74,11 @@ private:
     std::function<void(const ExecutionStatus & execution_status)> write_part_log;
 
     IExecutableTask::TaskResultCallback task_result_callback;
+
+    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 
     ProfileEvents::Counters profile_counters;
-
-    ContextMutablePtr task_context;
-
-    ContextMutablePtr createTaskContext() const;
 };
 
 
