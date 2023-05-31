@@ -8,16 +8,21 @@ use prql_compiler::sql::Options;
 
 #[no_mangle]
 pub unsafe extern "C" fn to_sql(query: *const c_char, out: *mut c_char) -> c_int {
-    let prql_query: String = CStr::from_ptr(query).to_string_lossy().into_owned();
+    let (is_err0, prql_query) = match CStr::from_ptr(query).to_str(){
+        Ok(prql_rust) => (false, prql_rust.to_string()),
+        Err(err) => (true, err.to_string())
+    };
+    if is_err0 {
+        return -1;
+    }
     let opts = Options::default();
-    let (is_err, sql_result) = match prql_compiler::compile(&prql_query, Some(opts)) {
+    let (is_err1, sql_result) = match prql_compiler::compile(&prql_query, Some(opts)) {
         Ok(sql_str) => (false, sql_str),
         Err(err) => {
             (true, err.to_string())
         }
     };
-
-    if is_err {
+    if is_err1 {
         return -1;
     }
 
@@ -28,10 +33,7 @@ pub unsafe extern "C" fn to_sql(query: *const c_char, out: *mut c_char) -> c_int
     let end_of_string_ptr = out.add(copylen);
     *end_of_string_ptr = 0;
 
-    match is_err {
-        true => -1,
-        false => 0,
-    }
+    return 0;
 }
 
 #[no_mangle]
