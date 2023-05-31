@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/logger_useful.h>
 #include <IO/BufferBase.h>
 
 
@@ -63,10 +64,29 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the finalize() call in the destructor,
-      * so that the last data is written (if finalize() wasn't called explicitly)
-      */
-    virtual ~WriteBuffer() = default;
+    /// Calling finalize() in the destructor of derived classes is a bad practice.
+    /// This causes objects to be left on the remote FS when a write operation is rolled back.
+    /// Do call finalize() explicitly, before this call you have no guarantee that the file has been written
+    virtual ~WriteBuffer()
+    {
+        // That destructor could be call with finalized=false in case of exceptions
+        if (!finalized)
+        {
+            /// It is totally OK to destroy instance without finalization when an exception occurs
+            /// However it is suspicious to destroy instance without finalization at the green path
+            if (!std::uncaught_exceptions())
+            {
+                Poco::Logger * log = &Poco::Logger::get("WriteBuffer");
+                LOG_ERROR(
+                    log,
+                    "WriteBufferFromS3 is not finalized in destructor. "
+                    "No exceptions in flight are detected. "
+                    "The file might not be written at all or might be truncated. "
+                    "Stack trace: {}",
+                    StackTrace().toString());
+            }
+        }
+    }
 
     inline void nextIfAtEnd()
     {
