@@ -29,7 +29,7 @@ uint64_t getMemoryAmountOrZero()
 #if defined(OS_LINUX)
     // Try to lookup at the Cgroup limit
 
-    // v2
+    // CGroups v2
     std::ifstream cgroupv2_limit("/sys/fs/cgroup/memory.max");
     if (cgroupv2_limit.is_open())
     {
