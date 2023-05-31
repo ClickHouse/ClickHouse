@@ -13,7 +13,6 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
-            with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
@@ -23,7 +22,7 @@ def cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
-            "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
+            "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True, with_zookeeper=True
         )
 
         cluster.add_instance(
@@ -283,7 +282,7 @@ def test_unavailable_server(cluster):
 
 
 def test_replicated_database(cluster):
-    node1 = cluster.instances["node1"]
+    node1 = cluster.instances["node3"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
         settings={"allow_experimental_database_replicated": 1},
