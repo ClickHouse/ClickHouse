@@ -36,6 +36,50 @@ SELECT toMonday(toDateTime(1419800400), 'Pacific/Pitcairn');
 SELECT toMonday(toDate(16433), 'Asia/Istanbul'); -- { serverError 43 }
 SELECT toMonday(toDate(16433));
 
+/* toStartOfWeek (Sunday) */
+
+SELECT 'toStartOfWeek (Sunday)';
+SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Asia/Istanbul');
+SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Europe/Paris');
+SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Europe/London');
+SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Asia/Tokyo');
+SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Pacific/Pitcairn');
+SELECT toStartOfWeek(toDate(16433), 0, 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toStartOfWeek(toDate(16433), 0);
+
+/* toStartOfWeek (Monday) */
+
+SELECT 'toStartOfWeek (Monday)';
+SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Asia/Istanbul');
+SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Europe/Paris');
+SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Europe/London');
+SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Asia/Tokyo');
+SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Pacific/Pitcairn');
+SELECT toStartOfWeek(toDate(16433), 1, 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toStartOfWeek(toDate(16433), 1);
+
+/* toLastDayOfWeek (Sunday) */
+
+SELECT 'toLastDayOfWeek (Sunday)';
+SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Asia/Istanbul');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Europe/Paris');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Europe/London');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Asia/Tokyo');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Pacific/Pitcairn');
+SELECT toLastDayOfWeek(toDate(16433), 0, 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toLastDayOfWeek(toDate(16433), 0);
+
+/* toLastDayOfWeek (Monday) */
+
+SELECT 'toLastDayOfWeek (Monday)';
+SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Asia/Istanbul');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Europe/Paris');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Europe/London');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Asia/Tokyo');
+SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Pacific/Pitcairn');
+SELECT toLastDayOfWeek(toDate(16433), 1, 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toLastDayOfWeek(toDate(16433), 1);
+
 /* toStartOfMonth */
 
 SELECT 'toStartOfMonth';
