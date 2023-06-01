@@ -29,6 +29,6 @@ SELECT accurateCast('2023-05-30 14:38:20', 'DateTime');
 SELECT accurateCast(19, 'DateTime');
 
 SELECT accurateCast(-1, 'Date');   -- { serverError 70 }
-SELECT accurateCast('1xxx', 'Date');   -- { serverError 70 }
+SELECT accurateCast('1xxx', 'Date');   -- { serverError 38 }
 SELECT accurateCast('2023-05-30', 'Date');
 SELECT accurateCast(19, 'Date');
