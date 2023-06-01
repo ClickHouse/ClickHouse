@@ -117,7 +117,17 @@ def set_capacity(
         # Finally, should the capacity be even changed
         stop = stop or asg["DesiredCapacity"] == desired_capacity
         if stop:
+            logging.info(
+                "Do not increase ASG %s capacity, current capacity=%s, "
+                "maximum capacity=%s, running jobs=%s, queue size=%s",
+                asg["AutoScalingGroupName"],
+                desired_capacity,
+                asg["MaxSize"],
+                running,
+                queued,
+            )
             return
+
         logging.info(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
             "maximum capacity=%s, running jobs=%s, queue size=%s",
@@ -142,6 +152,15 @@ def set_capacity(
     desired_capacity = min(desired_capacity, asg["MaxSize"])
     stop = stop or asg["DesiredCapacity"] == desired_capacity
     if stop:
+        logging.info(
+            "Do not decrease ASG %s capacity, current capacity=%s, "
+            "minimum capacity=%s, running jobs=%s, queue size=%s",
+            asg["AutoScalingGroupName"],
+            desired_capacity,
+            asg["MinSize"],
+            running,
+            queued,
+        )
         return
 
     logging.info(
