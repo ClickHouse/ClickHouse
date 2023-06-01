@@ -231,8 +231,6 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
             Element & element = dynamic_cast<Element &>(*node);
             if (element.hasAttribute("encryption_codec"))
             {
-                LOG_DEBUG(log, "Encrypted node <{}>", node->nodeName());
-
                 const NodeListPtr children = element.childNodes();
                 if (children->length() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have only one text node", node->nodeName());
@@ -244,10 +242,8 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
                 auto encryption_codec = element.getAttribute("encryption_codec");
                 text_node->setNodeValue(decryptValue(encryption_codec, text_node->getNodeValue()));
             }
+            decryptRecursive(node);
         }
-
-        decryptRecursive(node);
-
         node = node->nextSibling();
     }
 }
