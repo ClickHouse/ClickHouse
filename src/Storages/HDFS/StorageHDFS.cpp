@@ -233,6 +233,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (ctx->getSettingsRef().hdfs_skip_empty_files && path_with_info.info && path_with_info.info->size == 0)
             return read_buffer_iterator(columns);
 
+        first = false;
         auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, path_with_info.path, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
         const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
