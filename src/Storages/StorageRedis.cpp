@@ -8,6 +8,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Parsers/ASTDropQuery.h>
 
 #include <Storages/KVStorageUtils.h>
 #include <Storages/KeyDescription.h>
@@ -465,12 +466,17 @@ SinkToStoragePtr StorageRedis::write(const ASTPtr & /*query*/, const StorageMeta
     return std::make_shared<RedisSink>(*this, metadata_snapshot);
 }
 
-void StorageRedis::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     auto connection = getRedisConnection(pool, configuration);
 
+    auto * truncate_query = query->as<ASTDropQuery>();
+    assert(truncate_query != nullptr);
+
     RedisCommand cmd_flush_db("FLUSHDB");
-    cmd_flush_db.add("ASYNC");
+    if (!truncate_query->sync)
+        cmd_flush_db.add("ASYNC");
+
     auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
     if (ret != "OK")
