@@ -82,7 +82,6 @@
 02354_annoy
 02366_union_decimal_conversion
 02375_rocksdb_with_filters
-02382_join_and_filtering_set
 02402_merge_engine_with_view
 02404_memory_bound_merging
 02426_orc_bug
