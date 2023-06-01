@@ -247,11 +247,6 @@ public:
 
         String getPath() const { return url.key; }
 
-        void appendToPath(const String & suffix)
-        {
-            url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
-        }
-
         bool update(ContextPtr context);
 
         void connect(ContextPtr context);
