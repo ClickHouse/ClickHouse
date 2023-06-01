@@ -2344,16 +2344,19 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
+            scope_guard part_temp_directory_lock;
 
             if (interserver_scheme != address.scheme)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            part_desc->res_part = fetcher.fetchSelectedPart(
+            auto [fetched_part, lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
+            part_desc->res_part = fetched_part;
+            part_temp_directory_lock = std::move(lock);
 
             /// TODO: check columns_version of fetched part
 
@@ -2460,6 +2463,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         auto timeouts = getHTTPTimeouts(getContext());
         auto credentials = getContext()->getInterserverCredentials();
         String interserver_scheme = getContext()->getInterserverScheme();
+        scope_guard part_temp_directory_lock;
 
         auto get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
@@ -2467,11 +2471,13 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interserver schemes are different: '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            return fetcher.fetchSelectedPart(
+            auto [fetched_part, lock]  = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
                 replicated_fetches_throttler, true);
+            part_temp_directory_lock = std::move(lock);
+            return fetched_part;
         };
 
         part = get_part();
@@ -4170,14 +4176,14 @@ bool StorageReplicatedMergeTree::fetchPart(
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     MergeTreeData::HardlinkedFiles hardlinked_files;
-    scope_guard part_to_clone_lock;
+    scope_guard part_directory_lock;
 
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
         {
             auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false, {});
-            part_to_clone_lock = std::move(lock);
+            part_directory_lock = std::move(lock);
             return cloned_part;
         };
     }
@@ -4195,7 +4201,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                     "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-            return fetcher.fetchSelectedPart(
+            auto [fetched_part, lock] =  fetcher.fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
@@ -4212,6 +4218,8 @@ bool StorageReplicatedMergeTree::fetchPart(
                 "",
                 &tagger_ptr,
                 try_fetch_shared);
+            part_directory_lock = std::move(lock);
+            return fetched_part;
         };
     }
 
@@ -4355,6 +4363,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     auto timeouts = getHTTPTimeouts(getContext());
     auto credentials = getContext()->getInterserverCredentials();
     String interserver_scheme = getContext()->getInterserverScheme();
+    scope_guard part_temp_directory_lock;
 
     get_part = [&, address, timeouts, interserver_scheme, credentials]()
     {
@@ -4362,12 +4371,14 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
             throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                 "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-        return fetcher.fetchSelectedPart(
+        auto [fetched_part, lock] = fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
             interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
             replaced_disk);
+        part_temp_directory_lock = std::move(lock);
+        return fetched_part;
     };
 
     try

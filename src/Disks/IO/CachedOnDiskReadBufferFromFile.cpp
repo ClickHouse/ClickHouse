@@ -51,8 +51,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
-#ifndef NDEBUG
-    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
+#ifdef ABORT_ON_LOGICAL_ERROR
+    , log(&Poco::Logger::get(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile"))
 #endif
@@ -75,6 +75,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
     const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
 {
+    if (!cache_log)
+        return;
+
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
@@ -104,8 +107,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    if (cache_log)
-        cache_log->add(elem);
+    cache_log->add(elem);
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
@@ -363,8 +365,8 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                 else
                 {
                     LOG_TRACE(
-                        log,
-                        "Bypassing cache because file segment state is `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                        log, "Bypassing cache because file segment state is "
+                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     return getRemoteReadBuffer(file_segment, read_type);
                 }
@@ -411,7 +413,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     {
         case ReadType::CACHED:
         {
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
             size_t file_size = getFileSizeFromReadBuffer(*read_buffer_for_file_segment);
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
@@ -456,7 +458,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
             {
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
 
-                assert(read_buffer_for_file_segment->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end);
+                chassert(read_buffer_for_file_segment->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end);
             }
 
             const auto current_write_offset = file_segment.getCurrentWriteOffset(false);
@@ -464,8 +466,8 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, implementation buffer position: {}, "
-                    "implementation buffer end position: {}, file segment info: {}",
+                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, "
+                    "implementation buffer position: {}, implementation buffer end position: {}, file segment info: {}",
                     file_offset_of_buffer_end,
                     current_write_offset,
                     read_buffer_for_file_segment->getPosition(),
@@ -707,14 +709,18 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         }
         else if (current_write_offset < file_offset_of_buffer_end)
         {
+            const auto path = file_segment.getPathInLocalCache();
+            size_t file_size = 0;
+            if (fs::exists(path))
+                file_size = fs::file_size(path);
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Expected {} >= {} ({})",
-                current_write_offset, file_offset_of_buffer_end, getInfoForLog());
+                "Invariant failed. Expected {} >= {} (size on fs: {}, {})",
+                current_write_offset, file_offset_of_buffer_end, file_size, getInfoForLog());
         }
     }
-
-    if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+    else if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
     {
         /**
         * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
@@ -883,7 +889,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (!result)
     {
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
         if (read_type == ReadType::CACHED)
         {
             size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
@@ -897,10 +903,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
         else
         {
-            assert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
+            chassert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
         }
-
-        assert(!implementation_buffer->hasPendingData());
+        chassert(!implementation_buffer->hasPendingData());
 #endif
 
         Stopwatch watch(CLOCK_MONOTONIC);
@@ -918,14 +923,27 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         LOG_TEST(
             log,
-            "Read {} bytes, read type {}, position: {}, offset: {}, segment end: {}",
-            size, toString(read_type), implementation_buffer->getPosition(),
-            implementation_buffer->getFileOffsetOfBufferEnd(), file_segment.range().right);
+            "Read {} bytes, read type {}, file offset: {}, impl offset: {}/{}, segment: {}",
+            size, toString(read_type), file_offset_of_buffer_end,
+            implementation_buffer->getFileOffsetOfBufferEnd(), read_until_position, file_segment.range().toString());
 
         if (read_type == ReadType::CACHED)
         {
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+            const size_t new_file_offset = file_offset_of_buffer_end + size;
+            chassert(new_file_offset - 1 <= file_segment.range().right);
+            const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+            if (new_file_offset > file_segment_write_offset)
+            {
+                LOG_TRACE(
+                    log, "Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
+                    size, file_offset_of_buffer_end, file_segment.range().toString(), file_segment_write_offset);
+                chassert(false);
+            }
+#endif
         }
         else
         {
@@ -1082,8 +1100,8 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos <= working_buffer.end());
             return new_pos;
         }
     }

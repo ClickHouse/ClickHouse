@@ -262,9 +262,13 @@ void MaterializedMySQLSyncThread::synchronization()
 
             try
             {
-                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
-                if (binlog_event)
-                    onEvent(buffers, binlog_event, metadata);
+                UInt64 elapsed_ms = watch.elapsedMilliseconds();
+                if (elapsed_ms < max_flush_time)
+                {
+                    BinlogEventPtr binlog_event = client.readOneBinlogEvent(max_flush_time - elapsed_ms);
+                    if (binlog_event)
+                        onEvent(buffers, binlog_event, metadata);
+                }
             }
             catch (const Exception & e)
             {
