@@ -38,16 +38,16 @@ node5 = cluster.add_instance(
 )
 node6 = cluster.add_instance(
     "node6",
-    main_configs=["configs/allow_experimental_codecs.xml"],
-    user_configs=["configs/allow_suspicious_codecs.xml"],
+    main_configs=["configs/deflateqpl_compression_by_default.xml"],
+    user_configs=[
+        "configs/allow_suspicious_codecs.xml",
+        "configs/enable_deflateqpl_codec.xml",
+    ],
 )
 node7 = cluster.add_instance(
     "node7",
-    main_configs=["configs/deflateqpl_compression_by_default.xml"],
-    user_configs=[
-        "configs/enable_deflateqpl_codec.xml",
-        "configs/allow_suspicious_codecs.xml",
-    ],
+    main_configs=["configs/allow_experimental_codecs.xml"],
+    user_configs=["configs/allow_suspicious_codecs.xml"],
 )
 
 @pytest.fixture(scope="module")
@@ -253,7 +253,7 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
     )
 
 def test_preconfigured_deflateqpl_codec(start_cluster):
-    node7.query(
+    node6.query(
         """
     CREATE TABLE compression_codec_multiple_with_key (
         somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), DEFLATE_QPL),
@@ -263,46 +263,46 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
     ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
     """
     )
-    node7.query(
+    node6.query(
         "INSERT INTO compression_codec_multiple_with_key VALUES(toDate('2018-10-12'), 100000, 'hello', 88.88), (toDate('2018-10-12'), 100002, 'world', 99.99), (toDate('2018-10-12'), 1111, '!', 777.777)"
     )
     assert (
-        node7.query(
+        node6.query(
            "SELECT COUNT(*) FROM compression_codec_multiple_with_key WHERE id % 2 == 0"
         )
         == "2\n"
     )
     assert (
-        node7.query(
+        node6.query(
             "SELECT DISTINCT somecolumn FROM compression_codec_multiple_with_key ORDER BY id"
         )
         == "777.777\n88.88\n99.99\n"
     )
     assert (
-        node7.query(
+        node6.query(
             "SELECT data FROM compression_codec_multiple_with_key WHERE id >= 1112 AND somedate = toDate('2018-10-12') AND somecolumn <= 100"
         )
         == "hello\nworld\n"
     )
 
-    node7.query(
+    node6.query(
         "INSERT INTO compression_codec_multiple_with_key SELECT toDate('2018-10-12'), number, toString(number), 1.0 FROM system.numbers LIMIT 10000"
     )
 
     assert (
-        node7.query(
+        node6.query(
             "SELECT COUNT(id) FROM compression_codec_multiple_with_key WHERE id % 10 == 0"
         )
         == "1001\n"
     )
     assert (
-        node7.query(
+        node6.query(
             "SELECT SUM(somecolumn) FROM compression_codec_multiple_with_key"
         )
         == str(777.777 + 88.88 + 99.99 + 1.0 * 10000) + "\n"
     )
     assert (
-        node7.query(
+        node6.query(
             "SELECT count(*) FROM compression_codec_multiple_with_key GROUP BY somedate"
         )
         == "10003\n"
