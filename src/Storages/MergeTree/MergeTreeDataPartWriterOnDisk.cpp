@@ -13,17 +13,17 @@ namespace ErrorCodes
 
 void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
-    compressed_hashing.next();
-    compressor.next();
-    plain_hashing.next();
+    compressed_hashing.finalize();
+    compressor.finalize();
+    plain_hashing.finalize();
 
     if (compress_marks)
     {
-        marks_compressed_hashing.next();
-        marks_compressor.next();
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
     }
 
-    marks_hashing.next();
+    marks_hashing.finalize();
 
     plain_file->preFinalize();
     marks_file->preFinalize();
@@ -347,9 +347,9 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
 
         if (compress_primary_key)
-            index_source_hashing_stream->next();
+            index_source_hashing_stream->finalize();
 
-        index_file_hashing_stream->next();
+        index_file_hashing_stream->finalize();
 
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         if (compress_primary_key)
