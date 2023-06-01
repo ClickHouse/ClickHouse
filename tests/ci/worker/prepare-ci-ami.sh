@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
+# The script is downloaded the AWS image builder Task Orchestrator and Executor (AWSTOE)
+# We can't use `user data script` because cloud-init does not check the exit code
+# The script is downloaded in the component named ci-infrastructure-prepare in us-east-1
+# The link there must be adjusted to a particular RAW link, e.g.
+# https://github.com/ClickHouse/ClickHouse/raw/653da5f00219c088af66d97a8f1ea3e35e798268/tests/ci/worker/prepare-ci-ami.sh
+
 set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.298.2
+export RUNNER_VERSION=2.304.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -56,7 +62,7 @@ echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring
 
 apt-get update
 
-apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io
+apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
 
 usermod -aG docker ubuntu
 
@@ -74,6 +80,9 @@ cat <<EOT > /etc/docker/daemon.json
   "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }
 EOT
+
+# Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
+echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
 
 systemctl restart docker
 
@@ -97,7 +106,7 @@ chown -R ubuntu:ubuntu $RUNNER_HOME
 
 cd /home/ubuntu
 curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
-unzip awscliv2.zip
+unzip -q awscliv2.zip
 ./aws/install
 
 rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
@@ -118,3 +127,6 @@ gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
 dpkg -i /tmp/amazon-cloudwatch-agent.deb
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl enable amazon-cloudwatch-agent.service
+
+# The following line is used in aws TOE check.
+touch /var/tmp/clickhouse-ci-ami.success
