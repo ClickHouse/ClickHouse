@@ -3,6 +3,12 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <iostream>
 
+/** This test program encrypts or decrypts text values using AES_128_GCM_SIV or AES_256_GCM_SIV codecs.
+  * Keys for codecs are loaded from <encryption_codecs> section of configuration file.
+  *
+  * How to use:
+  *     ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV test
+  */
 
 int main(int argc, char ** argv)
 {
@@ -10,17 +16,22 @@ int main(int argc, char ** argv)
     {
         if (argc != 5)
         {
-            std::cerr << "usage: " << argv[0] << " path action codec value" << std::endl;
+            std::cerr << "Usage:" << std::endl
+                << "    " << argv[0] << " path action codec value" << std::endl
+                << "path: path to configuration file." << std::endl
+                << "action: -e for encryption and -d for decryption." << std::endl
+                << "codec: AES_128_GCM_SIV or AES_256_GCM_SIV." << std::endl << std::endl
+                << "Example:"  << std::endl
+                << "    ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV test";
             return 3;
         }
 
         std::string action = argv[2];
         std::string codec_name = argv[3];
         std::string value = argv[4];
+
         DB::ConfigProcessor processor(argv[1], false, true);
-
         auto loaded_config = processor.loadConfig();
-
         DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
 
         if (action == "-e")
