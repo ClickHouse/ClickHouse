@@ -1435,7 +1435,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         // String set_id = right_in_operand->getColumnName();
         //bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
         SubqueryForSet subquery_for_set; // = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
-        subquery_for_set.key = right_in_operand->getColumnName();
+        subquery_for_set.key = set_key.toString(); //right_in_operand->getColumnName();
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1450,7 +1450,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             subquery_for_set.createSource(*interpreter);
         }
 
-        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), std::move(external_table_set));
+        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), data.getContext()->getSettingsRef(), std::move(external_table_set));
     }
     else
     {

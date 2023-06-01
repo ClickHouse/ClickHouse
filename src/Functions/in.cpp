@@ -55,13 +55,9 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    FunctionIn(SizeLimits size_limits_, bool transform_null_in_)
-        : size_limits(std::move(size_limits_)), transform_null_in(transform_null_in_) {}
-
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionIn>(FutureSet::getSizeLimitsForSet(settings, false), settings.transform_null_in);
+        return std::make_shared<FunctionIn>();
     }
 
     String getName() const override
@@ -182,10 +178,6 @@ public:
 
         return res;
     }
-
-private:
-    SizeLimits size_limits;
-    bool transform_null_in;
 };
 
 template<bool ignore_set>

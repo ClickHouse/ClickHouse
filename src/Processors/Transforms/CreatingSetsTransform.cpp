@@ -25,11 +25,13 @@ CreatingSetsTransform::~CreatingSetsTransform() = default;
 CreatingSetsTransform::CreatingSetsTransform(
     Block in_header_,
     Block out_header_,
-    SubqueryForSet subquery_for_set_,
+    SubqueryForSet & subquery_for_set_,
+    FutureSetPtr set_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
-    , subquery(std::move(subquery_for_set_))
+    , subquery(subquery_for_set_)
+    , set(std::move(set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -61,6 +63,7 @@ void CreatingSetsTransform::startSubquery()
             auto from_cache = prepared_sets_cache->findOrPromiseToBuild(subquery.key);
             if (from_cache.index() == 0)
             {
+                LOG_TRACE(log, "Building set, key: {}", subquery.key);
                 promise_to_build = std::move(std::get<0>(from_cache));
             }
             else
@@ -74,8 +77,8 @@ void CreatingSetsTransform::startSubquery()
                     continue;
                 }
 
-                subquery.promise_to_fill_set.set_value(ready_set);
-                subquery.set.reset();
+                //subquery.promise_to_fill_set.set_value(ready_set);
+                subquery.set = ready_set; //.reset();
                 done_with_set = true;
                 set_from_cache = true;
             }

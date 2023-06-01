@@ -353,33 +353,33 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
+    /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+    /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+    /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+    /// that the types it was prepared with are compatible with the types of the primary key.
+    auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
+    {
+        assert(indexes_mapping.size() == data_types.size());
+
+        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        {
+            if (indexes_mapping[i].tuple_index >= set_types.size())
+                return false;
+
+            auto lhs = recursiveRemoveLowCardinality(data_types[i]);
+            auto rhs = recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]);
+
+            if (!lhs->equals(*rhs))
+                return false;
+        }
+
+        return true;
+    };
+
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
             return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
-
-        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-        /// that the types it was prepared with are compatible with the types of the primary key.
-        auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
-        {
-            assert(indexes_mapping.size() == data_types.size());
-
-            for (size_t i = 0; i < indexes_mapping.size(); ++i)
-            {
-                if (indexes_mapping[i].tuple_index >= set_types.size())
-                    return false;
-
-                auto lhs = recursiveRemoveLowCardinality(data_types[i]);
-                auto rhs = recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]);
-
-                if (!lhs->equals(*rhs))
-                    return false;
-            }
-
-            return true;
-        };
 
         auto tree_hash = ast_node->getTreeHash();
         for (const auto & [key, future_set] : prepared_sets->getSets())
@@ -392,7 +392,12 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         if (node_without_alias->column)
-            return tryGetSetFromDAGNode(node_without_alias);
+        {
+            auto future_set = tryGetSetFromDAGNode(node_without_alias);
+            auto set_types = future_set->getTypes();
+            if (types_match(future_set->getTypes()))
+                return future_set;
+        }
     }
 
     return nullptr;

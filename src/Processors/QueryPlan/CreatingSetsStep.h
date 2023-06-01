@@ -15,7 +15,8 @@ public:
     CreatingSetStep(
             const DataStream & input_stream_,
             String description_,
-            SubqueryForSet subquery_for_set_,
+            SubqueryForSet & subquery_for_set_,
+            FutureSetPtr set_,
             SizeLimits network_transfer_limits_,
             ContextPtr context_);
 
@@ -30,7 +31,8 @@ private:
     void updateOutputStream() override;
 
     String description;
-    SubqueryForSet subquery_for_set;
+    SubqueryForSet & subquery_for_set;
+    FutureSetPtr set;
     SizeLimits network_transfer_limits;
     ContextPtr context;
 };

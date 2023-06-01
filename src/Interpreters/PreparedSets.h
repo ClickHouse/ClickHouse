@@ -72,7 +72,9 @@ public:
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
     virtual std::unique_ptr<QueryPlan> build(const ContextPtr & context) = 0;
 
-    static SizeLimits getSizeLimitsForSet(const Settings & settings, bool ordered_set);
+    virtual DataTypes getTypes() const = 0;
+
+    // static SizeLimits getSizeLimitsForSet(const Settings & settings, bool ordered_set);
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -89,6 +91,8 @@ public:
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr &) override;
+
+    DataTypes getTypes() const override { return set->getElementsTypes(); }
 
 ///    void buildForTuple(SizeLimits size_limits, bool transform_null_in);
 
@@ -129,14 +133,14 @@ public:
     std::unique_ptr<QueryPlan> source;
 };
 
-class FutureSetFromSubquery : public FutureSet
+class FutureSetFromSubquery : public FutureSet, public std::enable_shared_from_this<FutureSetFromSubquery>
 {
 public:
-    FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_);
+    FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, bool transform_null_in_);
 
-    bool isReady() const override { return set != nullptr; }
+    bool isReady() const override { return subquery.set != nullptr && subquery.set->isCreated(); }
     bool isFilled() const override { return isReady(); }
-    SetPtr get() const override { return set; }
+    SetPtr get() const override { return subquery.set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
@@ -145,12 +149,15 @@ public:
         return buildPlan(context, false);
     }
 
-    void addStorage(StoragePtr storage) { subquery.table = std::move(storage); }
+    DataTypes getTypes() const override;
+
+    // void addStorage(StoragePtr storage) { subquery.table = std::move(storage); }
 
 private:
-    SetPtr set;
+    //SetPtr set;
     SubqueryForSet subquery;
     FutureSetPtr external_table_set;
+    bool transform_null_in;
 
     std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context, bool create_ordered_set);
 };
@@ -168,6 +175,8 @@ public:
     {
         return set->hasExplicitSetElements() ? set : nullptr;
     }
+
+    DataTypes getTypes() const override { return set->getElementsTypes(); }
 
     std::unique_ptr<QueryPlan> build(const ContextPtr &) override { return nullptr; }
 
@@ -240,7 +249,7 @@ public:
 
     FutureSetPtr addFromStorage(const PreparedSetKey & key, SetPtr set_);
     FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block, const Settings & settings);
-    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, FutureSetPtr external_table_set);
+    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set);
 
     //void addStorageToSubquery(const String & subquery_id, StoragePtr external_storage);
 
