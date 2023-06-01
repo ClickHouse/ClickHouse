@@ -529,6 +529,7 @@ public:
                     client,
                     bucket,
                     file_name,
+                    DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
                     std::nullopt,
                     getAsyncPolicy().getScheduler());
@@ -608,9 +609,16 @@ protected:
         test_with_pool = GetParam();
         client = MockS3::Client::CreateClient(bucket);
         if (test_with_pool)
+        {
+            /// Do not block the main thread awaiting the others task.
+            /// This test use the only one thread at all
+            getSettings().s3_max_inflight_parts_for_one_file = 0;
             async_policy = std::make_unique<MockS3::SimpleAsyncTasks>();
+        }
         else
+        {
             async_policy = std::make_unique<MockS3::BaseSyncPolicy>();
+        }
     }
 };
 

@@ -25,7 +25,7 @@ protected:
     ThrottlerPtr throttler;
 
     bool nextImpl() override;
-    void prefetch(int64_t priority) override;
+    void prefetch(Priority priority) override;
 
     /// Name or some description of file.
     std::string getFileName() const override;
