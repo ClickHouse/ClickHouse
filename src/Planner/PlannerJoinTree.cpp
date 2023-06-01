@@ -1248,7 +1248,26 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause = table_join->getOnlyClause();
 
             bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+
+            auto has_non_const = [](const Block & block, const auto & keys)
+            {
+                for (const auto & key : keys)
+                {
+                    const auto & column = block.getByName(key).column;
+                    if (column && !isColumnConst(*column))
+                        return true;
+                }
+                return false;
+            };
+
+            /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
+            /// It doesn't hold such a guarantee for streams with const keys.
+            /// Note: it's also doesn't work with the read-in-order optimization.
+            /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+            bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)
+                && has_non_const(right_plan.getCurrentDataStream().header, join_clause.key_names_right);
+
+            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
             {
                 auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
                 auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
