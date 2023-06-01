@@ -46,14 +46,17 @@ DROP TABLE IF EXISTS t;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t1 (id Int64, create_time DateTime) ENGINE = MergeTree ORDER BY id  AS SELECT number, toDateTime(number + 1600000000) from numbers(10000000) settings min_insert_block_size_rows=100000;
-CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time AS SELECT toDateTime(number + 1610000000) from numbers(100);
+CREATE TABLE t1 (id Int64, create_time DateTime) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time;
+
+insert into t1 values (101, '2023-05-28 00:00:00'), (102, '2023-05-28 00:00:00');
+insert into t2 values ('2023-05-31 00:00:00');
 
 EXPLAIN indexes=1 SELECT id, delete_time FROM t1
  CROSS JOIN (
     SELECT delete_time
-    FROM t2 WHERE delete_time > '2023-05-30 00:00:00'
-) AS d WHERE create_time < delete_time AND id IN (10000001);
+    FROM t2
+) AS d WHERE create_time < delete_time AND id = 101;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
