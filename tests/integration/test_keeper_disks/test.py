@@ -49,9 +49,7 @@ def stop_clickhouse(cluster, cleanup_disks):
         return
 
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
-    node.exec_in_container(
-        ["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"]
-    )
+    node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"])
 
     s3_objects = list_s3_objects(cluster, prefix="")
     if len(s3_objects) == 0:
