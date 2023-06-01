@@ -281,7 +281,6 @@ GraceHashJoin::GraceHashJoin(
 
 void GraceHashJoin::initBuckets()
 {
-    std::lock_guard current_bucket_lock(current_bucket_mutex);
 
     if (!buckets.empty())
         return;
