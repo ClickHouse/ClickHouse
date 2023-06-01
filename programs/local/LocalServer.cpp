@@ -516,12 +516,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
+    if (config().has("query") && config().has("queries-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
     if (is_interactive && !delayed_interactive)
     {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
-
         if (config().has("multiquery"))
             is_multiquery = true;
     }
