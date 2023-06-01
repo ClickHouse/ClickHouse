@@ -43,7 +43,8 @@ namespace
         auto from_path = fs::path(path_from);
         auto tmp_snapshot_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
         {
-            disk_to->writeFile(tmp_snapshot_name);
+            auto buf = disk_to->writeFile(tmp_snapshot_name);
+            buf->finalize();
         }
         disk_from->copyFile(from_path, *disk_to, path_to, {});
         disk_to->removeFile(tmp_snapshot_name);
@@ -784,7 +785,8 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
 
     auto disk = getLatestSnapshotDisk();
     {
-        disk->writeFile(tmp_snapshot_file_name);
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
     }
 
     auto writer = disk->writeFile(snapshot_file_name);
