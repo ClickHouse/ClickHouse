@@ -424,7 +424,6 @@ public:
         , bucket(bucket_)
         , query(query_)
         , virtual_header(virtual_header_)
-
     {
         Strings all_keys = keys_;
 
