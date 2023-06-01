@@ -1,7 +1,6 @@
 <test>
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
-        <enable_deflate_qpl>1</enable_deflate_qpl>
     </settings>
 
     <substitutions>
