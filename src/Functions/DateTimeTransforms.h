@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 /** Transformations.
@@ -1425,8 +1426,10 @@ struct ToDateTimeComponentsImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct DateTimeAccurateConvertStrategyAdditions {};
+struct DateTimeAccurateOrNullConvertStrategyAdditions {};
 
-template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
+template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false, typename Additions = void *>
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
@@ -1438,6 +1441,33 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
+            constexpr bool transformHasExtraCheck = requires(const Transform& t)
+            {
+                t.ExtraCheck(vec_from[i], time_zone);
+            };
+    
+            if constexpr (transformHasExtraCheck)
+            {
+                // if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
+                //     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                {
+                    bool checked = transform.ExtraCheck(vec_from[i], time_zone);
+                    if (!checked)
+                    {
+                        if (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>)
+                        {
+                            // vec_to[i] = 0;
+                            // (*vec_null_map_to)[i] = true;
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                                TypeName<ValueType>, TypeName<ValueType>);
+                        }
+                    }
+                }
+            }
+            
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
@@ -1446,14 +1476,14 @@ struct Transformer
     }
 };
 
-
 template <typename FromDataType, typename ToDataType, typename Transform, bool is_extended_result = false>
 struct DateTimeTransformImpl
 {
+    template <typename Additions = void *>
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>;
+        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result, Additions>;
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
