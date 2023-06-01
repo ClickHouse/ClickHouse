@@ -25,15 +25,15 @@ INSERT INTO alter_compression_codec VALUES('2018-01-01', 5, '5');
 INSERT INTO alter_compression_codec VALUES('2018-01-01', 6, '6');
 SELECT * FROM alter_compression_codec ORDER BY id;
 
-SET enable_qpl_deflate = 1;
+OPTIMIZE TABLE alter_compression_codec FINAL;
+SELECT * FROM alter_compression_codec ORDER BY id;
+
+SET enable_qpl_deflate_codec = 1;
 ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(DEFLATE_QPL);
 SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 'alter_compression_codec' AND name = 'alter_column';
 
 INSERT INTO alter_compression_codec VALUES('2018-01-01', 7, '7');
 INSERT INTO alter_compression_codec VALUES('2018-01-01', 8, '8');
-SELECT * FROM alter_compression_codec ORDER BY id;
-
-OPTIMIZE TABLE alter_compression_codec FINAL;
 SELECT * FROM alter_compression_codec ORDER BY id;
 
 SET allow_suspicious_codecs = 1;
@@ -62,7 +62,7 @@ ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01
 
 ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(ZSTD(100)); -- { serverError 433 }
 
-ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(DEFLATE_QPL(100)); -- { serverError 378 }
+ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(DEFLATE_QPL(100)); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
 
 DROP TABLE IF EXISTS alter_bad_codec;
 

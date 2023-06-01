@@ -1,6 +1,6 @@
 SET send_logs_level = 'fatal';
 SET allow_suspicious_codecs = 1;
-SET enable_qpl_deflate = 1;
+SET enable_qpl_deflate_codec = 1;
 
 DROP TABLE IF EXISTS compression_codec;
 
@@ -8,22 +8,21 @@ CREATE TABLE compression_codec(
     id UInt64 CODEC(LZ4),
     data String CODEC(ZSTD),
     ddd Date CODEC(NONE),
+    ddd32 Date32 CODEC(DEFLATE_QPL),
     somenum Float64 CODEC(ZSTD(2)),
     somestr FixedString(3) CODEC(LZ4HC(7)),
     othernum Int64 CODEC(Delta),
-    qplstr String CODEC(DEFLATE_QPL),
-    qplnum UInt32 CODEC(DEFLATE_QPL),
 ) ENGINE = MergeTree() ORDER BY tuple();
 
-INSERT INTO compression_codec VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5, 'qpl11', 11);
-INSERT INTO compression_codec VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6,'qpl22', 22);
-INSERT INTO compression_codec VALUES(3, '!', toDate('2018-12-16'), 3.3, 'ccc', 7, 'qpl33', 33);
+INSERT INTO compression_codec VALUES(1, 'hello', toDate('2018-12-14'), toDate32('2018-12-14'), 1.1, 'aaa', 5);
+INSERT INTO compression_codec VALUES(2, 'world', toDate('2018-12-15'), toDate32('2018-12-15'), 2.2, 'bbb', 6);
+INSERT INTO compression_codec VALUES(3, '!', toDate('2018-12-16'), toDate32('2018-12-16'), 3.3, 'ccc', 7);
 
 SELECT * FROM compression_codec ORDER BY id;
 
 OPTIMIZE TABLE compression_codec FINAL;
 
-INSERT INTO compression_codec VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd', 8, 'qpl44', 44);
+INSERT INTO compression_codec VALUES(2, '', toDate('2018-12-13'), toDate32('2018-12-13'), 4.4, 'ddd', 8);
 
 DETACH TABLE compression_codec;
 ATTACH TABLE compression_codec;

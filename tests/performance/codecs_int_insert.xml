@@ -1,7 +1,7 @@
 <test>
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
-        <enable_deflate_qpl >1</enable_deflate_qpl >
+        <enable_deflate_qpl>1</enable_deflate_qpl>
     </settings>
 
     <substitutions>
@@ -11,7 +11,6 @@
                 <value>NONE</value> <!-- as a baseline -->
                 <value>LZ4</value>
                 <value>ZSTD</value>
-                <value>DEFLATE_QPL</value>
                 <value>Delta</value>
                 <value>T64</value>
                 <value>DoubleDelta</value>

@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <enable_qpl_deflate>1</enable_qpl_deflate>
+            <enable_qpl_deflate_codec>1</enable_qpl_deflate_codec>
         </default>
     </profiles>
 </clickhouse>

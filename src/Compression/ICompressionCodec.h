@@ -109,11 +109,11 @@ public:
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
 
-    /// If it does nothing.
-    virtual bool isNone() const { return false; }
-
     /// This is a knob for Deflate QPL codec.
     virtual bool isDeflateQplCompression() const { return false; }
+
+    /// If it does nothing.
+    virtual bool isNone() const { return false; }
 
 protected:
     /// This is used for fuzz testing

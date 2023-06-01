@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_qpl_deflate) const
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_qpl_deflate_codec) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
@@ -43,13 +43,13 @@ void CompressionCodecFactory::validateCodec(
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs, enable_qpl_deflate);
+            {}, sanity_check, allow_experimental_codecs, enable_qpl_deflate_codec);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs, enable_qpl_deflate);
+            {}, sanity_check, allow_experimental_codecs, enable_qpl_deflate_codec);
     }
 }
 
@@ -77,7 +77,7 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_qpl_deflate) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_qpl_deflate_codec) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -159,10 +159,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         " You can enable it with the 'allow_experimental_codecs' setting.",
                         codec_family_name);
 
-                if (!enable_qpl_deflate && result_codec->isDeflateQplCompression())
+                if (!enable_qpl_deflate_codec && result_codec->isDeflateQplCompression())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_qpl_deflate' setting.",
+                        " You can enable it with the 'enable_qpl_deflate_codec' setting.",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
