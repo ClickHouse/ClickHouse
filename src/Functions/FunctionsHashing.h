@@ -1119,10 +1119,8 @@ private:
             if constexpr (first)
                 vec_to.assign(size, hash);
             else
-            {
                 for (size_t i = 0; i < size; ++i)
                     vec_to[i] = combineHashes(key, vec_to[i], hash);
-            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
@@ -1142,9 +1140,7 @@ private:
             {
                 ToType hash;
                 if constexpr (std::endian::native == std::endian::little)
-                {
                     hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
-                }
                 else
                 {
                     char tmp_buffer[sizeof(vec_from[i])];
@@ -1163,9 +1159,7 @@ private:
 
             ToType hash;
             if constexpr (std::endian::native == std::endian::little)
-            {
                 hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-            }
             else
             {
                 char tmp_buffer[sizeof(value)];
@@ -1176,10 +1170,8 @@ private:
             if constexpr (first)
                 vec_to.assign(size, hash);
             else
-            {
                 for (size_t i = 0; i < size; ++i)
                     vec_to[i] = combineHashes(key, vec_to[i], hash);
-            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
@@ -1246,16 +1238,10 @@ private:
             const size_t size = vec_to.size();
 
             if constexpr (first)
-            {
                 vec_to.assign(size, hash);
-            }
             else
-            {
                 for (size_t i = 0; i < size; ++i)
-                {
                     vec_to[i] = combineHashes(key, vec_to[i], hash);
-                }
-            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
