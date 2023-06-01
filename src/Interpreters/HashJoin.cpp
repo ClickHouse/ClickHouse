@@ -556,7 +556,7 @@ namespace
             return false;
         }
 
-        static ALWAYS_INLINE bool insertAll(const HashJoin &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insertAll(const HashJoin &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
@@ -567,10 +567,9 @@ namespace
                 /// The first element of the list is stored in the value of the hash table, the rest in the pool.
                 emplace_result.getMapped().insert({stored_block, i}, pool);
             }
-            return true;
         }
 
-        static ALWAYS_INLINE bool insertAsof(HashJoin & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool,
+        static ALWAYS_INLINE void insertAsof(HashJoin & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool,
                                              const IColumn & asof_column)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
@@ -580,7 +579,6 @@ namespace
             if (emplace_result.isInserted())
                 time_series_map = new (time_series_map) typename Map::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
             (*time_series_map)->insert(asof_column, stored_block, i);
-            return true;
         }
     };
 
@@ -599,7 +597,9 @@ namespace
 
         auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
-        is_inserted = false;
+        /// For ALL and ASOF join always insert values
+        is_inserted = !mapped_one || is_asof_join;
+
         for (size_t i = 0; i < rows; ++i)
         {
             if (has_null_map && (*null_map)[i])
@@ -615,11 +615,11 @@ namespace
                 continue;
 
             if constexpr (is_asof_join)
-                is_inserted |= Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
+                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
             else if constexpr (mapped_one)
                 is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
             else
-                is_inserted |= Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
+                Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
         }
         return map.getBufferSizeInCells();
     }
