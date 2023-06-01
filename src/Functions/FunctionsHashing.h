@@ -1073,42 +1073,43 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                ToType h;
+                ToType hash;
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                     else
-                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
                     if constexpr (std::is_same_v<Impl, JavaHashImpl>)
-                        h = JavaHashImpl::apply(vec_from[i]);
+                        hash = JavaHashImpl::apply(vec_from[i]);
                     else
                     {
-                        FromType v = vec_from[i];
+                        FromType value = vec_from[i];
                         if constexpr (std::endian::native == std::endian::big)
                         {
-                            FromType tmp_v;
-                            reverseMemcpy(&tmp_v, &v, sizeof(v));
-                            v = tmp_v;
+                            FromType value_reversed;
+                            reverseMemcpy(&value_reversed, &value, sizeof(value));
+                            value = value_reversed;
                         }
-                        h = apply(key, reinterpret_cast<const char *>(&v), sizeof(v));
+                        hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
                   }
                 }
 
                 if constexpr (first)
-                    vec_to[i] = h;
+                    vec_to[i] = hash;
                 else
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
             }
         }
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
+
             if constexpr (std::is_same_v<ToType, UInt64>)
                 hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             else
@@ -1139,45 +1140,45 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                ToType h;
+                ToType hash;
                 if constexpr (std::endian::native == std::endian::little)
                 {
-                    h = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                    hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
                 }
                 else
                 {
                     char tmp_buffer[sizeof(vec_from[i])];
                     reverseMemcpy(tmp_buffer, &vec_from[i], sizeof(vec_from[i]));
-                    h = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(vec_from[i]));
+                    hash = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(vec_from[i]));
                 }
                 if constexpr (first)
-                    vec_to[i] = h;
+                    vec_to[i] = hash;
                 else
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
             }
         }
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
 
-            ToType h;
+            ToType hash;
             if constexpr (std::endian::native == std::endian::little)
             {
-                h = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
             }
             else
             {
                 char tmp_buffer[sizeof(value)];
                 reverseMemcpy(tmp_buffer, &value, sizeof(value));
-                h = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(value));
+                hash = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(value));
             }
             size_t size = vec_to.size();
             if constexpr (first)
-                vec_to.assign(size, h);
+                vec_to.assign(size, hash);
             else
             {
                 for (size_t i = 0; i < size; ++i)
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
             }
         }
         else
@@ -1191,11 +1192,11 @@ private:
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             StringRef bytes = column->getDataAt(i);
-            const ToType h = apply(key, bytes.data, bytes.size);
+            const ToType hash = apply(key, bytes.data, bytes.size);
             if constexpr (first)
-                vec_to[i] = h;
+                vec_to[i] = hash;
             else
-                vec_to[i] = combineHashes(key, vec_to[i], h);
+                vec_to[i] = combineHashes(key, vec_to[i], hash);
         }
     }
 
@@ -1211,14 +1212,14 @@ private:
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                const ToType h = apply(key,
+                const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1);
 
                 if constexpr (first)
-                    vec_to[i] = h;
+                    vec_to[i] = hash;
                 else
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
 
                 current_offset = offsets[i];
             }
@@ -1231,11 +1232,11 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                const ToType h = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                const ToType hash = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
                 if constexpr (first)
-                    vec_to[i] = h;
+                    vec_to[i] = hash;
                 else
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
             }
         }
         else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
@@ -1283,16 +1284,16 @@ private:
             {
                 ColumnArray::Offset next_offset = offsets[i];
 
-                ToType h;
+                ToType hash;
                 if constexpr (std::is_same_v<ToType, UInt64>)
-                    h = IntHash64Impl::apply(next_offset - current_offset);
+                    hash = IntHash64Impl::apply(next_offset - current_offset);
                 else
-                    h = IntHash32Impl::apply(next_offset - current_offset);
+                    hash = IntHash32Impl::apply(next_offset - current_offset);
 
                 if constexpr (first)
-                    vec_to[i] = h;
+                    vec_to[i] = hash;
                 else
-                    vec_to[i] = combineHashes(key, vec_to[i], h);
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
 
                 for (size_t j = current_offset; j < next_offset; ++j)
                     vec_to[i] = combineHashes(key, vec_to[i], vec_temp[j]);
