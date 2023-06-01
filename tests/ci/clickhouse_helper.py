@@ -5,8 +5,8 @@ import logging
 import time
 
 import requests  # type: ignore
+
 from get_robot_token import get_parameter_from_ssm
-from env_helper import GITHUB_REPOSITORY
 from pr_info import PRInfo
 from report import TestResults
 
@@ -34,7 +34,7 @@ class ClickHouseHelper:
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-        print("JSON data:", json_str)
+
         for i in range(5):
             try:
                 response = requests.post(
@@ -141,7 +141,7 @@ def prepare_tests_results_for_clickhouse(
     report_url: str,
     check_name: str,
 ) -> List[dict]:
-    pull_request_url = "https://github.com/{}/commits/master".format(GITHUB_REPOSITORY)
+    pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
     base_repo = pr_info.repo_full_name
