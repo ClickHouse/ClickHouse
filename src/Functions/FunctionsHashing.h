@@ -1096,7 +1096,7 @@ private:
                             value = value_reversed;
                         }
                         hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-                  }
+                    }
                 }
 
                 if constexpr (first)
@@ -1110,10 +1110,28 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
 
-            if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+            if constexpr (Impl::use_int_hash_for_pods)
+            {
+                if constexpr (std::is_same_v<ToType, UInt64>)
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                else
+                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+            }
             else
-                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+            {
+                if constexpr (std::is_same_v<Impl, JavaHashImpl>)
+                    hash = JavaHashImpl::apply(value);
+                else
+                {
+                    if constexpr (std::endian::native == std::endian::big)
+                    {
+                        FromType value_reversed;
+                        reverseMemcpy(&value_reversed, &value, sizeof(value));
+                        value = value_reversed;
+                    }
+                    hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                }
+            }
 
             size_t size = vec_to.size();
             if constexpr (first)
