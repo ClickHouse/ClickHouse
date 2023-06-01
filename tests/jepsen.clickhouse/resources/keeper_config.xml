@@ -8,6 +8,28 @@
         <size>never</size>
     </logger>
 
+
+    <storage_configuration>
+        <disks>
+            <log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/logs/</path>
+            </log_local>
+            <latest_log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/latest_log/</path>
+            </latest_log_local>
+            <snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+            </snapshot_local>
+            <latest_snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/latest_snapshot/</path>
+            </latest_snapshot_local>
+        </disks>
+    </storage_configuration>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>{id}</server_id>
