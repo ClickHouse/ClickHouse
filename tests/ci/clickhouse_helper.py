@@ -17,27 +17,14 @@ class InsertException(Exception):
 
 class ClickHouseHelper:
     def __init__(self, url=None):
-    #     if url is None:
-    #         url = get_parameter_from_ssm("clickhouse-test-stat-url")
-
-    #     self.url = url
-    #     self.auth = {
-    #         "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
-    #         "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
-    #     }
-
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
         self.url = url
-        user = get_parameter_from_ssm("clickhouse-test-stat-login")
-        password = get_parameter_from_ssm("clickhouse-test-stat-password")
         self.auth = {
-            "X-ClickHouse-User": user,
-            "X-ClickHouse-Key": password,
+            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
+            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
         }
-
-        print(f"ClickHouse credentials - User: {user}, Password: {'*'*len(password)}, URL: {url}")    
 
     @staticmethod
     def _insert_json_str_info_impl(url, auth, db, table, json_str):
@@ -47,7 +34,7 @@ class ClickHouseHelper:
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-
+        print("JSON data:", json_str)
         for i in range(5):
             try:
                 response = requests.post(
