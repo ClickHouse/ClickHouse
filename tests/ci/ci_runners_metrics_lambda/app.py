@@ -99,7 +99,10 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
 def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
     client = boto3.client("ec2")
     reservations = client.describe_instances(
-        Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}],
+        Filters=[
+            {"Name": "tag-key", "Values": ["github:runner-type"]},
+            {"Name": "instance-state-name", "Values": ["pending", "running"]},
+        ],
     )["Reservations"]
     # flatten the reservation into instances
     instances = [
