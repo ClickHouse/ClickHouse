@@ -15,16 +15,13 @@ Expression ((Projection + Before ORDER BY))
           PrimaryKey
             Keys: 
               id
-            Condition: (id in 1-element set)
-            Parts: 0/19
-            Granules: 0/1204
+            Condition: (id in [101, 101])
+            Parts: 1/1
+            Granules: 1/1
       Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-        Filter (WHERE)
-          ReadFromMergeTree (default.t2)
-          Indexes:
-            PrimaryKey
-              Keys: 
-                delete_time
-              Condition: (delete_time in [1685397601, +Inf))
-              Parts: 0/1
-              Granules: 0/1
+        ReadFromMergeTree (default.t2)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
