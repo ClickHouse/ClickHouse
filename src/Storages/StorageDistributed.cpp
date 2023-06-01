@@ -1137,13 +1137,6 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
 
-    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage {} must have own data directory to enable asynchronous inserts",
-                        getName());
-    }
-
     auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
 
     /// If sharding key is not specified, then you can only write to a shard containing only one shard

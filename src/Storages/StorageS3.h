@@ -31,7 +31,6 @@ namespace DB
 {
 
 class PullingPipelineExecutor;
-class StorageS3SequentialSource;
 class NamedCollection;
 
 class StorageS3Source : public ISource, WithContext
