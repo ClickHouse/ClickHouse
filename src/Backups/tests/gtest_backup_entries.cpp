@@ -29,10 +29,15 @@ protected:
         /// Make encrypted disk.
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = local_disk;
-        settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        settings->keys[0] = "1234567890123456";
-        settings->current_key_id = 0;
         settings->disk_path = "encrypted/";
+
+        settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        String key = "1234567890123456";
+        UInt128 fingerprint = FileEncryption::calculateKeyFingerprint(key);
+        settings->all_keys[fingerprint] = key;
+        settings->current_key = key;
+        settings->current_key_fingerprint = fingerprint;
+
         encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings), true);
     }
 
