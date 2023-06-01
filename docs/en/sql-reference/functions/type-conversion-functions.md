@@ -319,6 +319,49 @@ SELECT
 ## toDateOrNull
 
 ## toDateOrDefault
+Converts an input value to [Date](/docs/en/sql-reference/data-types/date.md) data type. 
+If unsuccessful, returns the lower border value supported by [Date](/docs/en/sql-reference/data-types/date.md). The default value can be specified as a second argument.
+Similar to [toDate](#todate).
+
+**Syntax**
+
+``` sql
+toDateOrDefault(expr [, default_value])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [Int](/docs/en/sql-reference/data-types/int-uint.md), [Date](/docs/en/sql-reference/data-types/date.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md). 
+- `default_value` — The default value. [Date](/docs/en/sql-reference/data-types/date.md) 
+
+If `expr` is a number and looks like a UNIX timestamp (is greater than 65535), it is interpreted as a DateTime, then truncated to Date in the current timezone. If `expr` is a number and it is smaller than 65536, it is interpreted as the number of days since 1970-01-01.
+
+**Returned value**
+
+- A calendar date. [Date](/docs/en/sql-reference/data-types/date.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toDateOrDefault('2021-01-01', '2023-01-01'::Date),
+    toDateOrDefault('xx2021-01-01', '2023-01-01'::Date);
+```
+
+Result:
+
+```response
+┌─toDateOrDefault('2021-01-01', CAST('2023-01-01', 'Date'))─┬─toDateOrDefault('xx2021-01-01', CAST('2023-01-01', 'Date'))─┐
+│                                                2021-01-01 │                                                  2023-01-01 │
+└───────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+- [toDate](#todate)
+- [toDate32OrDefault](#todate32ordefault)
+
 
 ## toDateTime
 
@@ -327,6 +370,48 @@ SELECT
 ## toDateTimeOrNull
 
 ## toDateTimeOrDefault
+Converts an input value to [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type. 
+If unsuccessful, returns the lower border value supported by [DateTime](/docs/en/sql-reference/data-types/datetime.md). The default value can be specified as a third argument.
+Similar to [toDateTime](#todatetime).
+
+**Syntax**
+
+``` sql
+toDateTimeOrDefault(expr, [, time_zone [, default_value]])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [Int](/docs/en/sql-reference/data-types/int-uint.md), [Date](/docs/en/sql-reference/data-types/date.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md). 
+- `time_zone` — Time zone.
+- `default_value` — The default value. [DateTime](/docs/en/sql-reference/data-types/datetime.md) 
+
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
+
+**Returned value**
+
+- A date time. [DateTime](/docs/en/sql-reference/data-types/datetime.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toDateTimeOrDefault('2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC')),
+    toDateTimeOrDefault('xx2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC'));
+```
+
+Result:
+
+```response
+┌─toDateTimeOrDefault('2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┬─toDateTimeOrDefault('xx2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┐
+│                                                               2021-01-01 00:00:00 │                                                                 2023-01-01 00:00:00 │
+└───────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+- [toDateTime](#todatetime)
 
 ## toDate32
 

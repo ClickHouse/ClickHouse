@@ -400,7 +400,11 @@ template <typename FromType, typename ToType>
 struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
-
+    static NO_SANITIZE_UNDEFINED bool ExtraCheck(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
+    
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
@@ -2884,8 +2888,16 @@ private:
 
                 if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDateOrDateTime<RightDataType>)
                 {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
-                        arguments, result_type, input_rows_count);
+                     if (wrapper_cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateConvertStrategyAdditions>(
+                            arguments, result_type, input_rows_count);
+                    }
+                    else
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateOrNullConvertStrategyAdditions>(
+                            arguments, result_type, input_rows_count);
+                    }
                     return true;
                 }
 
