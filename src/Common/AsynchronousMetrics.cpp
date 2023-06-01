@@ -945,12 +945,22 @@ void AsynchronousMetrics::update(TimePoint update_time)
             uint64_t quota = 0;
             uint64_t period = 0;
 
-            readText(quota, *cgroupcpu_max);
-            skipWhitespaceIfAny(*cgroupcpu_max);
-            readText(period, *cgroupcpu_max);
+            std::string line;
+            readText(line, *cgroupcpu_max);
+
+            auto space = line.find_first_of(" ");
+
+            if (line.rfind("max", 0) == std::string::npos)
+            {
+                auto field1 = line.substr(0, space);
+                quota = std::stoull(field1);
+            }
+
+            auto field2 = line.substr(space + 1);
+            period = std::stoull(field2);
 
             new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup."};
+            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
         }
         catch (...)
         {
@@ -970,7 +980,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             tryReadText(period, *cgroupcpu_cfs_period);
 
             new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup."};
+            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
         }
         catch (...)
         {
