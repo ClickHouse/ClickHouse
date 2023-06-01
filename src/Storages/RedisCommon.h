@@ -3,6 +3,7 @@
 #include <Poco/Redis/Client.h>
 #include <Poco/Redis/Command.h>
 #include <Poco/Redis/Array.h>
+#include <Poco/Types.h>
 
 #include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
@@ -48,7 +49,7 @@ using RedisArray = Poco::Redis::Array;
 using RedisArrayPtr = std::shared_ptr<RedisArray>;
 using RedisBulkString = Poco::Redis::BulkString;
 using RedisSimpleString = String;
-using RedisInteger = Int64;
+using RedisInteger = Poco::Int64;
 
 using RedisClientPtr = std::unique_ptr<Poco::Redis::Client>;
 using RedisPool = BorrowedObjectPool<RedisClientPtr>;
