@@ -10,7 +10,6 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
 #include <Storages/StorageMaterializedView.h>
 
@@ -18,7 +17,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 
@@ -211,8 +209,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 
     checkIncompleteOrdinaryToAtomicConversion(context, databases);
 
-    /// clickhouse-local creates DatabaseMemory as default database by itself
-    /// For clickhouse-server we need create default database
+    /// We need create to default database
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.contains(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)

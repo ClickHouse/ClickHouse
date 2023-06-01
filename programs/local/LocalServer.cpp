@@ -652,43 +652,34 @@ void LocalServer::processConfig()
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
-    std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    std::string default_database = config().getString("default_database", "default");
+
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
-    if (config().has("path"))
+    String path = global_context->getPath();
+
+    /// Lock path directory before read
+    status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
+    LOG_DEBUG(log, "Loading metadata from {}", path);
+    loadMetadataSystem(global_context);
+    attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+    attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
+    attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+    startupSystemTables();
+
+    if (!config().has("only-system-tables"))
     {
-        String path = global_context->getPath();
-
-        /// Lock path directory before read
-        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
-        LOG_DEBUG(log, "Loading metadata from {}", path);
-        loadMetadataSystem(global_context);
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        startupSystemTables();
-
-        if (!config().has("only-system-tables"))
-        {
-            DatabaseCatalog::instance().createBackgroundTasks();
-            loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
-        }
-
-        /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
-
-        LOG_DEBUG(log, "Loaded metadata.");
+        DatabaseCatalog::instance().createBackgroundTasks();
+        loadMetadata(global_context);
+        DatabaseCatalog::instance().startupBackgroundCleanup();
     }
-    else if (!config().has("no-system-tables"))
-    {
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-    }
+
+    /// For ClickHouse local if path is not set the loader will be disabled.
+    global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+
+    LOG_DEBUG(log, "Loaded metadata.");
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
