@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # The script is downloaded the AWS image builder Task Orchestrator and Executor (AWSTOE)
 # We can't use `user data script` because cloud-init does not check the exit code
+# The script is downloaded in the component named ci-infrastructure-prepare in us-east-1
+# The link there must be adjusted to a particular RAW link, e.g.
+# https://github.com/ClickHouse/ClickHouse/raw/653da5f00219c088af66d97a8f1ea3e35e798268/tests/ci/worker/prepare-ci-ami.sh
+
 set -xeuo pipefail
 
 echo "Running prepare script"
