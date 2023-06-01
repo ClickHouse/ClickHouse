@@ -1,8 +1,6 @@
 1	2	3
 1	2	3
 1	2	3
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
     ReadFromMergeTree (default.data_02771)
     Indexes:
       PrimaryKey
@@ -24,8 +22,6 @@ Expression ((Projection + Before ORDER BY))
         Description: minmax GRANULARITY 1
         Parts: 0/0
         Granules: 0/0
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
     ReadFromMergeTree (default.data_02771)
     Indexes:
       PrimaryKey
