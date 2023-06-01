@@ -12,7 +12,75 @@ UPSTREAM_HOST = "minio1"
 UPSTREAM_PORT = 9001
 
 
-class ServerRuntime:
+class MockControl:
+    def __init__(self, cluster, container, port):
+        self._cluster = cluster
+        self._container = container
+        self._port = port
+
+    def reset(self):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/reset",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+    def setup_fail_upload(self, part_length):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/error_at_put?when_length_bigger={part_length}",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+    def setup_fake_upload(self, part_length):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/fake_put?when_length_bigger={part_length}",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+    def setup_slow_answers(
+        self, minimal_length=0, timeout=None, probability=None, count=None
+    ):
+        url = (
+            f"http://localhost:{self._port}/"
+            f"mock_settings/slow_put"
+            f"?minimal_length={minimal_length}"
+        )
+
+        if timeout is not None:
+            url += f"&timeout={timeout}"
+
+        if probability is not None:
+            url += f"&probability={probability}"
+
+        if count is not None:
+            url += f"&count={count}"
+
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            ["curl", "-s", url],
+            nothrow=True,
+        )
+        assert response == "OK"
+
+
+class _ServerRuntime:
     class SlowPut:
         def __init__(
             self, probability_=None, timeout_=None, minimal_length_=None, count_=None
@@ -34,11 +102,11 @@ class ServerRuntime:
             if content_length > self.minimal_length:
                 if self.count > 0:
                     if (
-                        runtime.slow_put.probability == 1
-                        or random.random() <= runtime.slow_put.probability
+                        _runtime.slow_put.probability == 1
+                        or random.random() <= _runtime.slow_put.probability
                     ):
                         self.count -= 1
-                        return runtime.slow_put.timeout
+                        return _runtime.slow_put.timeout
             return None
 
     def __init__(self):
@@ -65,10 +133,10 @@ class ServerRuntime:
         self.slow_put = None
 
 
-runtime = ServerRuntime()
+_runtime = _ServerRuntime()
 
 
-def and_then(value, func):
+def _and_then(value, func):
     assert callable(func)
     return None if value is None else func(value)
 
@@ -153,28 +221,28 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "error_at_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            runtime.error_at_put_when_length_bigger = int(
+            _runtime.error_at_put_when_length_bigger = int(
                 params.get("when_length_bigger", [1024 * 1024])[0]
             )
             return self._ok()
         if path[1] == "fake_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            runtime.fake_put_when_length_bigger = int(
+            _runtime.fake_put_when_length_bigger = int(
                 params.get("when_length_bigger", [1024 * 1024])[0]
             )
             return self._ok()
         if path[1] == "slow_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            runtime.slow_put = ServerRuntime.SlowPut(
-                minimal_length_=and_then(params.get("minimal_length", [None])[0], int),
-                probability_=and_then(params.get("probability", [None])[0], float),
-                timeout_=and_then(params.get("timeout", [None])[0], float),
-                count_=and_then(params.get("count", [None])[0], int),
+            _runtime.slow_put = _ServerRuntime.SlowPut(
+                minimal_length_=_and_then(params.get("minimal_length", [None])[0], int),
+                probability_=_and_then(params.get("probability", [None])[0], float),
+                timeout_=_and_then(params.get("timeout", [None])[0], float),
+                count_=_and_then(params.get("count", [None])[0], int),
             )
-            self.log_message("set slow put %s", runtime.slow_put)
+            self.log_message("set slow put %s", _runtime.slow_put)
             return self._ok()
         if path[1] == "reset":
-            runtime.reset()
+            _runtime.reset()
             return self._ok()
 
         return self._error("_mock_settings: wrong command")
@@ -191,14 +259,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_PUT(self):
         content_length = int(self.headers.get("Content-Length", 0))
 
-        if runtime.slow_put is not None:
-            timeout = runtime.slow_put.get_timeout(content_length)
+        if _runtime.slow_put is not None:
+            timeout = _runtime.slow_put.get_timeout(content_length)
             if timeout is not None:
                 self.log_message("slow put %s", timeout)
                 time.sleep(timeout)
 
-        if runtime.error_at_put_when_length_bigger is not None:
-            if content_length > runtime.error_at_put_when_length_bigger:
+        if _runtime.error_at_put_when_length_bigger is not None:
+            if content_length > _runtime.error_at_put_when_length_bigger:
                 return self._error(
                     '<?xml version="1.0" encoding="UTF-8"?>'
                     "<Error>"
@@ -211,9 +279,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
         upload_id = params.get("uploadId", [None])[0]
-        if runtime.fake_put_when_length_bigger is not None and upload_id is not None:
-            if content_length > runtime.fake_put_when_length_bigger:
-                runtime.register_fake_upload(upload_id, parts.path)
+        if _runtime.fake_put_when_length_bigger is not None:
+            if content_length > _runtime.fake_put_when_length_bigger:
+                if upload_id is not None:
+                    _runtime.register_fake_upload(upload_id, parts.path)
                 return self._fake_put_ok()
 
         return self._redirect()
@@ -223,7 +292,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
         upload_id = params.get("uploadId", [None])[0]
 
-        if runtime.is_fake_upload(upload_id, parts.path):
+        if _runtime.is_fake_upload(upload_id, parts.path):
             return self._fake_post_ok(parts.path)
 
         return self._redirect()
@@ -235,9 +304,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self._redirect()
 
 
-class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
 
-httpd = ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-httpd.serve_forever()
+if __name__ == "__main__":
+    httpd = _ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+    httpd.serve_forever()
