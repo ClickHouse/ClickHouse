@@ -43,7 +43,8 @@ void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr descrip
     auto from_path = fs::path(description->path);
     auto tmp_changelog_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
     {
-        disk_to->writeFile(tmp_changelog_name);
+        auto buf = disk_to->writeFile(tmp_changelog_name);
+        buf->finalize();
     }
     disk_from->copyFile(from_path, *disk_to, path_to, {});
     disk_to->removeFile(tmp_changelog_name);
@@ -342,9 +343,15 @@ private:
         }
 
         if (log_file_settings.compress_logs)
+        {
             compressed_buffer.reset();
+        }
         else
+        {
+            chassert(file_buf);
+            file_buf->finalize();
             file_buf.reset();
+        }
     }
 
     WriteBuffer & getBuffer()
