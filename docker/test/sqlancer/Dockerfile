@@ -6,8 +6,8 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update --yes && \
-	env DEBIAN_FRONTEND=noninteractive apt-get install wget git default-jdk maven python3 --yes --no-install-recommends && \
-	apt-get clean
+	env DEBIAN_FRONTEND=noninteractive apt-get install wget git default-jdk maven python3 --yes --no-install-recommends && 
+	# apt-get clean
 
 # We need to get the repository's HEAD each time despite, so we invalidate layers' cache
 ARG CACHE_INVALIDATOR=0
