@@ -8,6 +8,9 @@
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
