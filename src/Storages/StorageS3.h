@@ -31,7 +31,6 @@ namespace DB
 {
 
 class PullingPipelineExecutor;
-class StorageS3SequentialSource;
 class NamedCollection;
 
 class StorageS3Source : public ISource, WithContext
@@ -247,11 +246,6 @@ public:
         Configuration() = default;
 
         String getPath() const { return url.key; }
-
-        void appendToPath(const String & suffix)
-        {
-            url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
-        }
 
         bool update(ContextPtr context);
 

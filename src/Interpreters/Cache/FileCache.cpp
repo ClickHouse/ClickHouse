@@ -592,7 +592,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     std::unordered_map<Key, EvictionCandidates> to_delete;
     size_t freeable_space = 0, freeable_count = 0;
 
-    size_t removed_size = 0;
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
@@ -659,8 +658,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 && freeable_count == 0 && main_priority->getElementsCount(cache_lock) == main_priority->getElementsLimit());
 
         LOG_TEST(
-            log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
-            is_overflow, size, removed_size,
+            log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            is_overflow, size, freeable_space, freeable_count,
             main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
             main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
             file_segment.key(), file_segment.offset());
