@@ -77,16 +77,17 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/JoinedTables.h>
 
 
 #include <Backups/BackupEntriesCollector.h>
@@ -4707,8 +4708,14 @@ void StorageReplicatedMergeTree::read(
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
 
-        Block header =
-            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        Block header;
+
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
+        else
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(
