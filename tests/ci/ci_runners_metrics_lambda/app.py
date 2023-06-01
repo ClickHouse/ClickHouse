@@ -99,44 +99,44 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
 def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
     client = boto3.client("ec2")
     reservations = client.describe_instances(
-        Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}]
+        Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}],
     )["Reservations"]
-    lost_instances = []
-    offline_runners = [
-        runner.name for runner in runners if runner.offline and not runner.busy
+    # flatten the reservation into instances
+    instances = [
+        instance
+        for reservation in reservations
+        for instance in reservation["Instances"]
     ]
-    # Here we refresh the runners to get the most recent state
+    lost_instances = []
+    offline_runner_names = {
+        runner.name for runner in runners if runner.offline and not runner.busy
+    }
+    runner_names = {runner.name for runner in runners}
     now = datetime.now().timestamp()
 
-    for reservation in reservations:
-        for instance in reservation["Instances"]:
-            # Do not consider instances started 20 minutes ago as problematic
-            if now - instance["LaunchTime"].timestamp() < 1200:
-                continue
+    for instance in instances:
+        # Do not consider instances started 20 minutes ago as problematic
+        if now - instance["LaunchTime"].timestamp() < 1200:
+            continue
 
-            runner_type = [
-                tag["Value"]
-                for tag in instance["Tags"]
-                if tag["Key"] == "github:runner-type"
-            ][0]
-            # If there's no necessary labels in runner type it's fine
-            if not (
-                UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS
-            ):
-                continue
+        runner_type = [
+            tag["Value"]
+            for tag in instance["Tags"]
+            if tag["Key"] == "github:runner-type"
+        ][0]
+        # If there's no necessary labels in runner type it's fine
+        if not (UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS):
+            continue
 
-            if instance["InstanceId"] in offline_runners:
-                lost_instances.append(instance)
-                continue
+        if instance["InstanceId"] in offline_runner_names:
+            lost_instances.append(instance)
+            continue
 
-            if instance["State"]["Name"] == "running" and (
-                not [
-                    runner
-                    for runner in runners
-                    if runner.name == instance["InstanceId"]
-                ]
-            ):
-                lost_instances.append(instance)
+        if (
+            instance["State"]["Name"] == "running"
+            and not instance["InstanceId"] in runner_names
+        ):
+            lost_instances.append(instance)
 
     return lost_instances
 
