@@ -94,6 +94,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
+            bool need_total_size = true,
             KeysWithInfo * read_keys = nullptr);
 
         KeyWithInfo next() override;
@@ -348,6 +349,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
+        bool need_total_size = true,
         KeysWithInfo * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
