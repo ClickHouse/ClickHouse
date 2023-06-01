@@ -1448,7 +1448,7 @@ struct Transformer
             {
                 t.IsConvertible(vec_from[i], time_zone);
             };
-    
+
             if constexpr (transformHasIsConvertible)
             {
                 if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
@@ -1472,7 +1472,7 @@ struct Transformer
                     }
                 }
             }
-            
+
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
@@ -1500,7 +1500,7 @@ struct DateTimeTransformImpl
                 col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
                 vec_null_map_to = &col_null_map_to->getData();
             }
-            
+
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 

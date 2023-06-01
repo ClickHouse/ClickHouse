@@ -415,7 +415,7 @@ struct ToDateTransform8Or16Signed
     {
         return from >= 0;
     }
-    
+
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
