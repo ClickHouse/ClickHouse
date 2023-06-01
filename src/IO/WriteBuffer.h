@@ -33,7 +33,6 @@ class WriteBuffer : public BufferBase
 public:
     using BufferBase::set;
     using BufferBase::position;
-    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
@@ -70,7 +69,7 @@ public:
     virtual ~WriteBuffer()
     {
         // That destructor could be call with finalized=false in case of exceptions
-        if (!finalized)
+        if (count() > 0 && !finalized)
         {
             /// It is totally OK to destroy instance without finalization when an exception occurs
             /// However it is suspicious to destroy instance without finalization at the green path
@@ -164,6 +163,8 @@ public:
     }
 
 protected:
+    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+
     virtual void finalizeImpl()
     {
         next();
@@ -175,11 +176,31 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl() { throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer."); }
+    virtual void nextImpl()
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
+    }
 };
 
 
 using WriteBufferPtr = std::shared_ptr<WriteBuffer>;
 
+
+class WriteBufferFromPointer : public WriteBuffer
+{
+public:
+    WriteBufferFromPointer(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
+
+private:
+    virtual void finalizeImpl() override
+    {
+        /// no op
+    }
+
+    virtual void sync() override
+    {
+        /// no on
+    }
+};
 
 }
