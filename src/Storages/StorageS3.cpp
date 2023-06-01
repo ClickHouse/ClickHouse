@@ -418,6 +418,7 @@ public:
         ASTPtr query_,
         const Block & virtual_header_,
         ContextPtr context_,
+        bool need_total_size,
         KeysWithInfo * read_keys_)
         : WithContext(context_)
         , bucket(bucket_)
@@ -458,8 +459,13 @@ public:
 
         for (auto && key : all_keys)
         {
-            auto info = S3::getObjectInfo(client_, bucket, key, version_id_, request_settings_);
-            total_size += info.size;
+            std::optional<S3::ObjectInfo> info;
+            if (need_total_size)
+            {
+                info = S3::getObjectInfo(client_, bucket, key, version_id_, request_settings_);
+                total_size += info->size;
+            }
+
             keys.emplace_back(std::move(key), std::move(info));
         }
 
@@ -501,10 +507,11 @@ StorageS3Source::KeysIterator::KeysIterator(
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
+    bool need_total_size,
     KeysWithInfo * read_keys)
     : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(
         client_, version_id_, keys_, bucket_, request_settings_,
-        query, virtual_header, context, read_keys))
+        query, virtual_header, context, need_total_size, read_keys))
 {
 }
 
@@ -980,6 +987,7 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
     ContextPtr local_context,
     ASTPtr query,
     const Block & virtual_block,
+    bool need_total_size,
     KeysWithInfo * read_keys)
 {
     if (distributed_processing)
@@ -998,7 +1006,7 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
         return std::make_shared<StorageS3Source::KeysIterator>(
             *configuration.client, configuration.url.version_id, configuration.keys,
             configuration.url.bucket, configuration.request_settings, query,
-            virtual_block, local_context, read_keys);
+            virtual_block, local_context, need_total_size, read_keys);
     }
 }
 
@@ -1448,7 +1456,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 {
     KeysWithInfo read_keys;
 
-    auto file_iterator = createFileIterator(configuration, false, ctx, nullptr, {}, &read_keys);
+    auto file_iterator = createFileIterator(configuration, false, ctx, nullptr, {}, false, &read_keys);
 
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
