@@ -169,6 +169,7 @@ SelfManaged
 Stateful
 Submodules
 Subqueries
+TKSV
 TSVRaw
 TSan
 TabItem
