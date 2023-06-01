@@ -191,13 +191,12 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
 {
     auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
 
-    DB::Memory<> memory1;
-    memory1.resize(value.size() + codec.getAdditionalSizeAtTheEndOfBuffer() + codec.getHeaderSize()+100);
-    auto bytes_written = codec.compress(value.data(), static_cast<DB::UInt32>(value.size()), memory1.data());
-    std::string encrypted_value = std::string(memory1.data(), bytes_written);
+    DB::Memory<> memory;
+    memory.resize(codec.getCompressedReserveSize(static_cast<DB::UInt32>(value.size())));
+    auto bytes_written = codec.compress(value.data(), static_cast<DB::UInt32>(value.size()), memory.data());
+    std::string encrypted_value = std::string(memory.data(), bytes_written);
     std::string hex_value;
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
-    LOG_DEBUG(log, "Encrypted value: '{}'.", hex_value);
     return hex_value;
 }
 
@@ -217,10 +216,9 @@ std::string ConfigProcessor::decryptValue(const std::string & codec_name, const 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text, check for valid characters [0-9a-fA-F] and length");
     }
 
-    memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()) + codec.getAdditionalSizeAtTheEndOfBuffer());
+    memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
     codec.decompress(encrypted_value.data(), static_cast<DB::UInt32>(encrypted_value.size()), memory.data());
     std::string decrypted_value = std::string(memory.data(), memory.size());
-    LOG_DEBUG(log, "Decrypted value '{}'", decrypted_value);
     return decrypted_value;
 }
 
