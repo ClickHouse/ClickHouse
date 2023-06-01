@@ -370,6 +370,11 @@ struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
+
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
@@ -383,6 +388,11 @@ template <typename FromType, typename ToType>
 struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
@@ -400,7 +410,8 @@ template <typename FromType, typename ToType>
 struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
-    static NO_SANITIZE_UNDEFINED bool ExtraCheck(const FromType & from, const DateLUTImpl &)
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
         return from >= 0;
     }
@@ -423,6 +434,11 @@ struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
+
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -435,6 +451,11 @@ template <typename FromType, typename ToType>
 struct ToDate32Transform32Or64Signed
 {
     static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
@@ -451,6 +472,11 @@ template <typename FromType, typename ToType>
 struct ToDate32Transform8Or16Signed
 {
     static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -507,6 +533,11 @@ struct ToDateTimeTransform64
 {
     static constexpr auto name = "toDateTime";
 
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
+
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         return static_cast<ToType>(std::min(time_t(from), time_t(0xFFFFFFFF)));
@@ -517,6 +548,11 @@ template <typename FromType, typename ToType>
 struct ToDateTimeTransformSigned
 {
     static constexpr auto name = "toDateTime";
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -530,6 +566,11 @@ template <typename FromType, typename ToType>
 struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
+
+    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
+    {
+        return from >= 0;
+    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -2886,7 +2927,8 @@ private:
                     return true;
                 }
 
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDateOrDateTime<RightDataType>)
+                if constexpr (IsDataTypeNumber<LeftDataType>
+                    && (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>))
                 {
                      if (wrapper_cast_type == CastType::accurate)
                     {

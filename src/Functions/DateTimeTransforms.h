@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -1433,7 +1435,8 @@ template <typename FromType, typename ToType, typename Transform, bool is_extend
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
-    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
+        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]])
     {
         using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
@@ -1441,28 +1444,30 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
-            constexpr bool transformHasExtraCheck = requires(const Transform& t)
+            constexpr bool transformHasIsConvertible = requires(const Transform& t)
             {
-                t.ExtraCheck(vec_from[i], time_zone);
+                t.IsConvertible(vec_from[i], time_zone);
             };
     
-            if constexpr (transformHasExtraCheck)
+            if constexpr (transformHasIsConvertible)
             {
-                // if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                //     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-                    bool checked = transform.ExtraCheck(vec_from[i], time_zone);
+                    bool checked = transform.IsConvertible(vec_from[i], time_zone);
                     if (!checked)
                     {
-                        if (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>)
+                        if (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                         {
-                            // vec_to[i] = 0;
-                            // (*vec_null_map_to)[i] = true;
+                            vec_to[i] = 0;
+                            if (vec_null_map_to)
+                                (*vec_null_map_to)[i] = true;
+                            continue;
                         }
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                                TypeName<ValueType>, TypeName<ValueType>);
+                                TypeName<typename FromTypeVector::value_type>, TypeName<ValueType>);
                         }
                     }
                 }
@@ -1488,6 +1493,14 @@ struct DateTimeTransformImpl
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+            
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
@@ -1495,7 +1508,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
             }
             else
             {
@@ -1504,7 +1517,12 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+            }
+
+            if (vec_null_map_to)
+            {
+                return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
             }
 
             return mutable_result_col;
