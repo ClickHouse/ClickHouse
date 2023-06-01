@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -962,7 +962,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
+        tables_dependencies.addDependencies(qualified_name, getLoadingDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
     }
 
     tables_dependencies.checkNoCyclicDependencies();
