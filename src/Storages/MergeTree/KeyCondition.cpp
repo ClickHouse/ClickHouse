@@ -884,11 +884,7 @@ std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyFunctionForColumnOfUnknownT
     const DataTypePtr & arg_type,
     const ColumnPtr arg_column)
 {
-    auto converted_arg_column = arg_type->createColumn();
-    for (size_t i = 0; i < arg_column->size(); ++i)
-        converted_arg_column->insert((*arg_column)[i]);
-
-    ColumnsWithTypeAndName arguments{{std::move(converted_arg_column), arg_type, "x"}};
+    ColumnsWithTypeAndName arguments{{arg_column, arg_type, "x"}};
 
     DataTypePtr return_type = func->getResultType();
 
@@ -905,12 +901,8 @@ std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyBinaryFunctionForColumnOfUn
     const DataTypePtr & arg_type2,
     const ColumnPtr & arg_column2)
 {
-    auto converted_arg_column = arg_type->createColumn();
-    for (size_t i = 0; i < arg_column->size(); ++i)
-        converted_arg_column->insert((*arg_column)[i]);
-
     ColumnsWithTypeAndName arguments{
-        {std::move(converted_arg_column), arg_type, "x"}, {arg_column2, arg_type2, "y"}};
+        {arg_column, arg_type, "x"}, {arg_column2, arg_type2, "y"}};
 
     FunctionBasePtr func_base = func->build(arguments);
 
@@ -1051,9 +1043,15 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                 auto const_type = removeLowCardinality(cur_node->result_type);
                 auto const_values = castColumnAccurateOrNull({const_column, out_type, ""}, const_type);
 
+                out_type = const_type;
+                auto tmp_column = out_type->createColumn();
                 for (size_t i = 0; i < const_values->size(); ++i)
-                    if (const_values->isNullAt(i))
+                {
+                    if (const_values->isNullAt(i)) /// CAST fail
                         return false;
+                    tmp_column->insert((*const_values)[i]);
+                }
+                out_column = std::move(tmp_column);
 
                 while (!chain.empty())
                 {
@@ -1065,8 +1063,8 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
 
                     if (func->children.size() == 1)
                     {
-                        std::tie(const_values, const_type)
-                            = applyFunctionForColumnOfUnknownType(func->function_base, const_type, const_values);
+                        std::tie(out_column, out_type)
+                            = applyFunctionForColumnOfUnknownType(func->function_base, out_type, out_column);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1075,25 +1073,22 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                         if (left->column && isColumnConst(*left->column))
                         {
                             auto left_arg_type = left->result_type;
-                            std::tie(const_values, const_type) = applyBinaryFunctionForColumnOfUnknownType(
+                            std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func->function_base->getName(), context),
-                                left_arg_type, left->column, const_type, const_values);
+                                left_arg_type, left->column, out_type, out_column);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
-                            std::tie(const_values, const_type) = applyBinaryFunctionForColumnOfUnknownType(
+                            std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func->function_base->getName(), context),
-                                const_type, const_values, right_arg_type, right->column);
+                                out_type, out_column, right_arg_type, right->column);
                         }
                     }
                 }
 
-                /// If there's no function at all
-                out_column = const_values;
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
-                out_type = const_type;
                 return true;
             }
         }
