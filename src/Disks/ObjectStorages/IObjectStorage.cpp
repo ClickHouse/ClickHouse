@@ -20,6 +20,7 @@ void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, 
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
 }
+
 void IObjectStorage::getDirectoryContents(const std::string &,
     RelativePathsWithSize &,
     std::vector<std::string> &) const
