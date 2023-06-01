@@ -23,6 +23,8 @@ namespace ErrorCodes
 namespace
 {
 
+const std::string copy_lock_file = "STATE_COPY_LOCK";
+
 bool isLocalhost(const std::string & hostname)
 {
     try
@@ -324,7 +326,13 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     auto disk = getStateFileDisk();
 
     if (disk->exists(server_state_file_name))
-        disk->moveFile(server_state_file_name, old_path);
+    {
+        auto buf = disk->writeFile(copy_lock_file);
+        buf->finalize();
+        disk->copyFile(server_state_file_name, *disk, old_path);
+        disk->removeFile(copy_lock_file);
+        disk->removeFile(old_path);
+    }
 
     auto server_state_file = disk->writeFile(server_state_file_name);
     auto buf = state.serialize();
@@ -339,6 +347,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
     server_state_file->sync();
+    server_state_file->finalize();
 
     disk->removeFileIfExists(old_path);
 }
@@ -417,13 +426,25 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     if (disk->exists(old_path))
     {
-        auto state = try_read_file(old_path);
-        if (state)
+        if (disk->exists(copy_lock_file))
         {
-            disk->moveFile(old_path, server_state_file_name);
-            return state;
+            disk->removeFile(old_path);
+            disk->removeFile(copy_lock_file);
         }
-        disk->removeFile(old_path);
+        else
+        {
+            auto state = try_read_file(old_path);
+            if (state)
+            {
+                disk->moveFile(old_path, server_state_file_name);
+                return state;
+            }
+            disk->removeFile(old_path);
+        }
+    }
+    else if (disk->exists(copy_lock_file))
+    {
+        disk->removeFile(copy_lock_file);
     }
 
     LOG_WARNING(logger, "No state was read");

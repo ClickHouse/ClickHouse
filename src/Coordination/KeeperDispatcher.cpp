@@ -38,8 +38,6 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
