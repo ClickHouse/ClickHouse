@@ -108,8 +108,7 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
             {
                 column_identifier_parts = {column_source->getAlias()};
             }
-            else if (auto * table_node = column_source->as<TableNode>();
-                table_node && options.fully_qualified_identifiers)
+            else if (auto * table_node = column_source->as<TableNode>())
             {
                 if (!table_node->getTemporaryTableName().empty())
                 {
@@ -118,7 +117,7 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
                 else
                 {
                     const auto & table_storage_id = table_node->getStorageID();
-                    if (table_storage_id.hasDatabase())
+                    if (table_storage_id.hasDatabase() && options.fully_qualified_identifiers)
                         column_identifier_parts = { table_storage_id.getDatabaseName(), table_storage_id.getTableName() };
                     else
                         column_identifier_parts = { table_storage_id.getTableName() };
