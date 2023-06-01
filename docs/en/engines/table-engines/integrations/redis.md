@@ -105,7 +105,8 @@ ALTER TABLE redis_table DELETE WHERE key='1';
 
 Truncate:
 
-Redis engine will flush db asynchronously.
+Flush Redis db asynchronously. Also `Truncate` support SYNC mode.
+
 ```sql
-TRUNCATE TABLE redis_table;
+TRUNCATE TABLE redis_table SYNC;
 ```
