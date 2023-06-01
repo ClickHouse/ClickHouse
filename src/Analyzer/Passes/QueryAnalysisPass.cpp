@@ -5141,7 +5141,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
 
-            auto set = std::make_shared<Set>(size_limits_for_set, true /*fill_set_elements*/, settings.transform_null_in);
+            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, 0, settings.transform_null_in);
 
             set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
             set->insertFromBlock(result_block.getColumnsWithTypeAndName());

@@ -132,10 +132,10 @@ FutureSetPtr PreparedSets::addFromTuple(const PreparedSetKey & key, Block block,
     return it->second;
 }
 
-FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, FutureSetPtr external_table_set)
+FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set)
 {
     auto id = subquery.key;
-    auto from_subquery = std::make_shared<FutureSetFromSubquery>(std::move(subquery), std::move(external_table_set));
+    auto from_subquery = std::make_shared<FutureSetFromSubquery>(std::move(subquery), std::move(external_table_set), settings.transform_null_in);
     auto [it, inserted] = sets.emplace(key, from_subquery);
 
     if (!inserted)
@@ -210,6 +210,8 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
 {
     std::lock_guard lock(cache_mutex);
 
+    // std::cerr << "PreparedSetsCache::findOrPromiseToBuild " <<  key << "\n" << StackTrace().toString() << std::endl;
+
     auto it = cache.find(key);
     if (it != cache.end())
     {
@@ -231,10 +233,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!context->getSettingsRef().use_index_for_in_with_subqueries)
         return nullptr;
 
-    if (set)
+    if (subquery.set)
     {
-        if (set->hasExplicitSetElements())
-            return set;
+        if (subquery.set->hasExplicitSetElements())
+            return subquery.set;
 
         return nullptr;
     }
@@ -242,7 +244,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     // std::cerr << "... external_table_set " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
 
     if (external_table_set)
-        return set = external_table_set->buildOrderedSetInplace(context);
+        return subquery.set = external_table_set->buildOrderedSetInplace(context);
 
     auto plan = buildPlan(context, true);
     if (!plan)
@@ -255,37 +257,44 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    return set;
+    subquery.set->checkIsCreated();
+
+    return subquery.set;
+}
+
+static SizeLimits getSizeLimitsForSet(const Settings & settings)
+{
+    return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
 }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & context, bool create_ordered_set)
 {
-    if (set)
+    if (subquery.set)
         return nullptr;
 
     // std::cerr << StackTrace().toString() << std::endl;
 
-    auto set_cache = context->getPreparedSetsCache();
-    if (set_cache)
-    {
-        auto from_cache = set_cache->findOrPromiseToBuild(subquery.key);
-        if (from_cache.index() == 0)
-        {
-            subquery.promise_to_fill_set = std::move(std::get<0>(from_cache));
-        }
-        else
-        {
-            LOG_TRACE(&Poco::Logger::get("FutureSetFromSubquery"), "Waiting for set, key: {}", subquery.key);
-            set = std::get<1>(from_cache).get();
-            return nullptr;
-        }
-    }
+    // auto set_cache = context->getPreparedSetsCache();
+    // if (set_cache)
+    // {
+    //     auto from_cache = set_cache->findOrPromiseToBuild(subquery.key);
+    //     if (from_cache.index() == 0)
+    //     {
+    //         subquery.promise_to_fill_set = std::move(std::get<0>(from_cache));
+    //     }
+    //     else
+    //     {
+    //         LOG_TRACE(&Poco::Logger::get("FutureSetFromSubquery"), "Waiting for set, key: {}", subquery.key);
+    //         set = std::get<1>(from_cache).get();
+    //         return nullptr;
+    //     }
+    // }
 
 
     const auto & settings = context->getSettingsRef();
-    auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
+    auto size_limits = getSizeLimitsForSet(settings);
 
-    subquery.set = set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
+    subquery.set = std::make_shared<Set>(size_limits, create_ordered_set, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
 
     auto plan = subquery.detachSource();
     auto description = subquery.key;
@@ -297,7 +306,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),
             description,
-            std::move(subquery),
+            subquery,
+            shared_from_this(),
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             context);
     creating_set->setStepDescription("Create set for subquery");
@@ -305,31 +315,25 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     return plan;
 }
 
+// static SizeLimits getSizeLimitsForOrderedSet(const Settings & settings)
+// {
+//     if (settings.use_index_for_in_with_subqueries_max_values &&
+//         settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
+//         return getSizeLimitsForUnorderedSet(settings);
 
-static SizeLimits getSizeLimitsForUnorderedSet(const Settings & settings)
-{
-    return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
-}
+//     return SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
+// }
 
-static SizeLimits getSizeLimitsForOrderedSet(const Settings & settings)
-{
-    if (settings.use_index_for_in_with_subqueries_max_values &&
-        settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
-        return getSizeLimitsForUnorderedSet(settings);
-
-    return SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
-}
-
-SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordered_set)
-{
-    return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
-}
+// SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordered_set)
+// {
+//     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
+// }
 
 FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 {
     bool create_ordered_set = false;
-    auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
-    set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
+    auto size_limits = getSizeLimitsForSet(settings);
+    set = std::make_shared<Set>(size_limits, create_ordered_set, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
     set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
 
     Columns columns;
@@ -345,8 +349,16 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
     //block(std::move(block_))
 }
 
-FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_)
-    : subquery(std::move(subquery_)), external_table_set(std::move(external_table_set_)) {}
+FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, bool transform_null_in_)
+    : subquery(std::move(subquery_)), external_table_set(std::move(external_table_set_)), transform_null_in(transform_null_in_) {}
+
+DataTypes FutureSetFromSubquery::getTypes() const
+{
+    if (subquery.set)
+        return subquery.set->getElementsTypes();
+
+    return Set::getElementTypes(subquery.source->getCurrentDataStream().header.getColumnsWithTypeAndName(), transform_null_in);
+}
 
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 
@@ -356,13 +368,14 @@ SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
         return set;
 
     const auto & settings = context->getSettingsRef();
-    auto limits = getSizeLimitsForSet(settings, true);
+    size_t max_values = settings.use_index_for_in_with_subqueries_max_values;
+    bool too_many_values = max_values && max_values < set->getTotalRowCount();
+    if (!too_many_values)
+    {
+        set->initSetElements();
+        set->appendSetElements(set_key_columns);
+    }
 
-    if (!limits.check(set->getTotalRowCount(), set->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        return nullptr;
-
-    set->initSetElements();
-    set->appendSetElements(set_key_columns);
     return set;
 }
 

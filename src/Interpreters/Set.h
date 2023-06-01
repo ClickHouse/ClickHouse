@@ -30,9 +30,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
+    Set(const SizeLimits & limits_, bool fill_set_elements_, size_t max_elements_to_fill_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
+        limits(limits_), fill_set_elements(fill_set_elements_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
     {
     }
 
@@ -90,6 +90,8 @@ public:
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
+    static DataTypes getElementTypes(const ColumnsWithTypeAndName & header, bool transform_null_in);
+
 private:
     size_t keys_size = 0;
     Sizes key_sizes;
@@ -126,6 +128,7 @@ private:
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
+    size_t max_elements_to_fill;
 
     /// If true, insert NULL values to set.
     bool transform_null_in;

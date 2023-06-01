@@ -103,6 +103,25 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
+DataTypes Set::getElementTypes(const ColumnsWithTypeAndName & header, bool transform_null_in)
+{
+    DataTypes data_types;
+    data_types.reserve(header.size());
+
+    for (const auto & column : header)
+    {
+        data_types.push_back(column.type);
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
+            data_types.back() = low_cardinality_type->getDictionaryType();
+
+        if (!transform_null_in)
+            data_types.back() = removeNullable(data_types.back());
+    }
+
+    return data_types;
+}
+
+
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::lock_guard lock(rwlock);
@@ -190,7 +209,16 @@ bool Set::insertFromColumns(const Columns & columns)
 
     bool inserted = insertFromColumns(columns, holder);
     if (inserted && fill_set_elements)
-        appendSetElements(holder);
+    {
+        if (max_elements_to_fill && max_elements_to_fill < data.getTotalRowCount())
+        {
+            /// Drop filled elementes
+            fill_set_elements = false;
+            set_elements.clear();
+        }
+        else
+            appendSetElements(holder);
+    }
 
     return inserted;
 }

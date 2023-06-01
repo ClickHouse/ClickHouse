@@ -33,6 +33,9 @@ class TableJoin;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -141,7 +144,12 @@ public:
     /// This is used for CreatingSets.
     void addPipelineBefore(QueryPipelineBuilder pipeline);
 
-    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, PreparedSetsCachePtr prepared_sets_cache);
+    void addCreatingSetsTransform(
+        const Block & res_header,
+        SubqueryForSet & subquery_for_set,
+        FutureSetPtr set,
+        const SizeLimits & limits,
+        PreparedSetsCachePtr prepared_sets_cache);
 
     PipelineExecutorPtr execute();
 
