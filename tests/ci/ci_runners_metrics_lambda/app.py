@@ -171,18 +171,21 @@ def group_runners_by_tag(
 
 
 def push_metrics_to_cloudwatch(
-    listed_runners: RunnerDescriptions, namespace: str
+    listed_runners: RunnerDescriptions, group_name: str
 ) -> None:
     client = boto3.client("cloudwatch")
+    namespace = "RunnersMetrics"
     metrics_data = []
     busy_runners = sum(
         1 for runner in listed_runners if runner.busy and not runner.offline
     )
+    dimensions = [{"Name": "group", "Value": group_name}]
     metrics_data.append(
         {
             "MetricName": "BusyRunners",
             "Value": busy_runners,
             "Unit": "Count",
+            "Dimensions": dimensions,
         }
     )
     total_active_runners = sum(1 for runner in listed_runners if not runner.offline)
@@ -191,6 +194,7 @@ def push_metrics_to_cloudwatch(
             "MetricName": "ActiveRunners",
             "Value": total_active_runners,
             "Unit": "Count",
+            "Dimensions": dimensions,
         }
     )
     total_runners = len(listed_runners)
@@ -199,6 +203,7 @@ def push_metrics_to_cloudwatch(
             "MetricName": "TotalRunners",
             "Value": total_runners,
             "Unit": "Count",
+            "Dimensions": dimensions,
         }
     )
     if total_active_runners == 0:
@@ -211,6 +216,7 @@ def push_metrics_to_cloudwatch(
             "MetricName": "BusyRunnersRatio",
             "Value": busy_ratio,
             "Unit": "Percent",
+            "Dimensions": dimensions,
         }
     )
 
@@ -242,7 +248,7 @@ def main(
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
             print(f"Pushing metrics for group '{group}'")
-            push_metrics_to_cloudwatch(group_runners, "RunnersMetrics/" + group)
+            push_metrics_to_cloudwatch(group_runners, group)
         else:
             print(group, f"({len(group_runners)})")
             for runner in group_runners:
