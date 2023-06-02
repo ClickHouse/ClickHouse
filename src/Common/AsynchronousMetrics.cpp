@@ -948,7 +948,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             std::string line;
             readText(line, *cgroupcpu_max);
 
-            auto space = line.find_first_of(" ");
+            auto space = line.find(" ");
 
             if (line.rfind("max", space) == std::string::npos)
             {
