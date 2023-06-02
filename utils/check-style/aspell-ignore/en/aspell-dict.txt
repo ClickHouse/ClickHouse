@@ -15,7 +15,6 @@ ASan
 Actian
 ActionsMenu
 ActiveRecord
-Additionaly
 AddressSanitizer
 AggregateFunction
 Aggregatefunction
@@ -109,7 +108,6 @@ CESU
 CIDR
 CIDRToRange
 CLOB
-CLang
 CLion
 CMPLNT
 CMake
@@ -238,7 +236,6 @@ EdgeLengthM
 EmbeddedRocksDB
 Embeddings
 Encodings
-Engeneering
 Enum
 Enums
 Eoan
@@ -324,7 +321,6 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
-Hight
 Holistics
 Homebrew
 Homebrew's
@@ -628,7 +624,6 @@ OpenSUSE
 OpenSky
 OpenStack
 OpenTelemetry
-Optinal
 OrDefault
 OrNull
 OrZero
@@ -758,7 +753,6 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
-Returnes
 RoaringBitmap
 RocksDB
 Rollup
@@ -992,14 +986,12 @@ addr
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-adhoc
 adviced
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aiochclient
-alculates
 allocator
 alphaTokens
 amplab
@@ -1013,14 +1005,10 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
-approximatly
 argMax
 argMin
 argmax
 argmin
-arguments's
-argumetn
-arithmetics
 arrayAUC
 arrayAll
 arrayAvg
@@ -1074,7 +1062,6 @@ ascii
 asin
 asinh
 assumeNotNull
-asterics
 async
 asynch
 atan
@@ -1228,15 +1215,12 @@ codepoints
 collapsingmergetree
 combinator
 combinators
-commnents
 comparising
-compatitalbe
 compressability
 concat
 concatAssumeInjective
 concatWithSeparator
 concatWithSeparatorAssumeInjective
-concurenly
 cond
 conf
 config
@@ -1246,7 +1230,6 @@ conjuction
 conjuctive
 const
 contrib
-convergance
 convertCharset
 coroutines
 cosineDistance
@@ -1407,7 +1390,6 @@ enums
 erfc
 errorCodeToName
 evalMLMethod
-everytime
 exFAT
 expiryMsec
 exponentialMovingAverage
@@ -1415,7 +1397,6 @@ exponentialmovingaverage
 expr
 exprN
 extendedVerification
-extention
 extractAll
 extractAllGroups
 extractAllGroupsHorizontal
@@ -1465,7 +1446,6 @@ fromUnixTimestamp
 fromUnixTimestampInJodaSyntax
 fsync
 func
-funtion
 fuzzBits
 fuzzer
 fuzzers
@@ -1556,7 +1536,6 @@ hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
 hashtables
-have't
 haversine
 hdbc
 hdfs
@@ -1584,14 +1563,11 @@ hyvor
 icosahedron
 icudata
 idempotency
-identifiant
 ifNotFinite
 ifNull
 iframe
 ilike
-implicitely
 incrementing
-incremnt
 indexHint
 indexOf
 infi
@@ -1609,7 +1585,6 @@ integrational
 integrations
 interserver
 intervalLengthSum
-introspections
 invalidCertificateHandler
 invariants
 invertedindexes
@@ -1676,7 +1651,6 @@ lang
 laravel
 latencies
 ldap
-learing
 leftPad
 leftPadUTF
 lemmatization
@@ -1828,7 +1802,6 @@ namequota
 namespaces
 natively
 nats
-negtive
 nestjs
 netloc
 ngram
@@ -1881,7 +1854,6 @@ openldap
 opensky
 openssl
 opentelemetry
-optinal
 outfile
 overcommit
 overcommitted
@@ -1894,8 +1866,6 @@ parallelization
 parallelize
 parallelized
 params
-paratemer
-parsable
 parseDateTime
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
@@ -1987,7 +1957,6 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
-profuct
 prometheus
 proto
 protobuf
@@ -1997,11 +1966,9 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
-publsh
 pushdown
 pwrite
 py
-qouta
 qryn
 quantile
 quantileBFloat
@@ -2032,7 +1999,6 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quartile
-quaters
 queryID
 queryString
 queryStringAndFragment
@@ -2064,7 +2030,6 @@ readahead
 readline
 readme
 readonly
-reate
 rebalance
 rebalanced
 recency
@@ -2122,7 +2087,6 @@ rethrow
 retransmit
 retriable
 retuned
-reult
 reverseDNSQuery
 reverseUTF
 rightPad
@@ -2158,11 +2122,8 @@ sasl
 satisfiable
 scala
 schemas
-searchin
-seccessfully
 seekable
 seektable
-separatelly
 sequenceCount
 sequenceMatch
 sequenceNextNode
@@ -2181,7 +2142,6 @@ simdjson
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
-simpliest
 simpod
 singlepart
 sinh
@@ -2245,7 +2205,6 @@ subarray
 subarrays
 subcolumn
 subcolumns
-subcribe
 subdirectories
 subdirectory
 subexpression
@@ -2266,7 +2225,6 @@ subquery
 subranges
 subreddits
 subseconds
-substracted
 substring
 substringUTF
 substrings
@@ -2296,7 +2254,6 @@ superaggregates
 supremum
 symlink
 symlinks
-synchronious
 syntaxes
 syscall
 syscalls
@@ -2318,7 +2275,6 @@ templateignorespaces
 tgamma
 tgz
 th
-thats
 theilsU
 theilsu
 themself
@@ -2453,7 +2409,6 @@ ulid
 unary
 unbin
 uncomment
-underying
 undrop
 unencoded
 unencrypted

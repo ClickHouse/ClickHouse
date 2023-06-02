@@ -1845,7 +1845,7 @@ Result:
 This function is not available in ClickHouse Cloud.
 :::
 
-Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.
+Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learning.
 Accepts a path to a catboost model and model arguments (features). Returns Float64.
 
 ``` sql
@@ -2133,7 +2133,7 @@ isDecimalOverflow(d, [p])
 **Arguments**
 
 - `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this parameter could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 
