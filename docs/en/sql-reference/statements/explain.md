@@ -7,6 +7,18 @@ title: "EXPLAIN Statement"
 
 Shows the execution plan of a statement.
 
+<div class='vimeo-container'>
+  <iframe src="//www.youtube.com/embed/hP6G2Nlz_cA"
+    width="640"
+    height="360"
+    frameborder="0"
+    allow="autoplay;
+    fullscreen;
+    picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</div>
+
 Syntax:
 
 ```sql
