@@ -5,7 +5,7 @@ if(NOT ENABLE_PROTOBUF)
   return()
 endif()
 
-set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
+set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
 if(OS_FREEBSD AND SANITIZE STREQUAL "address")
   # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
   # #include <sanitizer/asan_interface.h>
@@ -17,8 +17,8 @@ if(OS_FREEBSD AND SANITIZE STREQUAL "address")
   endif()
 endif()
 
-set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/protobuf")
-set(protobuf_binary_dir "${ClickHouse_BINARY_DIR}/contrib/protobuf")
+set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf")
+set(protobuf_binary_dir "${ClickHouse_BINARY_DIR}/contrib/google-protobuf")
 
 
 add_definitions(-DGOOGLE_PROTOBUF_CMAKE_BUILD)
@@ -35,7 +35,6 @@ set(libprotobuf_lite_files
   ${protobuf_source_dir}/src/google/protobuf/arena.cc
   ${protobuf_source_dir}/src/google/protobuf/arenastring.cc
   ${protobuf_source_dir}/src/google/protobuf/extension_set.cc
-  ${protobuf_source_dir}/src/google/protobuf/field_access_listener.cc
   ${protobuf_source_dir}/src/google/protobuf/generated_enum_util.cc
   ${protobuf_source_dir}/src/google/protobuf/generated_message_table_driven_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/generated_message_util.cc
@@ -86,6 +85,7 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/empty.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/extension_set_heavy.cc
   ${protobuf_source_dir}/src/google/protobuf/field_mask.pb.cc
+  ${protobuf_source_dir}/src/google/protobuf/generated_message_bases.cc
   ${protobuf_source_dir}/src/google/protobuf/generated_message_reflection.cc
   ${protobuf_source_dir}/src/google/protobuf/generated_message_table_driven.cc
   ${protobuf_source_dir}/src/google/protobuf/io/gzip_stream.cc
@@ -316,7 +316,7 @@ else ()
     add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
 endif ()
 
-include("${ClickHouse_SOURCE_DIR}/contrib/protobuf-cmake/protobuf_generate.cmake")
+include("${ClickHouse_SOURCE_DIR}/contrib/google-protobuf-cmake/protobuf_generate.cmake")
 
 add_library(_protobuf INTERFACE)
 target_link_libraries(_protobuf INTERFACE _libprotobuf)
