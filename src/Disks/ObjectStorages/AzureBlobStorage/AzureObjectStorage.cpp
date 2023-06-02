@@ -163,7 +163,9 @@ void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWit
         auto blobs_list = blobs_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
+        {
             children.emplace_back(blob.Name, blob.BlobSize);
+        }
 
         if (max_keys && children.size() >= static_cast<size_t>(max_keys))
             break;

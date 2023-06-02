@@ -27,7 +27,7 @@ struct AzureBlobStorageEndpoint
 };
 
 
-void validateStorageAccountUrl(const String & storage_account_url)
+void validateAzureStorageAccountUrl(const String & storage_account_url)
 {
     const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
     static const RE2 storage_account_url_pattern(storage_account_url_pattern_str);
@@ -38,7 +38,7 @@ void validateStorageAccountUrl(const String & storage_account_url)
 }
 
 
-void validateContainerName(const String & container_name)
+void validateAzureContainerName(const String & container_name)
 {
     auto len = container_name.length();
     if (len < 3 || len > 64)
@@ -58,9 +58,9 @@ void validateContainerName(const String & container_name)
 AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     String storage_account_url = config.getString(config_prefix + ".storage_account_url");
-    validateStorageAccountUrl(storage_account_url);
+    validateAzureStorageAccountUrl(storage_account_url);
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
-    validateContainerName(container_name);
+    validateAzureContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};

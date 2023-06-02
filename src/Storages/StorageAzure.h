@@ -43,7 +43,15 @@ public:
         bool withWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-            return keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
+            return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
+        }
+
+        std::string getConnectionURL() const
+        {
+            if (!is_connection_string)
+                return connection_url;
+
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Connection string not implemented yet");
         }
 
         std::string connection_url;
@@ -55,14 +63,21 @@ public:
         std::string container;
         std::string blob_path;
         std::vector<String> blobs_paths;
-
-        /// If s3 configuration was passed from ast, then it is static.
-        /// If from config - it can be changed with config reload.
-        bool static_configuration = true;
-
     };
 
+    StorageAzure(
+        const Configuration & configuration_,
+        std::unique_ptr<AzureObjectStorage> && object_storage_,
+        ContextPtr context_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        std::optional<FormatSettings> format_settings_,
+        ASTPtr partition_by_);
+
     static StorageAzure::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static AzureClientPtr createClient(StorageAzure::Configuration configuration);
 
     String getName() const override
     {
@@ -87,6 +102,18 @@ public:
     bool supportsPartitionBy() const override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
+private:
+    std::string name;
+    Configuration configuration;
+    std::unique_ptr<AzureObjectStorage> object_storage;
+    NamesAndTypesList virtual_columns;
+    Block virtual_block;
+
+    const bool distributed_processing;
+    std::optional<FormatSettings> format_settings;
+    ASTPtr partition_by;
+
 };
 
 }

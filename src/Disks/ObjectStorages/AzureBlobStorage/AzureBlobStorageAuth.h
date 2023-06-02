@@ -17,6 +17,10 @@ struct AzureBlobStorageEndpoint
     const std::optional<bool> container_already_exists;
 };
 
+
+void validateAzureStorageAccountUrl(const String & storage_account_url);
+void validateAzureContainerName(const String & container_name);
+
 std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
