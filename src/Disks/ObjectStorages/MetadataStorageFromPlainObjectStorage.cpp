@@ -86,6 +86,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
         result.push_back(path_size.relative_path);
     }
 
+    std::unordered_set<std::string> duplicates_filter;
     for (auto & row : result)
     {
         chassert(row.starts_with(abs_path));
@@ -93,9 +94,10 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
         auto slash_pos = row.find_first_of('/');
         if (slash_pos != std::string::npos)
             row.erase(slash_pos, row.size() - slash_pos);
+        duplicates_filter.insert(row);
     }
 
-    return result;
+    return std::vector<std::string>(duplicates_filter.begin(), duplicates_filter.end());
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
