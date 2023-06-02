@@ -22,9 +22,9 @@ TEST(IOResourcePriorityPolicy, Priorities)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", "<priority>1</priority>");
+    t.add<FifoQueue>("/A", "<priority>3</priority>");
     t.add<FifoQueue>("/B", "<priority>2</priority>");
-    t.add<FifoQueue>("/C", "<priority>3</priority>");
+    t.add<FifoQueue>("/C", "<priority>1</priority>");
 
     t.enqueue("/A", {10, 10, 10});
     t.enqueue("/B", {10, 10, 10});
@@ -56,9 +56,9 @@ TEST(IOResourcePriorityPolicy, Activation)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", "<priority>1</priority>");
+    t.add<FifoQueue>("/A", "<priority>3</priority>");
     t.add<FifoQueue>("/B", "<priority>2</priority>");
-    t.add<FifoQueue>("/C", "<priority>3</priority>");
+    t.add<FifoQueue>("/C", "<priority>1</priority>");
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10});

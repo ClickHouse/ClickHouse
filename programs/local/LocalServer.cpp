@@ -532,12 +532,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
+    if (config().has("query") && config().has("queries-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
     if (is_interactive && !delayed_interactive)
     {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
-
         if (config().has("multiquery"))
             is_multiquery = true;
     }
@@ -834,8 +834,16 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 {
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
-        const char * arg = argv[arg_num];
-        common_arguments.emplace_back(arg);
+        std::string_view arg = argv[arg_num];
+        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+        {
+            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+            ++arg_num;
+            arg = argv[arg_num];
+            addMultiquery(arg, common_arguments);
+        }
+        else
+            common_arguments.emplace_back(arg);
     }
 }
 

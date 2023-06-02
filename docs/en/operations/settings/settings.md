@@ -452,6 +452,8 @@ Possible values:
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
+ Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
+
 - hash
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
@@ -1048,6 +1050,12 @@ Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
 
+## handshake_timeout_ms {#handshake-timeout-ms}
+
+Timeout in milliseconds for receiving Hello packet from replicas during handshake.
+
+Default value: 10000.
+
 ## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
@@ -1105,7 +1113,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
@@ -1126,7 +1134,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
@@ -1184,6 +1192,36 @@ See also:
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 
 Default value: false.
+
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool size for PostgreSQL table engine and database engine.
+
+Default value: 16
+
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
+
+Default value: 5000
+
+## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
+
+Close connection before returning connection to the pool.
+
+Default value: true.
+
+## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
+
+Connection pool size for each connection settings string in ODBC bridge.
+
+Default value: 16
+
+## odbc_bridge_use_connection_pooling {#odbc-bridge-use-connection-pooling}
+
+Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
+
+Default value: true
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
@@ -1376,6 +1414,12 @@ Possible values:
 - `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
 
 Default value: `default`.
+
+## allow_experimental_parallel_reading_from_replicas
+
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+
+Default value: `false`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1708,7 +1752,7 @@ Default value: `100000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
-The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
 
 Possible values:
 
@@ -1739,7 +1783,7 @@ Possible values:
 
 Default value: `0`.
 
-### async_insert_deduplicate {#settings-async-insert-deduplicate}
+### async_insert_deduplicate {#async-insert-deduplicate}
 
 Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
 
@@ -1992,7 +2036,7 @@ FORMAT PrettyCompactMonoBlock
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly.
+Enables or disables [LIMIT](#limit) applying on each shard separately.
 
 This will allow to avoid:
 - Sending extra rows over network;
@@ -2393,7 +2437,7 @@ Default value: 0.
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Enables or disables [introspection functions](../../sql-reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
@@ -3213,17 +3257,6 @@ Possible values:
 
 Default value: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
-
-Possible values:
-
-- 0 — Working with geo data types is disabled.
-- 1 — Working with geo data types is enabled.
-
-Default value: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -3465,7 +3498,7 @@ Default value: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
-Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
 
 Possible values:
 
@@ -3566,7 +3599,7 @@ SETTINGS index_granularity = 8192 │
 
 ## external_table_functions_use_nulls {#external-table-functions-use-nulls}
 
-Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
 
 Possible values:
 
@@ -3791,8 +3824,8 @@ Result:
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
-- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md/#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md/#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md/#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md/#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md/#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md/#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md/#tolastdayofmonth).
-- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md/#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md/#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md/#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md/#timeslot).
+- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) and [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
+- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Possible values:
 
@@ -4223,3 +4256,12 @@ Possible values:
 - false — Disallow.
 
 Default value: `false`.
+
+## zstd_window_log_max
+
+Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
+
+Type: Int64
+
+Default: 0
+
