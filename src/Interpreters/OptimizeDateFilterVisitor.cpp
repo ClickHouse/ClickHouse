@@ -10,14 +10,37 @@
 namespace DB
 {
 
-ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & converter, const String & column, UInt64 year)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const String & converter, const String & column, UInt64 compare_to)
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
-    if (converter != "toYear") return {};
+    String start_date;
+    String end_date;
 
-    String start_date = date_lut.dateToString(date_lut.makeDayNum(year, 1, 1));
-    String end_date = date_lut.dateToString(date_lut.makeDayNum(year, 12, 31));
+    if (converter == "toYear")
+    {
+        UInt64 year = compare_to;
+        start_date = date_lut.dateToString(date_lut.makeDayNum(year, 1, 1));
+        end_date = date_lut.dateToString(date_lut.makeDayNum(year, 12, 31));
+    }
+    else if (converter == "toYYYYMM")
+    {
+        UInt64 year = compare_to / 100;
+        UInt64 month = compare_to % 100;
+
+        if (month == 0 || month > 12) return {};
+
+        static constexpr UInt8 days_of_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+        bool leap_year = (year & 3) == 0 && (year % 100 || (year % 400 == 0 && year));
+
+        start_date = date_lut.dateToString(date_lut.makeDayNum(year, month, 1));
+        end_date = date_lut.dateToString(date_lut.makeDayNum(year, month, days_of_month[month - 1] + (leap_year && month == 2)));
+    }
+    else
+    {
+        return {};
+    }
 
     if (comparator == "equals")
     {
@@ -82,7 +105,7 @@ bool rewritePredicateInPlace(ASTFunction & function, ASTPtr & ast)
     {
         if (const auto * func = function.arguments->children[i]->as<ASTFunction>(); func)
         {
-            if (func->name == "toYear")
+            if (func->name == "toYear" || func->name == "toYYYYMM")
             {
                 func_id = i;
             }
