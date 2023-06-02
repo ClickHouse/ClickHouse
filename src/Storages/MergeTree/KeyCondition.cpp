@@ -1320,6 +1320,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
                 arguments.push_back(const_arg);
                 kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
             }
+
+            /// If constant arg of binary operator is NULL, there will be no monotonicity.
+            if (const_arg.column->isNullAt(0))
+                return false;
         }
         else
             arguments.push_back({ nullptr, key_column_type, "" });
