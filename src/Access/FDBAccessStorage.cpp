@@ -2,6 +2,7 @@
 #include <Access/AccessEntityConvertor.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <utility>
 #include <Common/FoundationDB/FoundationDBCommon.h>
 
 namespace DB
@@ -32,59 +33,13 @@ std::vector<UUID> FDBAccessStorage::findAllImpl(AccessEntityType type) const
     return res;
 }
 
-void FDBAccessStorage::prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const
-{
-    if (!remove && !entry.entity)
-        return;
 
-    const AccessEntityPtr entity = remove ? nullptr : entry.entity;
-    for (const auto & handler : entry.handlers_by_id)
-        notifications.push_back({handler, id, entity});
-
-    for (const auto & handler : handlers_by_type[static_cast<size_t>(entry.type)])
-        notifications.push_back({handler, id, entity});
-}
-
-scope_guard FDBAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
-{
-    std::lock_guard lock{mutex};
-    auto it = entries_by_id.find(id);
-    if (it == entries_by_id.end())
-        return {};
-
-    const Entry & entry = it->second;
-    auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
-
-    return [this, id, handler_it] {
-        std::lock_guard lock2{mutex};
-        auto it2 = entries_by_id.find(id);
-        if (it2 != entries_by_id.end())
-        {
-            const Entry & entry2 = it2->second;
-            entry2.handlers_by_id.erase(handler_it);
-        }
-    };
-}
-
-scope_guard FDBAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    std::lock_guard lock{mutex};
-    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    handlers.push_back(handler);
-    auto handler_it = std::prev(handlers.end());
-
-    return [this, type, handler_it] {
-        std::lock_guard lock2{mutex};
-        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
-        handlers2.erase(handler_it);
-    };
-}
-
-FDBAccessStorage::FDBAccessStorage(const String & storage_name_, std::shared_ptr<MetadataStoreFoundationDB> meta_store_)
-    : IAccessStorage(storage_name_), meta_store(meta_store_)
+FDBAccessStorage::FDBAccessStorage(
+    const String & storage_name_, AccessChangesNotifier & changes_notifier_, std::shared_ptr<MetadataStoreFoundationDB> meta_store_)
+    : IAccessStorage(storage_name_), meta_store(std::move(meta_store_)), changes_notifier(changes_notifier_)
 {
     if (!meta_store)
-        throw Exception("Can't initialize FoundationDBAccessStorage without FoundationDB", ErrorCodes::FDB_META_EXCEPTION);
+        throw Exception(ErrorCodes::FDB_META_EXCEPTION, "Can't initialize FoundationDBAccessStorage without FoundationDB");
 }
 
 bool FDBAccessStorage::exists(const UUID & id) const
@@ -93,28 +48,8 @@ bool FDBAccessStorage::exists(const UUID & id) const
     return entries_by_id.count(id);
 }
 
-bool FDBAccessStorage::hasSubscription(const UUID & id) const
-{
-    std::lock_guard lock{mutex};
-    auto it = entries_by_id.find(id);
-    if (it != entries_by_id.end())
-    {
-        const Entry & entry = it->second;
-        return !entry.handlers_by_id.empty();
-    }
-    return false;
-}
 
-bool FDBAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    std::lock_guard lock{mutex};
-    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    return !handlers.empty();
-}
-
-
-bool FDBAccessStorage::removeNoLock(
-    const UUID & id, bool throw_if_not_exists, Notifications & notifications, const DeleteEntityInFDBFunc & remove_func)
+bool FDBAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, const DeleteEntityInFDBFunc & remove_func)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -126,26 +61,23 @@ bool FDBAccessStorage::removeNoLock(
     }
 
     Entry & entry = it->second;
-    AccessEntityType & type = entry.type;
+    AccessEntityType type = entry.type;
 
     if (remove_func != nullptr)
         remove_func(id, type);
 
     /// Do removing in memory
-    prepareNotifications(id, entry, true, notifications);
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(entry.type)];
     entries_by_name.erase(entry.name);
     entries_by_id.erase(it);
+
+    changes_notifier.onEntityRemoved(id, type);
     return true;
 }
 
 
 bool FDBAccessStorage::updateNoLock(
-    const UUID & id,
-    const UpdateFunc & update_func,
-    bool throw_if_not_exists,
-    Notifications & notifications,
-    const WriteEntityInFDBFunc & write_func)
+    const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, const WriteEntityInFDBFunc & write_func)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -167,22 +99,34 @@ bool FDBAccessStorage::updateNoLock(
     if (*new_entity == *old_entity)
         return true;
 
-    if (new_entity->getName() != old_entity->getName())
-    {
-        auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
-        auto it2 = entries_by_name.find(new_entity->getName());
-        if (it2 != entries_by_name.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
+    const String & new_name = new_entity->getName();
+    const String & old_name = old_entity->getName();
+    const AccessEntityType type = entry.type;
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
 
-        entries_by_name.erase(old_entity->getName());
-        entries_by_name[new_entity->getName()] = &entry;
+    bool name_changed = (new_name != old_name);
+
+    if (name_changed)
+    {
+        if (entries_by_name.contains(new_name))
+            throwNameCollisionCannotRename(type, old_name, new_name);
+        if (write_func != nullptr)
+            write_func(id, *new_entity);
     }
 
     if (write_func != nullptr)
         write_func(id, *new_entity);
     entry.entity = new_entity;
 
-    prepareNotifications(id, entry, false, notifications);
+    if (name_changed)
+    {
+        entries_by_name.erase(entry.name);
+        entry.name = new_name;
+        entries_by_name[entry.name] = &entry;
+    }
+
+    changes_notifier.onEntityUpdated(id, new_entity);
+
     return true;
 }
 
@@ -191,15 +135,18 @@ bool FDBAccessStorage::insertNoLock(
     const AccessEntityPtr & new_entity,
     bool replace_if_exists,
     bool throw_if_exists,
-    Notifications & notifications,
     const WriteEntityInFDBFunc & write_func)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
 
+
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     auto it_by_name = entries_by_name.find(name);
     bool name_collision = (it_by_name != entries_by_name.end());
+    UUID id_by_name;
+    if (name_collision)
+        id_by_name = it_by_name->second->id;
 
     if (name_collision && !replace_if_exists)
     {
@@ -210,31 +157,66 @@ bool FDBAccessStorage::insertNoLock(
     }
 
     auto it_by_id = entries_by_id.find(id);
-    if (it_by_id != entries_by_id.end())
+    bool id_collision = (it_by_id != entries_by_id.end());
+    if (id_collision && !replace_if_exists)
     {
-        const auto & existing_entry = it_by_id->second;
-        throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name);
+        if (throw_if_exists)
+        {
+            const auto & existing_entry = it_by_id->second;
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name);
+        }
+        else
+            return false;
     }
 
-    if (write_func != nullptr)
-        write_func(id, *new_entity);
 
-    if (name_collision && replace_if_exists)
+    /// Remove collisions if necessary.
+    if (name_collision && (id_by_name != id))
     {
-        const auto & existing_entry = *(it_by_name->second);
-        removeNoLock(existing_entry.id, false, notifications);
+        assert(replace_if_exists);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ false);
+    }
+
+    if (id_collision)
+    {
+        assert(replace_if_exists);
+        auto & existing_entry = it_by_id->second;
+        if (existing_entry.type == new_entity->getType())
+        {
+            if (!existing_entry.entity || (*existing_entry.entity != *new_entity))
+            {
+                if (write_func != nullptr)
+                    write_func(id, *new_entity);
+                if (existing_entry.name != new_entity->getName())
+                {
+                    entries_by_name.erase(existing_entry.name);
+                    [[maybe_unused]] bool inserted = entries_by_name.emplace(new_entity->getName(), &existing_entry).second;
+                    assert(inserted);
+                }
+                existing_entry.entity = new_entity;
+                changes_notifier.onEntityUpdated(id, new_entity);
+            }
+            return true;
+        }
+
+        removeNoLock(id, /* throw_if_not_exists= */ false);
     }
 
     /// Do insertion.
+    if (write_func != nullptr)
+        write_func(id, *new_entity);
+
     auto & entry = entries_by_id[id];
     entry.id = id;
-    entry.entity = new_entity;
     entry.type = type;
     entry.name = name;
+    entry.entity = new_entity;
     entries_by_name[entry.name] = &entry;
-    prepareNotifications(id, entry, false, notifications);
+
+    changes_notifier.onEntityAdded(id, new_entity);
     return true;
 }
+
 
 /// Writes the proto value of a specified access entity into the entry in foundationdb.
 void FDBAccessStorage::tryInsertEntityToFDB(const UUID & id, const IAccessEntity & entity) const
@@ -276,7 +258,7 @@ void FDBAccessStorage::tryDeleteEntityOnFDB(const UUID & id, const AccessEntityT
     catch (FoundationDBException & e)
     {
         e.addMessage(fmt::format("while removing entity from FoundationDB happens error!"));
-        throw Exception("Couldn't delete UUID_" + toString(id), ErrorCodes::FDB_META_EXCEPTION);
+        throw Exception(ErrorCodes::FDB_META_EXCEPTION, "Couldn't delete UUID_" + toString(id));
     }
 }
 
@@ -311,3 +293,5 @@ void FDBAccessStorage::tryClearEntitiesOnFDB() const
     }
 }
 }
+
+

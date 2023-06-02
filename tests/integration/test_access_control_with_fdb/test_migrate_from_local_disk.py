@@ -3,18 +3,18 @@ from helpers.cluster import ClickHouseCluster
 import os
 
 cluster = ClickHouseCluster(__file__, "test_migrate")
-instance = cluster.add_instance(
-    'instance',
-    base_config_dir="configs",
-    user_configs=["configs/users.d/alice.xml"],
-    with_foundationdb=True,
-    stay_alive=True
-)
 
 
 @pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+def start_cluster():
     try:
+        instance = cluster.add_instance(
+            'instance',
+            base_config_dir="configs",
+            user_configs=["configs/users.d/alice.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
         cluster.start(destroy_dirs=True)
 
         yield cluster
@@ -23,7 +23,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_migrate_from_local():
+def test_migrate_from_local(start_cluster):
+    instance = start_cluster.instances["instance"]
     user_name = "test"
     instance.query(f"CREATE USER {user_name}")
 

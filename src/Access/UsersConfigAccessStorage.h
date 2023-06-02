@@ -68,23 +68,15 @@ private:
 public:
     static UUID generateID(AccessEntityType type, const String & name);
     static UUID generateID(const IAccessEntity & entity);
-    static UserPtr parseUser(
-        const Poco::Util::AbstractConfiguration & config, const String & user_name, bool allow_no_password, bool allow_plaintext_password);
-    static std::vector<AccessEntityPtr>
-    parseUsers(const Poco::Util::AbstractConfiguration & config, bool allow_no_password, bool allow_plaintext_password);
+    static UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password);
+    static std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password);
     static QuotaPtr
     parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids);
     static std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config);
-    static std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config);
-    static SettingsProfileElements parseSettingsConstraints(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & path_to_constraints,
-        Fn<void(std::string_view)> auto && check_setting_name_function);
-    static std::shared_ptr<SettingsProfile> parseSettingsProfile(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & profile_name,
-        Fn<void(std::string_view)> auto && check_setting_name_function);
-    static std::vector<AccessEntityPtr>
-    parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Fn<void(std::string_view)> auto && check_setting_name_function);
+    static std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, bool users_without_row_policies_can_read_rows);
+    static SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config, const String & path_to_constraints, const AccessControl & access_control);
+    static std::shared_ptr<SettingsProfile> parseSettingsProfile(const Poco::Util::AbstractConfiguration & config, const String & profile_name, const std::unordered_set<UUID> & allowed_parent_profile_ids, const AccessControl & access_control);
+    static std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, const std::unordered_set<UUID> & allowed_parent_profile_ids, const AccessControl & access_control);
+    static std::unordered_set<UUID> getAllowedSettingsProfileIDs(const Poco::Util::AbstractConfiguration & config);
 };
 }

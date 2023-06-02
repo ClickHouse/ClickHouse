@@ -7,6 +7,7 @@
 #include <base/FnTraits.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <utility>
 #include <Poco/MD5Engine.h>
 #include <Common/FoundationDB/FoundationDBCommon.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -17,18 +18,15 @@ namespace DB
 
 ConfigFDBAccessStorage::ConfigFDBAccessStorage(
     const String & storage_name_,
-    const String & config_path_,
+    AccessChangesNotifier & changes_notifier_,
+    AccessControl & access_control_,
     const Poco::Util::AbstractConfiguration & config_,
-    const std::function<FoundationDBPtr()> & get_fdb_function_,
-    const CheckSettingNameFunction & check_setting_name_function_,
-    const IsNoPasswordFunction & is_no_password_allowed_function_,
-    const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_)
-    : FDBAccessStorage(storage_name_, get_fdb_function_())
-    , check_setting_name_function(check_setting_name_function_)
-    , is_no_password_allowed_function(is_no_password_allowed_function_)
-    , is_plaintext_password_allowed_function(is_plaintext_password_allowed_function_)
+    const String & config_path_,
+    const std::function<FoundationDBPtr()> & get_fdb_function_)
+    : FDBAccessStorage(storage_name_, changes_notifier_, get_fdb_function_())
     , config_path(config_path_)
     , config(const_cast<Poco::Util::AbstractConfiguration &>(config_))
+    , access_control(access_control_)
 {
     readonly = true;
     scope = AccessEntityScope::CONFIG;
@@ -49,34 +47,29 @@ ConfigFDBAccessStorage::ConfigFDBAccessStorage(
 }
 
 ConfigFDBAccessStorage::ConfigFDBAccessStorage(
-    const String & config_path_,
+    AccessChangesNotifier & changes_notifier_,
+    AccessControl & access_control_,
     const Poco::Util::AbstractConfiguration & config_,
-    const std::function<FoundationDBPtr()> & get_fdb_function_,
-    const CheckSettingNameFunction & check_setting_name_function_,
-    const IsNoPasswordFunction & is_no_password_allowed_function_,
-    const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_)
+    const String & config_path_,
+    const std::function<FoundationDBPtr()> & get_fdb_function_)
     : ConfigFDBAccessStorage(
         STORAGE_TYPE,
-        config_path_,
+        changes_notifier_,
+        access_control_,
         config_,
-        get_fdb_function_,
-        check_setting_name_function_,
-        is_no_password_allowed_function_,
-        is_plaintext_password_allowed_function_)
+        config_path_,
+        get_fdb_function_)
 {
 }
 
 /// Sets all entities at once when starts up no matter what is first-time or not.
 void ConfigFDBAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
-    Notifications notifications;
-    SCOPE_EXIT({ notify(notifications); });
-
     std::lock_guard lock{mutex};
-    setAllNoLock(all_entities, notifications);
+    setAllNoLock(all_entities);
 }
 
-void ConfigFDBAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications)
+void ConfigFDBAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
     /// To support future modifiable features, There will be considered the cases of having conflicts or unused access entities.
     auto [not_used_ids, conflicting_ids] = getUnusedAndConflictingEntityComparedWithMemory(all_entities);
@@ -89,11 +82,11 @@ void ConfigFDBAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, Acce
     /// Remove not-used and conflicted entities.
     for (const auto & id : ids_to_remove)
         if (is_first_startup)
-            removeNoLock(id, /* throw_if_not_exists = */ false, notifications, [this](const UUID & id_, const AccessEntityType & type_) {
-                tryDeleteEntityOnFDB(id_, type_);
-            });
+            removeNoLock(id, /* throw_if_not_exists = */ false, [this](const UUID & id_, const AccessEntityType & type_) {
+                             tryDeleteEntityOnFDB(id_, type_);
+                         });
         else
-            removeNoLock(id, /* throw_if_not_exists = */ false, notifications);
+            removeNoLock(id, /* throw_if_not_exists = */ false);
 
     /// Insert or update entities.
     for (const auto & [id, entity] : all_entities)
@@ -109,14 +102,12 @@ void ConfigFDBAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, Acce
                         id,
                         [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
                         /* throw_if_not_exists = */ true,
-                        notifications,
                         [this](const UUID & id_, const IAccessEntity & entity_) { tryUpdateEntityOnFDB(id_, entity_); });
                 else
                     updateNoLock(
                         id,
                         [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
-                        /* throw_if_not_exists = */ true,
-                        notifications);
+                        /* throw_if_not_exists = */ true);
             }
         }
         else
@@ -127,10 +118,9 @@ void ConfigFDBAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, Acce
                     entity,
                     /* replace_if_exists = */ false,
                     /* throw_if_exists = */ true,
-                    notifications,
                     [this](const UUID & id_, const IAccessEntity & entity_) { tryInsertEntityToFDB(id_, entity_); });
             else
-                insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true, notifications);
+                insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
         }
     }
 }
@@ -212,18 +202,20 @@ AccessEntityPtr ConfigFDBAccessStorage::readImpl(const UUID & id, bool throw_if_
 }
 
 std::vector<std::pair<UUID, AccessEntityPtr>>
-ConfigFDBAccessStorage::parseEntitiesFromConfig(const Poco::Util::AbstractConfiguration & config)
+ConfigFDBAccessStorage::parseEntitiesFromConfig(const Poco::Util::AbstractConfiguration & config_)
 {
-    bool no_password_allowed = is_no_password_allowed_function();
-    bool plaintext_password_allowed = is_plaintext_password_allowed_function();
+    auto allowed_profile_ids = UsersConfigAccessStorage::getAllowedSettingsProfileIDs(config_);
+    bool no_password_allowed = access_control.isNoPasswordAllowed();
+    bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
+
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-    for (const auto & entity : UsersConfigAccessStorage::parseUsers(config, no_password_allowed, plaintext_password_allowed))
+    for (const auto & entity : UsersConfigAccessStorage::parseUsers(config_, allowed_profile_ids, no_password_allowed, plaintext_password_allowed))
         all_entities.emplace_back(UsersConfigAccessStorage::generateID(*entity), entity);
-    for (const auto & entity : UsersConfigAccessStorage::parseQuotas(config))
+    for (const auto & entity : UsersConfigAccessStorage::parseQuotas(config_))
         all_entities.emplace_back(UsersConfigAccessStorage::generateID(*entity), entity);
-    for (const auto & entity : UsersConfigAccessStorage::parseRowPolicies(config))
+    for (const auto & entity : UsersConfigAccessStorage::parseRowPolicies(config_, access_control.isEnabledUsersWithoutRowPoliciesCanReadRows()))
         all_entities.emplace_back(UsersConfigAccessStorage::generateID(*entity), entity);
-    for (const auto & entity : UsersConfigAccessStorage::parseSettingsProfiles(config, check_setting_name_function))
+    for (const auto & entity : UsersConfigAccessStorage::parseSettingsProfiles(config_, allowed_profile_ids, access_control))
         all_entities.emplace_back(UsersConfigAccessStorage::generateID(*entity), entity);
 
     return all_entities;

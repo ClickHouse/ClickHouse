@@ -3,24 +3,20 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from textwrap import dedent
 
-cluster = ClickHouseCluster(__file__, "test_normal_operations")
-instance = cluster.add_instance(
-    'instance',
-    base_config_dir="configs",
-    main_configs=["configs/config.d/foundationdb.xml"],
-    user_configs=["configs/users.d/alice.xml"],
-    with_foundationdb=True,
-    stay_alive=True
-)
-
+cluster = ClickHouseCluster(__file__)
 
 @pytest.fixture(scope="module", autouse=True)
-def started_cluster():
+def start_cluster():
     try:
+        instance = cluster.add_instance(
+            "instance",
+            base_config_dir="configs",
+            main_configs=["configs/config.d/foundationdb.xml"],
+            user_configs=["configs/users.d/alice.xml"],
+            with_foundationdb=True,
+            stay_alive=True
+        )
         cluster.start(destroy_dirs=True)
-
-        instance.query("CREATE TABLE test_table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
-        instance.query("INSERT INTO test_table VALUES (1,5), (2,10)")
 
         yield cluster
 
@@ -28,21 +24,32 @@ def started_cluster():
         cluster.shutdown()
 
 
+def initialize_table(instance):
+    instance.query(
+        "CREATE TABLE test_table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query("INSERT INTO test_table VALUES (1,5), (2,10)")
+
+
 @pytest.fixture(autouse=True)
-def cleanup_after_test():
+def cleanup_after_test(start_cluster):
     try:
         yield
     finally:
+        instance = start_cluster.instances["instance"]
         instance.query("DROP USER IF EXISTS A, B")
         instance.query("DROP ROLE IF EXISTS R1, R2, R3, R4")
 
 
-def test_load_access_storage_on_fdb():
+def test_load_access_storage_on_fdb(start_cluster):
+    instance = start_cluster.instances["instance"]
+    initialize_table(instance)
     assert instance.query(f"SELECT name, type FROM system.user_directories") == TSV(
         [['config in fdb', 'ConfigFDBAccessStorage'], ['sql_driven in fdb', 'SqlDrivenFDBAccessStorage']])
 
 
-def test_create_acl_entity_have_correct_privilege():
+def test_create_acl_entity_have_correct_privilege(start_cluster):
+    instance = start_cluster.instances["instance"]
     instance.query("CREATE USER A")
     instance.query('CREATE ROLE R1')
 
@@ -58,7 +65,9 @@ def test_create_acl_entity_have_correct_privilege():
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
 
 
-def test_combine_privileges():
+def test_combine_privileges(start_cluster):
+    instance = start_cluster.instances["instance"]
+    # initialize_table(instance)
     instance.query("CREATE USER A ")
     instance.query('CREATE ROLE R1')
     instance.query('CREATE ROLE R2')
@@ -75,7 +84,8 @@ def test_combine_privileges():
     assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
 
 
-def test_grant_role_to_role():
+def test_grant_role_to_role(start_cluster):
+    instance = start_cluster.instances["instance"]
     instance.query("CREATE USER A")
     instance.query('CREATE ROLE R1')
     instance.query('CREATE ROLE R2')
@@ -92,7 +102,8 @@ def test_grant_role_to_role():
     assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
 
 
-def test_revoke_requires_admin_option():
+def test_revoke_requires_admin_option(start_cluster):
+    instance = start_cluster.instances["instance"]
     instance.query("CREATE USER A, B")
     instance.query("CREATE ROLE R1, R2")
 
@@ -134,7 +145,8 @@ def test_revoke_requires_admin_option():
     assert instance.query("SHOW GRANTS FOR B") == ""
 
 
-def test_normal_operations_on_sql_driven():
+def test_normal_operations_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
     user_name = "rose"
 
     instance.query(f"CREATE USER `{user_name}`")
@@ -153,7 +165,8 @@ def test_normal_operations_on_sql_driven():
     assert instance.query(f"SELECT COUNT() FROM system.users WHERE name = '{new_user_name}'").strip() == "1"
 
 
-def test_create_should_persist_on_sql_driven():
+def test_create_should_persist_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
     user_name = "test"
     instance.query(f"CREATE USER '{user_name}'")
     instance.query(f"DROP USER IF EXISTS '{user_name}'")
@@ -162,7 +175,8 @@ def test_create_should_persist_on_sql_driven():
     assert instance.query(f"SELECT count() FROM system.users WHERE name = '{user_name}'").strip() == "0"
 
 
-def test_alter_should_persist_on_sql_driven():
+def test_alter_should_persist_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
     quota_name = "qA"
     quota_name_new = "QuotaA"
 
@@ -175,7 +189,8 @@ def test_alter_should_persist_on_sql_driven():
         f"SELECT name FROM system.quotas WHERE storage = 'sql_driven in fdb'").strip() == f"{quota_name_new}"
 
 
-def test_drop_should_persist_on_sql_driven():
+def test_drop_should_persist_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
     role_name = "accountant"
 
     instance.query(dedent(f"""\
@@ -191,7 +206,9 @@ def test_drop_should_persist_on_sql_driven():
     assert instance.query(f"SELECT count() FROM system.roles WHERE name = '{role_name}'").strip() == "0"
 
 
-def test_startup_should_persist_on_config():
+def test_startup_should_persist_on_config(start_cluster):
+    instance = start_cluster.instances["instance"]
+    # initialize_table(instance)
     assert instance.query(f"SELECT name, storage FROM system.users WHERE name = 'alice'") == TSV(
         [["alice", "config in fdb"]]
     )
@@ -200,7 +217,8 @@ def test_startup_should_persist_on_config():
     )
 
 
-def test_restart_should_persist_on_config():
+def test_restart_should_persist_on_config(start_cluster):
+    instance = start_cluster.instances["instance"]
     assert instance.query(f"SELECT name, storage FROM system.users WHERE name = 'alice'") == TSV(
         [["alice", "config in fdb"]]
     )
@@ -218,7 +236,8 @@ def test_restart_should_persist_on_config():
     )
 
 
-def test_readonly_on_config():
+def test_readonly_on_config(start_cluster):
+    instance = start_cluster.instances["instance"]
     assert instance.query(f"SELECT name, storage FROM system.users WHERE name = 'alice'") == TSV(
         [["alice", "config in fdb"]]
     )
@@ -244,7 +263,8 @@ def test_readonly_on_config():
            in instance.query_and_get_error(f"ALTER USER alice DEFAULT ROLE {role_name}")
 
 
-def create_entities():
+def create_entities(start_cluster):
+    instance = start_cluster.instances["instance"]
     instance.query("CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 123456789 MIN 100000000 MAX 200000000")
     instance.query("CREATE USER u1 SETTINGS PROFILE s1")
     instance.query("CREATE ROLE rx SETTINGS PROFILE s1")
@@ -255,7 +275,8 @@ def create_entities():
 
 
 @pytest.fixture(autouse=True)
-def drop_entities():
+def drop_entities(start_cluster):
+    instance = start_cluster.instances["instance"]
     instance.query("DROP USER IF EXISTS u1, u2")
     instance.query("DROP ROLE IF EXISTS rx, ry")
     instance.query("DROP ROW POLICY IF EXISTS p ON mydb.mytable")
@@ -263,8 +284,9 @@ def drop_entities():
     instance.query("DROP SETTINGS PROFILE IF EXISTS s1, s2")
 
 
-def test_create_on_sql_driven():
-    create_entities()
+def test_create_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
+    create_entities(start_cluster)
 
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS PROFILE s1\n"
@@ -288,8 +310,9 @@ def test_create_on_sql_driven():
     check()
 
 
-def test_alter_on_sql_driven():
-    create_entities()
+def test_alter_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
+    create_entities(start_cluster)
     instance.restart_clickhouse()
 
     instance.query("CREATE ROLE ry")
@@ -312,7 +335,7 @@ def test_alter_on_sql_driven():
         assert instance.query("SHOW GRANTS FOR rx") == "GRANT SELECT ON mydb.* TO rx WITH GRANT OPTION\n"
         assert instance.query("SHOW GRANTS FOR ry") == "GRANT rx TO ry WITH ADMIN OPTION\n"
         assert instance.query(
-            "SHOW CREATE SETTINGS PROFILE s1") == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 READONLY\n"
+            "SHOW CREATE SETTINGS PROFILE s1") == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 CONST\n"
         assert instance.query(
             "SHOW CREATE SETTINGS PROFILE s2") == "CREATE SETTINGS PROFILE s2 SETTINGS INHERIT s1 TO u2\n"
 
@@ -321,8 +344,9 @@ def test_alter_on_sql_driven():
     check()
 
 
-def test_drop_on_sql_driven():
-    create_entities()
+def test_drop_on_sql_driven(start_cluster):
+    instance = start_cluster.instances["instance"]
+    create_entities(start_cluster)
     instance.restart_clickhouse()
 
     instance.query("DROP USER u2")

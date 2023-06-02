@@ -6,9 +6,6 @@
 #include <Access/SqlDrivenFDBAccessStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <base/logger_useful.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Common/FoundationDB/FoundationDBCommon.h>
 
 
@@ -20,17 +17,18 @@ namespace ErrorCodes
 }
 
 SqlDrivenFDBAccessStorage::SqlDrivenFDBAccessStorage(
-    const DB::String & local_directory_path_, const std::function<FoundationDBPtr()> & get_fdb_function_, bool readonly_)
-    : SqlDrivenFDBAccessStorage(STORAGE_TYPE, local_directory_path_, get_fdb_function_, readonly_)
+    AccessChangesNotifier & changes_notifier_, const DB::String & local_directory_path_, const std::function<FoundationDBPtr()> & get_fdb_function_, bool readonly_)
+    : SqlDrivenFDBAccessStorage(STORAGE_TYPE, changes_notifier_, local_directory_path_, get_fdb_function_, readonly_)
 {
 }
 
 SqlDrivenFDBAccessStorage::SqlDrivenFDBAccessStorage(
     const DB::String & storage_name_,
+    AccessChangesNotifier & changes_notifier_,
     const DB::String & local_directory_path_,
     const std::function<FoundationDBPtr()> & get_fdb_function_,
     bool readonly_)
-    : FDBAccessStorage(storage_name_, get_fdb_function_())
+    : FDBAccessStorage(storage_name_, changes_notifier_, get_fdb_function_())
 {
     local_directory_path = DiskAccessStorage::makeDirectoryPathCanonical(local_directory_path_);
     readonly = readonly_;
@@ -200,9 +198,6 @@ std::optional<String> SqlDrivenFDBAccessStorage::readNameImpl(const UUID & id, b
 
 std::optional<UUID> SqlDrivenFDBAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
-    Notifications notifications;
-    SCOPE_EXIT({ notify(notifications); });
-
     UUID id = generateRandomID();
     /// Check that we can insert
     if (readonly)
@@ -210,7 +205,7 @@ std::optional<UUID> SqlDrivenFDBAccessStorage::insertImpl(const AccessEntityPtr 
 
     std::lock_guard lock{mutex};
     if (insertNoLock(
-            id, new_entity, replace_if_exists, throw_if_exists, notifications, [this](const UUID & id_, const IAccessEntity & entity_) {
+            id, new_entity, replace_if_exists, throw_if_exists, [this](const UUID & id_, const IAccessEntity & entity_) {
                 tryInsertEntityToFDB(id_, entity_);
             }))
         return id;
@@ -220,9 +215,6 @@ std::optional<UUID> SqlDrivenFDBAccessStorage::insertImpl(const AccessEntityPtr 
 
 bool SqlDrivenFDBAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
-    Notifications notifications;
-    SCOPE_EXIT({ notify(notifications); });
-
     auto entity = read(id, throw_if_not_exists);
     if (!entity)
         return false;
@@ -230,16 +222,13 @@ bool SqlDrivenFDBAccessStorage::removeImpl(const UUID & id, bool throw_if_not_ex
         throwReadonlyCannotRemove(entity->getType(), entity->getName());
 
     std::lock_guard lock{mutex};
-    return removeNoLock(id, throw_if_not_exists, notifications, [this](const UUID & id_, const AccessEntityType & type_) {
-        tryDeleteEntityOnFDB(id_, type_);
-    });
+    return removeNoLock(id, throw_if_not_exists, [this](const UUID & id_, const AccessEntityType & type_) {
+                            tryDeleteEntityOnFDB(id_, type_);
+                        });
 }
 
 bool SqlDrivenFDBAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    Notifications notifications;
-    SCOPE_EXIT({ notify(notifications); });
-
     auto entity = read(id, throw_if_not_exists);
     if (!entity)
         return false;
@@ -247,9 +236,9 @@ bool SqlDrivenFDBAccessStorage::updateImpl(const UUID & id, const UpdateFunc & u
         throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 
     std::lock_guard lock{mutex};
-    return updateNoLock(id, update_func, throw_if_not_exists, notifications, [this](const UUID & id_, const IAccessEntity & entity_) {
-        tryUpdateEntityOnFDB(id_, entity_);
-    });
+    return updateNoLock(id, update_func, throw_if_not_exists, [this](const UUID & id_, const IAccessEntity & entity_) {
+                            tryUpdateEntityOnFDB(id_, entity_);
+                        });
 }
 
 bool SqlDrivenFDBAccessStorage::isPathEqual(const String & local_directory_path_) const
