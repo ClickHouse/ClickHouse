@@ -32,8 +32,9 @@ StoragePtr TableFunctionRedis::executeImpl(
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
 
+    String db_name = "redis" + getDatabaseName() + "_db_" + toString(configuration.db_index);
     auto storage = std::make_shared<StorageRedis>(
-        StorageID(toString(configuration.db_index), table_name), configuration, context, metadata, primary_key);
+        StorageID(db_name, table_name), configuration, context, metadata, primary_key);
     storage->startup();
     return storage;
 }
