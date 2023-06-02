@@ -46,7 +46,6 @@ CreatingSetStep::CreatingSetStep(
     , network_transfer_limits(std::move(network_transfer_limits_))
     , context(std::move(context_))
 {
-    std::cerr << StackTrace().toString() << std::endl;
 }
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
