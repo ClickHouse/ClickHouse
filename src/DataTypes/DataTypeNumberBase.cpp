@@ -32,20 +32,20 @@ bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 
 template <typename T>
 const std::map<std::string, std::string> DataTypeNumberBase<T>::mysqlTypeMap = {
-    {"UInt8", "tinyint unsigned"},
-    {"UInt16", "smallint unsigned"},
-    {"UInt32", "mediumint unsigned"},
-    {"UInt64", "bigint unsigned"},
-    {"UInt128", "text"},
-    {"UInt256", "text"},
-    {"Int8", "tinyint"},
-    {"Int16", "smallint"},
-    {"Int32", "int"},
-    {"Int64", "bigint"},
-    {"Int128", "text"},
-    {"Int256", "text"},
-    {"Float32", "float"},
-    {"Float64", "double"},
+    {"UInt8", "TINYINT UNSIGNED"},
+    {"UInt16", "SMALLINT UNSIGNED"},
+    {"UInt32", "MEDIUMINT UNSIGNEd"},
+    {"UInt64", "BIGINT UNSIGNED"},
+    {"UInt128", "TEXT"},
+    {"UInt256", "TEXT"},
+    {"Int8", "TINYINT"},
+    {"Int16", "SMALLINT"},
+    {"Int32", "INT"},
+    {"Int64", "BIGINT"},
+    {"Int128", "TEXT"},
+    {"Int256", "TEXT"},
+    {"Float32", "FLOAT"},
+    {"Float64", "DOUBLE"},
 };
 
 /// Explicit template instantiations - to avoid code bloat in headers.

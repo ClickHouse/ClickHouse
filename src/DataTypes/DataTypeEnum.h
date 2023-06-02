@@ -54,7 +54,7 @@ public:
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
-    const char * getMySQLName() const override { return my_sql_type_name.c_str(); }
+    const char * getSQLCompatibleName() const override { return my_sql_type_name.c_str(); }
 
     TypeIndex getTypeId() const override { return type_id; }
 

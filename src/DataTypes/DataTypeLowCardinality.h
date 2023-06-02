@@ -24,7 +24,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    const char * getMySQLName() const override { return mysql_name.c_str(); }
+    const char * getSQLCompatibleName() const override { return mysql_name.c_str(); }
 
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 

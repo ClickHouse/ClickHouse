@@ -30,9 +30,9 @@ public:
     {
         return "Array";
     }
-    const char * getMySQLName() const override
+    const char * getSQLCompatibleName() const override
     {
-        return "text";
+        return "TEXT";
     }
 
     bool canBeInsideNullable() const override
