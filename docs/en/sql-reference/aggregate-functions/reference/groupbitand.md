@@ -5,7 +5,7 @@ sidebar_position: 125
 
 # groupBitAnd
 
-Applies bitwise `AND` for series of numbers.
+Applies bit-wise `AND` for series of numbers.
 
 ``` sql
 groupBitAnd(expr)

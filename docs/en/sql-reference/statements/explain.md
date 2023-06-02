@@ -127,7 +127,7 @@ CROSS JOIN system.numbers AS c
 
 Settings:
 
-- `run_passes` — Run all query tree passes before dumping the query tree. Defaul: `1`.
+- `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
 - `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
 - `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
 
@@ -475,5 +475,5 @@ Result:
 ```
 
 :::note    
-The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
+The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::
