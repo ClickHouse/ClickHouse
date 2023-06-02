@@ -238,11 +238,11 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 {
     UInt64 limit = ann_condition.getLimit();
     UInt64 index_granularity = ann_condition.getIndexGranularity();
-    std::optional<float> comp_dist = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
+    std::optional<float> comparison_distance = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
         ? std::optional<float>(ann_condition.getComparisonDistanceForWhereQuery())
         : std::nullopt;
 
-    if (comp_dist && comp_dist.value() < 0)
+    if (comparison_distance && comparison_distance.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
     std::vector<float> reference_vector = ann_condition.getReferenceVector();
@@ -269,7 +269,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     std::unordered_set<size_t> granule_numbers;
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
-        if (comp_dist && distances[i] > comp_dist)
+        if (comparison_distance && distances[i] > comparison_distance)
             continue;
         granule_numbers.insert(neighbors[i] / index_granularity);
     }
