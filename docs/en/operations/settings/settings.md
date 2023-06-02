@@ -1050,6 +1050,12 @@ Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
 
+## handshake_timeout_ms {#handshake-timeout-ms}
+
+Timeout in milliseconds for receiving Hello packet from replicas during handshake.
+
+Default value: 10000.
+
 ## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
