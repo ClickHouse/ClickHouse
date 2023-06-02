@@ -41,7 +41,7 @@ std::string DataTypeEnum<Type>::generateMySQLName(const Values & values)
 {
     WriteBufferFromOwnString out;
 
-    writeString("enum", out);
+    writeString("ENUM", out);
     writeChar('(', out);
 
     auto first = true;

@@ -18,7 +18,7 @@ public:
     static constexpr auto type_id = TypeIndex::UUID;
 
     const char * getFamilyName() const override { return "UUID"; }
-    const char * getMySQLName() const override { return "char"; }
+    const char * getSQLCompatibleName() const override { return "CHAR"; }
 
     TypeIndex getTypeId() const override { return type_id; }
 

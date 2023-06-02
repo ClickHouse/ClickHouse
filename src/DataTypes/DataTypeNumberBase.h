@@ -27,7 +27,7 @@ public:
     using ColumnType = ColumnVector<T>;
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    const char * getMySQLName() const override { return mysqlTypeMap.at(TypeName<T>.data()).c_str(); }
+    const char * getSQLCompatibleName() const override { return mysqlTypeMap.at(TypeName<T>.data()).c_str(); }
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
     Field getDefault() const override;
