@@ -82,7 +82,7 @@ log2(x)
 
 ## exp10
 
-Returns 10 to the power of the given argumetn
+Returns 10 to the power of the given argument.
 
 **Syntax**
 
