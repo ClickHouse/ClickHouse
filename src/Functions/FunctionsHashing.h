@@ -91,18 +91,12 @@ namespace impl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
-        {
-            const auto & key0col_data = key0col->getData();
-            ret.key0 = key0col_data[0];
-        }
+            ret.key0 = key0col->get64(0);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
 
         if (const auto * key1col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(1))))
-        {
-            const auto & key1col_data = key1col->getData();
-            ret.key1 = key1col_data[0];
-        }
+            ret.key1 = key1col->get64(0);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
 
@@ -1425,9 +1419,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
-
-        if (input_rows_count == 0)
-            return col_to;
 
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
