@@ -85,12 +85,12 @@ public:
 
     const String & getBaseDirectory() const { return path; }
 
-    String getPathInLocalCache(
+    String getPathForFileSegment(
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind) const;
 
-    String getPathInLocalCache(const Key & key) const;
+    String getPathForKey(const Key & key) const;
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateCacheMetadataFunc && func);
