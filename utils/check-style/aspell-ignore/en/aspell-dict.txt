@@ -1453,6 +1453,7 @@ gRPC
 gccMurmurHash
 gcem
 generateRandom
+generateRandomStructure
 generateULID
 generateUUIDv
 geoDistance
