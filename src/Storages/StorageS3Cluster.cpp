@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Sources/RemoteSource.h>

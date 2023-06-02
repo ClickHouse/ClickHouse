@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 bool hasJoin(const ASTSelectQuery & select)
