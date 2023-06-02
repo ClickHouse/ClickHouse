@@ -208,7 +208,7 @@ bool checkPermissionsImpl()
     try
     {
         ::taskstats stats{};
-        TaskStatsInfoGetter().getStat(stats, static_cast<int>(getThreadId()));
+        TaskStatsInfoGetter().getStat(stats, static_cast<pid_t>(getThreadId()));
     }
     catch (const Exception & e)
     {
