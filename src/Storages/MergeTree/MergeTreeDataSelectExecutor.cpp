@@ -954,7 +954,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     if (use_skip_indexes && settings.ignore_data_skipping_indices.changed)
     {
         const auto & indices = settings.ignore_data_skipping_indices.toString();
-        Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
+        Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
         IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
         Expected expected;
 
