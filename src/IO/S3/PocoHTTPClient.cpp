@@ -138,7 +138,9 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000) /// receive timeout.
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// receive timeout.
+          Poco::Timespan(client_configuration.tcpKeepAliveIntervalMs * 1000),  /// tcp keep alive timeout.
+          client_configuration.http_keep_alive /// http keep alive timeout.
           ))
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
@@ -147,6 +149,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , get_request_throttler(client_configuration.get_request_throttler)
     , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
+    , per_endpoint_pool_size(client_configuration.per_endpoint_pool_size)
 {
 }
 
@@ -303,30 +306,28 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
             auto request_configuration = per_request_configuration(request);
+
+            bool resolve_host = true;
+            Poco::URI proxy_uri;
 
             if (!request_configuration.proxy_host.empty())
             {
+                proxy_uri.setScheme(Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme));
+                proxy_uri.setHost(request_configuration.proxy_host);
+                proxy_uri.setPort(request_configuration.proxy_port);
+
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-
-                /// Reverse proxy can replace host header with resolved ip address instead of host name.
-                /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
-                bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
-
-                session->setProxy(
-                    request_configuration.proxy_host,
-                    request_configuration.proxy_port,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme),
-                    use_tunnel
-                );
+                resolve_host = false;
             }
-            else
-            {
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
-            }
+
+            auto session = makePooledHTTPSession(target_uri, proxy_uri, timeouts, per_endpoint_pool_size, resolve_host);
+
+            /// just for the draft PR
+            chassert(timeouts.http_keep_alive_timeout.totalMilliseconds() > 0);
+            chassert(session->getKeepAlive());
+            chassert(session->getKeepAliveTimeout().totalMilliseconds() > 0);
 
             /// In case of error this address will be written to logs
             request.SetResolvedRemoteHost(session->getResolvedAddress());

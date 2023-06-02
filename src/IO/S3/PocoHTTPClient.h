@@ -52,6 +52,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
     HTTPHeaderEntries extra_headers;
+    Poco::Timespan http_keep_alive = Poco::Timespan(DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, 0);
+    size_t per_endpoint_pool_size = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_S3_ENDPOINT;
 
     void updateSchemeAndRegion();
 
@@ -76,6 +78,7 @@ class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 {
 public:
     using SessionPtr = HTTPSessionPtr;
+    using PolledSessioPtr = PooledHTTPSessionPtr;
 
     explicit PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
         : Aws::Http::Standard::StandardHttpResponse(request)
@@ -87,6 +90,13 @@ public:
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
+        );
+    }
+
+    void SetResponseBody(Aws::IStream & incoming_stream, PolledSessioPtr & session_) /// NOLINT
+    {
+        body_stream = Aws::Utils::Stream::ResponseStream(
+            Aws::New<SessionAwareIOStream<PolledSessioPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
         );
     }
 
@@ -170,6 +180,8 @@ private:
     ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
+
+    size_t per_endpoint_pool_size = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT;
 };
 
 }
