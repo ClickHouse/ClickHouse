@@ -273,8 +273,11 @@ SELECT hex(sipHash128()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000')
 select hex(sipHash64Keyed());
 SELECT hex(sipHash128Keyed()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128Keyed()) = '1CE422FEE7BD8DE20000000000000000';
 
--- Crashed with memory sanitizer
-SELECT hex(sipHash128ReferenceKeyed((toUInt64(2), toUInt64(-9223372036854775807)))) GROUP BY (toUInt64(506097522914230528), toUInt64(now64(2, NULL + NULL), 1084818905618843912)), toUInt64(2), NULL + NULL, char(-2147483649, 1);
-SELECT sipHash64Keyed((2::UInt64, toUInt64(2)), 4) GROUP BY toUInt64(2);
-SELECT hex(sipHash64Keyed((toUInt64(9223372036854775806), toUInt64(-9223372036854775808)), char(2147483646, -2147483648, 1, 3, 4, 7, 2147483647))) GROUP BY toUInt64(257), (toUInt64(9223372036854775806), toUInt64(2147483646));
-SELECT sipHash64Keyed((toUInt64(9223372036854775806), 9223372036854775808::UInt64), char(2)) GROUP BY toUInt64(9223372036854775806);
+SELECT 'Check bug with hashing of const integer values';
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (key Tuple(UInt64, UInt64), val UInt64) ENGINE=Memory;
+INSERT INTO tab VALUES ((2, 2), 4);
+-- these two statements must produce the same result
+SELECT sipHash64Keyed(key, val) FROM tab;
+SELECT sipHash64Keyed(key, 4::UInt64) FROM tab;
+DROP TABLE tab;

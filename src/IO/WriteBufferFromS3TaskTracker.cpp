@@ -121,17 +121,17 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
     /// preallocation for the second issue
     FinishedList pre_allocated_finished {future_placeholder};
 
-    Callback func_with_notification = [&, func=std::move(func), pre_allocated_finished=std::move(pre_allocated_finished)] () mutable
+    Callback func_with_notification = [&, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
     {
         SCOPE_EXIT({
             DENY_ALLOCATIONS_IN_SCOPE;
 
             std::lock_guard lock(mutex);
-            finished_futures.splice(finished_futures.end(), pre_allocated_finished);
+            finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
             has_finished.notify_one();
         });
 
-        func();
+        my_func();
     };
 
     /// this move is nothrow

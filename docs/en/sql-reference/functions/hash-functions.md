@@ -51,7 +51,7 @@ Calculates the MD5 from a string and returns the resulting set of bytes as Fixed
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 {#hash_functions-siphash64}
+## sipHash64 (#hash_functions-siphash64)
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
@@ -63,9 +63,9 @@ This is a cryptographic hash function. It works at least three times faster than
 
 The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
-1. The first and the second hash value are concatenated to an array which is hashed.
-2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
-3. This calculation is repeated for all remaining hash values of the original input.
+1.  The first and the second hash value are concatenated to an array which is hashed.
+2.  The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
+3.  This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
 
@@ -1090,7 +1090,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 **Arguments**
 
 - `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optinal. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
