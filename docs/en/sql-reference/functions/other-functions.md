@@ -206,7 +206,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
-For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
+For [String](../../sql-reference/data-types/string.md) arguments the function returns the string length + 9 (terminating zero + length).
 
 Query:
 
@@ -1352,7 +1352,7 @@ ORDER BY k ASC
 
 ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
 The expression `k = '2017-09-15'` was not used when generating the result.
-In examle the `indexHint` function allows to see adjacent dates.
+In example the `indexHint` function allows to see adjacent dates.
 
 Result:
 
