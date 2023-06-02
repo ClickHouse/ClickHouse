@@ -81,7 +81,7 @@ private:
     template <typename Distance>
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
-    const ApproximateNearestNeighborCondition condition;
+    const ApproximateNearestNeighborCondition ann_condition;
     const String distance_function;
     const Int64 search_k;
 };
