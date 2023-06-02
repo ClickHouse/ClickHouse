@@ -127,15 +127,17 @@ A special `direct` join with EmbeddedRocksDB tables is supported.
 This direct join avoids forming a hash table in memory and accesses
 the data directly from the EmbeddedRocksDB.
 
+With large joins you may see much lower memory usage with direct joins
+because the hash table is not created.
+
 To enable direct joins:
 ```sql
-SET join_algorithm = 'direct'
+SET join_algorithm = 'direct, hash'
 ```
 
 :::tip
-When the `join_algorithm` is set to `direct`, direct joins will be used
-when possible.  However, direct joins are not used for RIGHT or FULL JOINs.
-ClickHouse will choose another join algorithm when direct joins are not possible.
+When the `join_algorithm` is set to `direct, hash`, direct joins will be used
+when possible, and hash otherwise.
 :::
 
 #### Example
@@ -205,3 +207,6 @@ ORDER BY key ASC
 └─────┴─────────┴────────┴────────┘
 ```
 
+### More information on Joins
+- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#settings-join_algorithm)
+- [JOIN clause](/docs/en/sql-reference/statements/select/join.md)
