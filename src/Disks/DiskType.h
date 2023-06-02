@@ -15,6 +15,7 @@ enum class DataSourceType
     HDFS,
     WebServer,
     AzureBlobStorage,
+    LocalBlobStorage,
 };
 
 inline String toString(DataSourceType data_source_type)
@@ -35,6 +36,8 @@ inline String toString(DataSourceType data_source_type)
             return "web";
         case DataSourceType::AzureBlobStorage:
             return "azure_blob_storage";
+        case DataSourceType::LocalBlobStorage:
+            return "local_blob_storage";
     }
     UNREACHABLE();
 }
@@ -48,6 +51,7 @@ struct DataSourceDescription
     bool is_cached = false;
 
     bool operator==(const DataSourceDescription & other) const;
+    bool sameKind(const DataSourceDescription & other) const;
 };
 
 }

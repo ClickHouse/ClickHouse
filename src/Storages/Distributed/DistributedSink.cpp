@@ -41,6 +41,8 @@
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
+    extern const Metric DistributedInsertThreads;
+    extern const Metric DistributedInsertThreadsActive;
 }
 
 namespace ProfileEvents
@@ -460,9 +462,10 @@ void DistributedSink::writeSync(const Block & block)
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
         size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
-        pool.emplace(/* max_threads_= */ max_threads,
-                     /* max_free_threads_= */ max_threads,
-                     /* queue_size_= */ jobs_count);
+        pool.emplace(
+            CurrentMetrics::DistributedInsertThreads,
+            CurrentMetrics::DistributedInsertThreadsActive,
+            max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {

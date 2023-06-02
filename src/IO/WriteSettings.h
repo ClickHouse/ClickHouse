@@ -11,6 +11,7 @@ struct WriteSettings
 {
     /// Bandwidth throttler to use during writing
     ThrottlerPtr remote_throttler;
+    ThrottlerPtr local_throttler;
 
     // Resource to be used during reading
     ResourceLink resource_link;

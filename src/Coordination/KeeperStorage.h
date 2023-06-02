@@ -105,10 +105,12 @@ public:
         return first.value == second.value;
     }
 
+    static String generateDigest(const String & userdata);
+
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
+        int64_t time{0};
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;
@@ -262,6 +264,8 @@ public:
 
             return check_auth(auth_it->second);
         }
+
+        void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
