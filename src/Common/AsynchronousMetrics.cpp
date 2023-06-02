@@ -950,7 +950,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
             auto space = line.find_first_of(" ");
 
-            if (line.rfind("max", 0) == std::string::npos)
+            if (line.rfind("max", space) == std::string::npos)
             {
                 auto field1 = line.substr(0, space);
                 quota = std::stoull(field1);
