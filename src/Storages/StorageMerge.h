@@ -201,7 +201,9 @@ private:
         const Aliases & aliases,
         ContextPtr context,
         QueryPipelineBuilder & builder,
-        const QueryProcessingStage::Enum & processed_stage);
+        const QueryProcessingStage::Enum & processed_stage,
+        const String & database_name,
+        const String & table_name);
 };
 
 }

@@ -961,6 +961,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     analysis_result = ExpressionAnalysisResult(
         *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
+    LOG_TRACE(log, "getSampleBlockImpl {} : source_header after ExpressionAnalysisResult {}", (void*) this, source_header.dumpStructure());
+
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -970,8 +972,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         {
             header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
+            {
+                LOG_TRACE(log, "getSampleBlockImpl {} : erasing column {}", (void*) this, analysis_result.prewhere_info->prewhere_column_name);
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
+            }
         }
+        LOG_TRACE(log, "getSampleBlockImpl {} : returning header", (void*) this);
         return header;
     }
 
@@ -1523,13 +1529,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             // Thus, we don't actually need to check if projection is active.
             if (!query_info.projection && expressions.filter_info)
             {
+                LOG_TRACE(log, "executeImpl,  adding Row-level security filter; column_name {}, block {}",
+                    expressions.filter_info->column_name, query_plan.getCurrentDataStream().header.dumpStructure());
+
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.filter_info->actions,
                     expressions.filter_info->column_name,
                     expressions.filter_info->do_remove_column);
 
-                LOG_TRACE(log, "executeImpl,  adding Row-level security filter");
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
@@ -2072,8 +2080,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
         if (!expressions.prewhere_info)
         {
-            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1", (void*)this);
             const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
+            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1 - does_storage_support_prewhere {} shouldMoveToPrewhere() {}",
+                (void*)this, does_storage_support_prewhere, shouldMoveToPrewhere());
             if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
                 LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1.5", (void*)this);
@@ -2095,6 +2104,14 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter->projectInput(false);
             expressions.filter_info = nullptr;
+        }
+        if (expressions.prewhere_info)
+        {
+            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {} dump: {}", (void*)this, expressions.prewhere_info->dump());
+        }
+        else
+        {
+            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " no prewhere_info");
         }
     }
 
