@@ -521,7 +521,7 @@ template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Nam
 template <typename FromType>
 static bool CheckDateTimeRange(const FromType & value)
 {
-    return value >= 0 && value <= 0xFFFFFFFF;
+    return value >= 0 && value <= 0xFFFFFFFFL;
 }
 
 template <typename FromType, typename ToType>
