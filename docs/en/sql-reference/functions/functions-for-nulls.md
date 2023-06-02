@@ -245,7 +245,7 @@ assumeNotNull(x)
 **Returned values**
 
 - The input value as non-`Nullable` type, if it is not `NULL`.
-- An arbirary value, if the input value is `NULL`.
+- An arbitrary value, if the input value is `NULL`.
 
 **Example**
 
