@@ -1113,7 +1113,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
@@ -1134,7 +1134,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
@@ -2036,7 +2036,7 @@ FORMAT PrettyCompactMonoBlock
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly.
+Enables or disables [LIMIT](#limit) applying on each shard separately.
 
 This will allow to avoid:
 - Sending extra rows over network;
@@ -2437,7 +2437,7 @@ Default value: 0.
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Enables or disables [introspection functions](../../sql-reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
