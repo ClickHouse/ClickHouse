@@ -65,7 +65,7 @@ if __name__ == "__main__":
     main()
 ```
 
-The following `my_executable_table` is built from the output of `my_script.py`, which will generate 10 random strings everytime you run a `SELECT` from `my_executable_table`:
+The following `my_executable_table` is built from the output of `my_script.py`, which will generate 10 random strings every time you run a `SELECT` from `my_executable_table`:
 
 ```sql
 CREATE TABLE my_executable_table (
