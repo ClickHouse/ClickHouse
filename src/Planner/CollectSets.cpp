@@ -81,6 +81,8 @@ public:
                     element_type = low_cardinality_type->getDictionaryType();
 
             auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
+            if (sets.getFuture(set_key))
+                return;
 
             sets.addFromTuple(set_key, std::move(set), settings);
 
