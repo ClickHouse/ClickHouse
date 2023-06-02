@@ -1255,7 +1255,7 @@ void Planner::buildPlanForQueryNode()
             const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", result_actions_to_execute);
-
+            LOG_INFO(&Poco::Logger::get("Planner"), "addAggregationStep");
             addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
@@ -1324,6 +1324,7 @@ void Planner::buildPlanForQueryNode()
 
             if (!query_processing_info.isFirstStage())
             {
+                LOG_INFO(&Poco::Logger::get("Planner"), "addMergingAggregatedStep");
                 addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
             }
 

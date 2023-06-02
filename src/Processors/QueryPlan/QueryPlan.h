@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Processors/QueryPlan/PlanNode.h>
 
 #include <list>
 #include <memory>
@@ -16,7 +17,7 @@ namespace DB
 class DataStream;
 
 class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -32,7 +33,7 @@ struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
 class PlanFragment;
-using PlanFragmentPtr = std::unique_ptr<PlanFragment>;
+using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
 using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
 
 
@@ -104,19 +105,13 @@ public:
     size_t getMaxThreads() const { return max_threads; }
 
     /// Tree node. Step and it's children.
-    struct Node
-    {
-        QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
-    };
+    using Node = PlanNode;
 
-    PlanFragmentPtrs createPlanFragments(Node & single_node_plan);
-    PlanFragmentPtr createPlanFragments(Node & root_node, PlanFragmentPtrs & fragments);
-    PlanFragmentPtr createScanFragment(Node & node);
-
-    const Node * getRootNode() const { return root; }
+    Node * getRootNode() const { return root; }
 
     using Nodes = std::list<Node>;
+
+    const Nodes & getNodes() const { return nodes; }
 
 private:
     QueryPlanResourceHolder resources;
