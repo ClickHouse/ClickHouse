@@ -313,12 +313,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
-    auto file_segment_path = getPathInLocalCache();
-    if (offset == range().left && fs::exists(file_segment_path))
-    {
-        fs::remove(file_segment_path);
-        chassert(false);
-    }
+    const auto file_segment_path = getPathInLocalCache();
 
     {
         auto lock = segment_guard.lock();
@@ -358,7 +353,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                     "Cache writer was finalized (downloaded size: {}, state: {})",
                     current_downloaded_size, stateToString(download_state));
 
-            cache_writer = std::make_unique<WriteBufferFromFile>(getPathInLocalCache());
+            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
         }
     }
 
@@ -385,6 +380,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
             const auto file_size = fs::file_size(file_segment_path);
             chassert(downloaded_size <= file_size);
             chassert(reserved_size >= file_size);
+            chassert(file_size <= range().right + 1);
             if (downloaded_size != file_size)
                 downloaded_size = file_size;
         }
