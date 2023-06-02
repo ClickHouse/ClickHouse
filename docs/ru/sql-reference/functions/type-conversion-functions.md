@@ -173,6 +173,49 @@ Cиноним: `DATE`.
 
 ## toDateOrDefault {#todateordefault}
 
+Конвертирует аргумент в значение [Date](/docs/ru/sql-reference/data-types/date.md) data type. 
+Если получен недопустимый аргумент, то возвращает значение по умолчанию (нижняя граница [Date](/docs/ru/sql-reference/data-types/date.md). Значение по умолчанию может быть указано вторым аргументом.
+Похожа на [toDate](#todate).
+
+**Синтаксис**
+
+``` sql
+toDateOrDefault(expr [, default_value])
+```
+
+**Аргументы**
+
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
+- `default_value` — Значение по умолчанию. [Date](/docs/ru/sql-reference/data-types/date.md) 
+
+Если `expr` является числом выглядит как UNIX timestamp (больше чем 65535), оно интерпретируется как DateTime, затем обрезается до Date учитывавая текущую часовой пояс. Если `expr` является числом и меньше чем 65536, оно интерпретируется как количество дней с 1970-01-01.
+
+**Возвращаемое значение**
+
+- Календарная дата. [Date](/docs/ru/sql-reference/data-types/date.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT
+    toDateOrDefault('2021-01-01', '2023-01-01'::Date),
+    toDateOrDefault('xx2021-01-01', '2023-01-01'::Date);
+```
+
+Результат:
+
+```response
+┌─toDateOrDefault('2021-01-01', CAST('2023-01-01', 'Date'))─┬─toDateOrDefault('xx2021-01-01', CAST('2023-01-01', 'Date'))─┐
+│                                                2021-01-01 │                                                  2023-01-01 │
+└───────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+- [toDate](#todate)
+- [toDate32OrDefault](#todate32ordefault)
+
 ## toDateTime {#todatetime}
 
 ## toDateTimeOrZero {#todatetimeorzero}
@@ -180,6 +223,49 @@ Cиноним: `DATE`.
 ## toDateTimeOrNull {#todatetimeornull}
 
 ## toDateTimeOrDefault {#todatetimeordefault}
+
+Конвертирует аргумент в значение [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
+Если получен недопустимый аргумент, то возвращает значение по умолчанию (нижняя граница [DateTime](/docs/ru/sql-reference/data-types/datetime.md)). Значение по умолчанию может быть указано третьим аргументом.
+Похожа на [toDateTime](#todatetime).
+
+**Синтаксис**
+
+``` sql
+toDateTimeOrDefault(expr, [, time_zone [, default_value]])
+```
+
+**Аргументы**
+
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
+- `time_zone` — Часовой пояс. [String](/docs/ru/sql-reference/data-types/string.md).
+- `default_value` — Значение по умолчанию. [DateTime](/docs/ru/sql-reference/data-types/datetime.md) 
+
+Если `expr` является числом, оно интерпретируется как количество секунд от начала unix эпохи.
+
+**Возвращаемое значение**
+
+- Время. [DateTime](/docs/ru/sql-reference/data-types/datetime.md)
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT
+    toDateTimeOrDefault('2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC')),
+    toDateTimeOrDefault('xx2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC'));
+```
+
+Результат:
+
+```response
+┌─toDateTimeOrDefault('2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┬─toDateTimeOrDefault('xx2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┐
+│                                                               2021-01-01 00:00:00 │                                                                 2023-01-01 00:00:00 │
+└───────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+- [toDateTime](#todatetime)
 
 ## toDate32 {#todate32}
 

@@ -383,7 +383,7 @@ toDateTimeOrDefault(expr, [, time_zone [, default_value]])
 **Arguments**
 
 - `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [Int](/docs/en/sql-reference/data-types/int-uint.md), [Date](/docs/en/sql-reference/data-types/date.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md). 
-- `time_zone` — Time zone.
+- `time_zone` — Time zone. [String](/docs/en/sql-reference/data-types/string.md).
 - `default_value` — The default value. [DateTime](/docs/en/sql-reference/data-types/datetime.md) 
 
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
