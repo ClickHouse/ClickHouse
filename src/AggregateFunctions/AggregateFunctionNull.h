@@ -155,7 +155,6 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena);
     }
 
-
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         bool flag = getFlag(place);
