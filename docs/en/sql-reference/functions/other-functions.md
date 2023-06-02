@@ -2006,11 +2006,7 @@ isDecimalOverflow(d, [p])
 **Arguments**
 
 - `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
-<<<<<<< HEAD
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This paratemer can be helpful to migrate data from/to another database or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
-=======
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this parameter could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
->>>>>>> rschu1ze/master
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 

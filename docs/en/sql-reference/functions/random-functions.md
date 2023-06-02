@@ -67,7 +67,7 @@ randUniform(min, max)
 **Arguments**
 
 - `min` - `Float64` - left boundary of the range,
-- `max` - `Float64` - reight boundary of the range.
+- `max` - `Float64` - right boundary of the range.
 
 **Returned value**
 
