@@ -255,10 +255,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, data_part_directory);
 
+    cloned_part.part->is_temp = true;
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
     cloned_part.part->loadVersionMetadata();
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
-    cloned_part.part->is_temp = true;
     return cloned_part;
 }
 
