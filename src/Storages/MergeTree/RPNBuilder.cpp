@@ -366,8 +366,10 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
             if (indexes_mapping[i].tuple_index >= set_types.size())
                 return false;
 
-            auto lhs = recursiveRemoveLowCardinality(data_types[i]);
-            auto rhs = recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]);
+            auto lhs = removeNullable(recursiveRemoveLowCardinality(data_types[i]));
+            auto rhs = removeNullable(recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]));
+
+            // std::cerr << "============ " << lhs->getName() << ' ' << rhs->getName() << std::endl;
 
             if (!lhs->equals(*rhs))
                 return false;
