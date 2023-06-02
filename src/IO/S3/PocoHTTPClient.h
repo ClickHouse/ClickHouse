@@ -181,7 +181,7 @@ private:
 
     const HTTPHeaderEntries extra_headers;
 
-    size_t per_endpoint_pool_size = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT;
+    size_t per_endpoint_pool_size = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_S3_ENDPOINT;
 };
 
 }
