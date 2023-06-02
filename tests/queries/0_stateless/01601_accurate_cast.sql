@@ -24,11 +24,13 @@ SELECT accurateCast('123', 'FixedString(2)'); -- { serverError 131 }
 SELECT accurateCast('12', 'FixedString(2)');
 
 SELECT accurateCast(-1, 'DateTime');   -- { serverError 70 }
+SELECT accurateCast(5000000000, 'DateTime');   -- { serverError 70 }
 SELECT accurateCast('1xxx', 'DateTime');   -- { serverError 41 }
 SELECT accurateCast('2023-05-30 14:38:20', 'DateTime');
-SELECT accurateCast(19, 'DateTime');
+SELECT toString(accurateCast(19, 'DateTime'), 'UTC');
 
 SELECT accurateCast(-1, 'Date');   -- { serverError 70 }
+SELECT accurateCast(999999, 'Date');   -- { serverError 70 }
 SELECT accurateCast('1xxx', 'Date');   -- { serverError 38 }
 SELECT accurateCast('2023-05-30', 'Date');
 SELECT accurateCast(19, 'Date');
