@@ -1936,6 +1936,30 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
     }
 }
 
+static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeeper, const String & replica_path,
+                                                    MergeTreeDataFormatVersion format_version, const String & covering_part_name)
+{
+#ifdef ABORT_ON_LOGICAL_ERROR
+    constexpr bool paranoid_check_for_covered_parts_default = true;
+#else
+    constexpr bool paranoid_check_for_covered_parts_default = false;
+#endif
+
+    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
+        "replicated_merge_tree_paranoid_check_on_drop_range", paranoid_check_for_covered_parts_default);
+    if (paranoid_check_for_covered_parts)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
+        Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
+        for (const auto & part_name : parts_remain)
+        {
+            auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+            if (drop_range_info.contains(part_info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, covering_part_name);
+        }
+    }
+}
 
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
@@ -1992,16 +2016,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-    Strings parts_remain = getZooKeeper()->getChildren(replica_path + "/parts");
-    for (const auto & part_name : parts_remain)
-    {
-        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-        if (drop_range_info.contains(part_info))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, entry.new_part_name);
-    }
-#endif
+    paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -2137,6 +2152,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
         removePartsFromZooKeeperWithRetries(parts_to_remove);
+        if (replace)
+            paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
         return true;
     }
 
@@ -2433,6 +2450,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
+    if (replace)
+        paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
@@ -7133,7 +7152,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
         }
 
-        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
@@ -7184,7 +7202,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
                 transaction.commit(&data_parts_lock);
                 if (replace)
-                    parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
+                    removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -7204,11 +7222,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        /// Forcibly remove replaced parts from ZooKeeper
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        /// Speedup removing of replaced parts from filesystem
-        parts_to_remove.clear();
         cleanup_thread.wakeup();
 
         lock2.reset();
@@ -7377,7 +7390,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
 
-        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
@@ -7414,7 +7426,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
                 transaction.commit(&src_data_parts_lock);
             }
 
@@ -7436,9 +7448,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        parts_to_remove.clear();
         cleanup_thread.wakeup();
         lock2.reset();
 
