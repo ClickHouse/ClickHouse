@@ -210,6 +210,7 @@ enum class AccessType
     M(HDFS, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
     M(HIVE, "", GLOBAL, SOURCES) \
+    M(AZURE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
