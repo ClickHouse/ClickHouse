@@ -956,8 +956,11 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 quota = std::stoull(field1);
             }
 
-            auto field2 = line.substr(space + 1);
-            period = std::stoull(field2);
+            if (space != std::string::npos)
+            {
+                auto field2 = line.substr(space + 1);
+                period = std::stoull(field2);
+            }
 
             new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
             new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
