@@ -126,6 +126,7 @@ TRUSTED_CONTRIBUTORS = {
         "aalexfvk",
         "MikhailBurdukov",
         "tsolodov",  # ClickHouse Employee
+        "kitaisreal",
     ]
 }
 

@@ -1050,6 +1050,12 @@ Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
 
+## handshake_timeout_ms {#handshake-timeout-ms}
+
+Timeout in milliseconds for receiving Hello packet from replicas during handshake.
+
+Default value: 10000.
+
 ## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
@@ -1186,6 +1192,36 @@ See also:
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 
 Default value: false.
+
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool size for PostgreSQL table engine and database engine.
+
+Default value: 16
+
+## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+
+Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
+
+Default value: 5000
+
+## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
+
+Close connection before returning connection to the pool.
+
+Default value: true.
+
+## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
+
+Connection pool size for each connection settings string in ODBC bridge.
+
+Default value: 16
+
+## odbc_bridge_use_connection_pooling {#odbc-bridge-use-connection-pooling}
+
+Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
+
+Default value: true
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
@@ -3563,7 +3599,7 @@ SETTINGS index_granularity = 8192 │
 
 ## external_table_functions_use_nulls {#external-table-functions-use-nulls}
 
-Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
 
 Possible values:
 
@@ -3788,8 +3824,8 @@ Result:
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
-- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md/#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md/#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md/#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md/#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md/#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md/#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md/#tolastdayofmonth).
-- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md/#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md/#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md/#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md/#timeslot).
+- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) and [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
+- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Possible values:
 

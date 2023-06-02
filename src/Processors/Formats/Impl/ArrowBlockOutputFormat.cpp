@@ -75,7 +75,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
-        const Block & header = getPort(PortKind::Main).getHeader();
+        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
 
         consume(Chunk(header.getColumns(), 0));
     }
