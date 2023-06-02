@@ -3492,7 +3492,7 @@ Default value: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
-Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
 
 Possible values:
 

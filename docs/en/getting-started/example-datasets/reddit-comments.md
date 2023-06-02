@@ -469,7 +469,7 @@ The response is:
 10 rows in set. Elapsed: 27.824 sec. Processed 6.74 billion rows, 53.26 GB (242.22 million rows/s., 1.91 GB/s.)
 ```
 
-11. Let's see which subreddits had the biggest increase in commnents from 2018 to 2019:
+11. Let's see which subreddits had the biggest increase in comments from 2018 to 2019:
 
 ```sql
 SELECT
