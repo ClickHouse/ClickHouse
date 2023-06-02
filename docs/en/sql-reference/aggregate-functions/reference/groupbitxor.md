@@ -5,7 +5,7 @@ sidebar_position: 127
 
 # groupBitXor
 
-Applies bitwise `XOR` for series of numbers.
+Applies bit-wise `XOR` for series of numbers.
 
 ``` sql
 groupBitXor(expr)
