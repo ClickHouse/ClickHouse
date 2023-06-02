@@ -47,7 +47,7 @@ namespace JSONUtils
                 throw ParsingException(ErrorCodes::INCORRECT_DATA,
                     "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
                     "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-                    "most likely JSON is malformed", pos, min_bytes, current_object_size);
+                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
 
             if (quotes)
             {
