@@ -1520,9 +1520,12 @@ struct DateTimeTransformImpl
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
             }
 
-            if (vec_null_map_to)
+            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
             {
-                return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
+                if (vec_null_map_to)
+                {
+                    return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
+                }
             }
 
             return mutable_result_col;
