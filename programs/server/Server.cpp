@@ -697,7 +697,7 @@ try
     OutdatedPartsLoadingThreadPool::initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
         0, // We don't need any threads one all the parts will be loaded
-        server_settings.outdated_part_loading_thread_pool_queue_size);
+        server_settings.max_outdated_parts_loading_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
