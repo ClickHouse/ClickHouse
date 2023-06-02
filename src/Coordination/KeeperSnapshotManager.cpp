@@ -618,12 +618,14 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::bu
     auto disk = getLatestSnapshotDisk();
 
     {
-        disk->writeFile(tmp_snapshot_file_name);
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
     }
 
     auto plain_buf = disk->writeFile(snapshot_file_name);
     copyData(reader, *plain_buf);
     plain_buf->sync();
+    plain_buf->finalize();
 
     disk->removeFile(tmp_snapshot_file_name);
 
