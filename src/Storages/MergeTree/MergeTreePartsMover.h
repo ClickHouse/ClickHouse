@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include <vector>
+#include <base/scope_guard.h>
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MovesList.h>
@@ -43,11 +44,18 @@ private:
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
 public:
+
     explicit MergeTreePartsMover(MergeTreeData * data_)
         : data(data_)
         , log(&Poco::Logger::get("MergeTreePartsMover"))
     {
     }
+
+    struct TemporaryClonedPart
+    {
+        MergeTreeMutableDataPartPtr part;
+        scope_guard temporary_directory_lock;
+    };
 
     /// Select parts for background moves according to storage_policy configuration.
     /// Returns true if at least one part was selected for move.
@@ -57,7 +65,7 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    MergeTreeMutableDataPartPtr clonePart(const MergeTreeMoveEntry & moving_part) const;
+    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
