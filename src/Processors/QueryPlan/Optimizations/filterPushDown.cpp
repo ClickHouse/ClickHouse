@@ -272,7 +272,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     {
         /// If totals step has HAVING expression, skip it for now.
         /// TODO:
-        /// We can merge HAVING expression with current filter.
+        /// We can merge HAVING expression with current filer.
         /// Also, we can push down part of HAVING which depend only on aggregation keys.
         if (totals_having->getActions())
             return 0;
@@ -323,9 +323,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         {
             const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
 
-            /// Only inner, cross and left(/right) join are supported. Other types may generate default values for left table keys.
+            /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Cross && table_join.kind() != kind)
+            if (table_join.kind() != JoinKind::Inner && table_join.kind() != kind)
                 return 0;
 
             bool is_left = kind == JoinKind::Left;
