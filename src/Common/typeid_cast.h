@@ -25,14 +25,14 @@ namespace DB
   */
 template <typename To, typename From>
 requires std::is_reference_v<To>
-To typeid_cast(From & from)
+To typeid_cast(From & from) noexcept(false)
 {
     try
     {
         if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
             return static_cast<To>(from);
     }
-    catch (const std::exception & e)
+    catch (const std::bad_typeid & e)
     {
         throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
@@ -44,19 +44,12 @@ To typeid_cast(From & from)
 
 template <typename To, typename From>
 requires std::is_pointer_v<To>
-To typeid_cast(From * from)
+To typeid_cast(From * from) noexcept
 {
-    try
-    {
-        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
-            return static_cast<To>(from);
-        else
-            return nullptr;
-    }
-    catch (const std::exception & e)
-    {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
+        return static_cast<To>(from);
+    else
+        return nullptr;
 }
 
 namespace detail
@@ -79,17 +72,10 @@ inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
 
 template <typename To, typename From>
 requires detail::is_shared_ptr_v<To>
-To typeid_cast(const std::shared_ptr<From> & from)
+To typeid_cast(const std::shared_ptr<From> & from) noexcept
 {
-    try
-    {
-        if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
-            return std::static_pointer_cast<typename To::element_type>(from);
-        else
-            return nullptr;
-    }
-    catch (const std::exception & e)
-    {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
+        return std::static_pointer_cast<typename To::element_type>(from);
+    else
+        return nullptr;
 }
