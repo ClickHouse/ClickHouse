@@ -208,11 +208,10 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const SelectQueryInfo & query,
     const String & distance_function_,
     ContextPtr context)
-    : condition(query, context)
+    : ann_condition(query, context)
     , distance_function(distance_function_)
     , search_k(context->getSettings().get("annoy_index_search_k_nodes").get<Int64>())
 {}
-
 
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
@@ -221,7 +220,7 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue(distance_function);
+    return ann_condition.alwaysUnknownOrTrue(distance_function);
 }
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
@@ -234,20 +233,19 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
 }
 
-
 template <typename Distance>
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = condition.getLimit();
-    UInt64 index_granularity = condition.getIndexGranularity();
-    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
-        ? std::optional<float>(condition.getComparisonDistanceForWhereQuery())
+    UInt64 limit = ann_condition.getLimit();
+    UInt64 index_granularity = ann_condition.getIndexGranularity();
+    std::optional<float> comp_dist = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
+        ? std::optional<float>(ann_condition.getComparisonDistanceForWhereQuery())
         : std::nullopt;
 
     if (comp_dist && comp_dist.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
-    std::vector<float> reference_vector = condition.getReferenceVector();
+    std::vector<float> reference_vector = ann_condition.getReferenceVector();
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance>>(idx_granule);
     if (granule == nullptr)
@@ -255,10 +253,10 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     auto annoy = granule->index;
 
-    if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
+    if (ann_condition.getNumOfDimensions() != annoy->getNumOfDimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
                         "does not match with the dimension in the index ({})",
-                        toString(condition.getNumOfDimensions()), toString(annoy->getNumOfDimensions()));
+                        toString(ann_condition.getNumOfDimensions()), toString(annoy->getNumOfDimensions()));
 
     /// neighbors contain indexes of dots which were closest to the reference vector
     std::vector<UInt64> neighbors;
