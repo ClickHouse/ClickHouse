@@ -365,6 +365,12 @@ template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDateTime, Na
 
 /// Implementation of toDate function.
 
+template <typename FromType>
+static bool CheckDateRange(const FromType & value)
+{
+    return value >= 0 && value <= DATE_LUT_MAX_DAY_NUM;
+}
+
 template <typename FromType, typename ToType>
 struct ToDateTransform32Or64
 {
@@ -372,7 +378,7 @@ struct ToDateTransform32Or64
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
@@ -391,7 +397,7 @@ struct ToDateTransform32Or64Signed
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
@@ -413,7 +419,7 @@ struct ToDateTransform8Or16Signed
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
@@ -434,11 +440,6 @@ struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return from >= 0;
-    }
-
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -451,11 +452,6 @@ template <typename FromType, typename ToType>
 struct ToDate32Transform32Or64Signed
 {
     static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return from >= 0;
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
@@ -472,11 +468,6 @@ template <typename FromType, typename ToType>
 struct ToDate32Transform8Or16Signed
 {
     static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return from >= 0;
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -527,6 +518,11 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Nam
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32>> {};
 
+template <typename FromType>
+static bool CheckDateTimeRange(const FromType & value)
+{
+    return value >= 0 && value <= 0xFFFFFFFF;
+}
 
 template <typename FromType, typename ToType>
 struct ToDateTimeTransform64
@@ -535,7 +531,7 @@ struct ToDateTimeTransform64
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateTimeRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
@@ -551,7 +547,7 @@ struct ToDateTimeTransformSigned
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateTimeRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
@@ -569,7 +565,7 @@ struct ToDateTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
     {
-        return from >= 0;
+        return CheckDateTimeRange(from);
     }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
