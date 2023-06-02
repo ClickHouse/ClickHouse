@@ -1947,7 +1947,7 @@ Config fields:
 - `regexp` - RE2 compatible regular expression (mandatory)
 - `replace` - substitution string for sensitive data (optional, by default - six asterisks)
 
-The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
+The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
 
 `system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
 
