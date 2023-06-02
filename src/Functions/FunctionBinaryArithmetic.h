@@ -41,14 +41,12 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
-#    pragma GCC diagnostic pop
 #endif
 
 #include <cassert>
@@ -119,6 +117,12 @@ template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, Da
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
+template <typename DataType> constexpr bool IsFixedString = false;
+template <> inline constexpr bool IsFixedString<DataTypeFixedString> = true;
+
+template <typename DataType> constexpr bool IsString = false;
+template <> inline constexpr bool IsString<DataTypeString> = true;
+
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct BinaryOperationTraits
 {
@@ -147,6 +151,8 @@ public:
         Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, DataTypeFloat64>,
 
         Case<IsOperation<Operation>::bit_hamming_distance && IsIntegral<LeftDataType> && IsIntegral<RightDataType>, DataTypeUInt8>,
+        Case<IsOperation<Operation>::bit_hamming_distance && IsFixedString<LeftDataType> && IsFixedString<RightDataType>, DataTypeUInt16>,
+        Case<IsOperation<Operation>::bit_hamming_distance && IsString<LeftDataType> && IsString<RightDataType>, DataTypeUInt64>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
@@ -249,9 +255,6 @@ private:
 template <typename B, typename Op>
 struct StringIntegerOperationImpl
 {
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = true;
-
     template <OpCase op_case>
     static void NO_INLINE processFixedString(const UInt8 * __restrict in_vec, const UInt64 n, const B * __restrict b, ColumnFixedString::Chars & out_vec, size_t size)
     {
@@ -381,6 +384,105 @@ private:
             if (b_offset >= N) /// This condition is easily predictable.
                 b_offset -= N;
         }
+    }
+};
+
+template <typename Op>
+struct FixedStringReduceOperationImpl
+{
+    template <OpCase op_case>
+    static void inline process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            vectorVector(a, b, result, size, N);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            vectorConstant(b, a, result, size, N);
+        else
+            vectorConstant(a, b, result, size, N);
+    }
+
+private:
+    static void vectorVector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t offset = i * N;
+            for (size_t j = 0; j < N; ++j)
+            {
+                result[i] += Op::template apply<UInt8>(a[offset + j], b[offset + j]);
+            }
+        }
+    }
+
+    static void vectorConstant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t offset = i * N;
+            for (size_t j = 0; j < N; ++j)
+            {
+                result[i] += Op::template apply<UInt8>(a[offset + j], b[j]);
+            }
+        }
+    }
+};
+
+template <typename Op>
+struct StringReduceOperationImpl
+{
+    static void vectorVector(
+        const ColumnString::Chars & a,
+        const ColumnString::Offsets & offsets_a,
+        const ColumnString::Chars & b,
+        const ColumnString::Offsets & offsets_b,
+        PaddedPODArray<UInt64> & res)
+    {
+        size_t size = res.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            res[i] = process(
+                a.data() + offsets_a[i - 1],
+                a.data() + offsets_a[i] - 1,
+                b.data() + offsets_b[i - 1],
+                b.data() + offsets_b[i] - 1);
+        }
+    }
+
+    static void
+    vectorConstant(const ColumnString::Chars & a, const ColumnString::Offsets & offsets_a, std::string_view b, PaddedPODArray<UInt64> & res)
+    {
+        size_t size = res.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            res[i] = process(
+                a.data() + offsets_a[i - 1],
+                a.data() + offsets_a[i] - 1,
+                reinterpret_cast<const UInt8 *>(b.data()),
+                reinterpret_cast<const UInt8 *>(b.data()) + b.size());
+        }
+    }
+
+    static inline UInt64 constConst(std::string_view a, std::string_view b)
+    {
+        return process(
+            reinterpret_cast<const UInt8 *>(a.data()),
+            reinterpret_cast<const UInt8 *>(a.data()) + a.size(),
+            reinterpret_cast<const UInt8 *>(b.data()),
+            reinterpret_cast<const UInt8 *>(b.data()) + b.size());
+    }
+
+private:
+    static UInt64 process(const UInt8 * __restrict start_a, const UInt8 * __restrict end_a, const UInt8 * start_b, const UInt8 * end_b)
+    {
+        UInt64 res = 0;
+        while (start_a < end_a && start_b < end_b)
+            res += Op::template apply<UInt8>(*start_a++, *start_b++);
+
+        while (start_a < end_a)
+            res += Op::template apply<UInt8>(*start_a++, 0);
+        while (start_b < end_b)
+            res += Op::template apply<UInt8>(0, *start_b++);
+        return res;
     }
 };
 
@@ -635,10 +737,11 @@ using namespace impl_;
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
 class FunctionBinaryArithmetic : public IFunction
 {
-    static constexpr const bool is_plus = IsOperation<Op>::plus;
-    static constexpr const bool is_minus = IsOperation<Op>::minus;
-    static constexpr const bool is_multiply = IsOperation<Op>::multiply;
-    static constexpr const bool is_division = IsOperation<Op>::division;
+    static constexpr bool is_plus = IsOperation<Op>::plus;
+    static constexpr bool is_minus = IsOperation<Op>::minus;
+    static constexpr bool is_multiply = IsOperation<Op>::multiply;
+    static constexpr bool is_division = IsOperation<Op>::division;
+    static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -783,8 +886,8 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (tuple_data_type_0)
         {
-            auto & tuple_types = tuple_data_type_0->getElements();
-            for (auto & type : tuple_types)
+            const auto & tuple_types = tuple_data_type_0->getElements();
+            for (const auto & type : tuple_types)
                 if (!isInterval(type))
                     return {};
         }
@@ -1017,11 +1120,9 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                                size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
-        ColumnsWithTypeAndName new_arguments = arguments;
+        auto function = function_builder->build(arguments);
 
-        auto function = function_builder->build(new_arguments);
-
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1319,13 +1420,20 @@ public:
                     {
                         if (left.getN() == right.getN())
                         {
-                            type_res = std::make_shared<LeftDataType>(left.getN());
+                            if constexpr (is_bit_hamming_distance)
+                                type_res = std::make_shared<DataTypeUInt16>();
+                            else
+                                type_res = std::make_shared<LeftDataType>(left.getN());
                             return true;
                         }
                     }
                 }
 
-                if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
+                if constexpr (
+                    is_bit_hamming_distance
+                    && std::is_same_v<DataTypeString, LeftDataType> && std::is_same_v<DataTypeString, RightDataType>)
+                    type_res = std::make_shared<DataTypeUInt64>();
+                else if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
                     return false;
                 else if constexpr (!IsIntegral<RightDataType>)
                     return false;
@@ -1414,6 +1522,7 @@ public:
     ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
+        using OpReduceImpl = FixedStringReduceOperationImpl<Op<UInt8, UInt8>>;
 
         const auto * const col_left_raw = arguments[0].column.get();
         const auto * const col_right_raw = arguments[1].column.get();
@@ -1428,18 +1537,30 @@ public:
                 if (col_left->getN() != col_right->getN())
                     return nullptr;
 
-                auto col_res = ColumnFixedString::create(col_left->getN());
-                auto & out_chars = col_res->getChars();
+                if constexpr (is_bit_hamming_distance)
+                {
+                    auto col_res = ColumnUInt16::create();
+                    auto & data = col_res->getData();
+                    data.resize_fill(col_left->size());
 
-                out_chars.resize(col_left->getN());
+                    OpReduceImpl::template process<OpCase::Vector>(
+                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
 
-                OpImpl::template process<OpCase::Vector>(
-                    col_left->getChars().data(),
-                    col_right->getChars().data(),
-                    out_chars.data(),
-                    out_chars.size(), {});
+                    return ColumnConst::create(std::move(col_res), col_left_raw->size());
+                }
+                else
+                {
+                    auto col_res = ColumnFixedString::create(col_left->getN());
+                    auto & out_chars = col_res->getChars();
 
-                return ColumnConst::create(std::move(col_res), col_left_raw->size());
+                    out_chars.resize(col_left->getN());
+
+                    OpImpl::template process<OpCase::Vector>(
+                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), {});
+
+                    return ColumnConst::create(std::move(col_res), col_left_raw->size());
+                }
+
             }
         }
 
@@ -1460,35 +1581,112 @@ public:
             if (col_left->getN() != col_right->getN())
                 return nullptr;
 
-            auto col_res = ColumnFixedString::create(col_left->getN());
-            auto & out_chars = col_res->getChars();
-            out_chars.resize((is_right_column_const ? col_left->size() : col_right->size()) * col_left->getN());
+            if constexpr (is_bit_hamming_distance)
+            {
+                auto col_res = ColumnUInt16::create();
+                auto & data = col_res->getData();
+                data.resize_fill(is_right_column_const ? col_left->size() : col_right->size());
 
-            if (!is_left_column_const && !is_right_column_const)
-            {
-                OpImpl::template process<OpCase::Vector>(
-                    col_left->getChars().data(),
-                    col_right->getChars().data(),
-                    out_chars.data(),
-                    out_chars.size(), {});
-            }
-            else if (is_left_column_const)
-            {
-                OpImpl::template process<OpCase::LeftConstant>(
-                    col_left->getChars().data(),
-                    col_right->getChars().data(),
-                    out_chars.data(),
-                    out_chars.size(),
-                    col_left->getN());
+                if (!is_left_column_const && !is_right_column_const)
+                {
+                    OpReduceImpl::template process<OpCase::Vector>(
+                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
+                }
+                else if (is_left_column_const)
+                {
+                    OpReduceImpl::template process<OpCase::LeftConstant>(
+                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
+                }
+                else
+                {
+                    OpReduceImpl::template process<OpCase::RightConstant>(
+                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
+                }
+
+                return col_res;
             }
             else
             {
-                OpImpl::template process<OpCase::RightConstant>(
-                    col_left->getChars().data(),
-                    col_right->getChars().data(),
-                    out_chars.data(),
-                    out_chars.size(),
-                    col_left->getN());
+                auto col_res = ColumnFixedString::create(col_left->getN());
+                auto & out_chars = col_res->getChars();
+                out_chars.resize((is_right_column_const ? col_left->size() : col_right->size()) * col_left->getN());
+
+                if (!is_left_column_const && !is_right_column_const)
+                {
+                    OpImpl::template process<OpCase::Vector>(
+                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), {});
+                }
+                else if (is_left_column_const)
+                {
+                    OpImpl::template process<OpCase::LeftConstant>(
+                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), col_left->getN());
+                }
+                else
+                {
+                    OpImpl::template process<OpCase::RightConstant>(
+                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), col_left->getN());
+                }
+
+                return col_res;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Only used for bitHammingDistance
+    ColumnPtr executeString(const ColumnsWithTypeAndName & arguments) const
+    {
+        using OpImpl = StringReduceOperationImpl<Op<UInt8, UInt8>>;
+
+        const auto * const col_left_raw = arguments[0].column.get();
+        const auto * const col_right_raw = arguments[1].column.get();
+
+        if (const auto * col_left_const = checkAndGetColumnConst<ColumnString>(col_left_raw))
+        {
+            if (const auto * col_right_const = checkAndGetColumnConst<ColumnString>(col_right_raw))
+            {
+                const auto * col_left = checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
+                const auto * col_right = checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
+
+                std::string_view a = col_left->getDataAt(0).toView();
+                std::string_view b = col_right->getDataAt(0).toView();
+
+                auto res = OpImpl::constConst(a, b);
+
+                return DataTypeUInt64{}.createColumnConst(1, res);
+            }
+        }
+
+        const bool is_left_column_const = checkAndGetColumnConst<ColumnString>(col_left_raw) != nullptr;
+        const bool is_right_column_const = checkAndGetColumnConst<ColumnString>(col_right_raw) != nullptr;
+
+        const auto * col_left = is_left_column_const
+            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
+            : checkAndGetColumn<ColumnString>(col_left_raw);
+        const auto * col_right = is_right_column_const
+            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
+            : checkAndGetColumn<ColumnString>(col_right_raw);
+
+        if (col_left && col_right)
+        {
+            auto col_res = ColumnUInt64::create();
+            auto & data = col_res->getData();
+            data.resize(is_right_column_const ? col_left->size() : col_right->size());
+
+            if (!is_left_column_const && !is_right_column_const)
+            {
+                OpImpl::vectorVector(
+                    col_left->getChars(), col_left->getOffsets(), col_right->getChars(), col_right->getOffsets(), data);
+            }
+            else if (is_left_column_const)
+            {
+                std::string_view str_view = col_left->getDataAt(0).toView();
+                OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
+            }
+            else
+            {
+                std::string_view str_view = col_right->getDataAt(0).toView();
+                OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
             }
 
             return col_res;
@@ -1496,9 +1694,8 @@ public:
         return nullptr;
     }
 
-
-    template <typename LeftColumnType, typename A, typename B>
-    ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
+template <typename LeftColumnType, typename A, typename B>
+ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1544,7 +1741,7 @@ public:
                 OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
             }
 
-            return ColumnConst::create(std::move(col_res), col_left->size());
+            return ColumnConst::create(std::move(col_res), col_left_const->size());
         }
         else if (!col_left_const && !col_right_const && col_right)
         {
@@ -1815,7 +2012,11 @@ public:
                         return (res = executeFixedString(arguments)) != nullptr;
                 }
 
-                if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
+                if constexpr (
+                    is_bit_hamming_distance
+                    && std::is_same_v<DataTypeString, LeftDataType> && std::is_same_v<DataTypeString, RightDataType>)
+                    return (res = executeString(arguments)) != nullptr;
+                else if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
                     return false;
                 else if constexpr (!IsIntegral<RightDataType>)
                     return false;

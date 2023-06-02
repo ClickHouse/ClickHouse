@@ -97,6 +97,7 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -265,6 +266,7 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
+entropyLearnedHash
 equals
 erf
 erfc
@@ -389,6 +391,7 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
+kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
@@ -416,17 +419,10 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
-mapApply
-mapContains
-mapContainsKeyLike
-mapExtractKeyLike
-mapFilter
 mapFromArrays
-mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
-mapValues
 match
 materialize
 max2
@@ -563,6 +559,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
+prepareTrainEntropyLearnedHash
 proportionsZTest
 protocol
 queryID
@@ -660,6 +657,7 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
+space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -788,6 +786,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
@@ -866,6 +865,7 @@ toYear
 toYearWeek
 today
 tokens
+trainEntropyLearnedHash
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

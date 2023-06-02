@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include "Common/Stopwatch.h"
+#include <Interpreters/Context_fwd.h>
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 
@@ -91,16 +93,18 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
+        auto & per_part = per_part_params.emplace_back();
+        per_part.data_part = part;
+
+        LoadedMergeTreeDataPartInfoForReader part_info(part.data_part, part.alter_conversions);
         auto task_columns = getReadTaskColumns(
-            LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
-            column_names, virtual_column_names, prewhere_info, actions_settings, reader_settings, /*with_subcolumns=*/ true);
+            part_info, storage_snapshot, column_names, virtual_column_names,
+            prewhere_info, actions_settings,
+            reader_settings, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
 
-        auto & per_part = per_part_params.emplace_back();
-
-        per_part.data_part = part;
         per_part.size_predictor = std::move(size_predictor);
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
@@ -201,13 +205,16 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
     }
 
     const auto & per_part = per_part_params[part_idx];
-
     auto curr_task_size_predictor = !per_part.size_predictor ? nullptr
         : std::make_unique<MergeTreeBlockSizePredictor>(*per_part.size_predictor); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
-        part.data_part, ranges_to_get_from_part, part.part_index_in_query,
-        per_part.column_name_set, per_part.task_columns,
+        part.data_part,
+        part.alter_conversions,
+        ranges_to_get_from_part,
+        part.part_index_in_query,
+        per_part.column_name_set,
+        per_part.task_columns,
         std::move(curr_task_size_predictor));
 }
 
@@ -377,7 +384,7 @@ MergeTreeReadPoolParallelReplicas::~MergeTreeReadPoolParallelReplicas() = defaul
 
 Block MergeTreeReadPoolParallelReplicas::getHeader() const
 {
-    return storage_snapshot->getSampleBlockForColumns(extension.colums_to_read);
+    return storage_snapshot->getSampleBlockForColumns(extension.columns_to_read);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
@@ -455,6 +462,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
 
     return std::make_unique<MergeTreeReadTask>(
         part.data_part,
+        part.alter_conversions,
         ranges_to_read,
         part.part_index_in_query,
         per_part.column_name_set,
@@ -513,6 +521,5 @@ MarkRanges MergeTreeInOrderReadPoolParallelReplicas::getNewTask(RangesInDataPart
 
     return {};
 }
-
 
 }
