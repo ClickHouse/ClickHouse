@@ -1729,7 +1729,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     std::max(ranges[i].begin, index_mark * index_granularity),
                     std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
-            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                 res.push_back(data_range);
             else
                 res.back().end = data_range.end;
@@ -1829,7 +1829,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 std::max(range.begin, index_mark * index_granularity),
                 std::min(range.end, (index_mark + 1) * index_granularity));
 
-            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                 res.push_back(data_range);
             else
                 res.back().end = data_range.end;

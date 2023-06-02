@@ -213,7 +213,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
-For [String](../../sql-reference/data-types/string.md) arguments, the funtion returns the string length + 9 (terminating zero + length).
+For [String](../../sql-reference/data-types/string.md) arguments, the function returns the string length + 9 (terminating zero + length).
 
 Query:
 
