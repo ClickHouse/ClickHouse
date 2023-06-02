@@ -19,6 +19,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -669,7 +670,7 @@ void LocalServer::processConfig()
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        scheduleAndWaitLoad(startup_system_tasks);
+        scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, startup_system_tasks);
 
         if (!config().has("only-system-tables"))
         {
