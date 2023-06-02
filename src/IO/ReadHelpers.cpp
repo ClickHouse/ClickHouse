@@ -46,48 +46,40 @@ inline void parseHex(IteratorSrc src, IteratorDst dst)
         dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
-void parseUUID(const UInt8 * src36, UInt8 * dst16)
+UUID parseUUID(std::span<const UInt8> src)
 {
-    /// If string is not like UUID - implementation specific behaviour.
+    UUID uuid;
+    const auto * src_ptr = src.data();
+    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
+    if (const auto size = src.size(); size == 36)
+    {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        parseHex<4>(src_ptr, dst);
+        parseHex<2>(src_ptr + 9, dst + 4);
+        parseHex<2>(src_ptr + 14, dst + 6);
+        parseHex<2>(src_ptr + 19, dst + 8);
+        parseHex<6>(src_ptr + 24, dst + 10);
+#else
+        const std::reverse_iterator dst_it(dst + sizeof(UUID));
+        /// FIXME This code looks like trash.
+        parseHex<4>(src_ptr, dst + 8);
+        parseHex<2>(src_ptr + 9, dst + 12);
+        parseHex<2>(src_ptr + 14, dst + 14);
+        parseHex<2>(src_ptr + 19, dst);
+        parseHex<6>(src_ptr + 24, dst + 2);
+#endif
+    }
+    else if (size == 32)
+    {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        parseHex<16>(src_ptr, dst);
+#else
+        parseHex<8>(src_ptr, dst + 8);
+        parseHex<8>(src_ptr + 16, dst);
+#endif
+    }
 
-    parseHex<4>(&src36[0], &dst16[0]);
-    parseHex<2>(&src36[9], &dst16[4]);
-    parseHex<2>(&src36[14], &dst16[6]);
-    parseHex<2>(&src36[19], &dst16[8]);
-    parseHex<6>(&src36[24], &dst16[10]);
-}
-
-void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
-{
-    /// If string is not like UUID - implementation specific behaviour.
-
-    parseHex<16>(&src36[0], &dst16[0]);
-}
-
-/** Function used when byte ordering is important when parsing uuid
- *  ex: When we create an UUID type
- */
-void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
-{
-    /// If string is not like UUID - implementation specific behaviour.
-
-    /// FIXME This code looks like trash.
-    parseHex<4>(&src36[0], dst16 + 8);
-    parseHex<2>(&src36[9], dst16 + 12);
-    parseHex<2>(&src36[14], dst16 + 14);
-    parseHex<2>(&src36[19], dst16);
-    parseHex<6>(&src36[24], dst16 + 2);
-}
-
-/** Function used when byte ordering is important when parsing uuid
- *  ex: When we create an UUID type
- */
-void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
-{
-    /// If string is not like UUID - implementation specific behaviour.
-
-    parseHex<8>(&src36[0], dst16 + 8);
-    parseHex<8>(&src36[16], dst16);
+    return uuid;
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
