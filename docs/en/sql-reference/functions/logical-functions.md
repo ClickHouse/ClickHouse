@@ -31,7 +31,7 @@ Alias: The [AND Operator](../../sql-reference/operators/index.md#logical-and-ope
 **Returned value**
 
 - `0`, if there at least one argument evaluates to `false`,
-- `NULL`, if no argumetn evaluates to `false` and at least one argument is `NULL`,
+- `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`,
 - `1`, otherwise.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
