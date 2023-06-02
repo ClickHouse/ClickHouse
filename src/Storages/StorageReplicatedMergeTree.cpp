@@ -2846,6 +2846,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored", total_entries_to_copy, source_queue.size() - total_entries_to_copy);
+    LOG_TRACE(log, "Parts in ZooKeeper after mimic: {}", fmt::join(zookeeper->getChildren(replica_path + "/parts"), ", "));
+    LOG_TRACE(log, "Enqueued fetches after mimic: {}", fmt::join(created_get_parts, ", "));
 }
 
 
