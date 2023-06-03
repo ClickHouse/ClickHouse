@@ -1384,13 +1384,13 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types) const override
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
-        if (2 != types.size())
+        if (2 != arguments.size())
             return false;
 
-        WhichDataType data_type_lhs(types[0]);
-        WhichDataType data_type_rhs(types[1]);
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
 
         auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
 
@@ -1400,16 +1400,18 @@ public:
             || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
 
-        return isCompilableType(types[0]) && isCompilableType(types[1]);
+        return canBeNativeType(arguments[0]) && canBeNativeType(arguments[1]) && canBeNativeType(result_type);
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == types.size() && 2 == values.size());
+        assert(2 == arguments.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
-        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
+        auto * x = nativeCast(b, arguments[0], result_type);
+        auto * y = nativeCast(b, arguments[1], result_type);
+        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*arguments[0].type) || typeIsSigned(*arguments[1].type));
+
         return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
     }
 #endif
