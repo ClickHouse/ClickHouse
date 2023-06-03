@@ -43,7 +43,8 @@ bool DetectWaitDependentDeadlockImpl(const LoadJob & waited)
 {
     if (&waited == current_load_job)
         return true;
-    for (const auto & dep : waited.dependencies) {
+    for (const auto & dep : waited.dependencies)
+    {
         if (DetectWaitDependentDeadlockImpl(*dep))
             return true;
     }
