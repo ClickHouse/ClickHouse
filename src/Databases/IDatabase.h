@@ -185,7 +185,7 @@ public:
         const QualifiedTableName & /*name*/,
         LoadingStrictnessLevel /*mode*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); // TODO: should return empty task instead because startupTables default implementation do no throw?
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
     /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
@@ -196,7 +196,7 @@ public:
         LoadJobSet /*startup_after*/,
         LoadingStrictnessLevel /*mode*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); // TODO: should return empty task instead because startupTables default implementation do no throw?
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
     /// Check the existence of the table in memory (attached).
