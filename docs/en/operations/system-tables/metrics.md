@@ -44,13 +44,21 @@ Number of threads in the Aggregator thread pool.
 
 Number of threads in the Aggregator thread pool running a task.
 
-### AsyncLoaderThreads
+### AsyncLoaderForegroundThreads
 
-Number of threads in the async loader thread pool.
+Number of threads in the async loader foreground thread pool.
 
-### AsyncLoaderThreadsActive
+### AsyncLoaderForegroundThreadsActive
 
-Number of threads in the async loader thread pool running a task.
+Number of threads in the async loader foreground thread pool running a task.
+
+### AsyncLoaderBackgroundThreads
+
+Number of threads in the async loader background thread pool.
+
+### AsyncLoaderBackgroundThreadsActive
+
+Number of threads in the async loader background thread pool running a task.
 
 ### AsyncInsertCacheSize
 
