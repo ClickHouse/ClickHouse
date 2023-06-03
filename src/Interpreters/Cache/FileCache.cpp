@@ -17,6 +17,12 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+}
+
 namespace
 {
 
@@ -643,7 +649,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 return PriorityIterationResult::CONTINUE;
             }
 
-            /// TODO: we can resize if partially downloaded instead.
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+
             locked_key.removeFileSegment(segment->offset(), segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
@@ -721,6 +729,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             chassert(candidate->releasable());
 
             const auto * segment = candidate->file_segment.get();
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+
             locked_key->removeFileSegment(segment->offset(), segment->lock());
             segment->getQueueIterator()->remove(cache_lock);
 
