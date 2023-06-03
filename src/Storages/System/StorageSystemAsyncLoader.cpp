@@ -49,7 +49,8 @@ NamesAndTypesList StorageSystemAsyncLoader::getNamesAndTypes()
 {
     return {
         { "job",               std::make_shared<DataTypeString>() },
-        { "dependencies",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "job_id",            std::make_shared<DataTypeUInt64>() },
+        { "dependencies",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
         { "dependencies_left", std::make_shared<DataTypeUInt64>() },
         { "status",            std::make_shared<DataTypeEnum8>(getTypeEnumValues<LoadStatus>()) },
         { "is_executing",      std::make_shared<DataTypeUInt8>() },
@@ -77,11 +78,10 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
 
     for (const auto & state : async_loader.getJobStates())
     {
-
         Array dependencies;
         dependencies.reserve(state.job->dependencies.size());
         for (const auto & dep : state.job->dependencies)
-            dependencies.emplace_back(dep->name);
+            dependencies.emplace_back(dep->jobId());
 
         TimePoint started = state.job->startTime();
         TimePoint finished = state.job->finishTime();
@@ -112,6 +112,7 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
 
         size_t i = 0;
         res_columns[i++]->insert(state.job->name);
+        res_columns[i++]->insert(state.job->jobId());
         res_columns[i++]->insert(dependencies);
         res_columns[i++]->insert(state.dependencies_left);
         res_columns[i++]->insert(static_cast<Int8>(state.job->status()));

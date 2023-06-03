@@ -107,8 +107,9 @@ void LoadJob::finish()
         finished.notify_all();
 }
 
-void LoadJob::scheduled()
+void LoadJob::scheduled(UInt64 job_id_)
 {
+    job_id = job_id_;
     schedule_time = std::chrono::system_clock::now();
 }
 
@@ -276,7 +277,7 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             scheduled_jobs.try_emplace(job);
-            job->scheduled();
+            job->scheduled(++last_job_id);
         });
     }
 

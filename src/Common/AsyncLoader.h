@@ -50,6 +50,7 @@ public:
     LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, Func && func_)
         : dependencies(std::forward<LoadJobSetType>(dependencies_))
         , name(std::move(name_))
+        , execution_pool_id(pool_id_)
         , pool_id(pool_id_)
         , func(std::forward<Func>(func_))
     {}
@@ -79,6 +80,7 @@ public:
 
     // Introspection
     using TimePoint = std::chrono::system_clock::time_point;
+    UInt64 jobId() const { return job_id; }
     TimePoint scheduleTime() const { return schedule_time; }
     TimePoint enqueueTime() const { return enqueue_time; }
     TimePoint startTime() const { return start_time; }
@@ -95,10 +97,11 @@ private:
     void canceled(const std::exception_ptr & ptr);
     void finish();
 
-    void scheduled();
+    void scheduled(UInt64 job_id_);
     void enqueued();
     void execute(size_t pool, const LoadJobPtr & self);
 
+    std::atomic<UInt64> job_id{0};
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
     std::function<void(const LoadJobPtr & self)> func;
@@ -372,6 +375,7 @@ private:
     bool is_running = true;
     std::optional<Priority> current_priority; // highest priority among active pools
     UInt64 last_ready_seqno = 0; // Increasing counter for ready queue keys.
+    UInt64 last_job_id = 0; // Increasing counter for job IDs
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs; // Full set of scheduled pending jobs along with scheduling info.
     std::vector<Pool> pools; // Thread pools for job execution and ready queues
     LoadJobSet finished_jobs; // Set of finished jobs (for introspection only, until jobs are removed).
