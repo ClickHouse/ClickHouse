@@ -794,7 +794,7 @@ public:
     void onException() override
     {
         std::lock_guard lock(cancel_mutex);
-        finalize();
+        release();
     }
 
     void onFinish() override
@@ -822,6 +822,15 @@ private:
             write_buf->finalize();
             throw;
         }
+    }
+
+    void release()
+    {
+        if (!writer)
+            return;
+
+        writer.reset();
+        write_buf.reset();
     }
 
     Block sample_block;
