@@ -2046,51 +2046,62 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments) const override
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
+            return false;
+
+        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, LeftDataType> || std::is_same_v<DataTypeString, RightDataType>)
-                return false;
-            else
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                return !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                    return true;
             }
+            return false;
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == types.size() && 2 == values.size());
+        assert(2 == arguments.size());
 
         llvm::Value * result = nullptr;
-        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType> && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto type = std::make_shared<ResultDataType>();
-                    auto * lval = nativeCast(b, types[0], values[0], type);
-                    auto * rval = nativeCast(b, types[1], values[1], type);
+                    auto * lval = nativeCast(b, arguments[0], result_type);
+                    auto * rval = nativeCast(b, arguments[1], result_type);
                     result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+
                     return true;
                 }
             }
+
             return false;
         });
+
         return result;
     }
 #endif
