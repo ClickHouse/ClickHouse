@@ -51,7 +51,7 @@ Calculates the MD5 from a string and returns the resulting set of bytes as Fixed
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 {#hash_functions-siphash64}
+## sipHash64 (#hash_functions-siphash64)
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
@@ -63,9 +63,9 @@ This is a cryptographic hash function. It works at least three times faster than
 
 The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
-1. The first and the second hash value are concatenated to an array which is hashed.
-2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
-3. This calculation is repeated for all remaining hash values of the original input.
+1.  The first and the second hash value are concatenated to an array which is hashed.
+2.  The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
+3.  This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
 
@@ -560,77 +560,6 @@ Result:
 └───────────────────────────┘
 ```
 
-## Entropy-learned hashing (experimental)
-
-Entropy-learned hashing is disabled by default, to enable: `SET allow_experimental_hash_functions=1`.
-
-Entropy-learned hashing is not a standalone hash function like `metroHash64`, `cityHash64`, `sipHash64` etc. Instead, it aims to preprocess
-the data to be hashed in a way that a standalone hash function can be computed more efficiently while not compromising the hash quality,
-i.e. the randomness of the hashes. For that, entropy-based hashing chooses a subset of the bytes in a training data set of Strings which has
-the same randomness (entropy) as the original Strings. For example, if the Strings are in average 100 bytes long, and we pick a subset of 5
-bytes, then a hash function will be 95% less expensive to evaluate. For details of the method, refer to [Entropy-Learned Hashing: Constant
-Time Hashing with Controllable Uniformity](https://doi.org/10.1145/3514221.3517894).
-
-Entropy-learned hashing has two phases:
-
-1. A training phase on a representative but typically small set of Strings to be hashed. Training consists of two steps:
-
-   - Function `prepareTrainEntropyLearnedHash(data, id)` caches the training data in a global state under a given `id`. It returns dummy
-     value `0` on every row.
-   - Function `trainEntropyLearnedHash(id)` computes a minimal partial sub-key of the training data stored stored under `id` in the global
-     state. The cached training data in the global state is replaced by the partial key. Dummy value `0` is returned on every row.
-
-2. An evaluation phase where hashes are computed using the previously calculated partial sub-keys. Function `entropyLearnedHash(data, id)`
-   hashes `data` using the partial subkey stored as `id`. CityHash64 is used as hash function.
-
-The reason that the training phase comprises two steps is that ClickHouse processes data at chunk granularity but entropy-learned hashing
-needs to process the entire training set at once.
-
-Since functions `prepareTrainEntropyLearnedHash()` and `trainEntropyLearnedHash()` access global state, they should not be called in
-parallel with the same `id`.
-
-**Syntax**
-
-``` sql
-prepareTrainEntropyLearnedHash(data, id);
-trainEntropyLearnedHash(id);
-entropyLearnedHash(data, id);
-```
-
-**Example**
-
-```sql
-SET allow_experimental_hash_functions=1;
-CREATE TABLE tab (col String) ENGINE=Memory;
-INSERT INTO tab VALUES ('aa'), ('ba'), ('ca');
-
-SELECT prepareTrainEntropyLearnedHash(col, 'id1') AS prepared FROM tab;
-SELECT trainEntropyLearnedHash('id1') AS trained FROM tab;
-SELECT entropyLearnedHash(col, 'id1') as hashes FROM tab;
-```
-
-Result:
-
-``` response
-┌─prepared─┐
-│        0 │
-│        0 │
-│        0 │
-└──────────┘
-
-┌─trained─┐
-│       0 │
-│       0 │
-│       0 │
-└─────────┘
-
-┌───────────────hashes─┐
-│  2603192927274642682 │
-│  4947675599669400333 │
-│ 10783339242466472992 │
-└──────────────────────┘
-```
-
 ## metroHash64
 
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
@@ -697,7 +626,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## gccMurmurHash
 
-Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
+Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between Clang and GCC builds.
 
 **Syntax**
 
@@ -1161,7 +1090,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 **Arguments**
 
 - `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optinal. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
