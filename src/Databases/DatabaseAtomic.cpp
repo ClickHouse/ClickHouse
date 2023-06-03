@@ -113,6 +113,9 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    // To DROP tables we need the database to be started up (including all the tables)
+    waitLoad(AsyncLoaderPoolId::Foreground, getStartupTask());
+
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -122,6 +125,12 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
 
     dropTableImpl(local_context, table_name, sync);
+}
+
+LoadTaskPtr DatabaseAtomic::getStartupTask()
+{
+    std::scoped_lock lock(mutex);
+    return startup_atomic_database_task;
 }
 
 void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & table_name, bool sync)

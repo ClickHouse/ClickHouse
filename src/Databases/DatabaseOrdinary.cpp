@@ -244,7 +244,7 @@ StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr local_c
             startup_task = &it->second;
     }
 
-    // Prioritize jobs (load and startup) to be executed in foreground pool and wait for them synchronously
+    // Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
     if (startup_task)
         waitLoad(AsyncLoaderPoolId::Foreground, *startup_task);
 

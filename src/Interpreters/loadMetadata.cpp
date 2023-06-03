@@ -478,7 +478,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
                                                  "will try to convert all Ordinary databases to Atomic");
 
     // Wait for all table to be loaded and started
-    waitLoadAllIn(AsyncLoaderPoolId::Foreground, load_metadata);
+    waitLoad(AsyncLoaderPoolId::Foreground, load_metadata);
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
