@@ -54,7 +54,7 @@ def test_upload_after_check_works(cluster, broken_s3):
         """
     )
 
-    broken_s3.setup_fake_upload(1)
+    broken_s3.setup_fake_puts(1)
 
     error = node.query_and_get_error(
         "INSERT INTO s3_upload_after_check_works VALUES (1, 'Hello')"
@@ -63,3 +63,99 @@ def test_upload_after_check_works(cluster, broken_s3):
     assert "Code: 499" in error, error
     assert "Immediately after upload" in error, error
     assert "suddenly disappeared" in error, error
+
+
+def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
+    node.query("SYSTEM FLUSH LOGS")
+    return [
+        int(x)
+        for x in node.query(
+            f"""
+                SELECT
+                    ProfileEvents['S3CreateMultipartUpload'],
+                    ProfileEvents['S3UploadPart'],
+                    ProfileEvents['S3WriteRequestsErrors']
+                FROM system.query_log
+                WHERE query_id='{query_id}'
+                    AND type='{log_type}'
+                """
+        ).split()
+        if x
+    ]
+
+
+def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_error_at_create_multi_part_upload()
+
+    insert_query_id = "INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU"
+    error = node.query_and_get_error(
+        """
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_upload_s3_fail_create_multi_part_upload',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 100000000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=100
+        """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "mock s3 injected error" in error, error
+    assert "DB::WriteBufferFromS3::createMultipartUpload()" in error, error
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id
+    )
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 0
+    assert count_s3_errors == 1
+
+
+def test_upload_s3_fail_upload_part_when_multi_part_upload(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_error_at_part_upload(count=1, after=2)
+
+    insert_query_id = "INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART"
+    error = node.query_and_get_error(
+        """
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_upload_s3_fail_upload_part_when_multi_part_upload',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 100000000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=100
+        """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "mock s3 injected error" in error, error
+    assert "DB::WriteBufferFromS3::writePart" in error, error
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id
+    )
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts >= 2
+    assert (
+        count_s3_errors == 2
+    )  # the second is cancel multipart upload, s3_mock just redirects this request
