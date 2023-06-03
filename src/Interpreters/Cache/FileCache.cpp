@@ -1,16 +1,35 @@
 #include "FileCache.h"
 
-#include <Common/randomSeed.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadSettings.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <pcg-random/pcg_random.hpp>
 #include <base/hex.h>
+#include <pcg-random/pcg_random.hpp>
+#include <Common/randomSeed.h>
+
+#include <filesystem>
+
+
+namespace fs = std::filesystem;
+
+namespace
+{
+
+size_t roundDownToMultiple(size_t num, size_t multiple)
+{
+    return (num / multiple) * multiple;
+}
+
+size_t roundUpToMultiple(size_t num, size_t multiple)
+{
+    return roundDownToMultiple(num + multiple - 1, multiple);
+}
+}
 
 namespace DB
 {
@@ -26,6 +45,7 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
+    , boundary_alignment(settings.boundary_alignment)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -385,15 +405,16 @@ FileSegmentsHolderPtr FileCache::set(
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
-FileSegmentsHolderPtr FileCache::getOrSet(
-    const Key & key,
-    size_t offset,
-    size_t size,
-    const CreateFileSegmentSettings & settings)
+FileSegmentsHolderPtr
+FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
 
-    FileSegment::Range range(offset, offset + size - 1);
+    const auto aligned_offset = roundDownToMultiple(offset, boundary_alignment);
+    const auto aligned_end = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size);
+    const auto aligned_size = aligned_end - aligned_offset;
+
+    FileSegment::Range range(aligned_offset, aligned_offset + aligned_size - 1);
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY);
 
@@ -401,14 +422,19 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     auto file_segments = getImpl(*locked_key, range);
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoFileSegments(
-            *locked_key, offset, size, FileSegment::State::EMPTY, settings);
+        file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, settings);
     }
     else
     {
         fillHolesWithEmptyFileSegments(
             *locked_key, file_segments, range, /* fill_with_detached */false, settings);
     }
+
+    while (!file_segments.empty() && file_segments.front()->range().right < offset)
+        file_segments.pop_front();
+
+    while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
+        file_segments.pop_back();
 
     chassert(!file_segments.empty());
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
