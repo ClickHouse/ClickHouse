@@ -52,7 +52,6 @@ struct RelativePathWithMetadata
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
 
 
-
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
