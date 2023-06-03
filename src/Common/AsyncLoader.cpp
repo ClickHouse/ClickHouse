@@ -1,6 +1,7 @@
 #include <Common/AsyncLoader.h>
 
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/noexcept_scope.h>
@@ -16,6 +17,7 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int LOGICAL_ERROR;
 }
 
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
@@ -27,6 +29,53 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
     {
         LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
         watch.restart();
+    }
+}
+
+// Keep track of currently executing load jobs to be able to:
+// 1) Detect "wait dependent" deadlocks (when job A function waits for job B that depends on job A)
+// 2) Detect "priority inversion" deadlocks (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
+// 3) Detect "blocked pool" deadlocks (when job A in pool P waits for another ready job B in P, but B never starts because there is no free workers in P)
+thread_local AsyncLoader * current_async_loader = nullptr;
+thread_local LoadJob * current_load_job = nullptr;
+
+bool DetectWaitDependentDeadlockImpl(const LoadJob & waited)
+{
+    if (&waited == current_load_job)
+        return true;
+    for (const auto & dep : waited.dependencies) {
+        if (DetectWaitDependentDeadlockImpl(*dep))
+            return true;
+    }
+    return false;
+}
+
+void DetectDeadlock(const LoadJob & waited)
+{
+    if (current_load_job)
+    {
+        chassert(current_async_loader); // We are inside a worker
+        if (DetectWaitDependentDeadlockImpl(waited))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for dependent load job '{}'", current_load_job->name, waited.name);
+
+        // NOTE: We assume that `waited` and `current_load_job` are in the same AsyncLoader.
+        // NOTE: To avoid assuming this, we have to store async_loader in every job, which looks unreasonable.
+        auto current_priority = current_async_loader->getPoolPriority(current_load_job->executionPool());
+        auto waited_pool = waited.pool();
+        auto waited_priority = current_async_loader->getPoolPriority(waited_pool);
+        if (current_priority < waited_priority)
+        {
+            // We are waiting for a lower-priority job, this is allowed only if it is already finished.
+            // It is not a deadlock if job has already started, but not finished. Nevertheless, it is a race condition, so must be reported.
+            if (waited.status() == LoadStatus::PENDING)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' (priority={}) waits for lower-priority load job '{}' (priority={})",
+                    current_load_job->name, current_priority.value, waited.name, waited_priority);
+        }
+
+        // TODO(serxa): this kind of deadlock can be resolved by allowing either recursive execution or granting one more worker per waiting worker. For now let's consider it invalid.
+        if (current_load_job->executionPool() == waited.pool())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for load job '{}' from the same pool '{}'",
+                current_load_job->name, waited.name, current_async_loader->getPoolName(waited_pool));
     }
 }
 
@@ -54,6 +103,7 @@ size_t LoadJob::pool() const
 
 void LoadJob::wait() const
 {
+    DetectDeadlock(*this);
     std::unique_lock lock{mutex};
     waiters++;
     finished.wait(lock, [this] { return load_status != LoadStatus::PENDING; });
@@ -64,6 +114,7 @@ void LoadJob::wait() const
 
 void LoadJob::waitNoThrow() const noexcept
 {
+    DetectDeadlock(*this);
     std::unique_lock lock{mutex};
     waiters++;
     finished.wait(lock, [this] { return load_status != LoadStatus::PENDING; });
@@ -121,6 +172,8 @@ void LoadJob::enqueued()
 
 void LoadJob::execute(size_t pool, const LoadJobPtr & self)
 {
+    current_load_job = this;
+    SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported yet
     execution_pool_id = pool;
     start_time = std::chrono::system_clock::now();
     func(self);
@@ -666,6 +719,9 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> &)
 void AsyncLoader::worker(Pool & pool)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
+
+    current_async_loader = this;
+    SCOPE_EXIT({ current_async_loader = nullptr; });
 
     size_t pool_id = &pool - &*pools.begin();
     LoadJobPtr job;
