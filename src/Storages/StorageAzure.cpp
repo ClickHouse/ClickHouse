@@ -236,7 +236,7 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
 StorageAzure::StorageAzure(
     const Configuration & configuration_,
     std::unique_ptr<AzureObjectStorage> && object_storage_,
-    ContextPtr context_,
+    ContextPtr,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -252,7 +252,7 @@ StorageAzure::StorageAzure(
     , partition_by(partition_by_)
 {
     FormatFactory::instance().checkFormatName(configuration.format);
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration.getConnectionURL()));
+    //context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration.getConnectionURL()));
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())

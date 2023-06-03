@@ -18,6 +18,11 @@ struct AzureSimpleAccountConfiguration
     std::string storage_account_url;
 };
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 using AzureConnectionString = std::string;
 
 using AzureCredentials = std::variant<AzureSimpleAccountConfiguration, AzureConnectionString>;
@@ -85,13 +90,16 @@ public:
     }
 
     Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override;
+        const Names &,
+        const StorageSnapshotPtr &,
+        SelectQueryInfo &,
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        size_t,
+        size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Read not implemented");
+    }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /* metadata_snapshot */, ContextPtr context) override;
 
