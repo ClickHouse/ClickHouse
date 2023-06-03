@@ -165,7 +165,7 @@ Received exception from server (version 22.6.1):
 Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
-While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
+While `aes_encrypt_mysql` produces MySQL-compatible output:
 
 Query:
 

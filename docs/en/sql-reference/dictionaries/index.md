@@ -247,7 +247,7 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 ### hashed
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
@@ -1243,8 +1243,8 @@ Setting fields:
 - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
 - `header` – Single HTTP header entry.
-- `name` – Identifiant name used for the header send on the request.
-- `value` – Value set for a specific identifiant name.
+- `name` – Identifier name used for the header send on the request.
+- `value` – Value set for a specific identifier name.
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 

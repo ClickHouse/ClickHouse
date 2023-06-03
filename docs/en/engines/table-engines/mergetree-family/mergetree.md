@@ -779,7 +779,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
-for adhoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
+for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
 See [dynamic storage](#dynamic-storage) for more details.
 :::
 
