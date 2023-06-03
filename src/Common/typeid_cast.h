@@ -27,15 +27,8 @@ template <typename To, typename From>
 requires std::is_reference_v<To>
 To typeid_cast(From & from) noexcept(false)
 {
-    try
-    {
-        if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
-            return static_cast<To>(from);
-    }
-    catch (const std::bad_typeid & e)
-    {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
+        return static_cast<To>(from);
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
                         demangle(typeid(from).name()), demangle(typeid(To).name()));
