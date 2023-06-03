@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# force-enable double star globbing
+shopt -s globstar
+
 # Perform spell checking on the docs
 
 if [[ ${1:-} == "--help" ]] || [[ ${1:-} == "-h" ]]; then
