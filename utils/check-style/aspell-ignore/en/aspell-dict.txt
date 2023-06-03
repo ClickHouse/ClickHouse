@@ -28,7 +28,6 @@ AnyEvent
 AppleClang
 ArrayJoin
 ArrowStream
-AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -37,6 +36,11 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
+AsyncInsertCacheSize
+AsyncLoaderBackgroundThreads
+AsyncLoaderBackgroundThreadsActive
+AsyncLoaderForegroundThreads
+AsyncLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoML
@@ -858,8 +862,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
