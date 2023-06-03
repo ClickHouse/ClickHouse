@@ -91,7 +91,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                 blob.Name,
                 ObjectMetadata{
                     static_cast<uint64_t>(blob.BlobSize),
-                    blob.Details.LastModified.time_since_epoch().count(),
+                    Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            blob.Details.LastModified.time_since_epoch()).count()),
                     {}});
         }
 

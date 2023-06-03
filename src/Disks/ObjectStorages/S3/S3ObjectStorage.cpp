@@ -211,7 +211,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(object.GetKey(), ObjectMetadata{static_cast<uint64_t>(object.GetSize()), object.GetLastModified().Millis() / 1000, {}});
+            children.emplace_back(object.GetKey(), ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}});
 
         if (max_keys)
         {
