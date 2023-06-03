@@ -247,6 +247,7 @@ public:
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
 
+        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
         const bool quoted = !isUUID(nested_type);
 
         writeChar('{', ostr);
