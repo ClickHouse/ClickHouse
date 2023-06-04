@@ -67,6 +67,51 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     return false;
 }
 
+void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+{
+    auto client_ptr = client.get();
+
+    /// What a shame, no Exists method...
+    Azure::Storage::Blobs::ListBlobsOptions options;
+    options.Prefix = path;
+    if (max_keys)
+        options.PageSizeHint = max_keys;
+    else
+        options.PageSizeHint = settings.get()->list_object_keys_size;
+    Azure::Storage::Blobs::ListBlobsPagedResponse blob_list_response;
+
+    while (true)
+    {
+        blob_list_response = client_ptr->ListBlobs(options);
+        auto blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
+        {
+            children.emplace_back(
+                blob.Name,
+                ObjectMetadata{
+                    static_cast<uint64_t>(blob.BlobSize),
+                    Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            blob.Details.LastModified.time_since_epoch()).count()),
+                    {}});
+        }
+
+        if (max_keys)
+        {
+            int keys_left = max_keys - static_cast<int>(children.size());
+            if (keys_left <= 0)
+                break;
+            options.PageSizeHint = keys_left;
+        }
+
+        if (blob_list_response.HasPage())
+            options.ContinuationToken = blob_list_response.NextPageToken;
+        else
+            break;
+    }
+}
+
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
@@ -144,33 +189,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         settings.get()->max_single_part_upload_size,
         buf_size,
         patchSettings(write_settings));
-}
-
-void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
-{
-    auto client_ptr = client.get();
-
-    Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
-    blobs_list_options.Prefix = path;
-    if (max_keys)
-        blobs_list_options.PageSizeHint = max_keys;
-    else
-        blobs_list_options.PageSizeHint = settings.get()->list_object_keys_size;
-
-    auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
-    for (;;)
-    {
-        auto blobs_list = blobs_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
-            children.emplace_back(blob.Name, blob.BlobSize);
-
-        if (max_keys && children.size() >= static_cast<size_t>(max_keys))
-            break;
-        if (!blobs_list_response.HasPage())
-            break;
-        blobs_list_response.MoveToNextPage();
-    }
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
