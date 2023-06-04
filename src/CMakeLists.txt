@@ -346,6 +346,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
+            boost::context
             ch_contrib::cityhash
             ch_contrib::re2
             ch_contrib::re2_st
