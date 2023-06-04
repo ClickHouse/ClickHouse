@@ -7,16 +7,17 @@
 namespace DB
 {
 
-    using IPv4 = StrongTypedef<UInt32, struct IPv4Tag>;
+    struct IPv4 : StrongTypedef<UInt32, struct IPv4Tag>
+    {
+        using StrongTypedef::StrongTypedef;
+        using StrongTypedef::operator=;
+        constexpr explicit IPv4(UInt64 value): StrongTypedef(static_cast<UnderlyingType>(value)) {}
+    };
 
     struct IPv6 : StrongTypedef<UInt128, struct IPv6Tag>
     {
-        constexpr IPv6() = default;
-        constexpr explicit IPv6(const UInt128 & x) : StrongTypedef(x) {}
-        constexpr explicit IPv6(UInt128 && x) : StrongTypedef(std::move(x)) {}
-
-        IPv6 & operator=(const UInt128 & rhs) { StrongTypedef::operator=(rhs); return *this; }
-        IPv6 & operator=(UInt128 && rhs) { StrongTypedef::operator=(std::move(rhs)); return *this; }
+        using StrongTypedef::StrongTypedef;
+        using StrongTypedef::operator=;
 
         bool operator<(const IPv6 & rhs) const
         {
@@ -60,6 +61,15 @@ namespace std
         size_t operator()(const DB::IPv6 & x) const
         {
             return std::hash<DB::IPv6::UnderlyingType>()(x.toUnderType());
+        }
+    };
+
+    template <>
+    struct hash<DB::IPv4>
+    {
+        size_t operator()(const DB::IPv4 & x) const
+        {
+            return std::hash<DB::IPv4::UnderlyingType>()(x.toUnderType());
         }
     };
 }

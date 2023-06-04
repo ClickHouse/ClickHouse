@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include "DataTypes/Serializations/ISerialization.h"
+#include <base/IPv4andIPv6.h>
 #include "base/types.h"
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
@@ -147,6 +148,8 @@ public:
                 StringRef key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
                     key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
+                else if (key_type->getTypeId() == TypeIndex::IPv6)
+                    key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(offset + i);
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
