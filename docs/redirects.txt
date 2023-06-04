@@ -13,7 +13,7 @@ data_types/date.md sql-reference/data-types/date.md
 data_types/datetime.md sql-reference/data-types/datetime.md
 data_types/datetime64.md sql-reference/data-types/datetime64.md
 data_types/decimal.md sql-reference/data-types/decimal.md
-data_types/domains/ipv4.md sql-reference/data-types/domains/ipv4.md
+data_types/domains/ipv4.md sql-reference/data-types/ipv4.md
 data_types/domains/ipv6.md sql-reference/data-types/ipv6.md
 data_types/domains/overview.md sql-reference/data-types/domains/overview.md
 data_types/enum.md sql-reference/data-types/enum.md
