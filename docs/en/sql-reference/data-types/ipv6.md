@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/data-types/domains/ipv6
+slug: /en/sql-reference/data-types/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---
 
 ## IPv6
 
-`IPv6` is a domain based on `FixedString(16)` type and serves as a typed replacement for storing IPv6 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
+IPv6 addresses. Stored in 16 bytes as UInt128.
 
 ### Basic Usage
 
@@ -57,27 +57,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴──────────────────────────────────┘
 ```
 
-Domain values are not implicitly convertible to types other than `FixedString(16)`.
-If you want to convert `IPv6` value to a string, you have to do that explicitly with `IPv6NumToString()` function:
+**See Also**
 
-``` sql
-SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
-```
-
-``` text
-┌─toTypeName(IPv6NumToString(from))─┬─s─────────────────────────────┐
-│ String                            │ 2001:44c8:129:2632:33:0:252:2 │
-└───────────────────────────────────┴───────────────────────────────┘
-```
-
-Or cast to a `FixedString(16)` value:
-
-``` sql
-SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
-```
-
-``` text
-┌─toTypeName(CAST(from, 'FixedString(16)'))─┬─i───────┐
-│ FixedString(16)                           │  ��� │
-└───────────────────────────────────────────┴─────────┘
-```
+- [Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)
