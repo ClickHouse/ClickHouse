@@ -115,6 +115,7 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
         else
         {
             configuration.account_name = fourth_arg;
+
             configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
@@ -216,18 +217,58 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
     if (configuration.is_connection_string)
     {
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
+        result->CreateIfNotExists();
     }
     else
     {
         if (configuration.account_name.has_value() && configuration.account_key.has_value())
         {
             auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
-            result = std::make_unique<BlobContainerClient>(configuration.connection_url, storage_shared_key_credential);
+            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
+            try
+            {
+                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
+            }
+            catch (const Azure::Storage::StorageException & e)
+            {
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+                {
+                    auto final_url = configuration.connection_url
+                        + (configuration.connection_url.back() == '/' ? "" : "/")
+                        + configuration.container;
+
+                    result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+                }
+                else
+                {
+                    throw;
+                }
+            }
         }
+        else
+        {
+            auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            try
+            {
+                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
+            }
+            catch (const Azure::Storage::StorageException & e)
+            {
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+                {
+                    auto final_url = configuration.connection_url
+                        + (configuration.connection_url.back() == '/' ? "" : "/")
+                        + configuration.container;
 
-        auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-
-        result = std::make_unique<BlobContainerClient>(configuration.connection_url, managed_identity_credential);
+                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
     }
 
     return result;
@@ -466,12 +507,14 @@ SinkToStoragePtr StorageAzure::write(const ASTPtr & query, const StorageMetadata
 
         if (!truncate_in_insert && object_storage->exists(StoredObject(configuration.blob_path)))
         {
+
             if (local_context->getSettingsRef().s3_create_new_file_on_insert)
             {
                 size_t index = configuration.blobs_paths.size();
                 const auto & first_key = configuration.blobs_paths[0];
                 auto pos = first_key.find_first_of('.');
                 String new_key;
+
                 do
                 {
                     new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
