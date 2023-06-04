@@ -522,9 +522,8 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
     DataTypes arguments_types;
     arguments_types.reserve(arguments.size());
 
-    for (const auto & argument : arguments) {
+    for (const auto & argument : arguments)
         arguments_types.push_back(argument.type);
-    }
 
     auto denulled_arguments_types = removeNullables(arguments_types);
     if (useDefaultImplementationForNulls() && denulled_arguments_types)
