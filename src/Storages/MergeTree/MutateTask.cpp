@@ -1269,22 +1269,23 @@ private:
                 continue;
 
             if (ctx->materialized_indices.contains(idx.name))
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
-
-            auto hardlink_index = [&](const String & idx_name)
             {
-                if (ctx->source_part->checksums.has(idx_name))
+                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+            }
+            else
+            {
+                auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
+                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
+                while (it != ctx->source_part->checksums.files.end())
                 {
-                    auto it = ctx->source_part->checksums.files.find(idx_name);
-                    if (it != ctx->source_part->checksums.files.end())
-                    {
-                        entries_to_hardlink.insert(idx_name);
-                        ctx->existing_indices_checksums.addFile(idx_name, it->second.file_size, it->second.file_hash);
-                    }
+                    if (!startsWith(it->first, prefix))
+                        break;
+
+                    entries_to_hardlink.insert(it->first);
+                    ctx->existing_indices_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
+                    ++it;
                 }
-            };
-            hardlink_index(INDEX_FILE_PREFIX + idx.name + ".idx");
-            hardlink_index(INDEX_FILE_PREFIX + idx.name + ".idx2");
+            }
         }
 
         NameSet removed_projections;
@@ -1301,10 +1302,14 @@ private:
                 continue;
 
             if (ctx->materialized_projections.contains(projection.name))
+            {
                 ctx->projections_to_build.push_back(&projection);
-
-            if (ctx->source_part->checksums.has(projection.getDirectoryName()))
-                entries_to_hardlink.insert(projection.getDirectoryName());
+            }
+            else
+            {
+                if (ctx->source_part->checksums.has(projection.getDirectoryName()))
+                    entries_to_hardlink.insert(projection.getDirectoryName());
+            }
         }
 
         NameSet hardlinked_files;
@@ -1354,7 +1359,7 @@ private:
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
             builder.addTransform(std::make_shared<ExpressionTransform>(
-                            builder.getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
+                builder.getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
 
             builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
         }

@@ -532,54 +532,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    for (const auto & [_, names] : column_to_affected_materialized)
-        updated_columns.insert(names.begin(), names.end());
-
     std::function<bool(const String & file_name)> has_index_or_projection
         = [&](const String & file_name) { return source.hasIndexOrProjection(file_name); };
 
     if (settings.recalculate_dependencies_of_updated_columns)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_index_or_projection);
-
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-    {
-        if (source.hasIndexOrProjection("skp_idx_" + index.name + ".idx") || source.hasIndexOrProjection("skp_idx_" + index.name + ".idx2"))
-        {
-            // If some dependent columns gets mutated
-            bool mutate = false;
-            const auto & index_cols = index.expression->getRequiredColumns();
-            for (const auto & col : index_cols)
-            {
-                if (updated_columns.contains(col))
-                {
-                    mutate = true;
-                    break;
-                }
-            }
-            if (mutate)
-                materialized_indices.insert(index.name);
-        }
-    }
-
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        if (source.hasIndexOrProjection(projection.getDirectoryName()))
-        {
-            // If some dependent columns gets mutated
-            bool mutate = false;
-            const auto & projection_cols = projection.required_columns;
-            for (const auto & col : projection_cols)
-            {
-                if (updated_columns.contains(col))
-                {
-                    mutate = true;
-                    break;
-                }
-            }
-            if (mutate)
-                materialized_projections.insert(projection.name);
-        }
-    }
 
     std::vector<String> read_columns;
     /// First, break a sequence of commands into stages.
@@ -869,6 +826,31 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : changed_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
+
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                if (source.hasIndexOrProjection("skp_idx_" + index.name + ".idx")
+                    || source.hasIndexOrProjection("skp_idx_" + index.name + ".idx2"))
+                {
+                    const auto & index_cols = index.expression->getRequiredColumns();
+                    bool changed = std::any_of(
+                        index_cols.begin(), index_cols.end(), [&](const auto & col) { return changed_columns.contains(col); });
+                    if (changed)
+                        materialized_indices.insert(index.name);
+                }
+            }
+
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                if (source.hasIndexOrProjection(projection.getDirectoryName()))
+                {
+                    const auto & projection_cols = projection.required_columns;
+                    bool changed = std::any_of(
+                        projection_cols.begin(), projection_cols.end(), [&](const auto & col) { return changed_columns.contains(col); });
+                    if (changed)
+                        materialized_projections.insert(projection.name);
+                }
+            }
         }
 
         if (!unchanged_columns.empty())
