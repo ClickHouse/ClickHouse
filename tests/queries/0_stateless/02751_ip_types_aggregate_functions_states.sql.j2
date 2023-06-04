@@ -1,6 +1,5 @@
 {% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,50) order by ip" %}
-{#{% set ip6_generator = "SELECT reinterpret(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16), 'IPv6') AS ip FROM numbers(1010011101, 50) order by ip" %}#}
-{% set ip6_generator = "SELECT CAST(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16), 'IPv6') AS ip FROM numbers(1010011101, 50) order by ip" %}
+{% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16))) AS ip FROM numbers(1010011101, 50) order by ip" %}
 {% set ip_generators = {'ip4': ip4_generator, 'ip6': ip6_generator} %}
 
 
@@ -141,8 +140,8 @@ from ( {{ ip_generator }} ) format Vertical;
 
 
 {% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,1) order by ip" %}
-{#{% set ip6_generator = "SELECT reinterpret(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16), 'IPv6') AS ip FROM numbers(1010011101, 1) order by ip" %}#}
-{% set ip6_generator = "SELECT CAST(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16), 'IPv6') AS ip FROM numbers(1010011101, 1) order by ip" %}
+{% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16))) AS ip FROM numbers(1010011101, 1) order by ip" %}
+
 {% set ip_generators = {'ip4': ip4_generator, 'ip6': ip6_generator} %}
 
 {% set agg_func_list = [ "any", "anyHeavy", "anyLast" ] %}
