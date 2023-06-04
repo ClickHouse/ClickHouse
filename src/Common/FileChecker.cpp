@@ -138,7 +138,7 @@ void FileChecker::save() const
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
-        std::unique_ptr<WriteBuffer> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
+        std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
         writeCString("{\"clickhouse\":{", *out);
@@ -157,7 +157,9 @@ void FileChecker::save() const
         }
 
         writeCString("}}", *out);
-        out->next();
+
+        out->sync();
+        out->finalize();
     }
 
     if (disk)

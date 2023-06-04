@@ -4854,6 +4854,9 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context)
 {
+    if (!supportsReplication() && isStaticStorage())
+        return;
+
     DataPartsVector parts_to_remove;
     const auto * partition_ast = partition->as<ASTPartition>();
     if (partition_ast && partition_ast->all)
@@ -4874,6 +4877,9 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, Context
 
 void MergeTreeData::checkPartCanBeDropped(const String & part_name)
 {
+    if (!supportsReplication() && isStaticStorage())
+        return;
+
     auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
