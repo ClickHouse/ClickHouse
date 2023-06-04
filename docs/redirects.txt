@@ -306,9 +306,7 @@ sql_reference/data_types/datetime64.md sql-reference/data-types/datetime64.md
 sql_reference/data_types/decimal.md sql-reference/data-types/decimal.md
 sql_reference/data_types/domains/index.md sql-reference/data-types/domains/index.md
 sql_reference/data_types/domains/ipv4.md sql-reference/data-types/ipv4.md
-sql_reference/data-types/domains/ipv4.md sql-reference/data-types/ipv4.md
 sql_reference/data_types/domains/ipv6.md sql-reference/data-types/ipv6.md
-sql_reference/data-types/domains/ipv6.md sql-reference/data-types/ipv6.md
 sql_reference/data_types/domains/overview.md sql-reference/data-types/domains/overview.md
 sql_reference/data_types/enum.md sql-reference/data-types/enum.md
 sql_reference/data_types/fixedstring.md sql-reference/data-types/fixedstring.md
