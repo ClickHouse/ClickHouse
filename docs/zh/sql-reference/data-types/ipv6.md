@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/data-types/domains/ipv6
+slug: /zh/sql-reference/data-types/ipv6
 ---
 ## IPv6 {#ipv6}
 

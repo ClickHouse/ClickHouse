@@ -15,7 +15,7 @@ slug: /zh/operations/system-tables/zookeeper_log
     -   `Finalize` — 连接丢失, 未收到响应.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件发生的日期.
 -   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件发生的日期和时间.
--   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — 用于发出请求的 ZooKeeper 服务器的 IP 地址.
+-   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — 用于发出请求的 ZooKeeper 服务器的 IP 地址.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — 用于发出请求的 ZooKeeper 服务器的端口.
 -   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — ZooKeeper 服务器为每个连接设置的会话 ID.
 -   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — 会话中请求的 ID. 这通常是一个连续的请求编号. 请求行和配对的 `response`/`finalize` 行相同.
