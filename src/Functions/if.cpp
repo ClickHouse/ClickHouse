@@ -1120,9 +1120,8 @@ public:
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
-        if (!arg_cond.column || !isColumnConst(*arg_cond.column)) {
+        if (!arg_cond.column || !isColumnConst(*arg_cond.column))
             return {};
-        }
 
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
         bool condition_value = cond_const_col->getValue<UInt8>();
@@ -1135,9 +1134,8 @@ public:
             return {};
 
         auto result = castColumn(potential_const_column, result_type);
-        if (!isColumnConst(*result)) {
+        if (!isColumnConst(*result))
             return {};
-        }
 
         return result;
     }
