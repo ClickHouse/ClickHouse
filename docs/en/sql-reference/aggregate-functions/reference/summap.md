@@ -5,7 +5,7 @@ sidebar_position: 141
 
 # sumMap
 
-Syntax: [sumMap(key <Array>, value <Array>)](../../data-types/array.md) or [sumMap(Tuple(key <Array>, value <Array>))](../../data-types/tuple.md)
+Syntax: `sumMap(key <Array>, value <Array>)` [Array](../../data-types/array.md) or `sumMap(Tuple(key <Array>, value <Array>))` [Tuple](../../data-types/tuple.md)
 
 Alias: `sumMappedArrays`.
 
