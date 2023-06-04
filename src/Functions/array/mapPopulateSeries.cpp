@@ -457,7 +457,7 @@ private:
             using ValueType = typename Types::RightType;
 
             static constexpr bool key_and_value_are_numbers = IsDataTypeNumber<KeyType> && IsDataTypeNumber<ValueType>;
-            static constexpr bool key_is_float = std::is_same_v<KeyType, DataTypeFloat32> || std::is_same_v<KeyType, DataTypeFloat64>;
+            static constexpr bool key_is_float = std::is_same_v<KeyType, DataTypeFloat32> || std::is_same_v<KeyType, DataTypeFloat64> || std::is_same_v<KeyType, DataTypeBFloat16>;
 
             if constexpr (key_and_value_are_numbers && !key_is_float)
             {

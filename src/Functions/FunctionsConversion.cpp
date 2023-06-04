@@ -21,6 +21,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt256>();
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
+    factory.registerFunction<FunctionToBFloat16>();
 
     factory.registerFunction<FunctionToDecimal32>();
     factory.registerFunction<FunctionToDecimal64>();
@@ -59,6 +60,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt256OrZero>();
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
+    factory.registerFunction<FunctionToBFloat16OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
     factory.registerFunction<FunctionToDate32OrZero>();
     factory.registerFunction<FunctionToDateTimeOrZero>();
@@ -87,6 +89,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToInt256OrNull>();
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
+    factory.registerFunction<FunctionToBFloat16OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
     factory.registerFunction<FunctionToDate32OrNull>();
     factory.registerFunction<FunctionToDateTimeOrNull>();

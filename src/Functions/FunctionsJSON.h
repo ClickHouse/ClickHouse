@@ -684,7 +684,7 @@ public:
         switch (element.type())
         {
             case ElementType::DOUBLE:
-                if constexpr (std::is_floating_point_v<NumberType>)
+                if constexpr (is_floating_point<NumberType>)
                 {
                     /// We permit inaccurate conversion of double to float.
                     /// Example: double 0.1 from JSON is not representable in float.
@@ -712,7 +712,7 @@ public:
             case ElementType::STRING:
             {
                 auto rb = ReadBufferFromMemory{element.getString()};
-                if constexpr (std::is_floating_point_v<NumberType>)
+                if constexpr (is_floating_point<NumberType>)
                 {
                     if (!tryReadFloatText(value, rb) || !rb.eof())
                         return false;
@@ -1249,6 +1249,7 @@ struct JSONExtractTree
             case TypeIndex::Int256: return std::make_unique<NumericNode<Int256>>();
             case TypeIndex::Float32: return std::make_unique<NumericNode<Float32>>();
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
+            case TypeIndex::BFloat16: return std::make_unique<NumericNode<BFloat16>>();
             case TypeIndex::String: return std::make_unique<StringNode>();
             case TypeIndex::FixedString: return std::make_unique<FixedStringNode>();
             case TypeIndex::UUID: return std::make_unique<UUIDNode>();

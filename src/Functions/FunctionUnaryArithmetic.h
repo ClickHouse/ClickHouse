@@ -209,6 +209,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
+            DataTypeBFloat16,
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,

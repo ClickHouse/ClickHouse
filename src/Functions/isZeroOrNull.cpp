@@ -63,7 +63,7 @@ public:
             if (!castTypeToEither<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(
+                ColumnFloat32, ColumnFloat64, ColumnBFloat16>(
                 nested_column, [&](const auto & column)
                 {
                     auto col = ColumnUInt8::create(input_rows_count);
@@ -80,7 +80,7 @@ public:
             if (!castTypeToEither<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(
+                ColumnFloat32, ColumnFloat64, ColumnBFloat16>(
                 input_column.get(), [&](const auto & column)
                 {
                     auto col = ColumnUInt8::create(input_rows_count);

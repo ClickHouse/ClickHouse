@@ -107,6 +107,11 @@ Float32 ColumnSparse::getFloat32(size_t n) const
     return values->getFloat32(getValueIndex(n));
 }
 
+BFloat16 ColumnSparse::getBFloat16(size_t n) const
+{
+    return values->getBFloat16(getValueIndex(n));
+}
+
 UInt64 ColumnSparse::getUInt(size_t n) const
 {
     return values->getUInt(getValueIndex(n));

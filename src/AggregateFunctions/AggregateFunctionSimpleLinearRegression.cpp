@@ -41,7 +41,8 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
         M(T, Int32) \
         M(T, Int64) \
         M(T, Float32) \
-        M(T, Float64)
+        M(T, Float64) \
+        M(T, BFloat16)
     #define FOR_LEASTSQR_TYPES(M) \
         FOR_LEASTSQR_TYPES_2(M, UInt8) \
         FOR_LEASTSQR_TYPES_2(M, UInt16) \
@@ -52,7 +53,8 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
         FOR_LEASTSQR_TYPES_2(M, Int32) \
         FOR_LEASTSQR_TYPES_2(M, Int64) \
         FOR_LEASTSQR_TYPES_2(M, Float32) \
-        FOR_LEASTSQR_TYPES_2(M, Float64)
+        FOR_LEASTSQR_TYPES_2(M, Float64) \
+        FOR_LEASTSQR_TYPES_2(M, BFloat16)
     #define DISPATCH(T1, T2) \
         if (which_x.idx == TypeIndex::T1 && which_y.idx == TypeIndex::T2) \
             return std::make_shared<AggregateFunctionSimpleLinearRegression<T1, T2>>(/* NOLINT */ \

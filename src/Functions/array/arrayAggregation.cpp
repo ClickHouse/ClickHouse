@@ -395,6 +395,7 @@ struct ArrayAggregateImpl
             executeType<Int256>(mapped, offsets, res) ||
             executeType<Float32>(mapped, offsets, res) ||
             executeType<Float64>(mapped, offsets, res) ||
+            executeType<BFloat16>(mapped, offsets, res) ||
             executeType<Decimal32>(mapped, offsets, res) ||
             executeType<Decimal64>(mapped, offsets, res) ||
             executeType<Decimal128>(mapped, offsets, res) ||

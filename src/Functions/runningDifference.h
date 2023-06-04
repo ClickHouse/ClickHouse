@@ -122,6 +122,8 @@ private:
             f(Float32());
         else if (which.isFloat64())
             f(Float64());
+        else if (which.isBFloat16())
+            f(BFloat16());
         else if (which.isDate())
             f(DataTypeDate::FieldType());
         else if (which.isDate32())

@@ -182,6 +182,7 @@ namespace
                 && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const)
                 && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const)
                 && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const)
+                && !executeNum<ColumnVector<BFloat16>>(in, *column_result, default_non_const)
                 && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const)
                 && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const)
                 && !executeString(in, *column_result, default_non_const))
@@ -226,6 +227,7 @@ namespace
                 && !executeNumToNum<ColumnVector<Int64>>(pod, column_result, default_non_const, in_scale)
                 && !executeNumToNum<ColumnVector<Float32>>(pod, column_result, default_non_const, in_scale)
                 && !executeNumToNum<ColumnVector<Float64>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<BFloat16>>(pod, column_result, default_non_const, in_scale)
                 && !executeNumToNum<ColumnDecimal<Decimal32>>(pod, column_result, default_non_const, in_scale)
                 && !executeNumToNum<ColumnDecimal<Decimal64>>(pod, column_result, default_non_const, in_scale))
             {
@@ -415,6 +417,7 @@ namespace
                 && !executeStringToNum<ColumnVector<Int64>>(data, offsets, column_result, default_non_const)
                 && !executeStringToNum<ColumnVector<Float32>>(data, offsets, column_result, default_non_const)
                 && !executeStringToNum<ColumnVector<Float64>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<BFloat16>>(data, offsets, column_result, default_non_const)
                 && !executeStringToNum<ColumnDecimal<Decimal32>>(data, offsets, column_result, default_non_const)
                 && !executeStringToNum<ColumnDecimal<Decimal64>>(data, offsets, column_result, default_non_const))
             {

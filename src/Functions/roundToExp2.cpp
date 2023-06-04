@@ -42,6 +42,13 @@ inline T roundDownToPowerOfTwo(T x)
 }
 
 template <typename T>
+requires std::is_same_v<T, BFloat16>
+inline T roundDownToPowerOfTwo(T x)
+{
+    return bit_cast<T>(bit_cast<UInt16>(x) & ~((1ULL << 7) - 1));
+}
+
+template <typename T>
 requires is_big_int_v<T>
 inline T roundDownToPowerOfTwo(T)
 {

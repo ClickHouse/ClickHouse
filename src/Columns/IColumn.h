@@ -126,6 +126,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
+    [[nodiscard]] virtual BFloat16 getBFloat16(size_t /*n*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBFloat16 is not supported for {}", getName());
+    }
+
     /** If column is numeric, return value of n-th element, casted to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.

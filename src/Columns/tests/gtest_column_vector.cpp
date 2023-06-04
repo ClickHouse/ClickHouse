@@ -94,6 +94,7 @@ TEST(ColumnVector, Filter)
     testFilter<Int256>();
     testFilter<Float32>();
     testFilter<Float64>();
+    testFilter<BFloat16>();
     testFilter<UUID>();
     testFilter<IPv4>();
     testFilter<IPv6>();

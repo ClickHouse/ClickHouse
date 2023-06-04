@@ -305,6 +305,14 @@ TEST(TernaryLogicTruthTable, NestedFloat64)
     ASSERT_EQ(test_2, true);
 }
 
+TEST(TernaryLogicTruthTable, NestedBFloat16)
+{
+    bool test_1 = testTernaryLogicTruthTable<AndImpl, BFloat16>();
+    bool test_2 = testTernaryLogicTruthTable<OrImpl, BFloat16>();
+    ASSERT_EQ(test_1, true);
+    ASSERT_EQ(test_2, true);
+}
+
 TEST(TernaryLogicTwoColumns, TwoNullable)
 {
     bool test_1 = testTernaryLogicOfTwoColumns<AndImpl, ColumnNullable, ColumnNullable>(100 /*size*/);

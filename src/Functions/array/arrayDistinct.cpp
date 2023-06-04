@@ -125,6 +125,7 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
         || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<BFloat16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 

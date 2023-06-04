@@ -144,7 +144,7 @@ bool assertOrParseNaN(ReadBuffer & buf)
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, BFloat16>, "Argument for readFloatTextPreciseImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -316,7 +316,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 template <typename T, typename ReturnType>
 ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, BFloat16>, "Argument for readFloatTextImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;

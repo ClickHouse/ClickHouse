@@ -556,6 +556,7 @@ private:
             ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
+            ContainerType<BFloat16>,
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,

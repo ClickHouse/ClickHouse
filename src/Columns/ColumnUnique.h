@@ -77,6 +77,7 @@ public:
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     Float64 getFloat64(size_t n) const override { return getNestedColumn()->getFloat64(n); }
     Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
+    BFloat16 getBFloat16(size_t n) const override { return getNestedColumn()->getBFloat16(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;

@@ -14,7 +14,7 @@ namespace DB
 template <typename T>
 class DataTypeNumberBase : public IDataType
 {
-    static_assert(is_arithmetic_v<T>);
+    static_assert(is_arithmetic_v<T> || std::is_same_v<T, BFloat16>);
 
 public:
     static constexpr bool is_parametric = false;
@@ -70,5 +70,6 @@ extern template class DataTypeNumberBase<Int128>;
 extern template class DataTypeNumberBase<Int256>;
 extern template class DataTypeNumberBase<Float32>;
 extern template class DataTypeNumberBase<Float64>;
+extern template class DataTypeNumberBase<BFloat16>;
 
 }

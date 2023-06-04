@@ -23,6 +23,7 @@ enum class TypeIndex
     Int256,
     Float32,
     Float64,
+    BFloat16,
     Date,
     Date32,
     DateTime,
@@ -92,6 +93,7 @@ TYPEID_MAP(Int128)
 TYPEID_MAP(Int256)
 TYPEID_MAP(Float32)
 TYPEID_MAP(Float64)
+TYPEID_MAP(BFloat16)
 TYPEID_MAP(UUID)
 TYPEID_MAP(IPv4)
 TYPEID_MAP(IPv6)

@@ -155,6 +155,7 @@ private:
             AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
+            AttributeContainerType<BFloat16>,
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,

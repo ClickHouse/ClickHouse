@@ -360,7 +360,8 @@ struct WhichDataType
 
     constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
     constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
-    constexpr bool isFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
+    constexpr bool isFloat() const { return isFloat32() || isFloat64() || isBFloat16(); }
 
     constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
     constexpr bool isEnum16() const { return idx == TypeIndex::Enum16; }
@@ -616,7 +617,8 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Int128) \
     M(Int256) \
     M(Float32) \
-    M(Float64)
+    M(Float64) \
+    M(BFloat16)
 }
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types

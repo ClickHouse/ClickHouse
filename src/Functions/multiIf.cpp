@@ -273,6 +273,7 @@ public:
     M(Int256, INDEX) \
     M(Float32, INDEX) \
     M(Float64, INDEX) \
+    M(BFloat16, INDEX) \
     throw Exception( \
         ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
 

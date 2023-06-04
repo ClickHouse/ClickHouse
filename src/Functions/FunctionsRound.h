@@ -701,6 +701,7 @@ public:
             && !executeNum<Int64>(in, out, boundaries)
             && !executeNum<Float32>(in, out, boundaries)
             && !executeNum<Float64>(in, out, boundaries)
+            && !executeNum<BFloat16>(in, out, boundaries)
             && !executeDecimal<Decimal32>(in, out, boundaries)
             && !executeDecimal<Decimal64>(in, out, boundaries)
             && !executeDecimal<Decimal128>(in, out, boundaries)

@@ -51,7 +51,7 @@ struct StatFuncOneArg
 {
     using Type1 = T;
     using Type2 = T;
-    using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
+    using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, std::conditional_t<std::is_same_v<T, Float64>, Float64, BFloat16>>;
     using Data = VarMoments<ResultType, _level>;
 
     static constexpr UInt32 num_args = 1;
@@ -62,7 +62,7 @@ struct StatFuncTwoArg
 {
     using Type1 = T1;
     using Type2 = T2;
-    using ResultType = std::conditional_t<std::is_same_v<T1, T2> && std::is_same_v<T1, Float32>, Float32, Float64>;
+    using ResultType = std::conditional_t<std::is_same_v<T1, T2> && std::is_same_v<T1, Float32>, Float32, std::conditional_t<std::is_same_v<T1, T2> && std::is_same_v<T1, BFloat16>, BFloat16, Float64>>;
     using Data = Moments<ResultType>;
 
     static constexpr UInt32 num_args = 2;

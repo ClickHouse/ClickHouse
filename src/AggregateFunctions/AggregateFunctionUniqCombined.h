@@ -67,6 +67,16 @@ namespace detail
         }
     };
 
+    template <typename Ret>
+    struct AggregateFunctionUniqCombinedTraits<BFloat16, Ret>
+    {
+        static Ret hash(BFloat16 x)
+        {
+            UInt64 res = bit_cast<UInt64>(x);
+            return static_cast<Ret>(intHash64(res));
+        }
+    };
+
 }
 
 // Unlike HashTableGrower always grows to power of 2.

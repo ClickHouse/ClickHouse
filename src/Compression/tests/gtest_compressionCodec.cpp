@@ -92,6 +92,7 @@ const char* type_name()
     MAKE_TYPE_NAME(Int64);
     MAKE_TYPE_NAME(Float32);
     MAKE_TYPE_NAME(Float64);
+    MAKE_TYPE_NAME(BFloat16);
 
 #undef MAKE_TYPE_NAME
 
@@ -114,6 +115,7 @@ DataTypePtr makeDataType()
     MAKE_DATA_TYPE(Int64);
     MAKE_DATA_TYPE(Float32);
     MAKE_DATA_TYPE(Float64);
+    MAKE_DATA_TYPE(BFloat16);
 
 #undef MAKE_DATA_TYPE
 
@@ -905,7 +907,8 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
-            generateSeq<Float64>(G(SameValueGenerator(M_E)))
+            generateSeq<Float64>(G(SameValueGenerator(M_E))),
+            generateSeq<BFloat16>(G(SameValueGenerator(M_E)))
         )
     )
 );
@@ -919,7 +922,8 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
-            generateSeq<Float64>(G(SameValueGenerator(-1 * M_E)))
+            generateSeq<Float64>(G(SameValueGenerator(-1 * M_E))),
+            generateSeq<BFloat16>(G(SameValueGenerator(-1 * M_E))),
         )
     )
 );
@@ -969,7 +973,8 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
-            generateSeq<Float64>(G(SequentialGenerator(M_E)))
+            generateSeq<Float64>(G(SequentialGenerator(M_E))),
+            generateSeq<BFloat16>(G(SequentialGenerator(M_E)))
         )
     )
 );
@@ -983,7 +988,8 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
-            generateSeq<Float64>(G(SequentialGenerator(-1 * M_E)))
+            generateSeq<Float64>(G(SequentialGenerator(-1 * M_E))),
+            generateSeq<BFloat16>(G(SequentialGenerator(-1 * M_E)))
         )
     )
 );
@@ -1030,7 +1036,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
-            generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5)))
+            generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5))),
+            generateSeq<BFloat16>(G(MonotonicGenerator<BFloat16>(static_cast<Float32>(M_E), 5)))
         )
     )
 );
@@ -1043,7 +1050,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
-            generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5)))
+            generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5))),
+            generateSeq<BFloat16>(G(MonotonicGenerator<BFloat16>(static_cast<BFloat16>(-1 * M_E), 5)))
         )
     )
 );
@@ -1071,7 +1079,8 @@ INSTANTIATE_TEST_SUITE_P(RandomishInt,
             generateSeq<UInt32>(G(RandomishGenerator)),
             generateSeq<UInt64>(G(RandomishGenerator)),
             generateSeq<Float32>(G(RandomishGenerator)),
-            generateSeq<Float64>(G(RandomishGenerator))
+            generateSeq<Float64>(G(RandomishGenerator)),
+            generateSeq<BFloat16>(G(RandomishGenerator)),
         )
     )
 );
@@ -1082,7 +1091,8 @@ INSTANTIATE_TEST_SUITE_P(RandomishFloat,
         DefaultCodecsToTest,
         ::testing::Values(
             generateSeq<Float32>(G(RandomishGenerator)),
-            generateSeq<Float64>(G(RandomishGenerator))
+            generateSeq<Float64>(G(RandomishGenerator)),
+            generateSeq<BFloat16>(G(RandomishGenerator))
         )
     )
 );
@@ -1114,8 +1124,10 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
         ::testing::Values(
             generateSeq<Float32>(G(MinMaxGenerator())),
             generateSeq<Float64>(G(MinMaxGenerator())),
+            generateSeq<BFloat16>(G(MinMaxGenerator())),
             generateSeq<Float32>(G(FFand0Generator())),
-            generateSeq<Float64>(G(FFand0Generator()))
+            generateSeq<Float64>(G(FFand0Generator())),
+            generateSeq<BFloat16>(G(FFand0Generator()))
         )
     )
 );

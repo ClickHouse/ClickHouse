@@ -327,6 +327,7 @@ struct NameToInt128OrDefault { static constexpr auto name = "toInt128OrDefault";
 struct NameToInt256OrDefault { static constexpr auto name = "toInt256OrDefault"; };
 struct NameToFloat32OrDefault { static constexpr auto name = "toFloat32OrDefault"; };
 struct NameToFloat64OrDefault { static constexpr auto name = "toFloat64OrDefault"; };
+struct NameToBFloat16OrDefault { static constexpr auto name = "toBFloat16OrDefault"; };
 struct NameToDateOrDefault { static constexpr auto name = "toDateOrDefault"; };
 struct NameToDate32OrDefault { static constexpr auto name = "toDate32OrDefault"; };
 struct NameToDateTimeOrDefault { static constexpr auto name = "toDateTimeOrDefault"; };
@@ -354,6 +355,7 @@ using FunctionToInt256OrDefault = FunctionCastOrDefaultTyped<DataTypeInt256, Nam
 
 using FunctionToFloat32OrDefault = FunctionCastOrDefaultTyped<DataTypeFloat32, NameToFloat32OrDefault>;
 using FunctionToFloat64OrDefault = FunctionCastOrDefaultTyped<DataTypeFloat64, NameToFloat64OrDefault>;
+using FunctionToBFloat16OrDefault = FunctionCastOrDefaultTyped<DataTypeBFloat16, NameToBFloat16OrDefault>;
 
 using FunctionToDateOrDefault = FunctionCastOrDefaultTyped<DataTypeDate, NameToDateOrDefault>;
 using FunctionToDate32OrDefault = FunctionCastOrDefaultTyped<DataTypeDate32, NameToDate32OrDefault>;
@@ -388,6 +390,7 @@ REGISTER_FUNCTION(CastOrDefault)
 
     factory.registerFunction<FunctionToFloat32OrDefault>();
     factory.registerFunction<FunctionToFloat64OrDefault>();
+    factory.registerFunction<FunctionToBFloat16OrDefault>();
 
     factory.registerFunction<FunctionToDateOrDefault>();
     factory.registerFunction<FunctionToDate32OrDefault>();

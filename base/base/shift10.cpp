@@ -1,5 +1,6 @@
 #include <base/shift10.h>
 
+#include "base/types.h"
 #include "defines.h"
 
 #include <limits>
@@ -64,6 +65,11 @@ double shift10(double x, int exponent)
 }
 
 float shift10(float x, int exponent)
+{
+    return shift10Impl(x, exponent);
+}
+
+float shift10(DB::BFloat16 x, int exponent)
 {
     return shift10Impl(x, exponent);
 }

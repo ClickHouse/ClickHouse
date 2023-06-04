@@ -154,7 +154,7 @@ namespace
 {
 
 template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+requires (sizeof(TUint) >= 2)
 class DfcmPredictor
 {
 public:
@@ -184,9 +184,13 @@ private:
         {
             hash = ((hash << 2) ^ static_cast<std::size_t>(value >> 40)) & (table.size() - 1);
         }
-        else
+        else if constexpr (sizeof(TUint) >= 4)
         {
             hash = ((hash << 4) ^ static_cast<std::size_t>(value >> 23)) & (table.size() - 1);
+        }
+        else
+        {
+            hash = ((hash << 3) ^ static_cast<std::size_t>(value >> 7)) & (table.size() - 1);
         }
     }
 
@@ -196,7 +200,7 @@ private:
 };
 
 template <std::unsigned_integral TUint>
-requires (sizeof(TUint) >= 4)
+requires (sizeof(TUint) >= 2)
 class FcmPredictor
 {
 public:
@@ -225,9 +229,13 @@ private:
         {
             hash = ((hash << 6) ^ static_cast<std::size_t>(value >> 48)) & (table.size() - 1);
         }
-        else
+        else if constexpr (sizeof(TUint) >= 4)
         {
             hash = ((hash << 1) ^ static_cast<std::size_t>(value >> 22)) & (table.size() - 1);
+        }
+        else
+        {
+            hash = ((hash << 1) ^ static_cast<std::size_t>(value >> 6)) & (table.size() - 1);
         }
     }
 
@@ -472,6 +480,8 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
             return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt64>(destination, level).encode(src));
         case sizeof(Float32):
             return static_cast<UInt32>(HEADER_SIZE + FPCOperation<UInt32>(destination, level).encode(src));
+        case sizeof(BFloat16):
+            return static_cast<UInt16>(HEADER_SIZE + FPCOperation<UInt16>(destination, level).encode(src));
         default:
             break;
     }
@@ -498,6 +508,9 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             break;
         case sizeof(Float32):
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
+            break;
+        case sizeof(BFloat16):
+            FPCOperation<UInt16>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect float width");

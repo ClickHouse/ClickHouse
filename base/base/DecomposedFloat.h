@@ -28,6 +28,15 @@ struct FloatTraits<double>
     static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
 };
 
+template <>
+struct FloatTraits<DB::BFloat16>
+{
+    using UInt = uint16_t;
+    static constexpr size_t bits = 16;
+    static constexpr size_t exponent_bits = 8;
+    static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
+};
+
 
 /// x = sign * (2 ^ normalized_exponent) * (1 + mantissa * 2 ^ -mantissa_bits)
 /// x = sign * (2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits))
@@ -217,3 +226,4 @@ struct DecomposedFloat
 
 using DecomposedFloat64 = DecomposedFloat<double>;
 using DecomposedFloat32 = DecomposedFloat<float>;
+using DecomposedBFloat16 = DecomposedFloat<DB::BFloat16>;

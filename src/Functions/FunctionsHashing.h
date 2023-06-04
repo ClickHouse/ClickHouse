@@ -1352,6 +1352,7 @@ private:
         else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(key, icolumn, vec_to);
         else if (which.isFloat32()) executeIntType<Float32, first>(key, icolumn, vec_to);
         else if (which.isFloat64()) executeIntType<Float64, first>(key, icolumn, vec_to);
+        else if (which.isBFloat16()) executeIntType<BFloat16, first>(key, icolumn, vec_to);
         else if (which.isString()) executeString<first>(key, icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(key, icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(key, from_type, icolumn, vec_to);

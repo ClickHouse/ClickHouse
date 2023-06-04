@@ -461,6 +461,15 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
+BFloat16 ColumnVector<T>::getBFloat16(size_t n [[maybe_unused]]) const
+{
+    if constexpr (is_arithmetic_v<T>)
+        return static_cast<BFloat16>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as BFloat16", TypeName<T>);
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
@@ -969,6 +978,7 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+template class ColumnVector<BFloat16>;
 template class ColumnVector<UUID>;
 template class ColumnVector<IPv4>;
 template class ColumnVector<IPv6>;

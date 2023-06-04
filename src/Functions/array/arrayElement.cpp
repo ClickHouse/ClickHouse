@@ -700,6 +700,7 @@ ColumnPtr FunctionArrayElement::executeArgument(
         || (res = executeNumber<IndexType, Int64>(arguments, index_data, builder))
         || (res = executeNumber<IndexType, Float32>(arguments, index_data, builder))
         || (res = executeNumber<IndexType, Float64>(arguments, index_data, builder))
+        || (res = executeNumber<IndexType, BFloat16>(arguments, index_data, builder))
         || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
         || (res = executeString<IndexType>(arguments, index_data, builder))
         || (res = executeGeneric<IndexType>(arguments, index_data, builder))))
@@ -1204,6 +1205,7 @@ ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments
             || (res = executeNumberConst<Int64>(arguments, index, builder))
             || (res = executeNumberConst<Float32>(arguments, index, builder))
             || (res = executeNumberConst<Float64>(arguments, index, builder))
+            || (res = executeNumberConst<BFloat16>(arguments, index, builder))
             || (res = executeStringConst (arguments, index, builder))
             || (res = executeGenericConst (arguments, index, builder))))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",

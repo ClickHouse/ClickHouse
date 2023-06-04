@@ -152,12 +152,19 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-    else
+    else if constexpr (std::is_same_v<T, float>)
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+    }
+    else
+    {
+        if (DecomposedBFloat16(x).isIntegerInRepresentableRange())
+            result = itoa(Int32(static_cast<float>(x)), buffer) - buffer;
+        else
+            result = jkj::dragonbox::to_chars_n(static_cast<float>(x), buffer) - buffer;
     }
 
     if (result <= 0)
@@ -168,7 +175,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 template <typename T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> || std::is_same_v<T, BFloat16>, "Argument for writeFloatText must be float or double");
 
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
@@ -384,7 +391,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
             if (std::signbit(x))
             {
@@ -864,6 +871,7 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const BFloat16 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 

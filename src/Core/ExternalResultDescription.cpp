@@ -58,6 +58,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtFloat32, is_nullable);
         else if (which.isFloat64())
             types.emplace_back(ValueType::vtFloat64, is_nullable);
+        else if (which.isBFloat16())
+            types.emplace_back(ValueType::vtBFloat16, is_nullable);
         else if (which.isString())
             types.emplace_back(ValueType::vtString, is_nullable);
         else if (which.isDate())

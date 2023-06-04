@@ -113,6 +113,9 @@ void ODBCSource::insertValue(
         case ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(row.get<float>(idx));
             break;
+        case ValueType::vtBFloat16:
+            assert_cast<ColumnBFloat16 &>(column).insertValue(BFloat16(row.get<float>(idx)));
+            break;
         case ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(row.get<double>(idx));
             break;

@@ -47,4 +47,5 @@ TEST(ColumnLowCardinality, Insert)
 
     testLowCardinalityNumberInsert<Float32>(std::make_shared<DataTypeFloat32>());
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
+    testLowCardinalityNumberInsert<BFloat16>(std::make_shared<DataTypeBFloat16>());
 }

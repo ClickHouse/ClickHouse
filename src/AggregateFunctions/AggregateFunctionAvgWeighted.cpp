@@ -34,7 +34,7 @@ bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
         LINE(Int8); LINE(Int16); LINE(Int32); LINE(Int64); LINE(Int128); LINE(Int256); \
         LINE(UInt8); LINE(UInt16); LINE(UInt32); LINE(UInt64); LINE(UInt128); LINE(UInt256); \
         LINE(Decimal32); LINE(Decimal64); LINE(Decimal128); LINE(Decimal256); \
-        LINE(Float32); LINE(Float64); \
+        LINE(Float32); LINE(Float64); LINE(BFloat16); \
         default: return nullptr; \
     }
 
