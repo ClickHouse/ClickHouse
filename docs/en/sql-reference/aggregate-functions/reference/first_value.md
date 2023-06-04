@@ -6,7 +6,7 @@ sidebar_position: 7
 # first_value
 
 Selects the first encountered value, similar to `any`, but could accept NULL.
-Mostly it should be used with [Window Functions](../../window-functions.md).
+Mostly it should be used with [Window Functions](../../window-functions/index.md).
 Without Window Functions the result will be random if the source stream is not ordered.
 
 ## examples
