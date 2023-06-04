@@ -82,7 +82,7 @@ public:
         const ColumnArray * column_first_array = nullptr;
         ColumnsWithTypeAndName arrays;
         arrays.reserve(arguments.size() - 1);
-
+        /// Valdate input types and get input array caolumns in convinient form
         for (size_t i = 1; i < arguments.size() - 1; ++i)
         {
             const auto & array_with_type_and_name = arguments[i];
@@ -135,15 +135,16 @@ public:
         size_t max_array_size = 0;
         const auto & offsets = column_first_array->getOffsets();
 
-        //get columns of Nth array elements
         IColumn::Selector selector(data_row_count);
         size_t cur_ind = 0;
         ssize_t cur_arr = 0;
 
+        /// skip to the first non empty array
         if (data_row_count)
             while (offsets[cur_arr] == 0)
                 ++cur_arr;
 
+        /// selector[i] is an index that i_th data element has in an array it corresponds to
         for (ssize_t i = 0; i < data_row_count; ++i)
         {
             selector[i] = cur_ind++;
@@ -159,14 +160,20 @@ public:
         std::vector<MutableColumns> data_arrays;
         data_arrays.resize(array_count);
 
+        /// Split each data column to columns containing elements of only Nth index in array
         if (max_array_size > 0)
             for (size_t i = 0; i < array_count; ++i)
                 data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
 
         size_t prev_size = rows_count;
+
         IColumn::Permutation inverse_permutation(rows_count);
         size_t inverse_permutation_count = 0;
 
+        /**Current_column after each iteration contains value of accumulator after aplying values under indexes ind of arrays.
+          *At each iteration only rows of current_column with arrays that still has unaplied elements are kept.
+          *Discarded rows which contain finished calculations are added to result_data column and as we insert them we save their original row_number in inverse_permutation vector
+          */
         for (size_t ind = 0; ind < max_array_size; ++ind)
         {
             IColumn::Selector prev_selector(prev_size);
@@ -203,6 +210,8 @@ public:
             if (offsets[irow] - offsets[irow - 1] == max_array_size)
                 inverse_permutation[inverse_permutation_count++] = irow;
 
+        /// We have result_data containing result for every row and inverse_permutation which contains indexes of rows in input it corresponds to.
+        /// Now we neead to invert inverse_permuation and apply it to result_data to get rows in right order.
         IColumn::Permutation perm(rows_count);
         for (ssize_t i = 0; i < rows_count; i++)
             perm[inverse_permutation[i]] = i;
