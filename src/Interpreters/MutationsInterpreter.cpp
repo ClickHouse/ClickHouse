@@ -38,6 +38,7 @@
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -804,10 +805,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
+    NameSet changed_columns;
+    NameSet unchanged_columns;
     if (!dependencies.empty())
     {
-        NameSet changed_columns;
-        NameSet unchanged_columns;
         for (const auto & dependency : dependencies)
         {
             if (dependency.isReadOnly())
@@ -826,31 +827,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : changed_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
-
-            for (const auto & index : metadata_snapshot->getSecondaryIndices())
-            {
-                if (source.hasIndexOrProjection("skp_idx_" + index.name + ".idx")
-                    || source.hasIndexOrProjection("skp_idx_" + index.name + ".idx2"))
-                {
-                    const auto & index_cols = index.expression->getRequiredColumns();
-                    bool changed = std::any_of(
-                        index_cols.begin(), index_cols.end(), [&](const auto & col) { return changed_columns.contains(col); });
-                    if (changed)
-                        materialized_indices.insert(index.name);
-                }
-            }
-
-            for (const auto & projection : metadata_snapshot->getProjections())
-            {
-                if (source.hasIndexOrProjection(projection.getDirectoryName()))
-                {
-                    const auto & projection_cols = projection.required_columns;
-                    bool changed = std::any_of(
-                        projection_cols.begin(), projection_cols.end(), [&](const auto & col) { return changed_columns.contains(col); });
-                    if (changed)
-                        materialized_projections.insert(projection.name);
-                }
-            }
         }
 
         if (!unchanged_columns.empty())
@@ -880,6 +856,34 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
+        }
+    }
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (source.hasIndexOrProjection("skp_idx_" + index.name + ".idx") || source.hasIndexOrProjection("skp_idx_" + index.name + ".idx2"))
+        {
+            const auto & index_cols = index.expression->getRequiredColumns();
+            bool changed = std::any_of(
+                index_cols.begin(),
+                index_cols.end(),
+                [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+            if (changed)
+                materialized_indices.insert(index.name);
+        }
+    }
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (source.hasIndexOrProjection(projection.getDirectoryName()))
+        {
+            const auto & projection_cols = projection.required_columns;
+            bool changed = std::any_of(
+                projection_cols.begin(),
+                projection_cols.end(),
+                [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+            if (changed)
+                materialized_projections.insert(projection.name);
         }
     }
 
