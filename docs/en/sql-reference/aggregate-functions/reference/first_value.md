@@ -19,7 +19,7 @@ CREATE TABLE test_data
 )
 ENGINE = Memory;
 
-INSERT INTO test_data (a, b) FORMAT Values (1,null), (2,3), (4, 5), (6,null);
+INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null);
 ```
 
 ### example1
