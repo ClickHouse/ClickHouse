@@ -207,7 +207,8 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     }
     catch (...)
     {
-        rollbackRequest(request_for_session, true);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        rollbackRequestNoLock(request_for_session, true);
         throw;
     }
 
@@ -327,6 +328,14 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
+    storage->rollbackRequest(request_for_session.zxid, allow_missing);
+}
+
+void KeeperStateMachine::rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
+{
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+        return;
+
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
