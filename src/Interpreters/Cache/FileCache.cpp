@@ -650,7 +650,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             }
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
 
             locked_key.removeFileSegment(segment->offset(), segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
