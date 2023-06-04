@@ -1214,7 +1214,7 @@ Possible values:
 
 - `bin` - as 16-bytes binary.
 - `str` - as a string of 36 bytes.
-- `ext` - as extention with ExtType = 2.
+- `ext` - as extension with ExtType = 2.
 
 Default value: `ext`.
 
