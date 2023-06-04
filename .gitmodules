@@ -35,10 +35,9 @@
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse/UnixODBC
-[submodule "contrib/protobuf"]
-	path = contrib/protobuf
-	url = https://github.com/ClickHouse/protobuf
-	branch = v3.13.0.1
+[submodule "contrib/google-protobuf"]
+	path = contrib/google-protobuf
+	url = https://github.com/ClickHouse/google-protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -268,9 +267,6 @@
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/VectorCamp/vectorscan.git
-[submodule "contrib/c-ares"]
-	path = contrib/c-ares
-	url = https://github.com/ClickHouse/c-ares
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -344,3 +340,6 @@
 [submodule "contrib/isa-l"]
 	path = contrib/isa-l
 	url = https://github.com/ClickHouse/isa-l.git
+[submodule "contrib/c-ares"]
+	path = contrib/c-ares
+	url = https://github.com/c-ares/c-ares.git
