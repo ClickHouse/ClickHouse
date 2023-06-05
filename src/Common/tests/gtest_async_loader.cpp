@@ -32,7 +32,7 @@ namespace DB::ErrorCodes
 
 struct Initializer {
     size_t max_threads = 1;
-    ssize_t priority = 0;
+    Priority priority;
 };
 
 struct AsyncLoaderTest
@@ -144,11 +144,11 @@ struct AsyncLoaderTest
 TEST(AsyncLoader, Smoke)
 {
     AsyncLoaderTest t({
-        {.max_threads = 2, .priority = 0},
-        {.max_threads = 2, .priority = -1},
+        {.max_threads = 2, .priority = Priority{0}},
+        {.max_threads = 2, .priority = Priority{1}},
     });
 
-    static constexpr ssize_t low_priority_pool = 1;
+    static constexpr size_t low_priority_pool = 1;
 
     std::atomic<size_t> jobs_done{0};
     std::atomic<size_t> low_priority_jobs_done{0};
@@ -419,6 +419,8 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
+// This test is disabled due to `MemorySanitizer: use-of-uninitialized-value` issue in `collectSymbolsFromProgramHeaders` function
+// More details: https://github.com/ClickHouse/ClickHouse/pull/48923#issuecomment-1545415482
 TEST(AsyncLoader, DISABLED_JobFailure)
 {
     AsyncLoaderTest t;
@@ -595,16 +597,16 @@ TEST(AsyncLoader, TestOverload)
 TEST(AsyncLoader, StaticPriorities)
 {
     AsyncLoaderTest t({
-        {.max_threads = 1, .priority = 0},
-        {.max_threads = 1, .priority = 1},
-        {.max_threads = 1, .priority = 2},
-        {.max_threads = 1, .priority = 3},
-        {.max_threads = 1, .priority = 4},
-        {.max_threads = 1, .priority = 5},
-        {.max_threads = 1, .priority = 6},
-        {.max_threads = 1, .priority = 7},
-        {.max_threads = 1, .priority = 8},
-        {.max_threads = 1, .priority = 9},
+        {.max_threads = 1, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+        {.max_threads = 1, .priority{-2}},
+        {.max_threads = 1, .priority{-3}},
+        {.max_threads = 1, .priority{-4}},
+        {.max_threads = 1, .priority{-5}},
+        {.max_threads = 1, .priority{-6}},
+        {.max_threads = 1, .priority{-7}},
+        {.max_threads = 1, .priority{-8}},
+        {.max_threads = 1, .priority{-9}},
     });
 
     std::string schedule;
@@ -614,6 +616,15 @@ TEST(AsyncLoader, StaticPriorities)
         schedule += fmt::format("{}{}", self->name, self->pool());
     };
 
+    // Job DAG with priorities. After priority inheritance from H9, jobs D9 and E9 can be
+    // executed in undefined order (Tested further in DynamicPriorities)
+    // A0(9) -+-> B3
+    //        |
+    //        `-> C4
+    //        |
+    //        `-> D1(9) -.
+    //        |          +-> F0(9) --> G0(9) --> H9
+    //        `-> E2(9) -'
     std::vector<LoadJobPtr> jobs;
     jobs.push_back(makeLoadJob({}, 0, "A", job_func)); // 0
     jobs.push_back(makeLoadJob({ jobs[0] }, 3, "B", job_func)); // 1
@@ -627,16 +638,15 @@ TEST(AsyncLoader, StaticPriorities)
 
     t.loader.start();
     t.loader.wait();
-
-    ASSERT_EQ(schedule, "A9E9D9F9G9H9C4B3");
+    ASSERT_TRUE(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3");
 }
 
 TEST(AsyncLoader, SimplePrioritization)
 {
     AsyncLoaderTest t({
-        {.max_threads = 1, .priority = 0},
-        {.max_threads = 1, .priority = 1},
-        {.max_threads = 1, .priority = 2},
+        {.max_threads = 1, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+        {.max_threads = 1, .priority{-2}},
     });
 
     t.loader.start();
@@ -674,16 +684,16 @@ TEST(AsyncLoader, SimplePrioritization)
 TEST(AsyncLoader, DynamicPriorities)
 {
     AsyncLoaderTest t({
-        {.max_threads = 1, .priority = 0},
-        {.max_threads = 1, .priority = 1},
-        {.max_threads = 1, .priority = 2},
-        {.max_threads = 1, .priority = 3},
-        {.max_threads = 1, .priority = 4},
-        {.max_threads = 1, .priority = 5},
-        {.max_threads = 1, .priority = 6},
-        {.max_threads = 1, .priority = 7},
-        {.max_threads = 1, .priority = 8},
-        {.max_threads = 1, .priority = 9},
+        {.max_threads = 1, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+        {.max_threads = 1, .priority{-2}},
+        {.max_threads = 1, .priority{-3}},
+        {.max_threads = 1, .priority{-4}},
+        {.max_threads = 1, .priority{-5}},
+        {.max_threads = 1, .priority{-6}},
+        {.max_threads = 1, .priority{-7}},
+        {.max_threads = 1, .priority{-8}},
+        {.max_threads = 1, .priority{-9}},
     });
 
     for (bool prioritize : {false, true})
@@ -890,8 +900,8 @@ TEST(AsyncLoader, DynamicPools)
     const size_t max_threads[] { 2, 10 };
     const int jobs_in_chain = 16;
     AsyncLoaderTest t({
-        {.max_threads = max_threads[0], .priority = 0},
-        {.max_threads = max_threads[1], .priority = 1},
+        {.max_threads = max_threads[0], .priority{0}},
+        {.max_threads = max_threads[1], .priority{-1}},
     });
 
     t.loader.start();
