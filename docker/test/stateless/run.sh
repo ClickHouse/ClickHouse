@@ -15,6 +15,8 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+source /usr/share/clickhouse-test/ci/attach_gdb.lib
+
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
@@ -85,44 +87,7 @@ fi
 
 sleep 5
 
-# Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
-# and clickhouse-server can do fork-exec, for example, to run some bridge.
-# Do not set nostop noprint for all signals, because some it may cause gdb to hang,
-# explicitly ignore non-fatal signals that are used by server.
-# Number of SIGRTMIN can be determined only in runtime.
-RTMIN=$(kill -l SIGRTMIN)
-echo "
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG$RTMIN nostop noprint pass
-info signals
-continue
-backtrace full
-thread apply all backtrace full
-info registers
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-" > script.gdb
-
-# FIXME Hung check may work incorrectly because of attached gdb
-# 1. False positives are possible
-# 2. We cannot attach another gdb to get stacktraces if some queries hung
-gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log &
-sleep 5
-# gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
-time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+attach_gdb_to_clickhouse
 
 function run_tests()
 {
