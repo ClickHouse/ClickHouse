@@ -183,8 +183,10 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 target_type->getName(),
                 field_type_size,
                 tmp.size());
+        else if (tmp.size() != field_type_size)
+            /// Add padding with 0-bytes.
+            tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
 
-        tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
         typename DecimalType::FieldType field;
         ReadBufferFromString buf(tmp);
         readBinaryBigEndian(field.value, buf);
