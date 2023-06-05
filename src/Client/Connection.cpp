@@ -138,11 +138,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         socket->impl()->error(err); // Throws an exception
 
                     socket->setBlocking(true);
-
-#if USE_SSL
-                    if (static_cast<bool>(secure))
-                        static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->completeHandshake();
-#endif
                 }
                 else
                 {
