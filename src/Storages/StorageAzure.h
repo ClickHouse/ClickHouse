@@ -51,13 +51,7 @@ public:
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
 
-        std::string getConnectionURL() const
-        {
-            if (!is_connection_string)
-                return connection_url;
-
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Connection string not implemented yet");
-        }
+        Poco::URI getConnectionURL() const;
 
         std::string connection_url;
         bool is_connection_string;
@@ -121,7 +115,6 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-
 };
 
 }

@@ -18,6 +18,7 @@
 #include <re2/re2.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
+#include  <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -45,9 +46,59 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
+namespace
+{
+
+static const std::unordered_set<std::string_view> required_configuration_keys = {
+    "blob_path",
+    "container",
+};
+
+static const std::unordered_set<std::string_view> optional_configuration_keys = {
+    "format",
+    "compression",
+    "compression_method",
+    "account_name",
+    "account_key",
+    "connection_string",
+    "storage_account_url",
+};
+
 bool isConnectionString(const std::string & candidate)
 {
     return candidate.starts_with("DefaultEndpointsProtocol");
+}
+
+
+void processNamedCollectionResult(StorageAzure::Configuration & configuration, const NamedCollection & collection)
+{
+    validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
+
+    if (collection.has("connection_string"))
+    {
+        configuration.connection_url = collection.get<String>("connection_string");
+        configuration.is_connection_string = true;
+    }
+
+    if (collection.has("storage_account_url"))
+    {
+        configuration.connection_url = collection.get<String>("storage_account_url");
+        configuration.is_connection_string = false;
+    }
+
+    configuration.container = collection.get<String>("container");
+    configuration.blob_path = collection.get<String>("blob_path");
+
+    if (collection.has("account_name"))
+        configuration.account_name = collection.get<String>("account_name");
+
+    if (collection.has("account_key"))
+        configuration.account_key = collection.get<String>("account_key");
+
+    configuration.format = collection.getOrDefault<String>("format", configuration.format);
+    configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+}
+
 }
 
 StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
@@ -57,6 +108,19 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
     /// Supported signatures:
     ///
     /// Azure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ///
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    {
+        processNamedCollectionResult(configuration, *named_collection);
+
+        configuration.blobs_paths = {configuration.blob_path};
+
+        if (configuration.format == "auto" && get_format_from_file)
+            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+        return configuration;
+    }
 
     if (engine_args.size() < 3 || engine_args.size() > 7)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -274,10 +338,20 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
     return result;
 }
 
+Poco::URI StorageAzure::Configuration::getConnectionURL() const
+{
+    if (!is_connection_string)
+        return Poco::URI(connection_url);
+
+    auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(connection_url);
+    return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
+}
+
+
 StorageAzure::StorageAzure(
     const Configuration & configuration_,
     std::unique_ptr<AzureObjectStorage> && object_storage_,
-    ContextPtr,
+    ContextPtr context,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -293,7 +367,7 @@ StorageAzure::StorageAzure(
     , partition_by(partition_by_)
 {
     FormatFactory::instance().checkFormatName(configuration.format);
-    //context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration.getConnectionURL()));
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration.getConnectionURL());
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
