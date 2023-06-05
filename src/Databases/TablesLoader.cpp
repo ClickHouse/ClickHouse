@@ -82,7 +82,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         /// Gather tasks to load before this table
         LoadTaskPtrs load_dependency_tasks;
         for (const StorageID & dependency_id : all_loading_dependencies.getDependencies(table_id))
-            load_dependency_tasks.push_back(load_table[dependency_id.uuid]);
+            load_dependency_tasks.push_back(load_table[dependency_id.getFullTableName()]);
 
         // Make load table task
         auto table_name = table_id.getQualifiedName();
@@ -95,7 +95,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
             table_name,
             path_and_query.ast,
             strictness_mode);
-        load_table[table_id.uuid] = task;
+        load_table[table_id.getFullTableName()] = task;
         result.push_back(task);
     }
 
@@ -113,7 +113,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
         auto table_name = table_id.getQualifiedName();
         auto task = databases[table_name.database]->startupTableAsync(
             async_loader,
-            joinJobs(load_table[table_id.uuid]->goals(), startup_after),
+            joinJobs(load_table[table_id.getFullTableName()]->goals(), startup_after),
             table_name,
             strictness_mode);
         startup_database[table_name.database].push_back(task);

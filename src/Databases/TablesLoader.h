@@ -78,7 +78,7 @@ private:
     AtomicStopwatch stopwatch;
 
     AsyncLoader & async_loader;
-    std::unordered_map<UUID, LoadTaskPtr> load_table; /// table uuid -> load task
+    std::unordered_map<String, LoadTaskPtr> load_table; /// table_id -> load task
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
