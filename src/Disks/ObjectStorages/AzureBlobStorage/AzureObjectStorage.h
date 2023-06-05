@@ -62,6 +62,8 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "AzureObjectStorage"; }
