@@ -69,6 +69,10 @@ void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctionExplain(TableFunctionFactory & factory);
 
+#if USE_AZURE_BLOB_STORAGE
+void registerTableFunctionAzure(TableFunctionFactory & factory);
+#endif
+
 void registerTableFunctions();
 
 }

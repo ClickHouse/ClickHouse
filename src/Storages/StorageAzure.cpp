@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <re2/re2.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
@@ -31,6 +32,9 @@
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFromStorageProgress.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Pipe.h>
 
 
 using namespace Azure::Storage::Blobs;
@@ -52,6 +56,8 @@ bool isConnectionString(const std::string & candidate)
 
 StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
+
     StorageAzure::Configuration configuration;
 
     /// Supported signatures:
@@ -74,6 +80,11 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
     configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
     configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "connection_url  = {}", configuration.connection_url);
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "container  = {}", configuration.container);
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "blobpath  = {}", configuration.blob_path);
+
+
     auto is_format_arg = [] (const std::string & s) -> bool
     {
         return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
@@ -81,6 +92,7 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 
     if (engine_args.size() == 4)
     {
+        //'c1 UInt64, c2 UInt64
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
@@ -143,8 +155,13 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 
     configuration.blobs_paths = {configuration.blob_path};
 
-    if (configuration.format == "auto" && get_format_from_file)
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
+
+//    if (configuration.format == "auto" && get_format_from_file)
+//        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+    configuration.format = "TSV";
 
     return configuration;
 }
@@ -215,6 +232,7 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
 
     if (configuration.is_connection_string)
     {
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient is_connection_string ");
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
     }
     else
@@ -228,7 +246,13 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
 
         result = std::make_unique<BlobContainerClient>(configuration.connection_url, managed_identity_credential);
+
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient account_name & account_key ");
     }
+
+
+
+
 
     return result;
 }
@@ -251,15 +275,13 @@ StorageAzure::StorageAzure(
     , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
-    FormatFactory::instance().checkFormatName(configuration.format);
+//    FormatFactory::instance().checkFormatName(configuration.format);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration.getConnectionURL()));
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Schema inference is not supported yet");
-        //auto columns = getTableStructureFromDataImpl(configuration, format_settings, context_);
-        //storage_metadata.setColumns(columns);
     }
     else
         storage_metadata.setColumns(columns_);
@@ -268,11 +290,28 @@ StorageAzure::StorageAzure(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    StoredObjects objects;
+    for (const auto & key : configuration.blobs_paths)
+        objects.emplace_back(key);
+
+    for (auto obj : objects)
+    {
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor obj.remote_paths  = {}", obj.remote_path);
+        if (object_storage->exists(obj))
+        {
+            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor exists  obj.remote_paths  = {}", obj.remote_path);
+//            auto read_buffer = object_storage->readObject(obj);
+//            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor read size  obj.remote_paths  = {} , size = {}", obj.remote_path, read_buffer->getFileSize());
+        }
+    }
+
+
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
     for (const auto & column : virtual_columns)
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
@@ -435,6 +474,35 @@ private:
 
 }
 
+
+Pipe StorageAzure::read(
+    const Names & /*column_names*/ ,
+    const StorageSnapshotPtr &  storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t /*num_streams*/)
+{
+    Pipes pipes;
+
+    StoredObjects objects;
+    for (const auto & key : configuration.blobs_paths)
+        objects.emplace_back(key);
+
+    auto reader = object_storage->readObjects(objects);
+    auto block_for_format = storage_snapshot->metadata->getSampleBlock();
+
+    for (auto col : block_for_format.getColumns())
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "read col  = {}",col->getName());
+
+
+    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size));
+
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 SinkToStoragePtr StorageAzure::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto sample_block = metadata_snapshot->getSampleBlock();
@@ -511,6 +579,44 @@ NamesAndTypesList StorageAzure::getVirtuals() const
 bool StorageAzure::supportsPartitionBy() const
 {
     return true;
+}
+
+
+StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> && read_buffer_, ContextPtr context_,
+                                       const Block & sample_block_,UInt64 max_block_size_)
+    :ISource(Block())
+    , WithContext(context_)
+    , read_buffer(std::move(read_buffer_))
+    , sample_block(sample_block_)
+    , max_block_size(max_block_size_)
+{
+    auto format = "TSV";
+
+    auto input_format = FormatFactory::instance().getInput(
+        format, *read_buffer, sample_block, getContext(), max_block_size);
+
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+
+    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+}
+
+
+Chunk StorageAzureSource::generate()
+{
+    Chunk chunk;
+    if (reader->pull(chunk))
+    {
+        LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "pulled chunk rows = {}", chunk.getNumRows());
+
+    }
+    return chunk;
+}
+
+String StorageAzureSource::getName() const
+{
+    return "StorageAzureSource";
 }
 
 }
