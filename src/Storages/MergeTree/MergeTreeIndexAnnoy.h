@@ -66,15 +66,13 @@ public:
     MergeTreeIndexConditionAnnoy(
         const IndexDescription & index_description,
         const SelectQueryInfo & query,
-        const String& distance_function,
+        const String & distance_function,
         ContextPtr context);
 
     ~MergeTreeIndexConditionAnnoy() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
 private:
@@ -97,7 +95,6 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
-
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }

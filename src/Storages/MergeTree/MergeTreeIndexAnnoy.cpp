@@ -236,22 +236,22 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
 template <typename Distance>
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = ann_condition.getLimit();
-    UInt64 index_granularity = ann_condition.getIndexGranularity();
-    std::optional<float> comparison_distance = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
+    const UInt64 limit = ann_condition.getLimit();
+    const UInt64 index_granularity = ann_condition.getIndexGranularity();
+    const std::optional<float> comparison_distance = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
         ? std::optional<float>(ann_condition.getComparisonDistanceForWhereQuery())
         : std::nullopt;
 
     if (comparison_distance && comparison_distance.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
-    std::vector<float> reference_vector = ann_condition.getReferenceVector();
+    const std::vector<float> reference_vector = ann_condition.getReferenceVector();
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance>>(idx_granule);
+    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance>>(idx_granule);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
-    AnnoyIndexWithSerializationPtr<Distance> annoy = granule->index;
+    const AnnoyIndexWithSerializationPtr<Distance> annoy = granule->index;
 
     if (ann_condition.getNumOfDimensions() != annoy->getNumOfDimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
