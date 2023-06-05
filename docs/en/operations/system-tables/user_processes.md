@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/user_processes
 ---
 # user_processes
 
-This system table is used for implementing the `SHOW USER PROCESSES` query.
+This system table can be used to get overview of memory usage and ProfileEvents of users.
 
 Columns:
 
