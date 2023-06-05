@@ -15,7 +15,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
-#include <Parsers/ParserShowUserProcessesQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ParserShowColumnsQuery.h>
 #include <Parsers/ParserShowEngineQuery.h>
@@ -62,7 +61,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
-    ParserShowUserProcessesQuery show_user_processes_p;
 
     ASTPtr query;
 
@@ -90,8 +88,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
-        || show_privileges_p.parse(pos, query, expected)
-        || show_user_processes_p.parse(pos, query, expected);
+        || show_privileges_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
