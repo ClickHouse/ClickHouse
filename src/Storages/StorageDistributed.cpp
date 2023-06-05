@@ -30,8 +30,6 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/MatcherNode.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -946,6 +944,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     else
     {
         auto resolved_remote_storage_id = remote_storage_id;
+        // In case of cross-replication we don't know what database is used for the table.
+        // `storage_id.hasDatabase()` can return false only on the initiator node.
+        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
         if (remote_storage_id.hasDatabase())
             resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
 

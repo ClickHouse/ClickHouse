@@ -106,6 +106,9 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
             storage_id.getFullTableName());
     }
 
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
 }
