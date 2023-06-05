@@ -85,7 +85,7 @@ select argMin(tuple(a), b) from test;
 
 select (argMin((a, b), b) as t).1 argMinA, t.2 argMinB from test;
 ┌─argMinA─┬─argMinB─┐
-│ ᴺᵁᴸᴸ    │       0 │ -- you can use Tuple and get both (all - tuple(*) ) columns for the according max(b)
+│ ᴺᵁᴸᴸ    │       0 │ -- you can use Tuple and get both (all - tuple(*)) columns for the according max(b)
 └─────────┴─────────┘
 
 select argMin(a, b), min(b) from test where a is Null and b is Null;
@@ -95,7 +95,7 @@ select argMin(a, b), min(b) from test where a is Null and b is Null;
 
 select argMin(a, (b, a)), min(tuple(b, a)) from test;
 ┌─argMin(a, tuple(b, a))─┬─min(tuple(b, a))─┐
-│ d                      │ (NULL,NULL)      │ 'd' is the first Not null value for the min
+│ d                      │ (NULL,NULL)      │ -- 'd' is the first Not null value for the min
 └────────────────────────┴──────────────────┘
 
 select argMin((a, b), (b, a)), min(tuple(b, a)) from test;
