@@ -106,4 +106,4 @@ select argMax(a, tuple(b)) from test;
 
 **See also**
 
-- [Tuple](../../sql-reference/data-types/tuple.md)
+- [Tuple](../../data-types/tuple.md)
