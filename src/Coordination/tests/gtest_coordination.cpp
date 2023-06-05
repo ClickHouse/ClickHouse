@@ -1944,6 +1944,8 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
         changelog1.end_of_append_batch(0, 0);
     }
 
+    waitDurableLogs(changelog1);
+
     DB::KeeperLogStore changelog2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog2.init(0, 3);
