@@ -4229,6 +4229,12 @@ Default value: `2000`
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
 (but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
 
+## parallel_view_processing
+
+Enables pushing to attached views concurrently instead of sequentially.
+
+Default value: `false`.
+
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
 
