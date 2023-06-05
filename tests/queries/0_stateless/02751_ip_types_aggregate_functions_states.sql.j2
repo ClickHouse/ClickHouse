@@ -1,4 +1,4 @@
-{# this test checks bacward compatibility of aggregate functions States against IPv4, IPv6 types #}
+{# this test checks backward compatibility of aggregate functions States against IPv4, IPv6 types #}
 
 {% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,50) order by ip" %}
 {% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16))) AS ip FROM numbers(1010011101, 50) order by ip" %}
@@ -140,7 +140,7 @@ from ( {{ ip_generator }} ) format Vertical;
 {% endfor -%}
 
 
-{# test functions with not deterministic result against 1 row, to make it deterministic #}
+{# let's test functions with not deterministic result against 1 row, to make it deterministic #}
 {% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,1) order by ip" %}
 {% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16))) AS ip FROM numbers(1010011101, 1) order by ip" %}
 
