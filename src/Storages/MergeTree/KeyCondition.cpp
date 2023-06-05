@@ -943,6 +943,13 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/** When table's key has expression with these functions from a column,
+  * and when a column in a query is compared with a constant, such as:
+  * CREATE TABLE (x String) ORDER BY toDate(x)
+  * SELECT ... WHERE x LIKE 'Hello%'
+  * we want to apply the function to the constant for index analysis,
+  * but should modify it to pass on unparseable values.
+  */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
