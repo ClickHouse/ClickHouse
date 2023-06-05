@@ -220,7 +220,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// In case of defined format, data follows it.
-    if (format && !infile)
+    if (format && !infile && !select)
     {
         Pos last_token = pos;
         --last_token;
