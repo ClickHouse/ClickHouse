@@ -105,7 +105,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
 
     if (!file_writer)
     {
-        const Block & header = getPort(PortKind::Main).getHeader();
+        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
         write(Chunk(header.getColumns(), 0), 1);
     }
 
