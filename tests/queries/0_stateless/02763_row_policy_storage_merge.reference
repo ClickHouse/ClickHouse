@@ -1,0 +1,114 @@
+1
+1
+1
+1
+2
+2
+2
+2
+3
+3
+3
+3
+4
+4
+4
+4
+1
+2
+3
+4
+SETTINGS optimize_move_to_prewhere= 0
+SELECT * FROM 02763_merge_log_1
+3
+SELECT * FROM merge(currentDatabase(), 02763_merge_log_1)
+3
+SELECT * FROM merge(currentDatabase(), 02763_merge_log)
+1
+2
+3
+3
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>2
+3
+3
+4
+SELECT * FROM 02763_merge_merge_1
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge)
+1
+2
+3
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
+3
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge)
+1
+1
+2
+2
+3
+3
+3
+4
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHEER x>2
+3
+3
+3
+4
+4
+4
+SETTINGS optimize_move_to_prewhere= 1
+SELECT * FROM 02763_merge_log_1
+3
+SELECT * FROM merge(currentDatabase(), 02763_merge_log_1)
+3
+SELECT * FROM merge(currentDatabase(), 02763_merge_log)
+1
+2
+3
+3
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>2
+3
+3
+4
+SELECT * FROM 02763_merge_merge_1
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge)
+1
+2
+3
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
+3
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge)
+1
+1
+2
+2
+3
+3
+3
+4
+4
+4
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHEER x>2
+3
+3
+3
+4
+4
+4

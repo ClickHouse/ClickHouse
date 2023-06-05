@@ -1080,82 +1080,88 @@ void ReadFromMerge::convertingSourceStream(
 
         auto row_policy_filter = local_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
 
-        // row_policy_filter->expression
-        // auto pipe_columns = builder.getHeader().getNamesAndTypesList();
-
-
-        ASTPtr expr = row_policy_filter->expression;
-
-        // auto * select_ast = expr /* query_ast */ ->as<ASTSelectQuery>();
-        // assert(select_ast);
-
-        // select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-        // auto expr_list = select_ast->select();
-        // expr_list->children.push_back(expr);
-        // String filter_column_name = expr_list->children.at(0)->getColumnName();
-        // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column_name: {} ", filter_column_name);
-
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
-        // auto syntax_result = TreeRewriter(local_context).analyze(expr, NamesAndTypesList());
-        auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, local_context};
-
-        auto actions_dag = expression_analyzer.getActionsDAG(true, false);
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "actions_dag: {},<> {}", actions_dag->dumpNames(), actions_dag->dumpDAG());
-
-
-
-        auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-        auto required_columns = filter_actions->getRequiredColumns();
-        for (const auto & req_col : required_columns)
+        if (row_policy_filter)
         {
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "req_col: {}", req_col);
+
+
+            // row_policy_filter->expression
+            // auto pipe_columns = builder.getHeader().getNamesAndTypesList();
+
+
+            ASTPtr expr = row_policy_filter->expression;
+
+            // auto * select_ast = expr /* query_ast */ ->as<ASTSelectQuery>();
+            // assert(select_ast);
+
+            // select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+            // auto expr_list = select_ast->select();
+            // expr_list->children.push_back(expr);
+            // String filter_column_name = expr_list->children.at(0)->getColumnName();
+            // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column_name: {} ", filter_column_name);
+
+            auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+            // auto syntax_result = TreeRewriter(local_context).analyze(expr, NamesAndTypesList());
+            auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, local_context};
+
+            auto actions_dag = expression_analyzer.getActionsDAG(true, false);
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "actions_dag: {},<> {}", actions_dag->dumpNames(), actions_dag->dumpDAG());
+
+
+
+            auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            auto required_columns = filter_actions->getRequiredColumns();
+            for (const auto & req_col : required_columns)
+            {
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "req_col: {}", req_col);
+            }
+
+
+
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
+                filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
+
+
+            auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
+            std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
+
+            Names required_columns_sorted = required_columns;
+            std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
+
+            Names filter_columns;
+
+
+            std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
+                required_columns.begin(), required_columns.end(),
+                std::inserter(filter_columns, filter_columns.begin()));
+
+            for (const auto & filter_column : filter_columns)
+            {
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column: {}", filter_column);
+            }
+
+            // Block block;
+            // block = filter_actions->getActionsDAG().updateHeader(std::move(block));
+            // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "block from updateHeader {}", block.dumpStructure());
+
+
+
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "stream_header {}", stream_header.dumpStructure());
+                return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_columns.front(), true /* remove fake column */);
+            });
+
+
+            // auto row_level_filter_step = std::make_unique<FilterStep>(
+            //     query_plan.getCurrentDataStream(),
+            //     expressions.prewhere_info->row_level_filter,
+            //     expressions.prewhere_info->row_level_column_name,
+            //     true);
+
+            // row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
+            // query_plan.addStep(std::move(row_level_filter_step));
         }
 
-
-
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
-            filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
-
-
-        auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
-        std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
-
-        Names required_columns_sorted = required_columns;
-        std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
-
-        Names filter_columns;
-
-
-        std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
-            required_columns.begin(), required_columns.end(),
-            std::inserter(filter_columns, filter_columns.begin()));
-
-        for (const auto & filter_column : filter_columns)
-        {
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column: {}", filter_column);
-        }
-
-        // Block block;
-        // block = filter_actions->getActionsDAG().updateHeader(std::move(block));
-        // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "block from updateHeader {}", block.dumpStructure());
-
-
-
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "stream_header {}", stream_header.dumpStructure());
-            return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_columns.front(), true /* remove fake column */);
-        });
-
-
-        // auto row_level_filter_step = std::make_unique<FilterStep>(
-        //     query_plan.getCurrentDataStream(),
-        //     expressions.prewhere_info->row_level_filter,
-        //     expressions.prewhere_info->row_level_column_name,
-        //     true);
-
-        // row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
-        // query_plan.addStep(std::move(row_level_filter_step));
 
     }
 }
