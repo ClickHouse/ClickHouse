@@ -102,6 +102,8 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
 

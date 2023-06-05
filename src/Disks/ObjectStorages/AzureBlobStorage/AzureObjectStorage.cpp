@@ -11,9 +11,16 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageAzureThreads;
+    extern const Metric ObjectStorageAzureThreadsActive;
+
+}
 
 namespace DB
 {
@@ -23,6 +30,60 @@ namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int UNSUPPORTED_METHOD;
+}
+
+
+namespace
+{
+
+class AzureIteratorAsync final : public IObjectStorageIteratorAsync
+{
+public:
+    AzureIteratorAsync(
+        const std::string & path_prefix,
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
+        size_t max_list_size)
+        : IObjectStorageIteratorAsync(
+            CurrentMetrics::ObjectStorageAzureThreads,
+            CurrentMetrics::ObjectStorageAzureThreadsActive,
+            "ListObjectAzure")
+        , client(client_)
+    {
+
+        options.Prefix = path_prefix;
+        options.PageSizeHint = static_cast<int>(max_list_size);
+    }
+
+private:
+    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+    {
+        auto outcome = client->ListBlobs(options);
+        auto blob_list_response = client->ListBlobs(options);
+        auto blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
+        {
+            batch.emplace_back(
+                blob.Name,
+                ObjectMetadata{
+                    static_cast<uint64_t>(blob.BlobSize),
+                    Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            blob.Details.LastModified.time_since_epoch()).count()),
+                    {}});
+        }
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
+        if (blob_list_response.HasPage())
+            return true;
+
+        return false;
+    }
+
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+    Azure::Storage::Blobs::ListBlobsOptions options;
+};
+
 }
 
 
@@ -65,6 +126,14 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 
     return false;
+}
+
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix) const
+{
+    auto settings_ptr = settings.get();
+    auto client_ptr = client.get();
+
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, settings_ptr->list_object_keys_size);
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
