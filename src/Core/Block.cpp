@@ -597,6 +597,14 @@ Block Block::sortColumns() const
     return sorted_block;
 }
 
+Block Block::shrinkToFit() const
+{
+    Columns new_columns(data.size(), nullptr);
+    for (size_t i = 0; i < data.size(); ++i)
+        new_columns[i] = data[i].column->shrinkToFit();
+    return cloneWithColumns(new_columns);
+}
+
 
 const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {

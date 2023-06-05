@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
@@ -7,13 +8,14 @@
 namespace DB
 {
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
-    : limits(table_join_->sizeLimits())
+JoinSwitcher::JoinSwitcher(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    : context(context_)
+    , limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
 {
-    join = std::make_shared<HashJoin>(table_join, right_sample_block);
+    join = std::make_shared<HashJoin>(context, table_join, right_sample_block);
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();

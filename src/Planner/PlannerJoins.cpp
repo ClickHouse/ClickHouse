@@ -630,6 +630,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     trySetStorageInTableJoin(right_table_expression, table_join);
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
+    auto query_context = planner_context->getQueryContext();
 
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
@@ -644,7 +645,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 
             table_join->setRename(*source_column_name, result_column.name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+        return storage->getJoinLocked(table_join, query_context);
     }
 
     /** JOIN with constant.
@@ -654,8 +655,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     {
         if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN with constant supported only with join algorithm 'hash'");
-
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(query_context, table_join, right_table_expression_header);
     }
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
@@ -682,12 +682,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         if (table_join->allowParallelHashJoin())
-        {
-            auto query_context = planner_context->getQueryContext();
             return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
-        }
-
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(query_context, table_join, right_table_expression_header);
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
@@ -699,22 +695,19 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         if (GraceHashJoin::isSupported(table_join))
-        {
-            auto query_context = planner_context->getQueryContext();
             return std::make_shared<GraceHashJoin>(
                 query_context,
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
                 query_context->getTempDataOnDisk());
-        }
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
     {
         if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+            return std::make_shared<JoinSwitcher>(query_context, table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(query_context, table_join, right_table_expression_header);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

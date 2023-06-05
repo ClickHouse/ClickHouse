@@ -217,8 +217,9 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
         JoinCommon::removeColumnNullability(column);
 }
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_, size_t reserve_num)
-    : table_join(table_join_)
+HashJoin::HashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_, size_t reserve_num)
+    : context(context_)
+    , table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
     , any_take_last_row(any_take_last_row_)
@@ -777,6 +778,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
+    if (context->getSettings().use_shrink_to_fit_in_hash_join)
+        block_to_save = block_to_save.shrinkToFit();
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -1795,23 +1798,17 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
-    {
         materializeBlockInplace(block);
-    }
 
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (!joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
         }))
-        {
-            /// Joined
-        }
-        else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
 }

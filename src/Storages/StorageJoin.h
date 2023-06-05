@@ -37,7 +37,8 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool overwrite,
-        bool persistent_);
+        bool persistent_,
+        ContextPtr context);
 
     String getName() const override { return "Join"; }
 
