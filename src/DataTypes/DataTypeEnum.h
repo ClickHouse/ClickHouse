@@ -45,7 +45,6 @@ public:
 
 private:
     std::string type_name;
-    std::string my_sql_type_name;
     static std::string generateName(const Values & values);
     static std::string generateMySQLName(const Values & values);
 
@@ -54,7 +53,7 @@ public:
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
-    const char * getSQLCompatibleName() const override { return my_sql_type_name.c_str(); }
+    String getSQLCompatibleName() const override { return generateMySQLName(this->getValues()); }
 
     TypeIndex getTypeId() const override { return type_id; }
 

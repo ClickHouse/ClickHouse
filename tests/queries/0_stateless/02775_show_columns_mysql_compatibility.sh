@@ -17,15 +17,25 @@ ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS tab"
 ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde"
 ${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde.tab"
 
-#${CLICKHOUSE_LOCAL} --query "SET allow_suspicious_low_cardinality_types = 1;"
 echo "Create tab table "
 ${CLICKHOUSE_LOCAL} -n -q "
     SET allow_suspicious_low_cardinality_types=1;
-    SET allow_experimental_object_type =1;
+    SET allow_experimental_object_type=1;
     CREATE TABLE tab
     (
+        uint8 UInt8,
+        uint16 UInt16,
+        uint32 UInt32,
         uint64 UInt64,
-        int32 Nullable(Int32),
+        uint128 UInt128,
+        uint256 UInt256,
+        int8 Int8,
+        int16 Int16,
+        int32 Int32,
+        int64 Int64,
+        int128 Int128,
+        int256 Int256,
+        nint32 Nullable(Int32),
         float32 Float32,
         float64 Float64,
         decimal_value Decimal(10, 2),
@@ -67,8 +77,19 @@ ${CLICKHOUSE_LOCAL} -n -q "
     SET allow_experimental_object_type =1;
     CREATE TABLE database_123456789abcde.tab
     (
+        uint8 UInt8,
+        uint16 UInt16,
+        uint32 UInt32,
         uint64 UInt64,
-        int32 Nullable(Int32),
+        uint128 UInt128,
+        uint256 UInt256,
+        int8 Int8,
+        int16 Int16,
+        int32 Int32,
+        int64 Int64,
+        int128 Int128,
+        int256 Int256,
+        nint32 Nullable(Int32),
         float32 Float32,
         float64 Float64,
         decimal_value Decimal(10, 2),
@@ -104,6 +125,8 @@ ${CLICKHOUSE_LOCAL} -n -q "
 TEMP_FILE=$(mktemp)
 
 cat <<EOT > $TEMP_FILE
+SHOW COLUMNS FROM tab;
+SET output_format_mysql_types=1;
 SHOW COLUMNS FROM tab;
 SHOW EXTENDED COLUMNS FROM tab;
 SHOW FULL COLUMNS FROM tab;

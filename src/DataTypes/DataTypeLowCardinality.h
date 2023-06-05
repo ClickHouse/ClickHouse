@@ -11,7 +11,6 @@ class DataTypeLowCardinality : public IDataType
 {
 private:
     DataTypePtr dictionary_type;
-    std::string mysql_name;
 
 
 public:
@@ -24,7 +23,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    const char * getSQLCompatibleName() const override { return mysql_name.c_str(); }
+    String getSQLCompatibleName() const override { return dictionary_type->getSQLCompatibleName(); }
 
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 

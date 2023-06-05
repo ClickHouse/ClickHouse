@@ -23,7 +23,7 @@ public:
     DataTypeObject(const String & schema_format_, bool is_nullable_);
 
     const char * getFamilyName() const override { return "Object"; }
-    const char * getSQLCompatibleName() const override { return "JSON"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 

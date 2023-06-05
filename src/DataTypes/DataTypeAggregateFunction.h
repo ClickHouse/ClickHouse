@@ -45,7 +45,7 @@ public:
     String doGetName() const override;
     String getNameWithoutVersion() const;
     const char * getFamilyName() const override { return "AggregateFunction"; }
-    const char * getSQLCompatibleName() const override { return "TEXT"; }
+    String getSQLCompatibleName() const override { return "TEXT"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     Array getParameters() const { return parameters; }

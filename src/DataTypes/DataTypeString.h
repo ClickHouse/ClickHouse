@@ -21,8 +21,7 @@ public:
         return "String";
     }
 
-    // FIXME: string can contain arbitrary bytes, not only UTF-8 sequences
-    const char * getSQLCompatibleName() const override { return "BLOB"; }
+    String getSQLCompatibleName() const override { return "BLOB"; }
 
     TypeIndex getTypeId() const override { return type_id; }
 
