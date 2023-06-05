@@ -19,7 +19,7 @@
 #include <re2/re2.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
-#include  <azure/storage/common/storage_credential.hpp>
+#include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -35,6 +35,7 @@
 #include <Storages/ReadFromStorageProgress.h>
 #include <Common/parseGlobs.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
@@ -596,29 +597,83 @@ private:
 
 }
 
-
 Pipe StorageAzure::read(
-    const Names & column_names ,
+    const Names & column_names,
     const StorageSnapshotPtr &  storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
+    if (partition_by && configuration.withWildcard())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
+
     Pipes pipes;
 
-    StoredObjects objects;
-    for (const auto & key : configuration.blobs_paths)
-        objects.emplace_back(key);
+    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
+    std::vector<NameAndTypePair> requested_virtual_columns;
 
-    auto reader = object_storage->readObjects(objects);
-    auto columns_description = storage_snapshot->getDescriptionForColumns(column_names);
-    auto block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    for (const auto & virtual_column : getVirtuals())
+    {
+        if (column_names_set.contains(virtual_column.name))
+            requested_virtual_columns.push_back(virtual_column);
+    }
 
+    std::shared_ptr<StorageAzureSource::Iterator> iterator_wrapper;
+    if (configuration.withGlobs())
+    {
+        /// Iterate through disclosed globs and make a source for each file
+        iterator_wrapper = std::make_shared<StorageAzureSource::Iterator>(
+            object_storage.get(), configuration.container, std::nullopt,
+            configuration.blob_path, query_info.query, virtual_block, local_context);
+    }
+    else
+    {
+        iterator_wrapper = std::make_shared<StorageAzureSource::Iterator>(
+            object_storage.get(), configuration.container, configuration.blobs_paths,
+            std::nullopt, query_info.query, virtual_block, local_context);
+    }
 
-    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size, columns_description));
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (supportsSubsetOfColumns())
+    {
+        auto fetch_columns = column_names;
+        const auto & virtuals = getVirtuals();
+        std::erase_if(
+            fetch_columns,
+            [&](const String & col)
+            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
+        if (fetch_columns.empty())
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
+    }
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        pipes.emplace_back(std::make_shared<StorageAzureSource>(
+            requested_virtual_columns,
+            configuration.format,
+            getName(),
+            block_for_format,
+            local_context,
+            format_settings,
+            columns_description,
+            max_block_size,
+            configuration.compression_method,
+            object_storage.get(),
+            configuration.container,
+            iterator_wrapper));
+    }
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -848,23 +903,27 @@ RelativePathWithMetadata StorageAzureSource::Iterator::next()
         if (!blobs_with_metadata || index >= blobs_with_metadata->size())
         {
             RelativePathsWithMetadata new_batch;
-            if (object_storage_iterator->isValid())
+            while (new_batch.empty())
             {
-                new_batch = object_storage_iterator->currentBatch();
-                object_storage_iterator->nextBatch();
-            }
-            else
-            {
-                is_finished = true;
-                return {};
+                if (object_storage_iterator->isValid())
+                {
+                    new_batch = object_storage_iterator->currentBatch();
+                    object_storage_iterator->nextBatch();
+                }
+                else
+                {
+                    is_finished = true;
+                    return {};
+                }
+
+                for (auto it = new_batch.begin(); it != new_batch.end(); ++it)
+                {
+                    if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
+                        it = new_batch.erase(it);
+                }
             }
 
-            for (auto it = new_batch.begin(); it != new_batch.end(); ++it)
-            {
-                if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
-                    it = new_batch.erase(it);
-            }
-
+            index.store(0, std::memory_order_relaxed);
             if (!is_initialized)
             {
                 createFilterAST(new_batch.front().relative_path);
@@ -895,13 +954,10 @@ RelativePathWithMetadata StorageAzureSource::Iterator::next()
                     total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
             }
         }
-        else
-        {
-            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-            return (*blobs_with_metadata)[current_index];
-        }
-    }
 
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        return (*blobs_with_metadata)[current_index];
+    }
 }
 
 size_t StorageAzureSource::Iterator::getTotalSize() const
@@ -924,27 +980,166 @@ void StorageAzureSource::Iterator::createFilterAST(const String & any_key)
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
 }
 
-}
-
 
 Chunk StorageAzureSource::generate()
 {
-    while(true)
+    while (true)
     {
+        if (isCancelled() || !reader)
+        {
+            if (reader)
+                reader->cancel();
+            break;
+        }
+
         Chunk chunk;
         if (reader->pull(chunk))
         {
-            LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "pulled chunk rows = {}", chunk.getNumRows());
+            UInt64 num_rows = chunk.getNumRows();
+
+            const auto & file_path = reader.getPath();
+            size_t total_size = file_iterator->getTotalSize();
+            if (num_rows && total_size)
+            {
+                updateRowsProgressApprox(
+                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+            }
+
+            for (const auto & virtual_column : requested_virtual_columns)
+            {
+                if (virtual_column.name == "_path")
+                {
+                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+                }
+                else if (virtual_column.name == "_file")
+                {
+                    size_t last_slash_pos = file_path.find_last_of('/');
+                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
+                    chunk.addColumn(column->convertToFullColumnIfConst());
+                }
+            }
+
+            return chunk;
         }
-        return chunk;
+
+
+        assert(reader_future.valid());
+        reader = reader_future.get();
+
+        if (!reader)
+            break;
+
+        /// Even if task is finished the thread may be not freed in pool.
+        /// So wait until it will be freed before scheduling a new task.
+        create_reader_pool.wait();
+        reader_future = createReaderAsync();
     }
-//    return {};
+
+    return {};
+}
+
+StorageAzureSource::~StorageAzureSource()
+{
+    create_reader_pool.wait();
 }
 
 String StorageAzureSource::getName() const
 {
-    return "StorageAzureSource";
+    return name;
 }
+
+StorageAzureSource::ReaderHolder StorageAzureSource::createReader()
+{
+    auto [current_key, info] = file_iterator->next();
+    if (current_key.empty())
+        return {};
+
+    size_t object_size = info.size_bytes != 0 ? info.size_bytes : object_storage->getObjectMetadata(current_key).size_bytes;
+    auto compression_method = chooseCompressionMethod(current_key, compression_hint);
+
+    auto read_buf = createAzureReadBuffer(current_key, object_size);
+    auto input_format = FormatFactory::instance().getInput(
+            format, *read_buf, sample_block, getContext(), max_block_size,
+            format_settings, std::nullopt, std::nullopt,
+            /* is_remote_fs */ true, compression_method);
+
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+
+    if (columns_desc.hasDefaults())
+    {
+        builder.addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
+    }
+
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+}
+
+std::future<StorageAzureSource::ReaderHolder> StorageAzureSource::createReaderAsync()
+{
+    return create_reader_scheduler([this] { return createReader(); }, Priority{});
+}
+
+std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const String & key, size_t object_size)
+{
+    auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
+    read_settings.enable_filesystem_cache = false;
+    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    const bool object_too_small = object_size <= 2 * download_buffer_size;
+
+    // Create a read buffer that will prefetch the first ~1 MB of the file.
+    // When reading lots of tiny files, this prefetching almost doubles the throughput.
+    // For bigger files, parallel reading is more useful.
+    if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    {
+        LOG_TRACE(log, "Downloading object of size {} from S3 with initial prefetch", object_size);
+        return createAsyncAzureReadBuffer(key, read_settings, object_size);
+    }
+
+    return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
+}
+
+
+std::unique_ptr<ReadBuffer> StorageAzureSource::createAsyncAzureReadBuffer(
+    const String & key, const ReadSettings & read_settings, size_t object_size)
+{
+    auto context = getContext();
+    auto read_buffer_creator =
+        [this, read_settings, object_size]
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        auto buffer = object_storage->readObject(StoredObject(path), read_settings, {}, object_size);
+        buffer->setReadUntilPosition(read_until_position);
+        return buffer;
+    };
+
+    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
+        StoredObjects{StoredObject{key, object_size}},
+        read_settings,
+        /* cache_log */nullptr);
+
+    auto modified_settings{read_settings};
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
+
+    auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+
+    auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
+        std::move(s3_impl), pool_reader, modified_settings,
+        context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
+
+    async_reader->setReadUntilEnd();
+    if (read_settings.remote_fs_prefetch)
+        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
+
+    return async_reader;
+}
+
 
 }
 
