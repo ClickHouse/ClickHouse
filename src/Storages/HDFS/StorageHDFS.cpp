@@ -490,6 +490,7 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
+            write_buf->finalize();
             throw;
         }
     }

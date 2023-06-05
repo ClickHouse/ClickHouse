@@ -909,6 +909,11 @@
                 <host>127.0.0.10</host>
                 <port>9000</port>
             </replica>
+            <!-- Unavailable replica -->
+            <replica>
+                <host>127.0.0.11</host>
+                <port>1234</port>
+            </replica>
         </shard>
 	</parallel_replicas>
         <test_cluster_two_shards_localhost>
