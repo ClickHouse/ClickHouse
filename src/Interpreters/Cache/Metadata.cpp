@@ -346,7 +346,7 @@ void LockedKey::removeAllReleasable()
             ++it;
             continue;
         }
-        else if (it->second.evicting())
+        else if (it->second->evicting())
         {
             /// File segment is currently a removal candidate,
             /// we do not know if it will be removed or not yet,
