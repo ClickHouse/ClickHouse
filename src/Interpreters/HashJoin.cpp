@@ -763,8 +763,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     Block block_to_save = prepareRightBlock(source_block);
     if (context->getSettings().use_shrink_to_fit_in_hash_join)
         block_to_save = block_to_save.shrinkToFit();
-    size_t total_rows = 0;
-    size_t total_bytes = 0;
     {
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addJoinedBlock called when HashJoin locked to prevent updates");
@@ -848,16 +846,14 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
                 data->blocks_nullmaps_allocated_size += not_joined_map->allocatedBytes();
                 data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
             }
-
-            if (!check_limits)
-                return true;
-
-            /// TODO: Do not calculate them every time
-            total_rows = getTotalRowCount();
-            total_bytes = getTotalByteCount();
         }
     }
 
+    if (!check_limits)
+        return true;
+    /// TODO: Do not calculate them every time
+    size_t total_rows = getTotalRowCount();
+    size_t total_bytes = getTotalByteCount();
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
