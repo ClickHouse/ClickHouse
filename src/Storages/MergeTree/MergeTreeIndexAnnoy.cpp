@@ -251,7 +251,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
-    const AnnoyIndexWithSerializationPtr<Distance> & annoy = granule->index;
+    AnnoyIndexWithSerializationPtr<Distance> annoy = granule->index;
 
     if (ann_condition.getNumOfDimensions() != annoy->getNumOfDimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
@@ -264,6 +264,8 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     distances.reserve(limit);
 
     annoy->get_nns_by_vector(reference_vector.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
+
+    chassert(neighbors.size() == distances.size());
 
     std::vector<size_t> granule_numbers;
     granule_numbers.reserve(neighbors.size());
