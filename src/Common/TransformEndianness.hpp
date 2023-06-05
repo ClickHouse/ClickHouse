@@ -31,8 +31,7 @@ template <std::endian endian, typename T>
 requires is_decimal<T>
 inline void transformEndianness(T & x)
 {
-    if constexpr (std::endian::native != endian)
-        transformEndianness<endian>(x.value);
+    transformEndianness<endian>(x.value);
 }
 
 template <std::endian endian, typename T>
