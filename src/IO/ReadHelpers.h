@@ -765,7 +765,6 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-/// If string is not like UUID - implementation specific behaviour.
 UUID parseUUID(std::span<const UInt8> src);
 
 template <typename ReturnType = void>

@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
@@ -51,33 +52,35 @@ UUID parseUUID(std::span<const UInt8> src)
     UUID uuid;
     const auto * src_ptr = src.data();
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
-    if (const auto size = src.size(); size == 36)
+    const auto size = src.size();
+    if (size == 36)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        parseHex<4>(src_ptr, dst);
-        parseHex<2>(src_ptr + 9, dst + 4);
-        parseHex<2>(src_ptr + 14, dst + 6);
-        parseHex<2>(src_ptr + 19, dst + 8);
-        parseHex<6>(src_ptr + 24, dst + 10);
-#else
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         const std::reverse_iterator dst_it(dst + sizeof(UUID));
-        /// FIXME This code looks like trash.
         parseHex<4>(src_ptr, dst + 8);
         parseHex<2>(src_ptr + 9, dst + 12);
         parseHex<2>(src_ptr + 14, dst + 14);
         parseHex<2>(src_ptr + 19, dst);
         parseHex<6>(src_ptr + 24, dst + 2);
+#else
+        parseHex<4>(src_ptr, dst);
+        parseHex<2>(src_ptr + 9, dst + 4);
+        parseHex<2>(src_ptr + 14, dst + 6);
+        parseHex<2>(src_ptr + 19, dst + 8);
+        parseHex<6>(src_ptr + 24, dst + 10);
 #endif
     }
     else if (size == 32)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        parseHex<16>(src_ptr, dst);
-#else
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         parseHex<8>(src_ptr, dst + 8);
         parseHex<8>(src_ptr + 16, dst);
+#else
+        parseHex<16>(src_ptr, dst);
 #endif
     }
+    else
+        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
 
     return uuid;
 }

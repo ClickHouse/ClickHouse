@@ -51,7 +51,7 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     {
         assertChar('\'', istr);
         char * next_pos = find_first_symbols<'\\', '\''>(istr.position(), istr.buffer().end());
-        const auto len = next_pos - istr.position();
+        const size_t len = next_pos - istr.position();
         if ((len == 32 || len == 36) && istr.position()[len] == '\'')
         {
             uuid = parseUUID(std::span(reinterpret_cast<const UInt8 *>(istr.position()), len));
