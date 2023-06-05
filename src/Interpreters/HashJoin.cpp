@@ -2,6 +2,7 @@
 #include <limits>
 #include <unordered_map>
 #include <vector>
+#include <queue>
 
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -761,14 +762,34 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
-    if (context->getSettings().use_shrink_to_fit_in_hash_join)
-        block_to_save = block_to_save.shrinkToFit();
-    {
-        if (storage_join_lock)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addJoinedBlock called when HashJoin locked to prevent updates");
+    
+    if (storage_join_lock)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addJoinedBlock called when HashJoin locked to prevent updates");
 
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
-        data->blocks.emplace_back(std::move(block_to_save));
+    data->blocks_allocated_size += block_to_save.allocatedBytes();
+    data->blocks.emplace_back(std::move(block_to_save));
+
+    size_t total_bytes = getTotalByteCount();
+    size_t max_bytes = table_join->sizeLimits().max_bytes;
+    if (max_bytes && context->getSettings().use_shrink_to_fit_in_hash_join)
+    {
+        std::cerr << "WE BE SHRINKING" << std::endl;
+        data->unshrunken_blocks.emplace(block_to_save.allocatedBytes() - block_to_save.bytes(), data->blocks.end());
+        // Memory used (as a fraction of max_bytes in join) before Block::shrinkToFit starts getting called
+        constexpr float shrink_to_fit_threshold = 0.95f;
+        while (total_bytes > shrink_to_fit_threshold * max_bytes && !data->unshrunken_blocks.empty())
+        {
+            const auto [memory_overuse, block_iter] = data->unshrunken_blocks.top();
+            data->unshrunken_blocks.pop();
+            Block & block = *block_iter; // Block to call shrinkToFit for
+            size_t old_size = block.allocatedBytes();
+            block = block.shrinkToFit();
+            size_t new_size = block.allocatedBytes();
+            data->blocks_allocated_size -= old_size - new_size; // We can't use memory_overuse here, because it is an estimate
+        }
+    }
+
+    {
         Block * stored_block = &data->blocks.back();
 
         if (rows)
@@ -853,7 +874,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
         return true;
     /// TODO: Do not calculate them every time
     size_t total_rows = getTotalRowCount();
-    size_t total_bytes = getTotalByteCount();
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 

@@ -361,6 +361,18 @@ public:
         BlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
+        using UnshrunkenBlock = std::pair<size_t, BlocksList::iterator>;
+        struct CompareBlocks
+        {
+            bool operator()(const UnshrunkenBlock & x, const UnshrunkenBlock & y) const
+            {
+                return x.first < y.first;
+            }
+        };
+        /// Blocks for which the shrinkToFit method has not yet been called
+        /// Ordered by estimated amount of memory that will be freed by calling shrinkToFit
+        std::priority_queue<UnshrunkenBlock, std::vector<UnshrunkenBlock>, CompareBlocks> unshrunken_blocks;
+
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
