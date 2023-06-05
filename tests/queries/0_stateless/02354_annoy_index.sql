@@ -3,10 +3,7 @@
 SET allow_experimental_annoy_index = 1;
 
 DROP TABLE IF EXISTS tab;
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab(id Int32, embedding Array(Float32), INDEX annoy_index embedding TYPE annoy()) ENGINE = MergeTree ORDER BY id;
--- SETTINGS index_granularity=5, index_granularity_bytes = '10Mi';
+CREATE TABLE tab(id Int32, embedding Array(Float32), INDEX annoy_index embedding TYPE annoy()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity=5;
 INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5]), (3, [0.0, 0.0, 9.5]), (4, [0.0, 0.0, 9.7]), (5, [0.0, 0.0, 10.2]), (6, [10.0, 0.0, 0.0]), (7, [9.5, 0.0, 0.0]), (8, [9.7, 0.0, 0.0]), (9, [10.2, 0.0, 0.0]), (10, [10.5, 0.0, 0.0]), (11, [0.0, 10.0, 0.0]), (12, [0.0, 9.5, 0.0]), (13, [0.0, 9.7, 0.0]), (14, [0.0, 10.2, 0.0]), (15, [0.0, 10.5, 0.0]);
 
 SELECT 'WHERE type, L2Distance';
@@ -21,13 +18,11 @@ FROM tab
 ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
 LIMIT 3;
 
-
 SELECT 'Reference ARRAYs with non-matching dimension are rejected';
 SELECT *
 FROM tab
 ORDER BY L2Distance(embedding, [0.0, 0.0])
 LIMIT 3; -- { serverError INCORRECT_QUERY }
-
 
 SELECT 'WHERE type, L2Distance, check that index is used';
 EXPLAIN indexes=1
