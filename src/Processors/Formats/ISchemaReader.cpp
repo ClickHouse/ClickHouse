@@ -1,6 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
@@ -54,6 +55,11 @@ void checkFinalInferredType(
 
     if (settings.schema_inference_make_columns_nullable)
         type = makeNullableRecursively(type);
+    /// In case when data for some column could contain nulls and regular values,
+    /// resulting inferred type is Nullable.
+    /// If input_format_null_as_default is enabled, we should remove Nullable type.
+    else if (settings.null_as_default)
+        type = removeNullable(type);
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
