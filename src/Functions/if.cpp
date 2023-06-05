@@ -1124,6 +1124,9 @@ public:
             return {};
 
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
+        if (!cond_const_col)
+            return {};
+
         bool condition_value = cond_const_col->getValue<UInt8>();
 
         const ColumnWithTypeAndName & arg_then = arguments[1];
