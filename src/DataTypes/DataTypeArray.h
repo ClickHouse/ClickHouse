@@ -30,7 +30,7 @@ public:
     {
         return "Array";
     }
-    const char * getSQLCompatibleName() const override
+    String getSQLCompatibleName() const override
     {
         return "TEXT";
     }

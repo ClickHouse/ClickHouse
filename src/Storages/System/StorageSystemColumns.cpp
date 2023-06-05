@@ -74,7 +74,8 @@ public:
         : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , clientInfo(context->getClientInfo())
+        , client_info_interface(context->getClientInfo().interface)
+        , use_mysql_types(context->getSettingsRef().output_format_mysql_types)
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -132,9 +133,10 @@ protected:
 
             auto get_type_name = [this](const IDataType& type) -> std::string
             {
-                if (clientInfo.interface == DB::ClientInfo::Interface::MYSQL)
+                // Check if the output_format_mysql_types setting is enabled and client is connected via MySQL protocol
+                if (use_mysql_types && client_info_interface == DB::ClientInfo::Interface::MYSQL)
                 {
-                   return type.getMySQLTypeName();
+                    return type.getSQLCompatibleName();
                 }
                 else
                 {
@@ -293,7 +295,8 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
-    ClientInfo clientInfo;
+    ClientInfo::Interface client_info_interface;
+    bool use_mysql_types;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;

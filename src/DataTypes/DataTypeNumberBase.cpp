@@ -11,6 +11,55 @@ Field DataTypeNumberBase<T>::getDefault() const
 {
     return NearestFieldType<FieldType>();
 }
+template <typename T>
+String DataTypeNumberBase<T>::getSQLCompatibleName() const
+{
+    if constexpr (std::is_same_v<T, Int8>)
+    {
+        return "TINYINT";
+    }
+    else if constexpr (std::is_same_v<T, Int16>)
+    {
+        return "SMALLINT";
+    }
+    else if constexpr (std::is_same_v<T, Int32>)
+    {
+        return "INTEGER";
+    }
+    else if constexpr (std::is_same_v<T, Int64>)
+    {
+        return "BIGINT";
+    }
+    else if constexpr (std::is_same_v<T, UInt8>)
+    {
+        return "TINYINT UNSIGNED";
+    }
+    else if constexpr (std::is_same_v<T, UInt16>)
+    {
+        return "SMALLINT UNSIGNED";
+    }
+    else if constexpr (std::is_same_v<T, UInt32>)
+    {
+        return "INTEGER UNSIGNED";
+    }
+    else if constexpr (std::is_same_v<T, UInt64>)
+    {
+        return "BIGINT UNSIGNED";
+    }
+    else if constexpr (std::is_same_v<T, Float32>)
+    {
+        return "FLOAT";
+    }
+    else if constexpr (std::is_same_v<T, Float64>)
+    {
+        return "DOUBLE";
+    }
+    /// Unsupported types are converted to TEXT
+    else
+    {
+        return "TEXT";
+    }
+}
 
 template <typename T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
@@ -29,24 +78,6 @@ bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
     return is_integer<T> && is_unsigned_v<T>;
 }
-
-template <typename T>
-const std::map<std::string, std::string> DataTypeNumberBase<T>::mysqlTypeMap = {
-    {"UInt8", "TINYINT UNSIGNED"},
-    {"UInt16", "SMALLINT UNSIGNED"},
-    {"UInt32", "MEDIUMINT UNSIGNEd"},
-    {"UInt64", "BIGINT UNSIGNED"},
-    {"UInt128", "TEXT"},
-    {"UInt256", "TEXT"},
-    {"Int8", "TINYINT"},
-    {"Int16", "SMALLINT"},
-    {"Int32", "INT"},
-    {"Int64", "BIGINT"},
-    {"Int128", "TEXT"},
-    {"Int256", "TEXT"},
-    {"Float32", "FLOAT"},
-    {"Float64", "DOUBLE"},
-};
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;

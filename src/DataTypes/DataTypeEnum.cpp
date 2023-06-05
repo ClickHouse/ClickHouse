@@ -90,7 +90,6 @@ template <typename Type>
 DataTypeEnum<Type>::DataTypeEnum(const Values & values_)
     : EnumValues<Type>(values_)
     , type_name(generateName(this->getValues()))
-    , my_sql_type_name(generateMySQLName(this->getValues()))
 {
 }
 

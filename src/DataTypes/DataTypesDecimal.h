@@ -37,10 +37,9 @@ public:
     using Base::Base;
 
     static constexpr auto family_name = "Decimal";
-    static constexpr auto mysql_name = "DECIMAL";
 
     const char * getFamilyName() const override { return family_name; }
-    const char * getSQLCompatibleName() const override { return mysql_name; }
+    String getSQLCompatibleName() const override;
 
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }

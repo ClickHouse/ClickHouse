@@ -16,7 +16,7 @@ public:
     static constexpr bool is_parametric = false;
 
     const char * getFamilyName() const override { return "Nothing"; }
-    const char * getSQLCompatibleName() const override { return "TEXT"; }
+    String getSQLCompatibleName() const override { return "TEXT"; }
 
     TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
 

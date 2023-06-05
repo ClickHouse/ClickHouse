@@ -33,7 +33,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
-    const char * getSQLCompatibleName() const override { return "JSON"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }

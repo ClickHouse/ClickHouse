@@ -20,14 +20,12 @@ public:
     static constexpr bool is_parametric = false;
     static constexpr auto family_name = TypeName<T>;
     static constexpr auto type_id = TypeToTypeIndex<T>;
-    // Create a map from the name of the type to the name of the type in MySQL.
-    static const std::map<std::string, std::string> mysqlTypeMap;
 
     using FieldType = T;
     using ColumnType = ColumnVector<T>;
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    const char * getSQLCompatibleName() const override { return mysqlTypeMap.at(TypeName<T>.data()).c_str(); }
+    String getSQLCompatibleName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
     Field getDefault() const override;
