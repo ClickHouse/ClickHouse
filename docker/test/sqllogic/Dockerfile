@@ -8,6 +8,7 @@ RUN apt-get update --yes \
         apt-get install --yes --no-install-recommends \
             wget \
             git \
+            curl \
             python3 \
             python3-dev \
             python3-pip \
