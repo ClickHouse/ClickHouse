@@ -256,7 +256,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     if (tmp.length() != 36)
                         throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
-                    const auto uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
+                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
                     return true;
                 };

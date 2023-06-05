@@ -625,12 +625,15 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
+/// @brief Serialize `uuid` into an array of characters in big-endian byte order.
+/// @param uuid UUID to serialize.
+/// @return Array of characters in big-endian byte order.
 std::array<char, 36> formatUUID(const UUID & uuid);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
-    const auto text = formatUUID(uuid);
-    buf.write(text.data(), text.size());
+    const auto serialized_uuid = formatUUID(uuid);
+    buf.write(serialized_uuid.data(), serialized_uuid.size());
 }
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);

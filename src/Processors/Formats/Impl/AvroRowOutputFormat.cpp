@@ -329,8 +329,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
-                const auto text = formatUUID(uuid);
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(text.data()), text.size());
+                const auto serialized_uuid = formatUUID(uuid);
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
             }};
         }
         case TypeIndex::Array:

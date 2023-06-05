@@ -20,25 +20,12 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
     }
 }
 
-/** Function used when byte ordering is important when parsing uuid
- *  ex: When we create an UUID type
- */
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
     std::array<char, 36> dst;
     const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
     auto * dst_ptr = dst.data();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    formatHex(src_ptr, dst_ptr, 4);
-    dst[8] = '-';
-    formatHex(src_ptr + 4, dst_ptr + 9, 2);
-    dst[13] = '-';
-    formatHex(src_ptr + 6, dst_ptr + 14, 2);
-    dst[18] = '-';
-    formatHex(src_ptr + 8, dst_ptr + 19, 2);
-    dst[23] = '-';
-    formatHex(src_ptr + 10, dst_ptr + 24, 6);
-#else
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     const std::reverse_iterator src_it(src_ptr + 16);
     formatHex(src_it + 8, dst_ptr, 4);
     dst[8] = '-';
@@ -49,6 +36,16 @@ std::array<char, 36> formatUUID(const UUID & uuid)
     formatHex(src_it, dst_ptr + 19, 2);
     dst[23] = '-';
     formatHex(src_it + 2, dst_ptr + 24, 6);
+#else
+    formatHex(src_ptr, dst_ptr, 4);
+    dst[8] = '-';
+    formatHex(src_ptr + 4, dst_ptr + 9, 2);
+    dst[13] = '-';
+    formatHex(src_ptr + 6, dst_ptr + 14, 2);
+    dst[18] = '-';
+    formatHex(src_ptr + 8, dst_ptr + 19, 2);
+    dst[23] = '-';
+    formatHex(src_ptr + 10, dst_ptr + 24, 6);
 #endif
 
     return dst;
