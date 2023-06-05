@@ -6,7 +6,7 @@ sidebar_position: 106
 # argMax
 
 Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered. 
-Both parts the `arg` and the `max` behave as aggregate functions, they skip `Null` during processing and return not-Null values if not-Null values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not-Null values if not-Null values are available.
 
 **Syntax**
 
@@ -100,7 +100,7 @@ select argMax(a, (b,a)) from test;
 
 select argMax(a, tuple(b)) from test;
 ┌─argMax(a, tuple(b))─┐
-│ b                   │ -- Tuple can be used `Max` to not skip Nulls in `Max`
+│ b                   │ -- Tuple can be used in `Max` to not skip Nulls in `Max`
 └─────────────────────┘
 ```
 
