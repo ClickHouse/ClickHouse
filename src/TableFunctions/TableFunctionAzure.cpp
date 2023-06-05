@@ -54,7 +54,8 @@ void TableFunctionAzure::parseArgumentsImpl(ASTs & args, const ContextPtr & cont
 
 void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    LOG_INFO(&Poco::Logger::get("TableFunctionAzure"), "parseArguments = {}", ast_function->dumpTree());
+    /// Clone ast function, because we can modify its arguments like removing headers.
+    auto ast_copy = ast_function->clone();
 
     ASTs & args_func = ast_function->children;
 
@@ -78,8 +79,6 @@ bool TableFunctionAzure::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionAzure::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    LOG_INFO(&Poco::Logger::get("TableFunctionAzure"), "executeImpl  = {}", table_name);
-
     ColumnsDescription columns;
     columns = parseColumnsListFromString(configuration.structure, context);
 

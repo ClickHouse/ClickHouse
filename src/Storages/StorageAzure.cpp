@@ -476,7 +476,7 @@ private:
 
 
 Pipe StorageAzure::read(
-    const Names & /*column_names*/ ,
+    const Names & column_names ,
     const StorageSnapshotPtr &  storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
@@ -491,13 +491,11 @@ Pipe StorageAzure::read(
         objects.emplace_back(key);
 
     auto reader = object_storage->readObjects(objects);
-    auto block_for_format = storage_snapshot->metadata->getSampleBlock();
-
-    for (auto col : block_for_format.getColumns())
-        LOG_INFO(&Poco::Logger::get("StorageAzure"), "read col  = {}",col->getName());
+    auto columns_description = storage_snapshot->getDescriptionForColumns(column_names);
+    auto block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
 
 
-    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size));
+    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size, columns_description));
 
 
     return Pipe::unitePipes(std::move(pipes));
@@ -583,12 +581,13 @@ bool StorageAzure::supportsPartitionBy() const
 
 
 StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> && read_buffer_, ContextPtr context_,
-                                       const Block & sample_block_,UInt64 max_block_size_)
-    :ISource(Block())
+                                       const Block & sample_block_,UInt64 max_block_size_, const ColumnsDescription & columns_)
+    :ISource(sample_block_)
     , WithContext(context_)
     , read_buffer(std::move(read_buffer_))
     , sample_block(sample_block_)
     , max_block_size(max_block_size_)
+    , columns_desc(columns_)
 {
     auto format = "TSV";
 
@@ -598,6 +597,13 @@ StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
+    if (columns_desc.hasDefaults())
+    {
+        builder.addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
+    }
+
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 }
@@ -605,13 +611,16 @@ StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> 
 
 Chunk StorageAzureSource::generate()
 {
-    Chunk chunk;
-    if (reader->pull(chunk))
+    while(true)
     {
-        LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "pulled chunk rows = {}", chunk.getNumRows());
-
+        Chunk chunk;
+        if (reader->pull(chunk))
+        {
+            LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "pulled chunk rows = {}", chunk.getNumRows());
+        }
+        return chunk;
     }
-    return chunk;
+//    return {};
 }
 
 String StorageAzureSource::getName() const
