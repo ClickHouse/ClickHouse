@@ -76,10 +76,11 @@ FROM t_null_big
 Also you can use [Tuple](../data-types/tuple.md) to change NULL skipping behavior.
 
 ```sql
-select groupArray(b), groupArray(tuple(b)) from t_null_big;
-┌─groupArray(b)─┬─groupArray(tuple(b))────────┐
-│ [2,2,3]       │ [(2),(NULL),(2),(3),(NULL)] │
-└───────────────┴─────────────────────────────┘
+select groupArray(b), groupArray(tuple(b)).1 from t_null_big;
+
+┌─groupArray(b)─┬─tupleElement(groupArray(tuple(b)), 1)─┐
+│ [2,2,3]       │ [2,NULL,2,3,NULL]                     │
+└───────────────┴───────────────────────────────────────┘
 ```
 
 
