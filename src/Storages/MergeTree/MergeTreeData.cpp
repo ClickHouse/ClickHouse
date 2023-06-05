@@ -7864,7 +7864,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                         if (lock->isLocked())
                         {
                             cloned_part = parts_mover.clonePart(moving_part);
-                            parts_mover.swapClonedPart(cloned_part.part);
+                            parts_mover.swapClonedPart(cloned_part);
                             break;
                         }
                         else if (wait_for_move_if_zero_copy)
@@ -7891,7 +7891,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             else /// Ordinary move as it should be
             {
                 cloned_part = parts_mover.clonePart(moving_part);
-                parts_mover.swapClonedPart(cloned_part.part);
+                parts_mover.swapClonedPart(cloned_part);
             }
             write_part_log({});
         }

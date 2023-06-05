@@ -213,6 +213,8 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
     LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->getDataPartStorage().getDiskName(), disk->getName());
+    TemporaryClonedPart cloned_part;
+    cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
     MutableDataPartStoragePtr cloned_part_storage;
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
@@ -243,17 +245,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     {
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
     }
-    String data_part_directory = cloned_part_storage->getFullPath();
-
-    TemporaryClonedPart cloned_part;
-    cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(data_part_directory);
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-
-    String part_directory = cloned_part.part->getDataPartStorage().getFullPath();
-
-    LOG_TRACE(log, "Part {} was cloned to {}", part->name, data_part_directory);
+    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
     cloned_part.part->is_temp = true;
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
@@ -263,34 +258,36 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 }
 
 
-void MergeTreePartsMover::swapClonedPart(const MergeTreeMutableDataPartPtr & cloned_part) const
+void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
 {
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
-    auto active_part = data->getActiveContainingPart(cloned_part->name);
+    auto active_part = data->getActiveContainingPart(cloned_part.part->name);
 
     /// It's ok, because we don't block moving parts for merges or mutations
-    if (!active_part || active_part->name != cloned_part->name)
+    if (!active_part || active_part->name != cloned_part.part->name)
     {
         LOG_INFO(log,
             "Failed to swap {}. Active part doesn't exist (containing part {}). "
             "Possible it was merged or mutated. Will remove copy on path '{}'",
-            cloned_part->name,
+            cloned_part.part->name,
             active_part ? active_part->name : "doesn't exist",
-            cloned_part->getDataPartStorage().getFullPath());
+            cloned_part.part->getDataPartStorage().getFullPath());
         return;
     }
 
-    cloned_part->is_temp = false;
+    cloned_part.part->is_temp = false;
 
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    cloned_part->renameTo(active_part->name, false);
+    cloned_part.part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
-    data->swapActivePart(cloned_part);
+    data->swapActivePart(cloned_part.part);
 
-    LOG_TRACE(log, "Part {} was moved to {}", cloned_part->name, cloned_part->getDataPartStorage().getFullPath());
+    LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
+
+    cloned_part.temporary_directory_lock = {};
 }
 
 }
