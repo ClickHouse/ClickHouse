@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,8 +9,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
-#include <Common/IPv6ToBinary.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
