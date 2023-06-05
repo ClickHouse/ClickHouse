@@ -2064,6 +2064,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     }
 }
 
+void ClientBase::printLongHelpMessage(const OptionsDescription & options_description)
+{
+    return printHelpMessage(options_description);
+}
 
 bool ClientBase::processQueryText(const String & text)
 {

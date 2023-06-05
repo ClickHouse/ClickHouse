@@ -111,6 +111,7 @@ protected:
 
     virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    virtual void printLongHelpMessage(const OptionsDescription & options_description);
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
