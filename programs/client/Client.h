@@ -26,7 +26,6 @@ protected:
     String getName() const override { return "client"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
-    void printLongHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
 

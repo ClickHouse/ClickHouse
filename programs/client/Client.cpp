@@ -958,13 +958,8 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
-void Client::printHelpMessage(const OptionsDescription & options_description)
-{
-    std::cout << options_description.main_description.value() << "\n";
-    std::cout << "for more options, use the --help " << "\n";
-}
 
-void Client::printLongHelpMessage(const OptionsDescription & options_description)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";

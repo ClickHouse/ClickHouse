@@ -111,7 +111,6 @@ protected:
 
     virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
-    virtual void printLongHelpMessage(const OptionsDescription & options_description);
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
@@ -162,7 +161,7 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
+    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments, bool verbose);
 
     void updateSuggest(const ASTPtr & ast);
 

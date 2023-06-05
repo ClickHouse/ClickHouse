@@ -2467,12 +2467,15 @@ private:
 }
 
 
-void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments, bool verbose)
 {
-    if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
-    else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (verbose)
+    {
+        if (allow_repeated_settings)
+            cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        else
+            cmd_settings.addProgramOptions(options_description.main_description.value());
+    }
 
     if (allow_merge_tree_settings)
     {
@@ -2645,7 +2648,8 @@ void ClientBase::init(int argc, char ** argv)
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
 
-    parseAndCheckOptions(options_description, options, common_arguments);
+    bool verbose = options.count("verbose");
+    parseAndCheckOptions(options_description, options, common_arguments, verbose);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
@@ -2667,11 +2671,7 @@ void ClientBase::init(int argc, char ** argv)
         printHelpMessage(options_description);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
-    if (options.count("long-help"))
-    {
-        printLongHelpMessage(options_description);
-        exit(0);
-    }
+
     /// Common options for clickhouse-client and clickhouse-local.
     if (options.count("time"))
         print_time_to_stderr = true;
