@@ -11,6 +11,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The number of threads removing data parts should be between 1 and 129.
+# Because max_parts_cleaning_thread_pool_size is 128 by default
+
 $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
 
 # MergeTree
@@ -30,7 +33,7 @@ $CLICKHOUSE_CLIENT -nm -q """
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
-    select throwIf(not(length(thread_ids) between 1 and 65))
+    select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
         event_date >= yesterday() and
@@ -60,7 +63,7 @@ $CLICKHOUSE_CLIENT -nm -q """
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
-    select throwIf(not(length(thread_ids) between 1 and 65))
+    select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
         event_date >= yesterday() and
