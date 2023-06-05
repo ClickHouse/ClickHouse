@@ -109,8 +109,8 @@ void WriteBufferFromS3::nextImpl()
 
     if (is_prefinalized)
         throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
     /// Make sense to call waitIfAny before adding new async task to check if there is an exception
     /// The faster the exception is propagated the lesser time is spent for cancellation
@@ -238,7 +238,11 @@ WriteBufferFromS3::~WriteBufferFromS3()
     // That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
     {
-        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It could be if an exception occurs. File is not written to S3. {}.", getLogDetails());
+        LOG_INFO(log,
+                 "WriteBufferFromS3 is not finalized in destructor. "
+                 "It could be if an exception occurs. File is not written to S3. "
+                 "{}.",
+                 getLogDetails());
     }
 
     task_tracker->safeWaitAll();

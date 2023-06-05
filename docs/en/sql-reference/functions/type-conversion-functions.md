@@ -793,7 +793,7 @@ toDecimalString(number, scale)
 **Returned value**
 
 - Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
-    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
+    The number is rounded up or down according to common arithmetic in case requested scale is smaller than original number's scale.
 
 **Example**
 
