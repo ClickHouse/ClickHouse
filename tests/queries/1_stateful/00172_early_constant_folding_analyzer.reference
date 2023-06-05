@@ -1,0 +1,28 @@
+-- { echoOn }
+set allow_experimental_analyzer=1;
+set optimize_trivial_count_query=1;
+set max_threads=10;
+EXPLAIN header=1 SELECT count() FROM hits WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR URL = '???' OR 1;
+Expression (Change column names)
+Header: count() UInt64
+  ReadFromPreparedSource (Optimized trivial count)
+  Header: ParsedParams.Key5 UInt64
+EXPLAIN PIPELINE header=1 SELECT count() FROM hits WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR URL = '???' OR 1;
+(Expression)
+ExpressionTransform
+Header: count() UInt64: count() UInt64 UInt64(size = 0)
+  (ReadFromPreparedSource)
+  SourceFromSingleChunk 0 → 1
+  Header: ParsedParams.Key5 UInt64: ParsedParams.Key5 UInt64 UInt64(size = 0)
+EXPLAIN header=1 SELECT count(JavaEnable) FROM hits WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR URL = '???' OR 1;
+Expression (Change column names)
+Header: count(JavaEnable) UInt64
+  ReadFromPreparedSource (Optimized trivial count)
+  Header: JavaEnable UInt64
+EXPLAIN PIPELINE header=1 SELECT count(JavaEnable) FROM hits WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR URL = '???' OR 1;
+(Expression)
+ExpressionTransform
+Header: count(JavaEnable) UInt64: count(JavaEnable) UInt64 UInt64(size = 0)
+  (ReadFromPreparedSource)
+  SourceFromSingleChunk 0 → 1
+  Header: JavaEnable UInt64: JavaEnable UInt64 UInt64(size = 0)
