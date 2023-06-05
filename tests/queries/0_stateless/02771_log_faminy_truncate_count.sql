@@ -23,3 +23,4 @@ INSERT INTO default.test_log (crypto_name, trade_date) VALUES ('abc', '2021-01-0
 
 TRUNCATE TABLE default.test_log;
 SELECT count() FROM  default.test_log;
+DROP TABLE default.test_log;
