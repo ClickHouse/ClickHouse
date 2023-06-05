@@ -178,7 +178,7 @@ public:
 
     void write(DB::WriteBuffer & buf) const
     {
-        const auto size = samples.size();
+        const size_t size = samples.size();
         writeBinaryLittleEndian(size, buf);
         writeBinaryLittleEndian(total_values, buf);
 
