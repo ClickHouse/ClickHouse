@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-random-settings, no-tsan, no-asan, no-ubsan, no-msan
 
 # shellcheck disable=SC2154
 
