@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <re2/re2.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
@@ -32,6 +33,11 @@
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFromStorageProgress.h>
+#include <Common/parseGlobs.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Pipe.h>
 
 
 using namespace Azure::Storage::Blobs;
@@ -44,6 +50,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -103,6 +110,8 @@ void processNamedCollectionResult(StorageAzure::Configuration & configuration, c
 
 StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
+
     StorageAzure::Configuration configuration;
 
     /// Supported signatures:
@@ -138,6 +147,11 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
     configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
     configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "connection_url  = {}", configuration.connection_url);
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "container  = {}", configuration.container);
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "blobpath  = {}", configuration.blob_path);
+
+
     auto is_format_arg = [] (const std::string & s) -> bool
     {
         return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
@@ -145,6 +159,7 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 
     if (engine_args.size() == 4)
     {
+        //'c1 UInt64, c2 UInt64
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
@@ -208,8 +223,13 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 
     configuration.blobs_paths = {configuration.blob_path};
 
-    if (configuration.format == "auto" && get_format_from_file)
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+    LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
+
+//    if (configuration.format == "auto" && get_format_from_file)
+//        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+    configuration.format = "TSV";
 
     return configuration;
 }
@@ -286,6 +306,7 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
 
     if (configuration.is_connection_string)
     {
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient is_connection_string ");
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
         result->CreateIfNotExists();
     }
@@ -339,6 +360,11 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
                 }
             }
         }
+        auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+
+        result = std::make_unique<BlobContainerClient>(configuration.connection_url, managed_identity_credential);
+
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient account_name & account_key ");
     }
 
     return result;
@@ -379,8 +405,6 @@ StorageAzure::StorageAzure(
     if (columns_.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Schema inference is not supported yet");
-        //auto columns = getTableStructureFromDataImpl(configuration, format_settings, context_);
-        //storage_metadata.setColumns(columns);
     }
     else
         storage_metadata.setColumns(columns_);
@@ -389,11 +413,28 @@ StorageAzure::StorageAzure(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    StoredObjects objects;
+    for (const auto & key : configuration.blobs_paths)
+        objects.emplace_back(key);
+
+    for (auto obj : objects)
+    {
+        LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor obj.remote_paths  = {}", obj.remote_path);
+        if (object_storage->exists(obj))
+        {
+            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor exists  obj.remote_paths  = {}", obj.remote_path);
+//            auto read_buffer = object_storage->readObject(obj);
+//            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor read size  obj.remote_paths  = {} , size = {}", obj.remote_path, read_buffer->getFileSize());
+        }
+    }
+
+
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
     for (const auto & column : virtual_columns)
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
@@ -555,6 +596,33 @@ private:
 
 }
 
+
+Pipe StorageAzure::read(
+    const Names & column_names ,
+    const StorageSnapshotPtr &  storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t /*num_streams*/)
+{
+    Pipes pipes;
+
+    StoredObjects objects;
+    for (const auto & key : configuration.blobs_paths)
+        objects.emplace_back(key);
+
+    auto reader = object_storage->readObjects(objects);
+    auto columns_description = storage_snapshot->getDescriptionForColumns(column_names);
+    auto block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+
+
+    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size, columns_description));
+
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 SinkToStoragePtr StorageAzure::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto sample_block = metadata_snapshot->getSampleBlock();
@@ -653,6 +721,229 @@ bool StorageAzure::prefersLargeBlocks() const
 bool StorageAzure::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
+}
+
+static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
+{
+    if (block.has("_path"))
+        block.getByName("_path").column->assumeMutableRef().insert(path);
+
+    if (block.has("_file"))
+    {
+        auto pos = path.find_last_of('/');
+        assert(pos != std::string::npos);
+
+        auto file = path.substr(pos + 1);
+        block.getByName("_file").column->assumeMutableRef().insert(file);
+    }
+
+    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+}
+
+StorageAzureSource::Iterator::Iterator(
+    AzureObjectStorage * object_storage_,
+    const std::string & container_,
+    std::optional<Strings> keys_,
+    std::optional<String> blob_path_with_globs_,
+    ASTPtr query_,
+    const Block & virtual_header_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , object_storage(object_storage_)
+    , container(container_)
+    , keys(keys_)
+    , blob_path_with_globs(blob_path_with_globs_)
+    , query(query_)
+    , virtual_header(virtual_header_)
+{
+    if (keys.has_value() && blob_path_with_globs.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simulatenously it's a bug");
+
+    if (!keys.has_value() && !blob_path_with_globs.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Both keys and glob mask are not specified");
+
+    if (keys)
+    {
+        Strings all_keys = *keys;
+
+        blobs_with_metadata.emplace();
+        /// Create a virtual block with one row to construct filter
+        if (query && virtual_header && !all_keys.empty())
+        {
+            /// Append "idx" column as the filter result
+            virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+            auto block = virtual_header.cloneEmpty();
+            addPathToVirtualColumns(block, fs::path(container) / all_keys.front(), 0);
+
+            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+
+            if (filter_ast)
+            {
+                block = virtual_header.cloneEmpty();
+                for (size_t i = 0; i < all_keys.size(); ++i)
+                    addPathToVirtualColumns(block, fs::path(container) / all_keys[i], i);
+
+                VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+                Strings filtered_keys;
+                filtered_keys.reserve(block.rows());
+                for (UInt64 idx : idxs.getData())
+                    filtered_keys.emplace_back(std::move(all_keys[idx]));
+
+                all_keys = std::move(filtered_keys);
+            }
+        }
+
+        for (auto && key : all_keys)
+        {
+            ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+            total_size += object_metadata.size_bytes;
+            blobs_with_metadata->emplace_back(RelativePathWithMetadata{key, object_metadata});
+        }
+    }
+    else
+    {
+        const String key_prefix = blob_path_with_globs->substr(0, blob_path_with_globs->find_first_of("*?{"));
+
+        /// We don't have to list bucket, because there is no asterisks.
+        if (key_prefix.size() == blob_path_with_globs->size())
+        {
+            ObjectMetadata object_metadata = object_storage->getObjectMetadata(*blob_path_with_globs);
+            blobs_with_metadata->emplace_back(*blob_path_with_globs, object_metadata);
+            return;
+        }
+
+        object_storage_iterator = object_storage->iterate(key_prefix);
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(*blob_path_with_globs));
+
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Cannot compile regex from glob ({}): {}", *blob_path_with_globs, matcher->error());
+
+        recursive = *blob_path_with_globs == "/**" ? true : false;
+    }
+
+}
+
+RelativePathWithMetadata StorageAzureSource::Iterator::next()
+{
+    if (is_finished)
+        return {};
+
+    if (keys)
+    {
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= blobs_with_metadata->size())
+        {
+            is_finished = true;
+            return {};
+        }
+
+        return (*blobs_with_metadata)[current_index];
+    }
+    else
+    {
+        if (!blobs_with_metadata || index >= blobs_with_metadata->size())
+        {
+            RelativePathsWithMetadata new_batch;
+            if (object_storage_iterator->isValid())
+            {
+                new_batch = object_storage_iterator->currentBatch();
+                object_storage_iterator->nextBatch();
+            }
+            else
+            {
+                is_finished = true;
+                return {};
+            }
+
+            for (auto it = new_batch.begin(); it != new_batch.end(); ++it)
+            {
+                if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
+                    it = new_batch.erase(it);
+            }
+
+            if (!is_initialized)
+            {
+                createFilterAST(new_batch.front().relative_path);
+                is_initialized = true;
+            }
+
+            if (filter_ast)
+            {
+                auto block = virtual_header.cloneEmpty();
+                for (size_t i = 0; i < new_batch.size(); ++i)
+                    addPathToVirtualColumns(block, fs::path(container) / new_batch[i].relative_path, i);
+
+                VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+                blob_path_with_globs.reset();
+                blob_path_with_globs.emplace();
+                for (UInt64 idx : idxs.getData())
+                {
+                    total_size.fetch_add(new_batch[idx].metadata.size_bytes, std::memory_order_relaxed);
+                    blobs_with_metadata->emplace_back(std::move(new_batch[idx]));
+                }
+            }
+            else
+            {
+                blobs_with_metadata = std::move(new_batch);
+                for (const auto & [_, info] : *blobs_with_metadata)
+                    total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
+            }
+        }
+        else
+        {
+            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+            return (*blobs_with_metadata)[current_index];
+        }
+    }
+
+}
+
+size_t StorageAzureSource::Iterator::getTotalSize() const
+{
+    return total_size.load(std::memory_order_relaxed);
+}
+
+
+void StorageAzureSource::Iterator::createFilterAST(const String & any_key)
+{
+    if (!query || !virtual_header)
+        return;
+
+    /// Create a virtual block with one row to construct filter
+    /// Append "idx" column as the filter result
+    virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+    auto block = virtual_header.cloneEmpty();
+    addPathToVirtualColumns(block, fs::path(container) / any_key, 0);
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+}
+
+}
+
+
+Chunk StorageAzureSource::generate()
+{
+    while(true)
+    {
+        Chunk chunk;
+        if (reader->pull(chunk))
+        {
+            LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "pulled chunk rows = {}", chunk.getNumRows());
+        }
+        return chunk;
+    }
+//    return {};
+}
+
+String StorageAzureSource::getName() const
+{
+    return "StorageAzureSource";
 }
 
 }

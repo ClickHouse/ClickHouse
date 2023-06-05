@@ -10,8 +10,10 @@ class IObjectStorageIterator
 {
 public:
     virtual void next() = 0;
+    virtual void nextBatch() = 0;
     virtual bool isValid() const = 0;
     virtual RelativePathWithMetadata current() const = 0;
+    virtual RelativePathsWithMetadata currentBatch() const = 0;
     virtual size_t getAccumulatedSize() const = 0;
 
     virtual ~IObjectStorageIterator() = default;
@@ -34,12 +36,22 @@ public:
             ++batch_iterator;
     }
 
+    void nextBatch() override
+    {
+        batch_iterator = batch.end();
+    }
+
     bool isValid() const override
     {
         return batch_iterator != batch.end();
     }
 
     RelativePathWithMetadata current() const override;
+
+    RelativePathsWithMetadata currentBatch() const override
+    {
+        return batch;
+    }
 
     size_t getAccumulatedSize() const override
     {

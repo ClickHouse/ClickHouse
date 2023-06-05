@@ -8,6 +8,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IObjectStorageIteratorAsync::nextBatch()
+{
+    std::lock_guard lock(mutex);
+    if (!is_finished)
+    {
+        if (outcome_future.valid())
+        {
+            BatchAndHasNext next_batch = outcome_future.get();
+            current_batch = std::move(next_batch.batch);
+            accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
+            current_batch_iterator = current_batch.begin();
+            if (next_batch.has_next)
+                outcome_future = scheduleBatch();
+            else
+                is_finished = true;
+        }
+    }
+}
+
 void IObjectStorageIteratorAsync::next()
 {
     std::lock_guard lock(mutex);
@@ -54,6 +73,13 @@ RelativePathWithMetadata IObjectStorageIteratorAsync::current() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
     return *current_batch_iterator;
+}
+
+
+RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch() const
+{
+    std::lock_guard lock(mutex);
+    return current_batch;
 }
 
 size_t IObjectStorageIteratorAsync::getAccumulatedSize() const
