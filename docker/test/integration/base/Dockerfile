@@ -1,7 +1,8 @@
 # rebuild in #33610
 # docker build -t clickhouse/integration-test .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+ARG DOCKER_REPO=docker.io
+FROM $DOCKER_REPO/clickhouse/test-base:$FROM_TAG
 
 SHELL ["/bin/bash", "-c"]
 

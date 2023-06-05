@@ -1,7 +1,8 @@
 # rebuild in #33610
 # docker build -t clickhouse/test-base .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:$FROM_TAG
+ARG DOCKER_REPO=docker.io
+FROM $DOCKER_REPO/clickhouse/test-util:$FROM_TAG
 
 RUN apt-get update \
     && apt-get install \

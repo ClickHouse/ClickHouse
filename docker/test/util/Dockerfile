@@ -14,6 +14,7 @@ RUN apt-get update \
         apt-utils \
         ca-certificates \
         curl \
+        curl \
         dnsutils \
         gnupg \
         iputils-ping \
