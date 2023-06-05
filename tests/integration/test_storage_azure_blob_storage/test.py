@@ -134,3 +134,12 @@ def test_partition_by_const_column(cluster):
     azure_query(node, f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = Azure('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}")
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
     assert values_csv == get_azure_file_content("test_88.csv")
+
+def test_truncate(cluster):
+    node = cluster.instances["node"]
+    azure_query(node, "CREATE TABLE test_truncate (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_truncate.csv', format='CSV')")
+    azure_query(node, "INSERT INTO test_truncate VALUES (1, 'a')")
+    assert get_azure_file_content('test_truncate.csv') == '1,"a"\n'
+    azure_query(node, "TRUNCATE TABLE test_truncate")
+    with pytest.raises(Exception):
+        print(get_azure_file_content('test_truncate.csv'))

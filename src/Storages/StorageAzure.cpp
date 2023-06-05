@@ -255,9 +255,15 @@ void registerStorageAzure(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
+        const auto & context_settings = args.getContext()->getSettingsRef();
+        auto settings = std::make_unique<AzureObjectStorageSettings>();
+        settings->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
+        settings->max_single_read_retries = context_settings.azure_max_single_read_retries;
+        settings->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
+
         return std::make_shared<StorageAzure>(
             std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureStorage", std::move(client), std::make_unique<AzureObjectStorageSettings>()),
+            std::make_unique<AzureObjectStorage>("AzureStorage", std::move(client), std::move(settings)),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -395,7 +401,6 @@ StorageAzure::StorageAzure(
 
 void StorageAzure::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-
     if (configuration.withGlobs())
     {
         throw Exception(
@@ -577,12 +582,12 @@ SinkToStoragePtr StorageAzure::write(const ASTPtr & query, const StorageMetadata
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Azure key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
 
-        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
+        bool truncate_in_insert = local_context->getSettingsRef().azure_truncate_on_insert;
 
         if (!truncate_in_insert && object_storage->exists(StoredObject(configuration.blob_path)))
         {
 
-            if (local_context->getSettingsRef().s3_create_new_file_on_insert)
+            if (local_context->getSettingsRef().azure_create_new_file_on_insert)
             {
                 size_t index = configuration.blobs_paths.size();
                 const auto & first_key = configuration.blobs_paths[0];
@@ -603,8 +608,8 @@ SinkToStoragePtr StorageAzure::write(const ASTPtr & query, const StorageMetadata
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Object in bucket {} with key {} already exists. "
-                    "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+                    "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
+                    "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
                     configuration.container, configuration.blobs_paths.back());
             }
         }
@@ -628,6 +633,26 @@ NamesAndTypesList StorageAzure::getVirtuals() const
 bool StorageAzure::supportsPartitionBy() const
 {
     return true;
+}
+
+bool StorageAzure::supportsSubcolumns() const
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
+}
+
+bool StorageAzure::supportsSubsetOfColumns() const
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+}
+
+bool StorageAzure::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
+}
+
+bool StorageAzure::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
 }
 
 }
