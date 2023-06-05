@@ -72,3 +72,15 @@ FROM t_null_big
 │ 2.3333333333333335 │                 1.4 │
 └────────────────────┴─────────────────────┘
 ```
+
+Also you can use [Tuple](../data-types/tuple.md) to change NULL skipping behavior.
+
+```sql
+select groupArray(b), groupArray(tuple(b)) from t_null_big;
+┌─groupArray(b)─┬─groupArray(tuple(b))────────┐
+│ [2,2,3]       │ [(2),(NULL),(2),(3),(NULL)] │
+└───────────────┴─────────────────────────────┘
+```
+
+
+
