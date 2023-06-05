@@ -36,6 +36,7 @@ Configuration template:
     <case>
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
+      <enable_deflate_qpl_codec>...</enable_deflate_qpl_codec>
       <method>...</method>
       <level>...</level>
     </case>
@@ -47,6 +48,7 @@ Configuration template:
 
 - `min_part_size` – The minimum size of a data part.
 - `min_part_size_ratio` – The ratio of the data part size to the table size.
+- `enable_deflate_qpl_codec` – The control of deflate_qpl codec support. If intend to use deflate_qpl as compression method, please set it to be true, othewise false or just omit.
 - `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 - `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 

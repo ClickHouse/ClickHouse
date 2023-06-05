@@ -41,7 +41,6 @@ node6 = cluster.add_instance(
     main_configs=["configs/deflateqpl_compression_by_default.xml"],
     user_configs=[
         "configs/allow_suspicious_codecs.xml",
-        "configs/enable_deflateqpl_codec.xml",
     ],
 )
 node7 = cluster.add_instance(

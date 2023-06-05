@@ -45,6 +45,7 @@ private:
     {
         size_t min_part_size = 0;
         double min_part_size_ratio = 0;
+        bool enable_deflate_qpl_codec = false;
         std::string family_name;
         std::optional<int> level;
 
@@ -53,6 +54,7 @@ private:
         {
             min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
+            enable_deflate_qpl_codec = config.getBool(config_prefix + ".enable_deflate_qpl_codec", false);
 
             family_name = config.getString(config_prefix + ".method", "lz4");
             if (config.has(config_prefix + ".level"))
@@ -92,7 +94,14 @@ public:
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))
+            {
                 res = factory.get(element.family_name, element.level);
+                if(res->isDeflateQplCompression() && !element.enable_deflate_qpl_codec)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is disabled by default."
+                        " You can enable it with the server setting: 'enable_deflate_qpl_codec' to be true",
+                        element.family_name);
+            }
 
         return res;
     }
