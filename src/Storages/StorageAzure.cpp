@@ -490,13 +490,16 @@ Pipe StorageAzure::read(
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    auto reader = object_storage->readObjects(objects);
-    auto columns_description = storage_snapshot->getDescriptionForColumns(column_names);
-    auto block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    if (objects.size() > 1)
+    {
+        auto reader = object_storage->readObject(objects[0]);
+        auto columns_description = storage_snapshot->getDescriptionForColumns(column_names);
+        auto block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
 
 
-    pipes.emplace_back(std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size, columns_description));
-
+        pipes.emplace_back(
+            std::make_shared<StorageAzureSource>(std::move(reader), context, block_for_format, max_block_size, columns_description));
+    }
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -592,7 +595,9 @@ StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> 
     auto format = "TSV";
 
     auto input_format = FormatFactory::instance().getInput(
-        format, *read_buffer, sample_block, getContext(), max_block_size);
+        format, *read_buffer, sample_block, getContext(), max_block_size,
+        FormatSettings(), std::nullopt, std::nullopt,
+        true);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -611,6 +616,7 @@ StorageAzureSource::StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> 
 
 Chunk StorageAzureSource::generate()
 {
+    LOG_INFO(&Poco::Logger::get("StorageAzureSource"), "generate");
     while(true)
     {
         Chunk chunk;
