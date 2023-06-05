@@ -176,6 +176,8 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
     , hints_str(format_settings_.schema_inference_hints)
     , reader(std::move(reader_))
     , column_names_from_settings(splitColumnNames(format_settings_.column_names_for_schema_inference))
+    , max_rows_to_read(format_settings_.max_rows_to_read_for_schema_inference)
+    , max_bytes_to_read(format_settings_.max_bytes_to_read_for_schema_inference)
 {
 }
 
@@ -196,12 +198,12 @@ void JSONColumnsSchemaReaderBase::transformTypesIfNeeded(DataTypePtr & type, Dat
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 {
-    size_t total_rows_read = 0;
     std::unordered_map<String, DataTypePtr> names_to_types;
     std::vector<String> names_order;
     /// Read data block by block and determine the type for each column
-    /// until max_rows_to_read_for_schema_inference is reached.
-    while (total_rows_read < format_settings.max_rows_to_read_for_schema_inference)
+    /// until max_rows_to_read/max_bytes_to_read is reached.
+    /// Note that we can exceed max_bytes_to_read to compete block parsing.
+    while (total_rows_read < max_rows_to_read && in.count() < max_bytes_to_read)
     {
         if (in.eof())
             break;
@@ -268,7 +270,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
     return result;
 }
 
-DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read)
+DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows)
 {
     /// Check for empty column.
     if (reader->checkColumnEnd())
@@ -279,7 +281,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
     do
     {
         /// If we reached max_rows_to_read, skip the rest part of this column.
-        if (rows_read == max_rows_to_read)
+        if (rows_read == max_rows)
         {
             reader->skipColumn();
             break;

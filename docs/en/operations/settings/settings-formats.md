@@ -137,6 +137,12 @@ The maximum rows of data to read for automatic schema inference.
 
 Default value: `25'000`.
 
+## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
+
+The maximum amount of data in bytes to read for automatic schema inference.
+
+Default value: `33554432` (32 Mb).
+
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
