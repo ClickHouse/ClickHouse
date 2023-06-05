@@ -16,6 +16,7 @@ fi
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $USER"
 $CLICKHOUSE_CLIENT -q "CREATE USER $USER"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.* TO $USER"
 $CLICKHOUSE_CLIENT -u "$USER" -q "SELECT * FROM system.numbers LIMIT 1"
 $CLICKHOUSE_CLIENT -u "$USER" -q "SELECT * FROM system.numbers LIMIT 1"
 $CLICKHOUSE_CLIENT -q "SELECT user, toBool(ProfileEvents['SelectQuery'] > 0), toBool(ProfileEvents['Query'] > 0) FROM system.user_processes WHERE user='default'"
