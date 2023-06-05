@@ -23,6 +23,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
+            main_configs=["configs/named_collections.xml"],
             with_azurite=True,
         )
         cluster.start()
@@ -80,6 +81,19 @@ def test_simple_write_connection_string(cluster):
     print(get_azure_file_content('test_simple_write_c.csv'))
     assert get_azure_file_content('test_simple_write_c.csv') == '1,"a"\n'
 
+def test_simple_write_named_collection_1(cluster):
+    node = cluster.instances["node"]
+    azure_query(node, "CREATE TABLE test_simple_write_named_collection_1 (key UInt64, data String) Engine = Azure(azure_conf1)")
+    azure_query(node, "INSERT INTO test_simple_write_named_collection_1 VALUES (1, 'a')")
+    print(get_azure_file_content('test_simple_write_named.csv'))
+    assert get_azure_file_content('test_simple_write_named.csv') == '1,"a"\n'
+
+def test_simple_write_named_collection_2(cluster):
+    node = cluster.instances["node"]
+    azure_query(node, "CREATE TABLE test_simple_write_named_collection_2 (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_simple_write_named_2.csv', format='CSV')")
+    azure_query(node, "INSERT INTO test_simple_write_named_collection_2 VALUES (1, 'a')")
+    print(get_azure_file_content('test_simple_write_named_2.csv'))
+    assert get_azure_file_content('test_simple_write_named_2.csv') == '1,"a"\n'
 
 def test_partition_by(cluster):
     node = cluster.instances["node"]
