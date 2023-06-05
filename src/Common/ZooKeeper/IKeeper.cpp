@@ -110,6 +110,7 @@ const char * errorMessage(Error code)
         case Error::ZCLOSING:                 return "ZooKeeper is closing";
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
+        case Error::ZTHROTTLEDOP:             return "Operation was throttled and not executed at all. Please, retry";
     }
 
     UNREACHABLE();

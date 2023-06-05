@@ -247,10 +247,18 @@ private:
     RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
-    using Operations = std::map<XID, RequestInfo>;
 
-    Operations operations TSA_GUARDED_BY(operations_mutex);
+    using OperationsQueue = std::list<RequestInfo>;
+    using OperationsQueueIterator = typename OperationsQueue::iterator;
+    struct Operation
+    {
+        OperationsQueueIterator iter;
+    };
+    using OperationsMap = std::unordered_map<XID, Operation>;
+
     std::mutex operations_mutex;
+    OperationsQueue operations_queue TSA_GUARDED_BY(operations_mutex);
+    OperationsMap operations_map TSA_GUARDED_BY(operations_mutex);
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
@@ -309,6 +317,8 @@ private:
 
     template <typename T>
     void read(T &);
+
+    XID getXID();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 

@@ -596,8 +596,15 @@ void ZooKeeper::sendThread()
                     if (info.request->xid != CLOSE_XID)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+
                         std::lock_guard lock(operations_mutex);
-                        operations[info.request->xid] = info;
+                        auto [it, inserted] = operations_map.emplace(
+                            std::piecewise_construct,
+                            std::forward_as_tuple(info.request->xid),
+                            std::forward_as_tuple());
+                        if (!inserted)
+                            throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Have a conflict xid: {}", info.request->xid);
+                        it->second.iter = operations_queue.insert(operations_queue.end(), info);
                     }
 
                     if (info.watch)
@@ -661,10 +668,10 @@ void ZooKeeper::receiveThread()
 
             {
                 std::lock_guard lock(operations_mutex);
-                if (!operations.empty())
+                if (!operations_queue.empty())
                 {
                     /// Operations are ordered by xid (and consequently, by time).
-                    earliest_operation = operations.begin()->second;
+                    earliest_operation = *(operations_queue.begin());
                     auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
                     if (now > earliest_operation_deadline)
                         throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
@@ -770,16 +777,17 @@ void ZooKeeper::receiveEvent()
         {
             std::lock_guard lock(operations_mutex);
 
-            auto it = operations.find(xid);
-            if (it == operations.end())
+            auto it = operations_map.find(xid);
+            if (it == operations_map.end())
                 throw Exception("Received response for unknown xid " + DB::toString(xid), Error::ZRUNTIMEINCONSISTENCY);
 
             /// After this point, we must invoke callback, that we've grabbed from 'operations'.
             /// Invariant: all callbacks are invoked either in case of success or in case of error.
             /// (all callbacks in 'operations' are guaranteed to be invoked)
 
-            request_info = std::move(it->second);
-            operations.erase(it);
+            request_info = std::move(*(it->second.iter));
+            operations_queue.erase(it->second.iter);
+            operations_map.erase(it);
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
@@ -935,9 +943,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             std::lock_guard lock(operations_mutex);
 
-            for (auto & op : operations)
+            for (auto & op : operations_map)
             {
-                RequestInfo & request_info = op.second;
+                RequestInfo & request_info = *(op.second.iter);
                 ZooKeeperResponsePtr response = request_info.request->makeResponse();
 
                 response->error = request_info.request->probably_sent
@@ -961,8 +969,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 }
             }
 
-            CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest, operations.size());
-            operations.clear();
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest, operations_map.size());
+            operations_map.clear();
+            operations_queue.clear();
         }
 
         {
@@ -1057,11 +1066,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         if (!info.request->xid)
         {
-            info.request->xid = next_xid.fetch_add(1);
-            if (info.request->xid == CLOSE_XID)
-                throw Exception(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
-            if (info.request->xid < 0)
-                throw Exception(Error::ZSESSIONEXPIRED, "XID overflow");
+            info.request->xid = getXID();
 
             if (auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(info.request.get()))
             {
@@ -1451,4 +1456,32 @@ void ZooKeeper::maybeInjectRecvSleep()
     if (unlikely(inject_setup.test() && recv_inject_sleep && recv_inject_sleep.value()(thread_local_rng)))
         sleepForMilliseconds(args.recv_sleep_ms);
 }
+
+XID ZooKeeper::getXID()
+{
+    /// Here is an issue about XID overflow from apache zookeeper jira:
+    ///     https://issues.apache.org/jira/browse/ZOOKEEPER-1485
+    ///
+    /// In my opinion, it's acceptable to reset xid to avoid the overflow problem, because:
+    ///    (a) xid is monotone increasing and it can not happen to have duplicate xid since the restrictions below.
+    ///    (b) there is an information level log when a reset occurs.
+    XID xid = next_xid.fetch_add(1);
+    if (xid < CLOSE_XID)
+        return xid;
+
+    /// Restrict: refuse the requests if there is a serious backlog in the queue.
+    {
+        std::lock_guard lock(operations_mutex);
+        if (requests_queue.size() + operations_map.size() >= CLOSE_XID)
+            throw Exception(Error::ZTHROTTLEDOP, "XID overflow: the operation queue is full, try later");
+    }
+
+    /// Log the reset operation.
+    LOG_INFO(log, "Reset the XID to avoid session expiration");
+    next_xid.exchange(1);
+    xid = next_xid.fetch_add(1);
+
+    return xid;
+}
+
 }
