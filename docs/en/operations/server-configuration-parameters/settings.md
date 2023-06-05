@@ -275,9 +275,9 @@ Type: UInt64
 
 Default: 1000
 
-## max_concurrent_insert_queries
+## max_concurrent_queries
 
-Limit on total number of concurrent insert queries. Zero means Unlimited.
+Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -287,9 +287,9 @@ Type: UInt64
 
 Default: 0
 
-## max_concurrent_queries
+## max_concurrent_insert_queries
 
-Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
+Limit on total number of concurrent insert queries. Zero means Unlimited.
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -1276,49 +1276,6 @@ For more information, see the section [Creating replicated tables](../../engines
 ``` xml
 <macros incl="macros" optional="true" />
 ```
-
-
-## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
-
-The maximum number of simultaneously processed queries related to MergeTree table per user.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
-```
-
-## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
-
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
-
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
-
-Modifying the setting for one query or user does not affect other queries.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
-```
-
-**See Also**
-
-- [max_concurrent_queries](#max-concurrent-queries)
 
 ## max_open_files {#max-open-files}
 

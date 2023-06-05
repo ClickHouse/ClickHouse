@@ -646,6 +646,48 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 By default: 1,000,000. It only works when reading from MergeTree engines.
 
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
+```
+
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
+Modifying the setting for one query or user does not affect other queries.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**See Also**
+
+- [max_concurrent_queries](/docs/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
+
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
 If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
@@ -4186,6 +4228,12 @@ Default value: `2000`
 
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
 (but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
+
+## parallel_view_processing
+
+Enables pushing to attached views concurrently instead of sequentially.
+
+Default value: `false`.
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
