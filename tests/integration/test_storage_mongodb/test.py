@@ -71,6 +71,7 @@ def test_simple_select(started_cluster):
     simple_mongo_table.drop()
 
 
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_simple_select_from_view(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -86,7 +87,7 @@ def test_simple_select_from_view(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table_view', 'root', 'clickhouse')"
+        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table_view', 'root', 'clickhouse')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
