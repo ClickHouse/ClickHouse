@@ -75,8 +75,11 @@ void DetectDeadlock(const LoadJob & waited)
 
         // TODO(serxa): this kind of deadlock can be resolved by allowing either recursive execution or granting one more worker per waiting worker. For now let's consider it invalid.
         if (current_load_job->executionPool() == waited.pool())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for load job '{}' from the same pool '{}'",
-                current_load_job->name, waited.name, current_async_loader->getPoolName(waited_pool));
+        {
+            if (waited.status() == LoadStatus::PENDING)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for load job '{}' from the same pool '{}'",
+                    current_load_job->name, waited.name, current_async_loader->getPoolName(waited_pool));
+        }
     }
 }
 
