@@ -62,7 +62,7 @@ namespace
 
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
-        auto base = std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
+        auto base = fmt::format("snapshot_{}.bin", up_to_log_idx);
         if (compress_zstd)
             base += ".zstd";
         return base;
@@ -567,10 +567,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                 continue;
             }
 
-            if (clean_incomplete_file(it->path()))
-                continue;
-
-            snapshot_files.push_back(it->path());
+            if (it->name().starts_with("snapshot_") && !clean_incomplete_file(it->path()))
+                snapshot_files.push_back(it->path());
         }
 
         for (const auto & snapshot_file : snapshot_files)
