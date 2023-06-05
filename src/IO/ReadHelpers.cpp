@@ -53,15 +53,18 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto * src_ptr = src.data();
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
     const auto size = src.size();
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    const std::reverse_iterator dst_it(dst + sizeof(UUID));
+#endif
     if (size == 36)
     {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        const std::reverse_iterator dst_it(dst + sizeof(UUID));
-        parseHex<4>(src_ptr, dst + 8);
-        parseHex<2>(src_ptr + 9, dst + 12);
-        parseHex<2>(src_ptr + 14, dst + 14);
-        parseHex<2>(src_ptr + 19, dst);
-        parseHex<6>(src_ptr + 24, dst + 2);
+        parseHex<4>(src_ptr, dst_it + 8);
+        parseHex<2>(src_ptr + 9, dst_it + 12);
+        parseHex<2>(src_ptr + 14, dst_it + 14);
+        parseHex<2>(src_ptr + 19, dst_it);
+        parseHex<6>(src_ptr + 24, dst_it + 2);
 #else
         parseHex<4>(src_ptr, dst);
         parseHex<2>(src_ptr + 9, dst + 4);
@@ -73,8 +76,8 @@ UUID parseUUID(std::span<const UInt8> src)
     else if (size == 32)
     {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        parseHex<8>(src_ptr, dst + 8);
-        parseHex<8>(src_ptr + 16, dst);
+        parseHex<8>(src_ptr, dst_it + 8);
+        parseHex<8>(src_ptr + 16, dst_it);
 #else
         parseHex<16>(src_ptr, dst);
 #endif
