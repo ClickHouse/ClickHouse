@@ -346,6 +346,16 @@ void LockedKey::removeAllReleasable()
             ++it;
             continue;
         }
+        else if (it->second.evicting())
+        {
+            /// File segment is currently a removal candidate,
+            /// we do not know if it will be removed or not yet,
+            /// but its size is currently accounted as potentially removed,
+            /// so if we remove file segment now, we break the freeable_count
+            /// calculation in tryReserve.
+            ++it;
+            continue;
+        }
 
         auto file_segment = it->second->file_segment;
         it = removeFileSegment(file_segment->offset(), file_segment->lock());
