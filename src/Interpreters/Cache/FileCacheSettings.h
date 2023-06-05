@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <string>
 
@@ -26,6 +27,8 @@ struct FileCacheSettings
     bool enable_bypass_cache_with_threashold = false;
     size_t bypass_cache_threashold = FILECACHE_BYPASS_THRESHOLD;
     size_t delayed_cleanup_interval_ms = FILECACHE_DELAYED_CLEANUP_INTERVAL_MS;
+
+    size_t boundary_alignment = DBMS_DEFAULT_BUFFER_SIZE;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

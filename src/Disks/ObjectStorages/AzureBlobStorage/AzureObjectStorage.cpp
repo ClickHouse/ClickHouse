@@ -8,6 +8,7 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #include <Interpreters/Context.h>
@@ -66,6 +67,51 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     return false;
 }
 
+void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+{
+    auto client_ptr = client.get();
+
+    /// What a shame, no Exists method...
+    Azure::Storage::Blobs::ListBlobsOptions options;
+    options.Prefix = path;
+    if (max_keys)
+        options.PageSizeHint = max_keys;
+    else
+        options.PageSizeHint = settings.get()->list_object_keys_size;
+    Azure::Storage::Blobs::ListBlobsPagedResponse blob_list_response;
+
+    while (true)
+    {
+        blob_list_response = client_ptr->ListBlobs(options);
+        auto blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
+        {
+            children.emplace_back(
+                blob.Name,
+                ObjectMetadata{
+                    static_cast<uint64_t>(blob.BlobSize),
+                    Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            blob.Details.LastModified.time_since_epoch()).count()),
+                    {}});
+        }
+
+        if (max_keys)
+        {
+            int keys_left = max_keys - static_cast<int>(children.size());
+            if (keys_left <= 0)
+                break;
+            options.PageSizeHint = keys_left;
+        }
+
+        if (blob_list_response.HasPage())
+            options.ContinuationToken = blob_list_response.NextPageToken;
+        else
+            break;
+    }
+}
+
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
@@ -112,8 +158,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-            reader, disk_read_settings, std::move(reader_impl),
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(reader_impl), reader, disk_read_settings,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
@@ -129,7 +175,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes>,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -138,41 +183,12 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
-    auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
+    return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         settings.get()->max_single_part_upload_size,
         buf_size,
         patchSettings(write_settings));
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.remote_path);
-}
-
-void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
-{
-    auto client_ptr = client.get();
-
-    Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
-    blobs_list_options.Prefix = path;
-    if (max_keys)
-        blobs_list_options.PageSizeHint = max_keys;
-    else
-        blobs_list_options.PageSizeHint = settings.get()->list_object_keys_size;
-
-    auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
-    for (;;)
-    {
-        auto blobs_list = blobs_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
-            children.emplace_back(blob.Name, blob.BlobSize);
-
-        if (max_keys && children.size() >= static_cast<size_t>(max_keys))
-            break;
-        if (!blobs_list_response.HasPage())
-            break;
-        blobs_list_response.MoveToNextPage();
-    }
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
