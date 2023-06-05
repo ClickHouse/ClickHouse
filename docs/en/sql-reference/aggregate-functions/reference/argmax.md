@@ -85,7 +85,7 @@ select argMax(tuple(a), b) from test;
 
 select (argMax((a, b), b) as t).1 argMaxA, t.2 argMaxB from test;
 ┌─argMaxA─┬─argMaxB─┐
-│ ᴺᵁᴸᴸ    │       3 │ -- you can use Tuple and get both (all - tuple(*) ) columns for the according max(b)
+│ ᴺᵁᴸᴸ    │       3 │ -- you can use Tuple and get both (all - tuple(*)) columns for the according max(b)
 └─────────┴─────────┘
 
 select argMax(a, b), max(b) from test where a is Null and b is Null;
