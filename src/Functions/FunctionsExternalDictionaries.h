@@ -370,7 +370,7 @@ public:
         }
 
         bool key_is_nullable = arguments[2].type->isNullable();
-        if (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
         {
             if (key_is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} does not support nullable keys", getName());
@@ -487,6 +487,7 @@ public:
             if (dictionary_get_function_type == DictionaryGetFunctionType::getAll && current_arguments_index < arguments.size())
             {
                 auto limit_col = arguments[current_arguments_index].column;
+                // The getUInt later attempts to cast and throws on a type mismatch, so skip actual type checking here
                 if (!limit_col || !isColumnConst(*limit_col))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of fourth argument of function {}. Expected const unsigned integer.",
@@ -609,7 +610,7 @@ private:
             const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
 
             Columns result_columns;
-            if (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
             {
                 result_columns = dictionary->getColumnsAllValues(
                     attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
@@ -624,7 +625,7 @@ private:
         }
         else
         {
-            if (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
             {
                 result = dictionary->getColumnAllValues(
                     attribute_names[0], result_type, key_columns, key_types, default_cols.front(), collect_values_limit);
