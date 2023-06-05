@@ -64,7 +64,7 @@ class MergeTreeIndexConditionAnnoy final : public IMergeTreeIndexConditionApprox
 {
 public:
     MergeTreeIndexConditionAnnoy(
-        const IndexDescription & index,
+        const IndexDescription & index_description,
         const SelectQueryInfo & query,
         const String& distance_function,
         ContextPtr context);

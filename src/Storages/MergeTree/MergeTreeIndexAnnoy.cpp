@@ -148,8 +148,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     if (index_sample_block.columns() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
-    auto index_column_name = index_sample_block.getByPosition(0).name;
-    const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
+    const String & index_column_name = index_sample_block.getByPosition(0).name;
+    ColumnPtr column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
 
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
@@ -204,7 +204,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 
 
 MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
-    const IndexDescription & /*index*/,
+    const IndexDescription & /*index_description*/,
     const SelectQueryInfo & query,
     const String & distance_function_,
     ContextPtr context)
@@ -251,35 +251,34 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
-    auto annoy = granule->index;
+    const AnnoyIndexWithSerializationPtr<Distance> & annoy = granule->index;
 
     if (ann_condition.getNumOfDimensions() != annoy->getNumOfDimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
-                        "does not match with the dimension in the index ({})",
-                        toString(ann_condition.getNumOfDimensions()), toString(annoy->getNumOfDimensions()));
+                        "does not match the dimension in the index ({})",
+                        ann_condition.getNumOfDimensions(), annoy->getNumOfDimensions());
 
-    /// neighbors contain indexes of dots which were closest to the reference vector
-    std::vector<UInt64> neighbors;
+    std::vector<UInt64> neighbors; /// indexes of dots which were closest to the reference vector
     std::vector<Float32> distances;
     neighbors.reserve(limit);
     distances.reserve(limit);
 
     annoy->get_nns_by_vector(reference_vector.data(), limit, static_cast<int>(search_k), &neighbors, &distances);
 
-    std::unordered_set<size_t> granule_numbers;
+    std::vector<size_t> granule_numbers;
+    granule_numbers.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.insert(neighbors[i] / index_granularity);
+        granule_numbers.push_back(neighbors[i] / index_granularity);
     }
 
-    std::vector<size_t> result_vector;
-    result_vector.reserve(granule_numbers.size());
-    for (auto granule_number : granule_numbers)
-        result_vector.push_back(granule_number);
+    /// make unique
+    std::sort(granule_numbers.begin(), granule_numbers.end());
+    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
 
-    return result_vector;
+    return granule_numbers;
 }
 
 MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t trees_, const String & distance_function_)
@@ -302,7 +301,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_function == "L2Distance")
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
-    if (distance_function == "cosineDistance")
+    else if (distance_function == "cosineDistance")
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
     std::unreachable();
 }
