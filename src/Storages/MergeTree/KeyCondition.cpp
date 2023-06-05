@@ -948,7 +948,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparseable values.
+  * but should modify it to pass on unparsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
