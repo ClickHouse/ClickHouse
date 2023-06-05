@@ -48,10 +48,9 @@ public:
 
         std::string getConnectionURL() const
         {
-            if (!is_connection_string)
+//            if (!is_connection_string)
                 return connection_url;
-
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Connection string not implemented yet");
+            //throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Connection string not implemented yet");
         }
 
         std::string connection_url;
@@ -78,6 +77,11 @@ public:
 
     static StorageAzure::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
     static AzureClientPtr createClient(StorageAzure::Configuration configuration);
+    static AzureObjectStorage::SettingsPtr createSettings(StorageAzure::Configuration configuration);
+    static ColumnsDescription getTableStructureFromData(
+        const StorageAzure::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
 
     String getName() const override
     {
@@ -114,6 +118,35 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
+    static ColumnsDescription getTableStructureFromDataImpl(
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
+
+};
+
+class StorageAzureSource : public ISource, WithContext
+{
+public:
+    StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> && read_buffer_, ContextPtr context_, const Block & sample_block_, UInt64 max_block_size_);
+    ~StorageAzureSource() override {}
+
+    Chunk generate() override;
+    String getName() const override;
+
+
+private:
+//    std::unique_ptr<ReadBufferFromFileBase> read_buffer;
+
+    String path;
+    std::unique_ptr<ReadBufferFromFileBase> read_buffer;
+//    std::unique_ptr<ReadBuffer> read_buf;
+    std::unique_ptr<QueryPipeline> pipeline;
+    std::unique_ptr<PullingPipelineExecutor> reader;
+    Block sample_block;
+    UInt64 max_block_size;
+
+//    void createReader();
 };
 
 }
