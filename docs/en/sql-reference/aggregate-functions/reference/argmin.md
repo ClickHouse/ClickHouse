@@ -6,7 +6,7 @@ sidebar_position: 105
 # argMin
 
 Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
-Both parts the `arg` and the `min` behave as [aggregate functions](../aggregate-functions/index.md), they both [skip `Null`](../aggregate-functions/index.md#null-processing) during processing and return not-Null values if not-Null values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not-Null values if not-Null values are available.
 
 **Syntax**
 
