@@ -1009,7 +1009,7 @@ bool KeyCondition::tryCollectBestTransformForExpr(const String & expr_name, std:
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparseable values.
+  * but should modify it to pass on unparsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
@@ -1097,7 +1097,7 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                     if (func->children.size() == 1)
                     {
                         std::tie(out_column, out_type)
-                            = applyFunctionForColumnOfUnknownType(func->function_base, out_type, out_column);
+                            = applyFunctionForColumnOfUnknownType(func_base, out_type, out_column);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1107,14 +1107,14 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                         {
                             auto left_arg_type = left->result_type;
                             std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
-                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context),
                                 left_arg_type, left->column, out_type, out_column);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
                             std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
-                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context),
                                 out_type, out_column, right_arg_type, right->column);
                         }
                     }
