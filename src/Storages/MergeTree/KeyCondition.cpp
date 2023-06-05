@@ -1004,6 +1004,25 @@ bool KeyCondition::tryCollectBestTransformForExpr(const String & expr_name, std:
     }
     return false;
 }
+/** When table's key has expression with these functions from a column,
+  * and when a column in a query is compared with a constant, such as:
+  * CREATE TABLE (x String) ORDER BY toDate(x)
+  * SELECT ... WHERE x LIKE 'Hello%'
+  * we want to apply the function to the constant for index analysis,
+  * but should modify it to pass on unparseable values.
+  */
+static std::set<std::string_view> date_time_parsing_functions = {
+    "toDate",
+    "toDate32",
+    "toDateTime",
+    "toDateTime64",
+    "ParseDateTimeBestEffort",
+    "ParseDateTimeBestEffortUS",
+    "ParseDateTime32BestEffort",
+    "ParseDateTime64BestEffort",
+    "parseDateTime",
+    "parseDateTimeInJodaSyntax",
+};
 
 /** The key functional expression constraint may be inferred from a plain column in the expression.
   * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
@@ -1061,6 +1080,20 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
+                    const auto & func_name = func->function_base->getName();
+                    auto func_base = func->function_base;
+                    const auto & arg_types = func_base->getArgumentTypes();
+                    if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
+                    {
+                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
+                        ColumnsWithTypeAndName arguments;
+                        int i = 0;
+                        for (const auto & type : func->function_base->getArgumentTypes())
+                            arguments.push_back({nullptr, type, fmt::format("_{}", i++)});
+
+                        func_base = func_or_null->build(arguments);
+                    }
+
                     if (func->children.size() == 1)
                     {
                         std::tie(out_column, out_type)
@@ -1084,6 +1117,12 @@ bool KeyCondition::transformConstColumnWithValidFunctions(
                                 FunctionFactory::instance().get(func->function_base->getName(), context),
                                 out_type, out_column, right_arg_type, right->column);
                         }
+                    }
+
+                    for (size_t i = 0; i < out_column->size(); ++i)
+                    {
+                        if (out_column->isNullAt(i)) /// Apply function fail
+                            return false;
                     }
                 }
 
