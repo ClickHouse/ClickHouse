@@ -128,7 +128,7 @@ private:
 class StorageAzureSource : public ISource, WithContext
 {
 public:
-    StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> && read_buffer_, ContextPtr context_, const Block & sample_block_, UInt64 max_block_size_);
+    StorageAzureSource (std::unique_ptr<ReadBufferFromFileBase> && read_buffer_, ContextPtr context_, const Block & sample_block_, UInt64 max_block_size_, const ColumnsDescription & columns_);
     ~StorageAzureSource() override {}
 
     Chunk generate() override;
@@ -145,6 +145,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     Block sample_block;
     UInt64 max_block_size;
+    ColumnsDescription columns_desc;
 
 //    void createReader();
 };
