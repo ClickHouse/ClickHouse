@@ -19,14 +19,13 @@ public:
         : list_objects_pool(threads_metric, threads_active_metric, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<BatchAndHasNext>(list_objects_pool, thread_name))
     {
-        nextBatch();
     }
 
     void next() override;
     void nextBatch() override;
-    bool isValid() const override;
-    RelativePathWithMetadata current() const override;
-    RelativePathsWithMetadata currentBatch() const override;
+    bool isValid() override;
+    RelativePathWithMetadata current() override;
+    RelativePathsWithMetadata currentBatch() override;
     size_t getAccumulatedSize() const override;
 
     ~IObjectStorageIteratorAsync() override
@@ -46,6 +45,7 @@ protected:
 
     std::future<BatchAndHasNext> scheduleBatch();
 
+    bool is_initialized{false};
     bool is_finished{false};
 
     mutable std::mutex mutex;

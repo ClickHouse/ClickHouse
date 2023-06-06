@@ -1,5 +1,7 @@
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -13,17 +15,26 @@ void IObjectStorageIteratorAsync::nextBatch()
     std::lock_guard lock(mutex);
     if (!is_finished)
     {
-        if (outcome_future.valid())
+        if (!is_initialized)
         {
-            BatchAndHasNext next_batch = outcome_future.get();
-            current_batch = std::move(next_batch.batch);
-            accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
-            current_batch_iterator = current_batch.begin();
-            if (next_batch.has_next)
-                outcome_future = scheduleBatch();
-            else
-                is_finished = true;
+            outcome_future = scheduleBatch();
+            is_initialized = true;
         }
+
+         BatchAndHasNext next_batch = outcome_future.get();
+         current_batch = std::move(next_batch.batch);
+         accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
+         current_batch_iterator = current_batch.begin();
+         LOG_DEBUG(&Poco::Logger::get("DEBUG"), "HAS NEXT {}", next_batch.has_next);
+         if (next_batch.has_next)
+             outcome_future = scheduleBatch();
+         else
+             is_finished = true;
+    }
+    else
+    {
+        current_batch.clear();
+        current_batch_iterator = current_batch.begin();
     }
 }
 
@@ -62,12 +73,15 @@ std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIterator
 }
 
 
-bool IObjectStorageIteratorAsync::isValid() const
+bool IObjectStorageIteratorAsync::isValid()
 {
+    if (!is_initialized)
+        nextBatch();
+
     return current_batch_iterator != current_batch.end();
 }
 
-RelativePathWithMetadata IObjectStorageIteratorAsync::current() const
+RelativePathWithMetadata IObjectStorageIteratorAsync::current()
 {
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
@@ -76,9 +90,12 @@ RelativePathWithMetadata IObjectStorageIteratorAsync::current() const
 }
 
 
-RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch() const
+RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 {
     std::lock_guard lock(mutex);
+    if (!isValid())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
+
     return current_batch;
 }
 

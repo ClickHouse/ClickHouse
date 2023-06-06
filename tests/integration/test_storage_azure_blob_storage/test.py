@@ -62,6 +62,20 @@ def get_azure_file_content(filename):
     download_stream = blob_client.download_blob()
     return download_stream.readall().decode("utf-8")
 
+def put_azure_file_content(filename, data):
+    container_name = "cont"
+    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    try:
+        container_client = blob_service_client.create_container(container_name)
+    except:
+        container_client = blob_service_client.get_container_client(container_name)
+
+    blob_client = container_client.get_blob_client(filename)
+    buf = io.BytesIO(data)
+    blob_client.upload_blob(buf)
+
+
 
 def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
@@ -223,3 +237,134 @@ def test_create_new_files_on_insert(cluster):
     assert int(result) == 60
 
     azure_query(node, f"drop table test_multiple_inserts")
+
+def test_overwrite(cluster):
+
+    node = cluster.instances["node"]
+
+    azure_query(node, f"create table test_overwrite(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_parquet_overwrite', format='Parquet')")
+    azure_query(node, "truncate table test_overwrite")
+
+    azure_query(node,
+        f"insert into test_overwrite select number, randomString(100) from numbers(50) settings azure_truncate_on_insert=1"
+    )
+    node.query_and_get_error(
+        f"insert into test_overwrite select number, randomString(100) from numbers(100)"
+    )
+    azure_query(node,
+        f"insert into test_overwrite select number, randomString(100) from numbers(200) settings azure_truncate_on_insert=1"
+    )
+
+    result = azure_query(node, f"select count() from test_overwrite")
+    assert int(result) == 200
+
+def test_insert_with_path_with_globs(cluster):
+    node = cluster.instances["node"]
+    azure_query(node, f"create table test_insert_globs(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_insert_with_globs*', format='Parquet')")
+    node.query_and_get_error(
+        f"insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
+    )
+
+def test_put_get_with_globs(cluster):
+    # type: (ClickHouseCluster) -> None
+    unique_prefix = random.randint(1, 10000)
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    max_path = ""
+    for i in range(10):
+        for j in range(10):
+            path = "{}/{}_{}/{}.csv".format(
+                unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
+            )
+            max_path = max(path, max_path)
+            values = f"({i},{j},{i + j})"
+
+            azure_query(node, f"CREATE TABLE test_{i}_{j} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSV')")
+
+            query = f"insert into test_{i}_{j} VALUES {values}"
+            azure_query(node, query)
+
+
+    azure_query(node, f"CREATE TABLE test_glob_select ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV')")
+    query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from test_glob_select"
+    assert azure_query(node, query).splitlines() == [
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+            bucket='cont', max_path=max_path
+        )
+    ]
+
+def test_azure_glob_scheherazade(cluster):
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 1, 1)"
+    nights_per_job = 1001 // 30
+    jobs = []
+    for night in range(0, 1001, nights_per_job):
+
+        def add_tales(start, end):
+            for i in range(start, end):
+                path = "night_{}/tale.csv".format(i)
+                unique_num = random.randint(1, 10000)
+                azure_query(node, f"CREATE TABLE test_{i}_{unique_num} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSV')")
+                query = f"insert into test_{i}_{unique_num} VALUES {values}"
+                azure_query(node, query)
+
+        jobs.append(
+            threading.Thread(
+                target=add_tales, args=(night, min(night + nights_per_job, 1001))
+            )
+        )
+        jobs[-1].start()
+
+    for job in jobs:
+        job.join()
+
+
+    azure_query(node, f"CREATE TABLE test_glob_select_scheherazade ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='night_*/tale.csv', format='CSV')")
+    query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
+    assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
+
+@pytest.mark.parametrize(
+    "extension,method",
+    [pytest.param("bin", "gzip", id="bin"), pytest.param("gz", "auto", id="gz")],
+)
+def test_storage_azure_get_gzip(cluster, extension, method):
+    node = cluster.instances["node"]
+    filename = f"test_get_gzip.{extension}"
+    name = f"test_get_gzip_{extension}"
+    data = [
+        "Sophia Intrieri,55",
+        "Jack Taylor,71",
+        "Christopher Silva,66",
+        "Clifton Purser,35",
+        "Richard Aceuedo,43",
+        "Lisa Hensley,31",
+        "Alice Wehrley,1",
+        "Mary Farmer,47",
+        "Samara Ramirez,19",
+        "Shirley Lloyd,51",
+        "Santos Cowger,0",
+        "Richard Mundt,88",
+        "Jerry Gonzalez,15",
+        "Angela James,10",
+        "Norman Ortega,33",
+        "",
+    ]
+    azure_query(node, f"DROP TABLE IF EXISTS {name}")
+
+    buf = io.BytesIO()
+    compressed = gzip.GzipFile(fileobj=buf, mode="wb")
+    compressed.write(("\n".join(data)).encode())
+    compressed.close()
+    put_azure_file_content(filename, buf.getvalue())
+
+    azure_query(
+        node,
+        f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = Azure(
+                                azure_conf2, container='cont', blob_path ='{filename}',
+                                format='CSV',
+                                compression='{method}')""",
+    )
+
+    assert azure_query(node, f"SELECT sum(id) FROM {name}").splitlines() == ["565"]
+    azure_query(node, f"DROP TABLE {name}")
