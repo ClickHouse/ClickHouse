@@ -90,7 +90,7 @@ select (argMin((a, b), b) as t).1 argMinA, t.2 argMinB from test;
 
 select argMin(a, b), min(b) from test where a is Null and b is Null;
 ┌─argMin(a, b)─┬─min(b)─┐
-│ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- Nulls are not skipped because only Null values are available
+│ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- ll aggregated rows contains at least one `NULL` value because of the filter, so all rows are skipped, therefore the result will be `NULL`
 └──────────────┴────────┘
 
 select argMin(a, (b, a)), min(tuple(b, a)) from test;
