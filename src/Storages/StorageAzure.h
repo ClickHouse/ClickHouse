@@ -79,10 +79,6 @@ public:
     static StorageAzure::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
     static AzureClientPtr createClient(StorageAzure::Configuration configuration);
     static AzureObjectStorage::SettingsPtr createSettings(StorageAzure::Configuration configuration);
-    static ColumnsDescription getTableStructureFromData(
-        const StorageAzure::Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
 
     String getName() const override
     {
@@ -127,10 +123,19 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    static ColumnsDescription getTableStructureFromDataImpl(
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+    ColumnsDescription getTableStructureFromDataImpl(ContextPtr ctx);
+
+    std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const RelativePathsWithMetadata::const_iterator & begin,
+        const RelativePathsWithMetadata::const_iterator & end,
+        const ContextPtr & ctx);
+
+    void addColumnsToCache(
+        const RelativePathsWithMetadata & keys,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const ContextPtr & ctx);
+
 
 };
 
@@ -147,12 +152,14 @@ public:
             std::optional<String> blob_path_with_globs_,
             ASTPtr query_,
             const Block & virtual_header_,
-            ContextPtr context_);
+            ContextPtr context_,
+            RelativePathsWithMetadata * outer_blobs_);
 
         RelativePathWithMetadata next();
         size_t getTotalSize() const;
         ~Iterator() = default;
-    private:
+
+     private:
         AzureObjectStorage * object_storage;
         std::string container;
         std::optional<Strings> keys;
@@ -165,6 +172,7 @@ public:
         std::atomic<size_t> total_size = 0;
 
         std::optional<RelativePathsWithMetadata> blobs_with_metadata;
+        RelativePathsWithMetadata * outer_blobs;
         ObjectStorageIteratorPtr object_storage_iterator;
         bool recursive{false};
 
