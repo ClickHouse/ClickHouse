@@ -15,7 +15,7 @@ class Context;
 
 /* AzureBlob(source, [access_key_id, secret_access_key,] [format, structure, compression]) - creates a temporary storage for a file in AzureBlob.
  */
-class TableFunctionAzure : public ITableFunction
+class TableFunctionAzureBlobStorage : public ITableFunction
 {
 public:
     static constexpr auto name = "azure_blob_storage";
