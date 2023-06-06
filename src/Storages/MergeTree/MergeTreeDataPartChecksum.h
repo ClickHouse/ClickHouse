@@ -88,6 +88,8 @@ struct MergeTreeDataPartChecksums
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
     UInt64 getTotalSizeOnDisk() const;
+
+    std::optional<String> getFileNameOrHash(const String & name) const;
 };
 
 

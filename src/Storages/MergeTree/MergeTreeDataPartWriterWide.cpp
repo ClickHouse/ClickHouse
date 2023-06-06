@@ -97,7 +97,15 @@ void MergeTreeDataPartWriterWide::addStreams(
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+
+        auto storage_settings = storage.getSettings();
+        auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+
+        String stream_name;
+        if (storage_settings->replace_long_file_name_to_hash && full_stream_name.size() > storage_settings->max_file_name_length)
+            stream_name = sipHash128String(full_stream_name);
+        else
+            stream_name = full_stream_name;
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
@@ -126,12 +134,21 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             settings.query_write_settings);
+
+        full_name_to_stream_name.emplace(full_stream_name, stream_name);
     };
 
     ISerialization::SubstreamPath path;
     data_part->getSerialization(column.name)->enumerateStreams(callback, column.type);
 }
 
+const String & MergeTreeDataPartWriterWide::getStreamName(
+    const NameAndTypePair & column,
+    const ISerialization::SubstreamPath & substream_path) const
+{
+    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+    return full_name_to_stream_name.at(full_stream_name);
+}
 
 ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
         const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const
@@ -139,8 +156,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
     return [&, this] (const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-
-        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        auto stream_name = getStreamName(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
@@ -289,8 +305,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-
-        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        auto stream_name = getStreamName(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
@@ -328,14 +343,13 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        auto stream_name = getStreamName(name_and_type, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        column_streams[stream_name]->compressed_hashing.nextIfAtEnd();
+        column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     });
 }
 
@@ -406,10 +420,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets)
-        {
-            String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
-            offset_columns.insert(stream_name);
-        }
+            offset_columns.insert(getStreamName(name_and_type, substream_path));
     });
 }
 
@@ -656,10 +667,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            offset_columns.insert(stream_name);
-        }
+            offset_columns.insert(getStreamName(column, substream_path));
     });
 }
 

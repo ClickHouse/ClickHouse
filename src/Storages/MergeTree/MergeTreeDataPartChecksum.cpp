@@ -8,6 +8,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <optional>
 
 
 namespace DB
@@ -338,6 +339,18 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
     MergeTreeDataPartChecksums::Checksum::uint128 ret;
     hash_of_all_files.get128(reinterpret_cast<char *>(&ret));
     return ret;
+}
+
+std::optional<String> MergeTreeDataPartChecksums::getFileNameOrHash(const String & name) const
+{
+    if (files.contains(name + ".bin"))
+        return name;
+
+    auto hash = sipHash128String(name);
+    if (files.contains(hash + ".bin"))
+        return hash;
+
+    return std::nullopt;
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const

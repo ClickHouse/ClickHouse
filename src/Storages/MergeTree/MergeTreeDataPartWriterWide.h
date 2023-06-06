@@ -101,6 +101,7 @@ private:
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -109,6 +110,9 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
+    /// TODO:
+    std::unordered_map<String, String> full_name_to_stream_name;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
