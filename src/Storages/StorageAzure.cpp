@@ -1096,6 +1096,7 @@ StorageAzureSource::ReaderHolder StorageAzureSource::createReader()
         return {};
 
     size_t object_size = info.size_bytes != 0 ? info.size_bytes : object_storage->getObjectMetadata(current_key).size_bytes;
+    LOG_DEBUG(log, "SIZE {}", object_size);
     auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
     auto read_buf = createAzureReadBuffer(current_key, object_size);
@@ -1104,6 +1105,7 @@ StorageAzureSource::ReaderHolder StorageAzureSource::createReader()
             format_settings, std::nullopt, std::nullopt,
             /* is_remote_fs */ true, compression_method);
 
+    LOG_DEBUG(log, "FORMAT {}", format);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
@@ -1138,47 +1140,10 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
     if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         LOG_TRACE(log, "Downloading object of size {} from S3 with initial prefetch", object_size);
-        return createAsyncAzureReadBuffer(key, read_settings, object_size);
+        return object_storage->readObjects({StoredObject(key)}, read_settings, {}, object_size);
     }
 
     return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
-}
-
-
-std::unique_ptr<ReadBuffer> StorageAzureSource::createAsyncAzureReadBuffer(
-    const String & key, const ReadSettings & read_settings, size_t object_size)
-{
-    auto context = getContext();
-    auto read_buffer_creator =
-        [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        auto buffer = object_storage->readObject(StoredObject(path), read_settings, {}, object_size);
-        buffer->setReadUntilPosition(read_until_position);
-        return buffer;
-    };
-
-    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        StoredObjects{StoredObject{key, object_size}},
-        read_settings,
-        /* cache_log */nullptr);
-
-    auto modified_settings{read_settings};
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-
-    auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-
-    auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(s3_impl), pool_reader, modified_settings,
-        context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
-
-    async_reader->setReadUntilEnd();
-    if (read_settings.remote_fs_prefetch)
-        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
-
-    return async_reader;
 }
 
 

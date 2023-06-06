@@ -188,3 +188,16 @@ def test_truncate(cluster):
     azure_query(node, "TRUNCATE TABLE test_truncate")
     with pytest.raises(Exception):
         print(get_azure_file_content("test_truncate.csv"))
+
+
+def test_simple_read_write(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        "CREATE TABLE test_simple_read_write (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_simple_read_write.csv', format='CSV')",
+    )
+
+    azure_query(node, "INSERT INTO test_simple_read_write VALUES (1, 'a')")
+    assert get_azure_file_content("test_simple_read_write.csv") == '1,"a"\n'
+
+    print(azure_query(node, "SELECT * FROM test_simple_read_write"))
