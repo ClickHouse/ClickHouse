@@ -13,19 +13,19 @@
         <disks>
             <log_local>
                 <type>local</type>
-                <path>/var/lib/clickhouse/coordination/logs/</path>
+                <path>/home/robot-clickhouse/db/coordination/logs/</path>
             </log_local>
             <latest_log_local>
                 <type>local</type>
-                <path>/var/lib/clickhouse/coordination/latest_log/</path>
+                <path>/home/robot-clickhouse/db/coordination/latest_log/</path>
             </latest_log_local>
             <snapshot_local>
                 <type>local</type>
-                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+                <path>/home/robot-clickhouse/db/coordination/snapshots/</path>
             </snapshot_local>
             <latest_snapshot_local>
                 <type>local</type>
-                <path>/var/lib/clickhouse/coordination/latest_snapshot/</path>
+                <path>/home/robot-clickhouse/db/coordination/latest_snapshot/</path>
             </latest_snapshot_local>
         </disks>
     </storage_configuration>
