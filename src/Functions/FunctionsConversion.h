@@ -365,21 +365,10 @@ template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDateTime, Na
 
 /// Implementation of toDate function.
 
-template <typename FromType>
-static bool CheckDateRange(const FromType & value)
-{
-    return value >= 0 && value <= DATE_LUT_MAX_DAY_NUM;
-}
-
 template <typename FromType, typename ToType>
 struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
@@ -394,11 +383,6 @@ template <typename FromType, typename ToType>
 struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
@@ -416,11 +400,6 @@ template <typename FromType, typename ToType>
 struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -518,21 +497,11 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Nam
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32>> {};
 
-template <typename FromType>
-static bool CheckDateTimeRange(const FromType & value)
-{
-    return value >= 0 && value <= 0xFFFFFFFFL;
-}
 
 template <typename FromType, typename ToType>
 struct ToDateTimeTransform64
 {
     static constexpr auto name = "toDateTime";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateTimeRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -544,11 +513,6 @@ template <typename FromType, typename ToType>
 struct ToDateTimeTransformSigned
 {
     static constexpr auto name = "toDateTime";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateTimeRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
@@ -562,11 +526,6 @@ template <typename FromType, typename ToType>
 struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
-
-    static NO_SANITIZE_UNDEFINED bool IsConvertible(const FromType & from, const DateLUTImpl &)
-    {
-        return CheckDateTimeRange(from);
-    }
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {

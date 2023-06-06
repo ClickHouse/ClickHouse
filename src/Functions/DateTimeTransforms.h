@@ -1444,31 +1444,33 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
-            constexpr bool transformHasIsConvertible = requires(const Transform& t)
+            if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
+                || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
             {
-                t.IsConvertible(vec_from[i], time_zone);
-            };
+                bool check_range_result = true;
 
-            if constexpr (transformHasIsConvertible)
-            {
-                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                if constexpr (std::is_same_v<ToType, DataTypeDate>)
                 {
-                    bool checked = transform.IsConvertible(vec_from[i], time_zone);
-                    if (!checked)
+                    check_range_result = vec_from[i] >= 0 && vec_from[i] <= DATE_LUT_MAX_DAY_NUM;
+                }
+                else if constexpr (std::is_same_v<ToType, DataTypeDateTime>)
+                {
+                    check_range_result = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
+                }
+
+                if (!check_range_result)
+                {
+                    if (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                     {
-                        if (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-                        {
-                            vec_to[i] = 0;
-                            if (vec_null_map_to)
-                                (*vec_null_map_to)[i] = true;
-                            continue;
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                                TypeName<typename FromTypeVector::value_type>, TypeName<ValueType>);
-                        }
+                        vec_to[i] = 0;
+                        if (vec_null_map_to)
+                            (*vec_null_map_to)[i] = true;
+                        continue;
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                            TypeName<FromType>, TypeName<ToType>);
                     }
                 }
             }
@@ -1488,7 +1490,7 @@ struct DateTimeTransformImpl
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result, Additions>;
+        using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
