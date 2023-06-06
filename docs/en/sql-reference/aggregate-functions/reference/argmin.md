@@ -80,7 +80,7 @@ select argMin(a, b), min(b) from test;
 
 select argMin(tuple(a), b) from test;
 ┌─argMin(tuple(a), b)─┐
-│ (NULL)              │ -- Tuple allows to get Null value.
+│ (NULL)              │ -- The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value
 └─────────────────────┘
 
 select (argMin((a, b), b) as t).1 argMinA, t.2 argMinB from test;
