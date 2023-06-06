@@ -67,12 +67,12 @@ namespace ErrorCodes
 namespace
 {
 
-static const std::unordered_set<std::string_view> required_configuration_keys = {
+const std::unordered_set<std::string_view> required_configuration_keys = {
     "blob_path",
     "container",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
@@ -87,8 +87,9 @@ bool isConnectionString(const std::string & candidate)
     return candidate.starts_with("DefaultEndpointsProtocol");
 }
 
+}
 
-void processNamedCollectionResult(StorageAzure::Configuration & configuration, const NamedCollection & collection)
+void StorageAzure::processNamedCollectionResult(StorageAzure::Configuration & configuration, const NamedCollection & collection)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
@@ -113,11 +114,11 @@ void processNamedCollectionResult(StorageAzure::Configuration & configuration, c
     if (collection.has("account_key"))
         configuration.account_key = collection.get<String>("account_key");
 
+    configuration.structure = collection.getOrDefault<String>("structure", "auto");
     configuration.format = collection.getOrDefault<String>("format", configuration.format);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 }
 
-}
 
 StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
@@ -236,6 +237,17 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 }
 
 
+AzureObjectStorage::SettingsPtr StorageAzure::createSettings(ContextPtr local_context)
+{
+    const auto & context_settings = local_context->getSettingsRef();
+    auto settings_ptr = std::make_unique<AzureObjectStorageSettings>();
+    settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
+    settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
+    settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
+
+    return settings_ptr;
+}
+
 void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage("Azure", [](const StorageFactory::Arguments & args)
@@ -276,11 +288,7 @@ void registerStorageAzure(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        const auto & context_settings = args.getContext()->getSettingsRef();
-        auto settings = std::make_unique<AzureObjectStorageSettings>();
-        settings->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
-        settings->max_single_read_retries = context_settings.azure_max_single_read_retries;
-        settings->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
+        auto settings = StorageAzure::createSettings(args.getContext());
 
         return std::make_shared<StorageAzure>(
             std::move(configuration),
@@ -399,7 +407,7 @@ StorageAzure::StorageAzure(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromDataImpl(context);
+        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
         storage_metadata.setColumns(columns);
     }
     else
@@ -1149,27 +1157,31 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
     return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
 }
 
-ColumnsDescription StorageAzure::getTableStructureFromDataImpl(ContextPtr ctx)
+ColumnsDescription StorageAzure::getTableStructureFromData(
+    AzureObjectStorage * object_storage,
+    const Configuration & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr ctx)
 {
     RelativePathsWithMetadata read_keys;
     std::shared_ptr<StorageAzureSource::Iterator> file_iterator;
     if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureSource::Iterator>(
-            object_storage.get(), configuration.container, std::nullopt,
-            configuration.blob_path, nullptr, virtual_block, ctx, &read_keys);
+            object_storage, configuration.container, std::nullopt,
+            configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
     }
     else
     {
         file_iterator = std::make_shared<StorageAzureSource::Iterator>(
-            object_storage.get(), configuration.container, configuration.blobs_paths,
-            std::nullopt, nullptr, virtual_block, ctx, &read_keys);
+            object_storage, configuration.container, configuration.blobs_paths,
+            std::nullopt, nullptr, Block{}, ctx, &read_keys);
     }
 
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
     if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
-        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), ctx);
+        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -1189,7 +1201,7 @@ ColumnsDescription StorageAzure::getTableStructureFromDataImpl(ContextPtr ctx)
         /// S3 file iterator could get new keys after new iteration, check them in schema cache.
         if (ctx->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
         {
-            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), ctx);
+            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);
             prev_read_keys_size = read_keys.size();
             if (columns_from_cache)
             {
@@ -1213,7 +1225,7 @@ ColumnsDescription StorageAzure::getTableStructureFromDataImpl(ContextPtr ctx)
         columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
 
     if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
-        addColumnsToCache(read_keys, columns, configuration.format, ctx);
+        addColumnsToCache(read_keys, columns, configuration, format_settings, configuration.format, ctx);
 
     return columns;
 
@@ -1222,6 +1234,8 @@ ColumnsDescription StorageAzure::getTableStructureFromDataImpl(ContextPtr ctx)
 std::optional<ColumnsDescription> StorageAzure::tryGetColumnsFromCache(
         const RelativePathsWithMetadata::const_iterator & begin,
         const RelativePathsWithMetadata::const_iterator & end,
+        const StorageAzure::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache(ctx);
@@ -1247,6 +1261,8 @@ std::optional<ColumnsDescription> StorageAzure::tryGetColumnsFromCache(
 void StorageAzure::addColumnsToCache(
     const RelativePathsWithMetadata & keys,
     const ColumnsDescription & columns,
+    const StorageAzure::Configuration & configuration,
+    const std::optional<FormatSettings> & format_settings,
     const String & format_name,
     const ContextPtr & ctx)
 {

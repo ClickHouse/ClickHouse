@@ -10,6 +10,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 namespace DB
 {
@@ -31,6 +32,7 @@ using AzureCredentials = std::variant<AzureSimpleAccountConfiguration, AzureConn
 class StorageAzure : public IStorage
 {
 public:
+
     using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
     using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
 
@@ -78,7 +80,10 @@ public:
 
     static StorageAzure::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
     static AzureClientPtr createClient(StorageAzure::Configuration configuration);
-    static AzureObjectStorage::SettingsPtr createSettings(StorageAzure::Configuration configuration);
+
+    static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
+
+    static void processNamedCollectionResult(StorageAzure::Configuration & configuration, const NamedCollection & collection);
 
     String getName() const override
     {
@@ -112,6 +117,12 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
+    static ColumnsDescription getTableStructureFromData(
+        AzureObjectStorage * object_storage,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
+
 private:
     std::string name;
     Configuration configuration;
@@ -123,16 +134,19 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    ColumnsDescription getTableStructureFromDataImpl(ContextPtr ctx);
 
-    std::optional<ColumnsDescription> tryGetColumnsFromCache(
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const RelativePathsWithMetadata::const_iterator & begin,
         const RelativePathsWithMetadata::const_iterator & end,
+        const StorageAzure::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
-    void addColumnsToCache(
+    static void addColumnsToCache(
         const RelativePathsWithMetadata & keys,
         const ColumnsDescription & columns,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
         const String & format_name,
         const ContextPtr & ctx);
 

@@ -36,20 +36,148 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-void TableFunctionAzure::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
+namespace
 {
-    if (args.size() != 5)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+bool isConnectionString(const std::string & candidate)
+{
+    return candidate.starts_with("DefaultEndpointsProtocol");
+}
 
-    configuration.connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_url");
-    configuration.container = checkAndGetLiteralArgument<String>(args[1], "container");
-    configuration.blob_path = checkAndGetLiteralArgument<String>(args[2], "blob_path");
-    configuration.format = checkAndGetLiteralArgument<String>(args[3], "format");
-    configuration.structure = checkAndGetLiteralArgument<String>(args[4], "structure");
+}
+
+StorageAzure::Configuration TableFunctionAzure::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
+{
+    StorageAzure::Configuration configuration;
+
+    /// Supported signatures:
+    ///
+    /// Azure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+    ///
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    {
+        StorageAzure::processNamedCollectionResult(configuration, *named_collection);
+
+        configuration.blobs_paths = {configuration.blob_path};
+
+        if (configuration.format == "auto" && get_format_from_file)
+            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+        return configuration;
+    }
+
+    if (engine_args.size() < 3 || engine_args.size() > 8)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage Azure requires 3 to 7 arguments: "
+                        "Azure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
+
+    for (auto & engine_arg : engine_args)
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
+
+    std::unordered_map<std::string_view, size_t> engine_args_to_idx;
+
+    configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+    configuration.is_connection_string = isConnectionString(configuration.connection_url);
+
+    configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
+    configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+
+    auto is_format_arg = [] (const std::string & s) -> bool
+    {
+        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
+    };
+
+    if (engine_args.size() == 4)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name/structure");
+        if (is_format_arg(fourth_arg))
+        {
+            configuration.format = fourth_arg;
+        }
+        else
+        {
+            configuration.structure = fourth_arg;
+        }
+    }
+    else if (engine_args.size() == 5)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        if (is_format_arg(fourth_arg))
+        {
+            configuration.format = fourth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+        }
+        else
+        {
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+        }
+    }
+    else if (engine_args.size() == 6)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        if (is_format_arg(fourth_arg))
+        {
+            configuration.format = fourth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            configuration.structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
+        }
+        else
+        {
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            configuration.format = sixth_arg;
+        }
+    }
+    else if (engine_args.size() == 7)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        if (is_format_arg(fourth_arg))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format, compression and structure must be last arguments");
+        }
+        else
+        {
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            configuration.format = sixth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+        }
+    }
+    else if (engine_args.size() == 8)
+    {
+
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        if (is_format_arg(fourth_arg))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+        }
+        else
+        {
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            configuration.format = sixth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+        }
+    }
+
+    configuration.blobs_paths = {configuration.blob_path};
+
+    if (configuration.format == "auto" && get_format_from_file)
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+
+    return configuration;
 }
 
 void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -69,6 +197,16 @@ void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionAzure::getActualTableStructure(ContextPtr context) const
 {
+    if (configuration.structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
+        auto client = StorageAzure::createClient(configuration);
+        auto settings = StorageAzure::createSettings(context);
+
+        auto object_storage = std::make_unique<AzureObjectStorage>("AzureTableFunction", std::move(client), std::move(settings));
+        return StorageAzure::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
+    }
+
     return parseColumnsListFromString(configuration.structure, context);
 }
 
@@ -79,24 +217,29 @@ bool TableFunctionAzure::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionAzure::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    ColumnsDescription columns;
-    columns = parseColumnsListFromString(configuration.structure, context);
-
     configuration.is_connection_string = true;
     configuration.blobs_paths = {configuration.blob_path};
 
     auto client = StorageAzure::createClient(configuration);
+    auto settings = StorageAzure::createSettings(context);
+
+    ColumnsDescription columns;
+    if (configuration.structure != "auto")
+        columns = parseColumnsListFromString(configuration.structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
 
     StoragePtr storage = std::make_shared<StorageAzure>(
         configuration,
-        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::make_unique<AzureObjectStorageSettings>()),
+        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
         String{},
         /// No format_settings for table function Azure
-        std::nullopt, nullptr);
+        std::nullopt,
+        nullptr);
 
     storage->startup();
 
