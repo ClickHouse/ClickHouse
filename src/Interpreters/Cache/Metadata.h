@@ -22,7 +22,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool valid() const { return !removal_candidate.load(); }
+    bool evicting() const { return removal_candidate.load(); }
 
     Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
 
