@@ -199,5 +199,27 @@ def test_simple_read_write(cluster):
 
     azure_query(node, "INSERT INTO test_simple_read_write VALUES (1, 'a')")
     assert get_azure_file_content("test_simple_read_write.csv") == '1,"a"\n'
-
     print(azure_query(node, "SELECT * FROM test_simple_read_write"))
+    assert azure_query(node, "SELECT * FROM test_simple_read_write") == "1\ta\n"
+
+
+def test_create_new_files_on_insert(cluster):
+
+    node = cluster.instances["node"]
+
+    azure_query(node, f"create table test_multiple_inserts(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_parquet', format='Parquet')")
+    azure_query(node, "truncate table test_multiple_inserts")
+    azure_query(node,
+        f"insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings azure_truncate_on_insert=1"
+    )
+    azure_query(node,
+        f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings azure_create_new_file_on_insert=1"
+    )
+    azure_query(node,
+        f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings azure_create_new_file_on_insert=1"
+    )
+
+    result = azure_query(node, f"select count() from test_multiple_inserts")
+    assert int(result) == 60
+
+    azure_query(node, f"drop table test_multiple_inserts")

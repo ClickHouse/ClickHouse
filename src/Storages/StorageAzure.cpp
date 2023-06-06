@@ -453,7 +453,7 @@ void StorageAzure::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextP
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    object_storage->removeObjects(objects);
+    object_storage->removeObjectsIfExist(objects);
 }
 
 namespace
