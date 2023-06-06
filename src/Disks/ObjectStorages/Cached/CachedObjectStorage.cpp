@@ -57,7 +57,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (!canUseReadThroughCache())
+    if (!canUseReadThroughCache(read_settings))
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return object_storage->patchSettings(modified_settings);
@@ -227,8 +227,11 @@ String CachedObjectStorage::getObjectsNamespace() const
     return object_storage->getObjectsNamespace();
 }
 
-bool CachedObjectStorage::canUseReadThroughCache()
+bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
 {
+    if (!settings.avoid_readthrough_cache_outside_query_context)
+        return true;
+
     return CurrentThread::isInitialized()
         && CurrentThread::get().getQueryContext()
         && !CurrentThread::getQueryId().empty();
