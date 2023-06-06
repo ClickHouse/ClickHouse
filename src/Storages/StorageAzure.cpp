@@ -40,6 +40,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+
 
 using namespace Azure::Storage::Blobs;
 
@@ -155,11 +158,6 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
     configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
     configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
-    LOG_INFO(&Poco::Logger::get("StorageAzure"), "connection_url  = {}", configuration.connection_url);
-    LOG_INFO(&Poco::Logger::get("StorageAzure"), "container  = {}", configuration.container);
-    LOG_INFO(&Poco::Logger::get("StorageAzure"), "blobpath  = {}", configuration.blob_path);
-
-
     auto is_format_arg = [] (const std::string & s) -> bool
     {
         return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
@@ -230,8 +228,6 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
     }
 
     configuration.blobs_paths = {configuration.blob_path};
-
-    LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
 
     if (configuration.format == "auto" && get_format_from_file)
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
@@ -311,7 +307,6 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
 
     if (configuration.is_connection_string)
     {
-        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient is_connection_string ");
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
         result->CreateIfNotExists();
     }
@@ -417,18 +412,6 @@ StorageAzure::StorageAzure(
     StoredObjects objects;
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
-
-    for (auto obj : objects)
-    {
-        LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor obj.remote_paths  = {}", obj.remote_path);
-        if (object_storage->exists(obj))
-        {
-            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor exists  obj.remote_paths  = {}", obj.remote_path);
-//            auto read_buffer = object_storage->readObject(obj);
-//            LOG_INFO(&Poco::Logger::get("StorageAzure"), "constructor read size  obj.remote_paths  = {} , size = {}", obj.remote_path, read_buffer->getFileSize());
-        }
-    }
-
 
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -1151,17 +1134,17 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
 {
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
-    //auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
-    //const bool object_too_small = object_size <= 2 * download_buffer_size;
+    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    const bool object_too_small = object_size <= 2 * download_buffer_size;
 
-    ///// Create a read buffer that will prefetch the first ~1 MB of the file.
-    ///// When reading lots of tiny files, this prefetching almost doubles the throughput.
-    ///// For bigger files, parallel reading is more useful.
-    //if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-    //{
-    //    LOG_TRACE(log, "Downloading object {} of size {} from S3 with initial prefetch", key, object_size);
-    //    return object_storage->readObjects({StoredObject(key)}, read_settings, {}, object_size);
-    //}
+    // Create a read buffer that will prefetch the first ~1 MB of the file.
+    // When reading lots of tiny files, this prefetching almost doubles the throughput.
+    // For bigger files, parallel reading is more useful.
+    if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    {
+        LOG_TRACE(log, "Downloading object of size {} from Azure with initial prefetch", object_size);
+        return createAsyncAzureReadBuffer(key, read_settings, object_size);
+    }
 
     return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
 }
@@ -1282,6 +1265,20 @@ SchemaCache & StorageAzure::getSchemaCache(const ContextPtr & ctx)
     return schema_cache;
 }
 
+
+std::unique_ptr<ReadBuffer> StorageAzureSource::createAsyncAzureReadBuffer(
+    const String & key, const ReadSettings & read_settings, size_t object_size)
+{
+    auto modified_settings{read_settings};
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
+
+    async_reader->setReadUntilEnd();
+    if (read_settings.remote_fs_prefetch)
+        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
+
+    return async_reader;
+}
 
 }
 
