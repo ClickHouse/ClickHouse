@@ -105,7 +105,7 @@ select argMin((a, b), (b, a)), min(tuple(b, a)) from test;
 
 select argMin(a, tuple(b)) from test;
 ┌─argMax(a, tuple(b))─┐
-│ b                   │ -- Tuple can be used in `Min` to not skip Nulls in `Min`
+│ d                   │ -- Tuple can be used in `min` to not skip rows with Null values as b. 
 └─────────────────────┘
 ```
 
