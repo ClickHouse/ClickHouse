@@ -73,7 +73,7 @@ FROM t_null_big
 └────────────────────┴─────────────────────┘
 ```
 
-Also you can use [Tuple](../data-types/tuple.md) to change NULL skipping behavior.
+Also you can use [Tuple](../data-types/tuple.md) to work around NULL skipping behavior. The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
 
 ```sql
 SELECT
