@@ -1131,17 +1131,17 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
 {
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
-    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
-    const bool object_too_small = object_size <= 2 * download_buffer_size;
+    //auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    //const bool object_too_small = object_size <= 2 * download_buffer_size;
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-    {
-        LOG_TRACE(log, "Downloading object of size {} from S3 with initial prefetch", object_size);
-        return object_storage->readObjects({StoredObject(key)}, read_settings, {}, object_size);
-    }
+    //if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    //{
+    //    LOG_TRACE(log, "Downloading object {} of size {} from S3 with initial prefetch", key, object_size);
+    //    return object_storage->readObjects({StoredObject(key)}, read_settings, {}, object_size);
+    //}
 
     return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
 }
