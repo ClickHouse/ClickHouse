@@ -9,7 +9,7 @@ The data in this dataset is derived and cleaned from the full OpenSky dataset to
 
 Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
-Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent Lenders
+Martin Strohmeier, Xavier Olive, Jannis Luebbe, Matthias Schaefer, and Vincent Lenders
 "Crowdsourced air traffic data from the OpenSky Network 2019–2020"
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021

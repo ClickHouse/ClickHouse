@@ -70,9 +70,12 @@ This pull-request will be merged automatically as it reaches the mergeable state
 
 ### If the PR was closed and then reopened
 
-If it stuck, check {pr_url} for `{label_backports_created}` and delete it if \
-necessary. Manually merging will do nothing, since `{label_backports_created}` \
+If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
+necessary. Manually merging will do nothing, since `{backport_created_label}` \
 prevents the original PR {pr_url} from being processed.
+
+If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
+You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
@@ -82,7 +85,13 @@ close it.
 """
     REMOTE = ""
 
-    def __init__(self, name: str, pr: PullRequest, repo: Repository):
+    def __init__(
+        self,
+        name: str,
+        pr: PullRequest,
+        repo: Repository,
+        backport_created_label: str = Labels.BACKPORTS_CREATED,
+    ):
         self.name = name
         self.pr = pr
         self.repo = repo
@@ -92,6 +101,8 @@ close it.
         self.cherrypick_pr = None  # type: Optional[PullRequest]
         self.backport_pr = None  # type: Optional[PullRequest]
         self._backported = False
+
+        self.backport_created_label = backport_created_label
 
         self.git_prefix = (  # All commits to cherrypick are done as robot-clickhouse
             "git -c user.email=robot-clickhouse@users.noreply.github.com "
@@ -226,7 +237,8 @@ close it.
             body=self.CHERRYPICK_DESCRIPTION.format(
                 pr_number=self.pr.number,
                 pr_url=self.pr.html_url,
-                label_backports_created=Labels.BACKPORTS_CREATED,
+                backport_created_label=self.backport_created_label,
+                label_cherrypick=Labels.CHERRYPICK,
             ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
@@ -459,11 +471,12 @@ class Backport:
         pr_labels = [label.name for label in pr.labels]
         if self.must_create_backport_label in pr_labels:
             branches = [
-                ReleaseBranch(br, pr, self.repo) for br in self.release_branches
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
-                ReleaseBranch(br, pr, self.repo)
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in [
                     label.split("-", 1)[0][1:]  # v21.8-must-backport
                     for label in pr_labels
@@ -492,6 +505,7 @@ class Backport:
         )
         bp_cp_prs = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
+            label=f"{Labels.BACKPORT},{Labels.CHERRYPICK}",
         )
         for br in branches:
             br.pop_prs(bp_cp_prs)

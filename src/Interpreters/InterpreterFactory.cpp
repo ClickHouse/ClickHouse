@@ -114,6 +114,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
 }
@@ -130,6 +131,15 @@ namespace ErrorCodes
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
+
+    /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
+    if (!(query->as<ASTSelectQuery>() ||
+        query->as<ASTSelectWithUnionQuery>() ||
+        query->as<ASTSelectIntersectExceptQuery>() ||
+        query->as<ASTInsertQuery>()))
+    {
+        ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+    }
 
     if (query->as<ASTSelectQuery>())
     {
