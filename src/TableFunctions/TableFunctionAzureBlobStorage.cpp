@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
-#include <TableFunctions/TableFunctionAzure.h>
+#include <TableFunctions/TableFunctionAzureBlobStorage.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
@@ -46,13 +46,13 @@ bool isConnectionString(const std::string & candidate)
 
 }
 
-StorageAzure::Configuration TableFunctionAzure::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
+StorageAzure::Configuration TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
 {
     StorageAzure::Configuration configuration;
 
     /// Supported signatures:
     ///
-    /// Azure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
     ///
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
@@ -70,7 +70,7 @@ StorageAzure::Configuration TableFunctionAzure::parseArgumentsImpl(ASTs & engine
     if (engine_args.size() < 3 || engine_args.size() > 8)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Storage Azure requires 3 to 7 arguments: "
-                        "Azure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
+                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
 
     for (auto & engine_arg : engine_args)
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
@@ -181,7 +181,7 @@ StorageAzure::Configuration TableFunctionAzure::parseArgumentsImpl(ASTs & engine
     return configuration;
 }
 
-void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Clone ast function, because we can modify its arguments like removing headers.
     auto ast_copy = ast_function->clone();
@@ -197,7 +197,7 @@ void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr 
     LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
 }
 
-ColumnsDescription TableFunctionAzure::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(ContextPtr context) const
 {
     if (configuration.structure == "auto")
     {
@@ -205,19 +205,19 @@ ColumnsDescription TableFunctionAzure::getActualTableStructure(ContextPtr contex
         auto client = StorageAzure::createClient(configuration);
         auto settings = StorageAzure::createSettings(context);
 
-        auto object_storage = std::make_unique<AzureObjectStorage>("AzureTableFunction", std::move(client), std::move(settings));
+        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
         return StorageAzure::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionAzure::supportsReadingSubsetOfColumns()
+bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns()
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
-StoragePtr TableFunctionAzure::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto client = StorageAzure::createClient(configuration);
     auto settings = StorageAzure::createSettings(context);
@@ -245,9 +245,9 @@ StoragePtr TableFunctionAzure::executeImpl(const ASTPtr & /*ast_function*/, Cont
     return storage;
 }
 
-void registerTableFunctionAzure(TableFunctionFactory & factory)
+void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionAzure>(
+    factory.registerFunction<TableFunctionAzureBlobStorage>(
         {.documentation
          = {.description=R"(The table function can be used to read the data stored on Azure Blob Storage.)",
             .examples{{"azure_blob_storage", "SELECT * FROM  azure_blob_storage(connection, container, blob_path, format, structure)", ""}}},
