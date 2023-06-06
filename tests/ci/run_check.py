@@ -20,9 +20,11 @@ from docs_check import NAME as DOCS_NAME
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-
-from cancel_and_rerun_workflow_lambda.app import CATEGORY_TO_LABEL, check_pr_description
-from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
+from lambda_shared_package.lambda_shared.pr import (
+    CATEGORY_TO_LABEL,
+    TRUSTED_CONTRIBUTORS,
+    check_pr_description,
+)
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
