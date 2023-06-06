@@ -403,6 +403,84 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 └────────────────────────────────────────────────────────────┘
 ```
 
+
+## dictGetAll
+
+Retrieves the attribute values of all nodes that matched each key in a [regular expression tree dictionary](../../sql-reference/dictionaries/index.md#regexp-tree-dictionary).
+
+Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictget-dictgetordefault-dictgetornull).
+
+**Syntax**
+
+``` sql
+dictGetAll('dict_name', attr_names, id_expr[, limit])
+```
+
+**Arguments**
+
+- `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+- `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
+- `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning array of dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+- `limit` - Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, array length is unlimited.
+
+**Returned value**
+
+- If ClickHouse parses the attribute successfully in the attribute’s data type as defined in the dictionary, returns an array of dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
+
+- If there is no key corresponding to `id_expr` in the dictionary, then an empty array is returned.
+
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+
+**Example**
+
+Consider the following regexp tree dictionary:
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+...
+```
+
+```yaml
+# /var/lib/clickhouse/user_files/regexp_tree.yaml
+- regexp: 'foo'
+  tag: 'foo_attr'
+- regexp: 'bar'
+  tag: 'bar_attr'
+- regexp: 'baz'
+  tag: 'baz_attr'
+```
+
+Get all matching values:
+
+```sql
+SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz');
+```
+
+```text
+┌─dictGetAll('regexp_dict', 'tag', 'foobarbaz')─┐
+│ ['foo_attr','bar_attr','baz_attr']            │
+└───────────────────────────────────────────────┘
+```
+
+Get up to 2 matching values:
+
+```sql
+SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2);
+```
+
+```text
+┌─dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2)─┐
+│ ['foo_attr','bar_attr']                          │
+└──────────────────────────────────────────────────┘
+```
+
 ## Other Functions
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
