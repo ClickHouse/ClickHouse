@@ -43,6 +43,12 @@
 
 using namespace Azure::Storage::Blobs;
 
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageAzureThreads;
+    extern const Metric ObjectStorageAzureThreadsActive;
+}
+
 namespace DB
 {
 
@@ -1037,6 +1043,49 @@ Chunk StorageAzureSource::generate()
 
     return {};
 }
+
+Block StorageAzureSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
+{
+    for (const auto & virtual_column : requested_virtual_columns)
+        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
+
+    return sample_block;
+}
+
+StorageAzureSource::StorageAzureSource(
+    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const String & format_,
+    String name_,
+    const Block & sample_block_,
+    ContextPtr context_,
+    std::optional<FormatSettings> format_settings_,
+    const ColumnsDescription & columns_,
+    UInt64 max_block_size_,
+    String compression_hint_,
+    AzureObjectStorage * object_storage_,
+    const String & container_,
+    std::shared_ptr<Iterator> file_iterator_)
+    :ISource(getHeader(sample_block_, requested_virtual_columns_))
+    , WithContext(context_)
+    , requested_virtual_columns(requested_virtual_columns_)
+    , format(format_)
+    , name(std::move(name_))
+    , sample_block(sample_block_)
+    , format_settings(format_settings_)
+    , columns_desc(columns_)
+    , max_block_size(max_block_size_)
+    , compression_hint(compression_hint_)
+    , object_storage(std::move(object_storage_))
+    , container(container_)
+    , file_iterator(file_iterator_)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateAzureReader"))
+{
+    reader = createReader();
+    if (reader)
+        reader_future = createReaderAsync();
+}
+
 
 StorageAzureSource::~StorageAzureSource()
 {

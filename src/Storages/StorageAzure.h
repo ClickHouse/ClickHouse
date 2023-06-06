@@ -198,17 +198,17 @@ public:
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
 private:
-    String name;
-    String container;
-    String format;
     std::vector<NameAndTypePair> requested_virtual_columns;
-    ColumnsDescription columns_desc;
-    AzureObjectStorage * object_storage;
-    std::shared_ptr<Iterator> file_iterator;
-    UInt64 max_block_size;
-    String compression_hint;
+    String format;
+    String name;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    ColumnsDescription columns_desc;
+    UInt64 max_block_size;
+    String compression_hint;
+    AzureObjectStorage * object_storage;
+    String container;
+    std::shared_ptr<Iterator> file_iterator;
 
     struct ReaderHolder
     {
