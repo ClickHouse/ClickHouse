@@ -457,9 +457,13 @@ def test_schema_inference_from_globs(cluster):
         )
     ]
 
+
 def test_simple_write_account_string_table_function(cluster):
     node = cluster.instances["node"]
-    azure_query(node, "INSERT INTO azure_blob('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')")
+    azure_query(
+        node,
+        "INSERT INTO azure_blob('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')",
+    )
     print(get_azure_file_content("test_simple_write_tf.csv"))
     assert get_azure_file_content("test_simple_write_tf.csv") == '1,"a"\n'
 
