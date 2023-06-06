@@ -1,7 +1,7 @@
 ---
 slug: /en/engines/table-engines/integrations/hive
 sidebar_position: 4
-sidebar_label: MaxmindDB
+sidebar_label: maxminddb 
 ---
 
 # MaxMindDB Engine

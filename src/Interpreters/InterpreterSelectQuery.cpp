@@ -13,6 +13,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -93,10 +94,16 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 
 #include "config_version.h"
+
+namespace ProfileEvents
+{
+    extern const Event SelectQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -459,6 +466,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 continue;
             checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         }
+    }
+
+    /// Set skip_unavailable_shards to true only if it wasn't disabled explicitly
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.skip_unavailable_shards && !settings.isChanged("skip_unavailable_shards"))
+    {
+        context->setSetting("skip_unavailable_shards", true);
     }
 
     /// Check support for JOIN for parallel replicas with custom key
@@ -1332,6 +1345,9 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
+    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
      *  if there is an ORDER BY, then glue the streams using ResizeProcessor, and then MergeSorting transforms,
