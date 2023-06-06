@@ -42,7 +42,7 @@ systemctl restart amazon-cloudwatch-agent.service
 
 # Refresh teams ssh keys
 TEAM_KEYS_URL=$(aws ssm get-parameter --region us-east-1 --name team-keys-url --query 'Parameter.Value' --output=text)
-curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
+curl -s "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 
 
@@ -50,23 +50,27 @@ chown ubuntu: /home/ubuntu/.ssh -R
 mkdir -p /tmp/actions-hooks
 cat > /tmp/actions-hooks/common.sh << 'EOF'
 #!/bin/bash
-terminate-and-exit() {
-  echo "Going to terminate the runner"
+terminate-delayed() {
+  sleep=7
+  echo "Going to terminate the runner's instance in $sleep seconds"
   INSTANCE_ID=$(ec2metadata --instance-id)
-  # To avoid the next job assigned, we kill the runner process with SIGTERM
-  # It should support SIGINT, but it does not work
-  # See https://github.com/actions/runner/issues/2582
-  # We execute it with `at` to not have it as an orphan process
+  # We execute it with `at` to not have it as an orphan process, but launched independently
   # GH Runners kill all remain processes
-  echo "sleep 3; pkill -SIGTERM Runner.Listener; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
+  echo "sleep '$sleep'; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
+    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space or non-installed `at`
   exit 0
+}
+
+terminate-and-exit() {
+  echo "Going to terminate the runner's instance"
+  INSTANCE_ID=$(ec2metadata --instance-id)
+  aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
 }
 
 check-terminating-metadata() {
   # If there is a rebalance event, then the instance could die soon
   # Let's don't wait for it and terminate proactively
-  if curl --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
+  if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
     echo 'The runner received rebalance recommendation, we are terminating'
     terminate-and-exit
   fi
@@ -74,6 +78,14 @@ check-terminating-metadata() {
   # Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
   ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
   if [ "$ASG_STATUS" == "Terminated" ]; then
+    INSTANCE_ID=$(ec2metadata --instance-id)
+    ASG_NAME=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='aws:autoscaling:groupName'].Value" --output text)
+    LIFECYCLE_HOOKS=$(aws autoscaling describe-lifecycle-hooks --auto-scaling-group-name "$ASG_NAME" --query "LifecycleHooks[].LifecycleHookName" --output text)
+    for LCH in $LIFECYCLE_HOOKS; do
+      aws autoscaling complete-lifecycle-action --lifecycle-action-result CONTINUE \
+        --lifecycle-hook-name "$LCH" --auto-scaling-group-name "$ASG_NAME" \
+        --instance-id "$INSTANCE_ID"
+    done
     echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
     terminate-and-exit
   fi
@@ -95,13 +107,11 @@ set -xuo pipefail
 
 source /tmp/actions-hooks/common.sh
 
-check-terminating-metadata
-
 # Free KiB, free percents
 ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
 if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
   echo "The runner has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
-  terminate-and-exit
+  terminate-delayed
 fi
 
 # shellcheck disable=SC2046
@@ -124,7 +134,7 @@ if [ "$(docker ps --all --quiet)" ]; then
     docker info && break || sleep 2
   done
   # Last chance, otherwise we have to terminate poor instance
-  docker info 1>/dev/null || { echo Docker unable to start; terminate-and-exit; }
+  docker info 1>/dev/null || { echo Docker unable to start; terminate-delayed ; }
 fi
 EOF
 
@@ -134,19 +144,21 @@ while true; do
     runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid $runner_pid"
 
-    cd $RUNNER_HOME || exit 1
     if [ -z "$runner_pid" ]; then
+        cd $RUNNER_HOME || exit 1
         # If runner is not active, check that it needs to terminate itself
+        echo "Checking if the instance suppose to terminate"
         check-terminating-metadata
 
         echo "Receiving token"
         RUNNER_TOKEN=$(/usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value)
 
-        echo "Will try to remove runner"
-        sudo -u ubuntu ./config.sh remove --token "$RUNNER_TOKEN" ||:
-
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$RUNNER_TOKEN" --name "$INSTANCE_ID" --runnergroup Default --labels "$LABELS" --work _work
+        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$RUNNER_TOKEN" --ephemeral \
+          --runnergroup Default --labels "$LABELS" --work _work --name "$INSTANCE_ID"
+
+        echo "Another one check to avoid race between runner and infrastructure"
+        check-terminating-metadata
 
         echo "Run"
         sudo -u ubuntu \
@@ -156,6 +168,20 @@ while true; do
         sleep 15
     else
         echo "Runner is working with pid $runner_pid, nothing to do"
-        sleep 10
+        # The runner does not provide a way to determine, if it runs the job,
+        # neither the way to determine if it just litens. But there should be a
+        # process for Runner.Worker. So if the runner just hangs around for long,
+        # we check if it's fine to let it go
+        if ! pgrep Runner.Worker > /dev/null; then
+            RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
+            echo "The runner is launched $RUNNER_AGE seconds ago and still doesn't have launched Runner.Worker"
+            if (( 60 < RUNNER_AGE )); then
+                echo "Check if the instance should tear down"
+                check-terminating-metadata
+            fi
+        fi
+        sleep 5
     fi
 done
+
+# vim:ts=4:sw=4
