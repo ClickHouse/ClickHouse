@@ -3807,6 +3807,22 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Active, lock);
 
+    if (!hierarchy.covering_parts.empty())
+    {
+        // Drop part|partition operation inside some transactions sees some stale snapshot from the time when transactions has been started.
+        // So such operation may attempt to delete already outdated part. In this case, this outdated part is most likely covered by the other part and intersection may occur.
+        // Part mayght be outdated due to merge|mutation|update|optimization operations.
+        if (part->isEmpty() || (hierarchy.covering_parts.size() == 1 && hierarchy.covering_parts.back()->isEmpty()))
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Part {} is covered by part {}. One of them is empty part. "
+                            "That is a race between drop operation under transaction and a merge/mutation.",
+                            part->name, hierarchy.covering_parts.back()->getNameWithState());
+        }
+
+        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part->name, hierarchy.covering_parts.back());
+        return false;
+    }
+
     if (!hierarchy.intersected_parts.empty())
     {
         // Drop part|partition operation inside some transactions sees some stale snapshot from the time when transactions has been started.
