@@ -204,7 +204,7 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
-std::optional<String> getStreamName(
+String getStreamName(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path,
     const MergeTreeDataPartChecksums & checksums)
@@ -226,18 +226,20 @@ void MergeTreeReaderWide::addStreams(
     {
         auto stream_name = getStreamName(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
-        /** If data file is missing then we will not try to open it.
-          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-          */
-        if (!stream_name)
+        if (streams.contains(stream_name))
         {
-            has_all_streams = false;
+            has_any_stream = true;
             return;
         }
 
-        if (streams.contains(*stream_name))
+        bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
+
+        /** If data file is missing then we will not try to open it.
+          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+          */
+        if (!data_file_exists)
         {
-            has_any_stream = true;
+            has_all_streams = false;
             return;
         }
 
@@ -247,10 +249,10 @@ void MergeTreeReaderWide::addStreams(
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-        streams.emplace(*stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read, *stream_name, DATA_FILE_EXTENSION,
+        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+            data_part_info_for_read, stream_name, DATA_FILE_EXTENSION,
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
+            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
             profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
     };
@@ -278,10 +280,7 @@ static ReadBuffer * getStream(
 
     auto stream_name = getStreamName(name_and_type, substream_path, checksums);
 
-    if (!stream_name)
-        return nullptr;
-
-    auto it = streams.find(*stream_name);
+    auto it = streams.find(stream_name);
     if (it == streams.end())
         return nullptr;
 
@@ -329,13 +328,13 @@ void MergeTreeReaderWide::prefetchForColumn(
     {
         auto stream_name = getStreamName(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
-        if (stream_name && !prefetched_streams.contains(*stream_name))
+        if (!prefetched_streams.contains(stream_name))
         {
             bool seek_to_mark = !continue_reading;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
-                prefetched_streams.insert(*stream_name);
+                prefetched_streams.insert(stream_name);
             }
         }
     });

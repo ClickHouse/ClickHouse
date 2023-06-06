@@ -1,3 +1,4 @@
+#include "Common/SipHash.h"
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Common/logger_useful.h>
@@ -591,7 +592,8 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+                auto full_stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+                auto stream_name = data_part->checksums.getFileNameOrHash(full_stream_name);
                 ++stream_counts[stream_name];
             };
 
@@ -705,7 +707,9 @@ static NameToNameVector collectFilesForRenames(
         {
             ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                auto full_stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                auto stream_name = source_part->checksums.getFileNameOrHash(full_stream_name);
+
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
@@ -724,8 +728,11 @@ static NameToNameVector collectFilesForRenames(
 
             ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                String stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
-                String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
+                String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
+                String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
+
+                String stream_from = source_part->checksums.getFileNameOrHash(full_stream_from);
+                String stream_to = stream_from == full_stream_from ? full_stream_to : sipHash128String(full_stream_to);
 
                 if (stream_from != stream_to)
                 {

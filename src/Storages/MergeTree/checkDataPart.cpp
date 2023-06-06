@@ -11,6 +11,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 
 
 namespace CurrentMetrics
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NO_FILE_IN_DATA_PART;
 }
 
 
@@ -137,7 +139,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
+                auto file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
+
+                if (!data_part_storage.exists(file_name))
+                    file_name = sipHash128String(file_name);
+
+                if (!data_part_storage.exists(file_name))
+                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "There is no file for column '{}' in data part '{}'",
+                        column.name, data_part->name);
+
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             });
         }
