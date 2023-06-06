@@ -374,7 +374,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
         LOG_TEST(log, "Removed file segment at path: {}", path);
     }
     else if (file_segment->downloaded_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
     file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);
