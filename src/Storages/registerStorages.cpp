@@ -97,7 +97,7 @@ void registerStorageSQLite(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
-void registerStorageAzure(StorageFactory & factory);
+void registerStorageAzureBlob(StorageFactory & factory);
 #endif
 
 void registerStorages()
@@ -197,7 +197,7 @@ void registerStorages()
     registerStorageKeeperMap(factory);
 
     #if USE_AZURE_BLOB_STORAGE
-    registerStorageAzure(factory);
+    registerStorageAzureBlob(factory);
     #endif
 }
 
