@@ -13,7 +13,7 @@ namespace DB
 template <typename Result, typename Callback = std::function<Result()>>
 using ThreadPoolCallbackRunner = std::function<std::future<Result>(Callback &&, Priority)>;
 
-/// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrow()'.
+/// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool & pool, const std::string & thread_name)
 {
@@ -44,7 +44,7 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
 
         auto future = task->get_future();
 
-        my_pool->scheduleOrThrow([my_task = std::move(task)]{ (*my_task)(); }, priority);
+        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ (*my_task)(); }, priority);
 
         return future;
     };
