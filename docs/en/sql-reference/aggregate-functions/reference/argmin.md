@@ -6,7 +6,7 @@ sidebar_position: 105
 # argMin
 
 Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
-Both parts the `arg` and the `min` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not Null values if not Null values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
@@ -61,7 +61,7 @@ CREATE TABLE test
 )
 ENGINE = Memory AS
 SELECT *
-FROM values((NULL, 0), ('a', 1), ('b', 2), ('c', 2), (NULL, NULL), ('d', NULL));
+FROM VALUES((NULL, 0), ('a', 1), ('b', 2), ('c', 2), (NULL, NULL), ('d', NULL));
 
 select * from test;
 ┌─a────┬────b─┐
@@ -73,39 +73,39 @@ select * from test;
 │ d    │ ᴺᵁᴸᴸ │
 └──────┴──────┘
 
-select argMin(a, b), min(b) from test;
+SELECT argMin(a, b), min(b) FROM test;
 ┌─argMin(a, b)─┬─min(b)─┐
-│ a            │      0 │ -- argMin = a because it the first not Null value, min(b) is from another row!
+│ a            │      0 │ -- argMin = a because it the first not `NULL` value, min(b) is from another row!
 └──────────────┴────────┘
 
-select argMin(tuple(a), b) from test;
+SELECT argMin(tuple(a), b) FROM test;
 ┌─argMin(tuple(a), b)─┐
 │ (NULL)              │ -- The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value
 └─────────────────────┘
 
-select (argMin((a, b), b) as t).1 argMinA, t.2 argMinB from test;
+SELECT (argMin((a, b), b) as t).1 argMinA, t.2 argMinB from test;
 ┌─argMinA─┬─argMinB─┐
-│ ᴺᵁᴸᴸ    │       0 │ -- you can use Tuple and get both (all - tuple(*)) columns for the according max(b)
+│ ᴺᵁᴸᴸ    │       0 │ -- you can use `Tuple` and get both (all - tuple(*)) columns for the according max(b)
 └─────────┴─────────┘
 
-select argMin(a, b), min(b) from test where a is Null and b is Null;
+SELECT argMin(a, b), min(b) FROM test WHERE a IS NULL and b IS NULL;
 ┌─argMin(a, b)─┬─min(b)─┐
 │ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- All aggregated rows contains at least one `NULL` value because of the filter, so all rows are skipped, therefore the result will be `NULL`
 └──────────────┴────────┘
 
-select argMin(a, (b, a)), min(tuple(b, a)) from test;
+SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
 ┌─argMin(a, tuple(b, a))─┬─min(tuple(b, a))─┐
-│ d                      │ (NULL,NULL)      │ -- 'd' is the first not Null value for the min
+│ d                      │ (NULL,NULL)      │ -- 'd' is the first not `NULL` value for the min
 └────────────────────────┴──────────────────┘
 
-select argMin((a, b), (b, a)), min(tuple(b, a)) from test;
+SELECT argMin((a, b), (b, a)), min(tuple(b, a)) FROM test;
 ┌─argMin(tuple(a, b), tuple(b, a))─┬─min(tuple(b, a))─┐
-│ (NULL,NULL)                      │ (NULL,NULL)      │ -- argMin returns (NULL,NULL) here because Tuple allows to don't skip Nulls and min(tuple(b, a)) in this case is minimal value for this dataset
+│ (NULL,NULL)                      │ (NULL,NULL)      │ -- argMin returns (NULL,NULL) here because `Tuple` allows to don't skip `NULL` and min(tuple(b, a)) in this case is minimal value for this dataset
 └──────────────────────────────────┴──────────────────┘
 
 select argMin(a, tuple(b)) from test;
 ┌─argMax(a, tuple(b))─┐
-│ d                   │ -- Tuple can be used in `min` to not skip rows with Null values as b. 
+│ d                   │ -- `Tuple` can be used in `min` to not skip rows with `NULL` values as b. 
 └─────────────────────┘
 ```
 
