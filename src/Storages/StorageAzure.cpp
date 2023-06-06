@@ -858,6 +858,7 @@ StorageAzureSource::Iterator::Iterator(
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GLOBS BRANCH");
         const String key_prefix = blob_path_with_globs->substr(0, blob_path_with_globs->find_first_of("*?{"));
 
         /// We don't have to list bucket, because there is no asterisks.
@@ -868,7 +869,11 @@ StorageAzureSource::Iterator::Iterator(
             return;
         }
 
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "KEY PREFIX {}", key_prefix);
         object_storage_iterator = object_storage->iterate(key_prefix);
+
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BLOBS BLOBS{}", *blob_path_with_globs);
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "REGEXP PATTERN {}", makeRegexpPatternFromGlobs(*blob_path_with_globs));
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(*blob_path_with_globs));
 
         if (!matcher->ok())
@@ -898,27 +903,37 @@ RelativePathWithMetadata StorageAzureSource::Iterator::next()
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GLOBS IN NEXt");
         if (!blobs_with_metadata || index >= blobs_with_metadata->size())
         {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "INITIALIZING BLOBS BATCH");
             RelativePathsWithMetadata new_batch;
             while (new_batch.empty())
             {
                 if (object_storage_iterator->isValid())
                 {
+                    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ITERATOR VALID FETCHING BATCH");
                     new_batch = object_storage_iterator->currentBatch();
+                    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BATCH SIZE {}", new_batch.size());
                     object_storage_iterator->nextBatch();
                 }
                 else
                 {
+                    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ITERATOR INVALID");
                     is_finished = true;
                     return {};
                 }
 
-                for (auto it = new_batch.begin(); it != new_batch.end(); ++it)
+                for (auto it = new_batch.begin(); it != new_batch.end();)
                 {
+                    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ITERATOR FILTER {} MATCH {}", it->relative_path, re2::RE2::FullMatch(it->relative_path, *matcher));
                     if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
                         it = new_batch.erase(it);
+                    else
+                        ++it;
                 }
+
+                LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NEW BATCH AFTER FILTEr {}", new_batch.size());
             }
 
             index.store(0, std::memory_order_relaxed);
@@ -1092,11 +1107,11 @@ String StorageAzureSource::getName() const
 StorageAzureSource::ReaderHolder StorageAzureSource::createReader()
 {
     auto [current_key, info] = file_iterator->next();
+    LOG_DEBUG(log, "KEY {} SIZE {}", current_key, info.size_bytes);
     if (current_key.empty())
         return {};
 
     size_t object_size = info.size_bytes != 0 ? info.size_bytes : object_storage->getObjectMetadata(current_key).size_bytes;
-    LOG_DEBUG(log, "SIZE {}", object_size);
     auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
     auto read_buf = createAzureReadBuffer(current_key, object_size);
@@ -1134,9 +1149,9 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
     //auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     //const bool object_too_small = object_size <= 2 * download_buffer_size;
 
-    // Create a read buffer that will prefetch the first ~1 MB of the file.
-    // When reading lots of tiny files, this prefetching almost doubles the throughput.
-    // For bigger files, parallel reading is more useful.
+    ///// Create a read buffer that will prefetch the first ~1 MB of the file.
+    ///// When reading lots of tiny files, this prefetching almost doubles the throughput.
+    ///// For bigger files, parallel reading is more useful.
     //if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     //{
     //    LOG_TRACE(log, "Downloading object {} of size {} from S3 with initial prefetch", key, object_size);
