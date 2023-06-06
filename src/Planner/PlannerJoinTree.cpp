@@ -873,10 +873,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
+    JoinStrictness join_strictness = join_node.getStrictness();
 
     std::optional<bool> join_constant;
 
-    if (join_node.getStrictness() == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
     if (join_constant)
@@ -996,7 +997,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         plan_to_add_cast.addStep(std::move(cast_join_columns_step));
     };
 
-    if (join_use_nulls)
+    /// Join use nulls doen't make sense for semi and anti joins
+    /// Only columns from corresponding table should be used, values in other table are undefined.
+    if (join_use_nulls && join_strictness != JoinStrictness::Semi && join_strictness != JoinStrictness::Anti)
     {
         if (isFull(join_kind))
         {
