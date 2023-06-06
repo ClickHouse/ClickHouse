@@ -6,7 +6,7 @@ sidebar_position: 106
 # argMax
 
 Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered. 
-Both parts the `arg` and the `max` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not Null values if not Null values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
@@ -61,7 +61,7 @@ CREATE TABLE test
 )
 ENGINE = Memory AS
 SELECT *
-FROM values(('a', 1), ('b', 2), ('c', 2), (NULL, 3), (NULL, NULL), ('d', NULL));
+FROM VALUES(('a', 1), ('b', 2), ('c', 2), (NULL, 3), (NULL, NULL), ('d', NULL));
 
 select * from test;
 ┌─a────┬────b─┐
@@ -73,34 +73,34 @@ select * from test;
 │ d    │ ᴺᵁᴸᴸ │
 └──────┴──────┘
 
-select argMax(a, b), max(b) from test;
+SELECT argMax(a, b), max(b) FROM test;
 ┌─argMax(a, b)─┬─max(b)─┐
-│ b            │      3 │ -- argMax = b because it the first not-Null value, max(b) is from another row!
+│ b            │      3 │ -- argMax = 'b' because it the first not Null value, max(b) is from another row!
 └──────────────┴────────┘
 
-select argMax(tuple(a), b) from test;
+SELECT argMax(tuple(a), b) FROM test;
 ┌─argMax(tuple(a), b)─┐
 │ (NULL)              │ -- The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value
 └─────────────────────┘
 
-select (argMax((a, b), b) as t).1 argMaxA, t.2 argMaxB from test;
+SELECT (argMax((a, b), b) as t).1 argMaxA, t.2 argMaxB FROM test;
 ┌─argMaxA─┬─argMaxB─┐
 │ ᴺᵁᴸᴸ    │       3 │ -- you can use Tuple and get both (all - tuple(*)) columns for the according max(b)
 └─────────┴─────────┘
 
-select argMax(a, b), max(b) from test where a is Null and b is Null;
+SELECT argMax(a, b), max(b) FROM test WHERE a IS NULL AND b IS NULL;
 ┌─argMax(a, b)─┬─max(b)─┐
 │ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- All aggregated rows contains at least one `NULL` value because of the filter, so all rows are skipped, therefore the result will be `NULL`
 └──────────────┴────────┘
 
-select argMax(a, (b,a)) from test;
+SELECT argMax(a, (b,a)) FROM test;
 ┌─argMax(a, tuple(b, a))─┐
-│ c                      │ -- There are two rows with b=2, Tuple in the `Max` allows to get not the first `arg`
+│ c                      │ -- There are two rows with b=2, `Tuple` in the `Max` allows to get not the first `arg`
 └────────────────────────┘
 
-select argMax(a, tuple(b)) from test;
+SELECT argMax(a, tuple(b)) FROM test;
 ┌─argMax(a, tuple(b))─┐
-│ b                   │ -- Tuple can be used in `Max` to not skip Nulls in `Max`
+│ b                   │ -- `Tuple` can be used in `Max` to not skip Nulls in `Max`
 └─────────────────────┘
 ```
 
