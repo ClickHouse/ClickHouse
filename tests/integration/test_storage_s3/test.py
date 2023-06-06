@@ -931,15 +931,23 @@ def test_predefined_connection_configuration(started_cluster):
     error = instance.query_and_get_error(
         f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
     )
-    assert "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1" in error
-    error = instance.query_and_get_error(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')", user="user"
+    assert (
+        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1"
+        in error
     )
-    assert "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1" in error
+    error = instance.query_and_get_error(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
+        user="user",
+    )
+    assert (
+        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1"
+        in error
+    )
 
     instance.query("GRANT USE NAMED COLLECTION ON s3_conf1 TO user", user="admin")
     instance.query(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')", user="user"
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
+        user="user",
     )
 
     instance.query(f"INSERT INTO {name} SELECT number FROM numbers(10)")
