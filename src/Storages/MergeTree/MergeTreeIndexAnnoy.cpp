@@ -314,12 +314,14 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
-    uint64_t trees = 100;
-    String distance_function = "L2Distance";
+    static constexpr auto default_trees = 100uz;
+    static constexpr auto default_distance_function = "L2Distance";
 
+    String distance_function = default_distance_function;
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
+    uint64_t trees = default_trees;
     if (index.arguments.size() > 1)
         trees = index.arguments[1].get<uint64_t>();
 
