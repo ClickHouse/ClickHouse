@@ -54,7 +54,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-ANN indexes are built during column insertion and merge and `INSERT` and `OPTIMIZE` statements will slower than for ordinary tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively comparatively many more read requests than write requests.
+ANN indexes are built during column insertion and merge and `INSERT` and `OPTIMIZE` statements will be slower than for ordinary tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively there are much more read requests than write requests.
 
 Similar to regular skip indexes, ANN indexes are constructed over granules and each indexed block consists of `GRANULARITY = <N>`-many
 granules. For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`,
