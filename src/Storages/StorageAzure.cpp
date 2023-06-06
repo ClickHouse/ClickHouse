@@ -230,13 +230,10 @@ StorageAzure::Configuration StorageAzure::getConfiguration(ASTs & engine_args, C
 
     configuration.blobs_paths = {configuration.blob_path};
 
-
     LOG_INFO(&Poco::Logger::get("StorageAzure"), "get_format_from_file  = {}", get_format_from_file);
 
-//    if (configuration.format == "auto" && get_format_from_file)
-//        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
-
-    configuration.format = "TSV";
+    if (configuration.format == "auto" && get_format_from_file)
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
 
     return configuration;
 }
@@ -367,11 +364,6 @@ AzureClientPtr StorageAzure::createClient(StorageAzure::Configuration configurat
                 }
             }
         }
-        auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-
-        result = std::make_unique<BlobContainerClient>(configuration.connection_url, managed_identity_credential);
-
-        LOG_INFO(&Poco::Logger::get("StorageAzure"), "createClient account_name & account_key ");
     }
 
     return result;
@@ -613,7 +605,7 @@ Pipe StorageAzure::read(
     size_t num_streams)
 {
     if (partition_by && configuration.withWildcard())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     Pipes pipes;
 
@@ -1079,7 +1071,7 @@ StorageAzureSource::StorageAzureSource(
     , container(container_)
     , file_iterator(file_iterator_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateAzureReader"))
+    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
     if (reader)
