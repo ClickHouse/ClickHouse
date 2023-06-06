@@ -24,7 +24,7 @@ using AzureConnectionString = std::string;
 
 using AzureCredentials = std::variant<AzureSimpleAccountConfiguration, AzureConnectionString>;
 
-class StorageAzure : public IStorage
+class StorageAzureBlob : public IStorage
 {
 public:
 
@@ -62,7 +62,7 @@ public:
         std::vector<String> blobs_paths;
     };
 
-    StorageAzure(
+    StorageAzureBlob(
         const Configuration & configuration_,
         std::unique_ptr<AzureObjectStorage> && object_storage_,
         ContextPtr context_,
@@ -73,12 +73,12 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTPtr partition_by_);
 
-    static StorageAzure::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
-    static AzureClientPtr createClient(StorageAzure::Configuration configuration);
+    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 
-    static void processNamedCollectionResult(StorageAzure::Configuration & configuration, const NamedCollection & collection);
+    static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection);
 
     String getName() const override
     {
@@ -133,7 +133,7 @@ private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const RelativePathsWithMetadata::const_iterator & begin,
         const RelativePathsWithMetadata::const_iterator & end,
-        const StorageAzure::Configuration & configuration,
+        const StorageAzureBlob::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
@@ -148,7 +148,7 @@ private:
 
 };
 
-class StorageAzureSource : public ISource, WithContext
+class StorageAzureBlobSource : public ISource, WithContext
 {
 public:
     class Iterator : WithContext
@@ -192,7 +192,7 @@ public:
         bool is_initialized = false;
     };
 
-    StorageAzureSource(
+    StorageAzureBlobSource(
         const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format_,
         String name_,
@@ -206,7 +206,7 @@ public:
         const String & container_,
         std::shared_ptr<Iterator> file_iterator_);
 
-    ~StorageAzureSource() override;
+    ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
 
