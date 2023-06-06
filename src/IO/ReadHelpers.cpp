@@ -849,15 +849,18 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if constexpr (WithResize<Vector>)
             {
-                /** CSV format can contain insignificant spaces and tabs.
-                * Usually the task of skipping them is for the calling code.
-                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-                */
-                size_t size = s.size();
-                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
-                    --size;
+                if (settings.trim_whitespaces) [[likely]]
+                {
+                    /** CSV format can contain insignificant spaces and tabs.
+                    * Usually the task of skipping them is for the calling code.
+                    * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                    */
+                    size_t size = s.size();
+                    while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                        --size;
 
-                s.resize(size);
+                    s.resize(size);
+                }
             }
             return;
         }
