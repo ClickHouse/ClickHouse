@@ -459,43 +459,102 @@ def test_schema_inference_from_globs(cluster):
 
 def test_simple_write_account_string_table_function(cluster):
     node = cluster.instances["node"]
-    azure_query(node, "INSERT INTO azure_blob('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')")
+    azure_query(node, "INSERT INTO TABLE FUNCTION azure_blob('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_tf.csv"))
     assert get_azure_file_content("test_simple_write_tf.csv") == '1,"a"\n'
 
 
 def test_simple_write_connection_string_table_function(cluster):
     node = cluster.instances["node"]
-    azure_query(
-        node,
-        "CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = Azure('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;', 'cont', 'test_simple_write_c.csv', 'CSV')",
-    )
-    azure_query(node, "INSERT INTO test_simple_write_connection_string VALUES (1, 'a')")
-    print(get_azure_file_content("test_simple_write_c.csv"))
-    assert get_azure_file_content("test_simple_write_c.csv") == '1,"a"\n'
+    azure_query(node, "INSERT INTO TABLE FUNCTION azure_blob('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;', 'cont', 'test_simple_write_connection_tf.csv', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')")
+    print(get_azure_file_content("test_simple_write_connection_tf.csv"))
+    assert get_azure_file_content("test_simple_write_connection_tf.csv") == '1,"a"\n'
 
 
 def test_simple_write_named_collection_1_table_function(cluster):
     node = cluster.instances["node"]
-    azure_query(
-        node,
-        "CREATE TABLE test_simple_write_named_collection_1 (key UInt64, data String) Engine = Azure(azure_conf1)",
-    )
-    azure_query(
-        node, "INSERT INTO test_simple_write_named_collection_1 VALUES (1, 'a')"
-    )
+    azure_query(node, "INSERT INTO TABLE FUNCTION azure_blob(azure_conf1) VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_named.csv"))
     assert get_azure_file_content("test_simple_write_named.csv") == '1,"a"\n'
 
 
 def test_simple_write_named_collection_2_table_function(cluster):
     node = cluster.instances["node"]
-    azure_query(
-        node,
-        "CREATE TABLE test_simple_write_named_collection_2 (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_simple_write_named_2.csv', format='CSV')",
-    )
-    azure_query(
-        node, "INSERT INTO test_simple_write_named_collection_2 VALUES (1, 'a')"
-    )
-    print(get_azure_file_content("test_simple_write_named_2.csv"))
-    assert get_azure_file_content("test_simple_write_named_2.csv") == '1,"a"\n'
+
+    azure_query(node, "INSERT INTO TABLE FUNCTION azure_blob(azure_conf2, container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a')")
+    print(get_azure_file_content("test_simple_write_named_2_tf.csv"))
+    assert get_azure_file_content("test_simple_write_named_2_tf.csv") == '1,"a"\n'
+
+def test_put_get_with_globs_tf(cluster):
+    # type: (ClickHouseCluster) -> None
+    unique_prefix = random.randint(1, 10000)
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    max_path = ""
+    for i in range(10):
+        for j in range(10):
+            path = "{}/{}_{}/{}.csv".format(
+                unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
+            )
+            max_path = max(path, max_path)
+            values = f"({i},{j},{i + j})"
+
+            azure_query(
+                node,
+                f"INSERT INTO TABLE FUNCTION azure_blob(azure_conf2, container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+            )
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azure_blob(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV', structure='{table_format}')"
+    assert azure_query(node, query).splitlines() == [
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+            bucket="cont", max_path=max_path
+        )
+    ]
+
+def test_schema_inference_no_globs_tf(cluster):
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 String, column3 UInt32"
+
+    query = f"insert into table function azure_blob(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs_tf.csv', format='CSVWithNames', structure='{table_format}') SELECT number, toString(number), number * number FROM numbers(1000)"
+    azure_query(node, query)
+
+    query = "select sum(column1), sum(length(column2)), sum(column3), min(_file), max(_path) from azure_blob(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs_tf.csv')"
+    assert azure_query(node, query).splitlines() == [
+        "499500\t2890\t332833500\ttest_schema_inference_no_globs_tf.csv\tcont/test_schema_inference_no_globs_tf.csv"
+    ]
+
+def test_schema_inference_from_globs_tf(cluster):
+    node = cluster.instances["node"]
+    unique_prefix = random.randint(1, 10000)
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    max_path = ""
+    for i in range(10):
+        for j in range(10):
+            path = "{}/{}_{}/{}.csv".format(
+                unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
+            )
+            max_path = max(path, max_path)
+            values = f"({i},{j},{i + j})"
+
+            query = f"insert into table function azure_blob(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
+            azure_query(node, query)
+
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azure_blob(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')"
+    assert azure_query(node, query).splitlines() == [
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+            bucket="cont", max_path=max_path
+        )
+    ]
+
+def test_partition_by_tf(cluster):
+    node = cluster.instances["node"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    partition_by = "column3"
+    values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
+    filename = "test_tf_{_partition_id}.csv"
+
+    azure_query(node, f"INSERT INTO TABLE FUNCTION azure_blob('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}")
+
+    assert "1,2,3\n" == get_azure_file_content("test_tf_3.csv")
+    assert "3,2,1\n" == get_azure_file_content("test_tf_1.csv")
+    assert "78,43,45\n" == get_azure_file_content("test_tf_45.csv")

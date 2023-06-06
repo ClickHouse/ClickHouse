@@ -78,6 +78,7 @@ StorageAzure::Configuration TableFunctionAzure::parseArgumentsImpl(ASTs & engine
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
     configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
     configuration.is_connection_string = isConnectionString(configuration.connection_url);
 
     configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
@@ -192,7 +193,8 @@ void TableFunctionAzure::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     auto & args = args_func.at(0)->children;
 
-    parseArgumentsImpl(args, context);
+    configuration = parseArgumentsImpl(args, context);
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
 }
 
 ColumnsDescription TableFunctionAzure::getActualTableStructure(ContextPtr context) const
@@ -217,9 +219,6 @@ bool TableFunctionAzure::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionAzure::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    configuration.is_connection_string = true;
-    configuration.blobs_paths = {configuration.blob_path};
-
     auto client = StorageAzure::createClient(configuration);
     auto settings = StorageAzure::createSettings(context);
 

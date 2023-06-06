@@ -75,6 +75,7 @@ const std::unordered_set<std::string_view> required_configuration_keys = {
 const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
+    "structure",
     "compression_method",
     "account_name",
     "account_key",
@@ -1193,7 +1194,7 @@ ColumnsDescription StorageAzure::getTableStructureFromData(
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "Cannot extract table structure from {} format file, because there are no files with provided path "
-                    "in S3. You must specify table structure manually", configuration.format);
+                    "in AzureBlobStorage. You must specify table structure manually", configuration.format);
 
             return nullptr;
         }
