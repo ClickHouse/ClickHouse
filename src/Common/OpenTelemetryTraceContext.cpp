@@ -124,7 +124,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        /// Add new initialization here
+        this->addAttribute("clickhouse.thread_id", getThreadId());
     }
     catch (...)
     {
