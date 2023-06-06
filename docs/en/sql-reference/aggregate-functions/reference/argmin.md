@@ -75,7 +75,7 @@ select * from test;
 
 select argMin(a, b), min(b) from test;
 ┌─argMin(a, b)─┬─min(b)─┐
-│ a            │      0 │ -- argMin = a because it the first not-Null value, min(b) is from another row!
+│ a            │      0 │ -- argMin = a because it the first not Null value, min(b) is from another row!
 └──────────────┴────────┘
 
 select argMin(tuple(a), b) from test;
