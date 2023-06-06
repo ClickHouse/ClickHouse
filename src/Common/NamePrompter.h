@@ -23,9 +23,8 @@ public:
     static std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings)
     {
         DistanceIndexQueue queue;
-        for (size_t i = 0; i < prompting_strings.size(); ++i){
+        for (size_t i = 0; i < prompting_strings.size(); ++i)
             appendToQueue(i, name, queue, prompting_strings);
-        }
         return release(queue, prompting_strings);
     }
 
@@ -43,6 +42,7 @@ public:
                 best_match = prompt;
             }
         }
+
         return best_match;
     }
 private:
