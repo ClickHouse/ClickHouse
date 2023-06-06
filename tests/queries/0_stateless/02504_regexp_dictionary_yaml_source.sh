@@ -128,9 +128,57 @@ LAYOUT(regexp_tree);
 select dictGet('regexp_dict2', ('col_bool','col_uuid', 'col_date', 'col_datetime', 'col_array'), 'abc');
 "
 
+cat > "$yaml" <<EOL
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  topological_index: 1
+  paths:
+    - regexp: 'clickhouse\.com/docs(.*)'
+      tag: 'ClickHouse Documentation'
+      topological_index: 0
+      captured: '\1'
+      parent: 'ClickHouse'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+  topological_index: 2
+
+- regexp: 'github.com'
+  tag: 'GitHub'
+  topological_index: 3
+  captured: 'NULL'
+EOL
+
+# dictGetAll
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String,
+    topological_index Int64,
+    captured Nullable(String),
+    parent String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com', 2);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com/docs/en');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com/docs/en', 2);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs', 2);
+"
+
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
+drop dictionary regexp_dict3;
 "
 
 rm -rf "$USER_FILES_PATH/test_02504"
