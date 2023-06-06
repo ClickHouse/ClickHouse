@@ -19,9 +19,9 @@ class TableFunctionAzure : public ITableFunction
 {
 public:
     static constexpr auto name = "azure_blob";
-    static constexpr auto signature = "- connection_url, container, blob, format, structure\n";
+    static constexpr auto signature = "- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure]\n";
 
-    static size_t getMaxNumberOfArguments() { return 5; }
+    static size_t getMaxNumberOfArguments() { return 8; }
 
     String getName() const override
     {
@@ -46,9 +46,7 @@ public:
         return {"_path", "_file"};
     }
 
-    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
-
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
+    static StorageAzure::Configuration parseArgumentsImpl(ASTs & args, const ContextPtr & context, bool get_format_from_file = true);
 
 protected:
 
