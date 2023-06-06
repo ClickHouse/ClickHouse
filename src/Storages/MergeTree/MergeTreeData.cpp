@@ -179,6 +179,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_MUTATIONS;
+    extern const int CANNOT_PERFORM_INDEX_ANALYSIS;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -7154,6 +7155,9 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// Parallel replicas
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
+        if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
+            return QueryProcessingStage::Enum::FetchColumns;
+
         /// ReplicatedMergeTree
         if (supportsReplication())
             return QueryProcessingStage::Enum::WithMergeableState;
@@ -7176,6 +7180,42 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
+bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
+    ContextPtr query_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info) const
+{
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
+
+    MergeTreeDataSelectExecutor reader(*this);
+    auto result_ptr = reader.estimateNumMarksToRead(
+        parts,
+        query_info.prewhere_info,
+        storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
+        storage_snapshot->metadata,
+        storage_snapshot->metadata,
+        query_info,
+        /*added_filter_nodes*/ActionDAGNodes{},
+        query_context,
+        query_context->getSettingsRef().max_threads);
+
+    if (result_ptr->error())
+        throw Exception(ErrorCodes::CANNOT_PERFORM_INDEX_ANALYSIS, "Cannot estimate the number of granules to read");
+
+    LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
+
+    bool decision = result_ptr->marks() >= query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable;
+
+    if (!decision)
+        LOG_DEBUG(log, "Parallel replicas will be disabled, because the estimated number of granules to read {} is less than the threshold which is {}",
+            result_ptr->marks(),
+            query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable);
+
+    return decision;
 }
 
 
