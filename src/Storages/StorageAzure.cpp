@@ -12,7 +12,6 @@
 #include <IO/SharedThreadPools.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -29,7 +28,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/getVirtualsForStorage.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFromStorageProgress.h>
@@ -806,7 +804,7 @@ StorageAzureSource::Iterator::Iterator(
     , outer_blobs(outer_blobs_)
 {
     if (keys.has_value() && blob_path_with_globs.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simulatenously it's a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simultaneously it's a bug");
 
     if (!keys.has_value() && !blob_path_with_globs.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Both keys and glob mask are not specified");
