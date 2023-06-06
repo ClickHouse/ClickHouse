@@ -89,8 +89,6 @@ StorageMaxMindDB::StorageMaxMindDB(
     setInMemoryMetadata(metadata);
 
     initDB();
-
-    // json_format_settings.settings = format_settings;
 }
 
 StorageMaxMindDB::~StorageMaxMindDB()
@@ -256,6 +254,7 @@ bool StorageMaxMindDB::lookupDB(const std::string & key, std::string & value) co
     WriteBufferFromString buf(value);
     JSONBuilder::FormatContext format_context{.out = buf};
     json->format(json_format_settings, format_context);
+    value.resize(buf.count());
     return true;
 }
 
