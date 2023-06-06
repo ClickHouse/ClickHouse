@@ -100,8 +100,15 @@ def set_capacity(
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
     scale_down, scale_up = get_scales(runner_type)
+    # With lyfecycle hooks some instances are actually free because some of
+    # them are in 'Terminating:Wait' state
+    effective_capacity = max(
+        asg["DesiredCapacity"],
+        len([ins for ins in asg["Instances"] if ins["HealthStatus"] == "Healthy"]),
+    )
+
     # How much nodes are free (positive) or need to be added (negative)
-    capacity_reserve = asg["DesiredCapacity"] - running - queued
+    capacity_reserve = effective_capacity - running - queued
     stop = False
     if capacity_reserve < 0:
         # This part is about scaling up
@@ -118,10 +125,11 @@ def set_capacity(
         stop = stop or asg["DesiredCapacity"] == desired_capacity
         if stop:
             logging.info(
-                "Do not increase ASG %s capacity, current capacity=%s, "
-                "maximum capacity=%s, running jobs=%s, queue size=%s",
+                "Do not increase ASG %s capacity, current capacity=%s, effective "
+                "capacity=%s, maximum capacity=%s, running jobs=%s, queue size=%s",
                 asg["AutoScalingGroupName"],
-                desired_capacity,
+                asg["DesiredCapacity"],
+                effective_capacity,
                 asg["MaxSize"],
                 running,
                 queued,
@@ -130,9 +138,10 @@ def set_capacity(
 
         logging.info(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
-            "maximum capacity=%s, running jobs=%s, queue size=%s",
+            "effective capacity=%sm maximum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
             desired_capacity,
+            effective_capacity,
             asg["DesiredCapacity"],
             asg["MaxSize"],
             running,
@@ -153,10 +162,11 @@ def set_capacity(
     stop = stop or asg["DesiredCapacity"] == desired_capacity
     if stop:
         logging.info(
-            "Do not decrease ASG %s capacity, current capacity=%s, "
-            "minimum capacity=%s, running jobs=%s, queue size=%s",
+            "Do not decrease ASG %s capacity, current capacity=%s, effective "
+            "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
-            desired_capacity,
+            asg["DesiredCapacity"],
+            effective_capacity,
             asg["MinSize"],
             running,
             queued,
@@ -164,11 +174,12 @@ def set_capacity(
         return
 
     logging.info(
-        "The ASG %s capacity will be decreased to %s, current capacity=%s, "
-        "minimum capacity=%s, running jobs=%s, queue size=%s",
+        "The ASG %s capacity will be decreased to %s, current capacity=%s, effective "
+        "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
         asg["AutoScalingGroupName"],
         desired_capacity,
         asg["DesiredCapacity"],
+        effective_capacity,
         asg["MinSize"],
         running,
         queued,
