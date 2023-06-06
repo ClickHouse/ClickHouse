@@ -260,19 +260,37 @@ void CacheMetadata::doCleanup()
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
+        const fs::path key_directory = getPathInLocalCache(cleanup_key);
+        const fs::path key_prefix_directory = key_directory.parent_path();
+
         try
         {
-            const fs::path key_directory = getPathInLocalCache(cleanup_key);
             if (fs::exists(key_directory))
                 fs::remove_all(key_directory);
-
-            const fs::path key_prefix_directory = key_directory.parent_path();
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+            continue;
+        }
+
+        try
+        {
+            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+                fs::remove_all(key_prefix_directory);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Key prefix directory can become non-empty just now, it is expected.
+            if (e.code() == std::errc::directory_not_empty)
+                continue;
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
             chassert(false);
         }
     }
@@ -336,13 +354,18 @@ void LockedKey::removeAllReleasable()
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
-    LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", getKey(), offset);
-
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
+
+    LOG_DEBUG(
+        log, "Remove from cache. Key: {}, offset: {}, size: {}",
+        getKey(), offset, file_segment->reserved_size);
+
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->annul();
 

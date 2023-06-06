@@ -110,6 +110,9 @@ private:
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes;
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_max;
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
 

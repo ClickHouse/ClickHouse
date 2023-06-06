@@ -1,3 +1,2 @@
-requests
-PyJWT
-cryptography==37.0.4
+../lambda_shared_package
+../lambda_shared_package[token]

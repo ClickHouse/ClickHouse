@@ -79,7 +79,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         auto async_read_counters = remote_fs_fd->getReadCounters();
         std::optional<AsyncReadIncrement> increment = async_read_counters ? std::optional<AsyncReadIncrement>(async_read_counters) : std::nullopt;
 
-        auto watch = std::make_unique<Stopwatch>(CLOCK_MONOTONIC);
+        auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch->stop();
 

@@ -79,6 +79,8 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 wait
 check_replication_consistency "alter_table" "count(), sum(a), sum(b), round(sum(c))"
 
+$CLICKHOUSE_CLIENT -q "SELECT table, lost_part_count FROM system.replicas WHERE database=currentDatabase() AND lost_part_count!=0";
+
 $CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table0;" 2> >(grep -F -v 'is already started to be removing by another replica right now') &
 $CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table1;" 2> >(grep -F -v 'is already started to be removing by another replica right now') &
 wait

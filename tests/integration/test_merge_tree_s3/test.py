@@ -4,10 +4,11 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers
+from helpers.mock_servers import start_s3_mock, start_mock_servers
 from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_merges
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -23,6 +24,9 @@ def cluster():
                 "configs/config.xml",
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+            ],
+            user_configs=[
+                "configs/config.d/users.xml",
             ],
             stay_alive=True,
             with_minio=True,
@@ -87,6 +91,17 @@ def create_table(node, table_name, **additional_settings):
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(create_table_statement)
+
+
+@pytest.fixture(scope="module")
+def init_broken_s3(cluster):
+    yield start_s3_mock(cluster, "broken_s3", "8083")
+
+
+@pytest.fixture(scope="function")
+def broken_s3(init_broken_s3):
+    init_broken_s3.reset()
+    yield init_broken_s3
 
 
 def run_s3_mocks(cluster):
@@ -217,7 +232,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     node.query("SYSTEM START MERGES s3_test")
 
     # Wait for merges and old parts deletion
-    for attempt in range(0, 10):
+    for attempt in range(0, 60):
         parts_count = node.query(
             "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' and active = 1 FORMAT Values"
         )
@@ -225,7 +240,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         if parts_count == "(1)":
             break
 
-        if attempt == 9:
+        if attempt == 59:
             assert parts_count == "(1)"
 
         time.sleep(1)
@@ -725,31 +740,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_store_cleanup_disk_s3(cluster, node_name):
-    node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-
-    node.stop_clickhouse(kill=True)
-    path_to_data = "/var/lib/clickhouse/"
-    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/s3_test.sql"])
-    node.start_clickhouse()
-
-    node.wait_for_log_line(
-        "Removing unused directory", timeout=90, look_behind_lines=1000
-    )
-    node.wait_for_log_line("directories from store")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-    check_no_objects_after_drop(cluster)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
 def test_cache_setting_compatibility(cluster, node_name):
     node = cluster.instances[node_name]
 
@@ -825,3 +815,201 @@ def test_cache_setting_compatibility(cluster, node_name):
     assert not node.contains_in_log("No such file or directory: Cache info:")
 
     check_no_objects_after_drop(cluster)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS test_merge_canceled_by_drop NO DELAY")
+    node.query(
+        "CREATE TABLE test_merge_canceled_by_drop "
+        " (key UInt32, value String)"
+        " Engine=MergeTree() "
+        " ORDER BY value "
+        " SETTINGS storage_policy='s3'"
+    )
+    node.query("SYSTEM STOP MERGES test_merge_canceled_by_drop")
+    node.query(
+        "INSERT INTO test_merge_canceled_by_drop SELECT number, toString(number) FROM numbers(100000000)"
+    )
+    node.query("SYSTEM START MERGES test_merge_canceled_by_drop")
+
+    wait_for_merges(node, "test_merge_canceled_by_drop")
+    check_no_objects_after_drop(
+        cluster, table_name="test_merge_canceled_by_drop", node_name=node_name
+    )
+
+
+@pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_policy):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
+    node.query(
+        "CREATE TABLE test_merge_canceled_by_s3_errors "
+        " (key UInt32, value String)"
+        " Engine=MergeTree() "
+        " ORDER BY value "
+        f" SETTINGS storage_policy='{storage_policy}'"
+    )
+    node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
+    node.query(
+        "INSERT INTO test_merge_canceled_by_s3_errors SELECT number, toString(number) FROM numbers(10000)"
+    )
+    node.query(
+        "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
+    )
+    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(min_key) == 0, min_key
+
+    broken_s3.setup_fail_upload(50000)
+
+    node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
+
+    error = node.query_and_get_error(
+        "OPTIMIZE TABLE test_merge_canceled_by_s3_errors FINAL",
+    )
+    assert "ExpectedError Message: mock s3 injected error" in error, error
+
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+
+    check_no_objects_after_drop(
+        cluster, table_name="test_merge_canceled_by_s3_errors", node_name=node_name
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
+    node = cluster.instances[node_name]
+    settings = {
+        "storage_policy": "external_broken_s3",
+        "merge_with_ttl_timeout": 1,
+    }
+    create_table(node, "merge_canceled_by_s3_errors_when_move", **settings)
+
+    node.query("SYSTEM STOP MERGES merge_canceled_by_s3_errors_when_move")
+    node.query(
+        "INSERT INTO merge_canceled_by_s3_errors_when_move"
+        " VALUES {}".format(generate_values("2020-01-03", 1000))
+    )
+    node.query(
+        "INSERT INTO merge_canceled_by_s3_errors_when_move"
+        " VALUES {}".format(generate_values("2020-01-03", 1000, -1))
+    )
+
+    node.query(
+        "ALTER TABLE merge_canceled_by_s3_errors_when_move"
+        "    MODIFY TTL"
+        "        dt + INTERVAL 1 DAY "
+        "        TO VOLUME 'external'",
+        settings={"materialize_ttl_after_modify": 0},
+    )
+
+    broken_s3.setup_fail_upload(10000)
+
+    node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
+
+    node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
+
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+
+    count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
+    assert int(count) == 2000, count
+
+    check_no_objects_after_drop(
+        cluster, table_name="merge_canceled_by_s3_errors_when_move", node_name=node_name
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize(
+    "in_flight_memory", [(10, 245918115), (5, 156786752), (1, 106426187)]
+)
+def test_s3_engine_heavy_write_check_mem(
+    cluster, broken_s3, node_name, in_flight_memory
+):
+    in_flight = in_flight_memory[0]
+    memory = in_flight_memory[1]
+
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test"
+        " ("
+        "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
+        " )"
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
+    )
+
+    broken_s3.setup_fake_upload(1000)
+    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=15, count=10)
+
+    query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
+    node.query(
+        "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
+        f" SETTINGS max_memory_usage={2*memory}"
+        f", s3_max_inflight_parts_for_one_file={in_flight}",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    memory_usage, wait_inflight = node.query(
+        "SELECT memory_usage, ProfileEvents['WriteBufferFromS3WaitInflightLimitMicroseconds']"
+        " FROM system.query_log"
+        f" WHERE query_id='{query_id}'"
+        "   AND type!='QueryStart'"
+    ).split()
+
+    assert int(memory_usage) < 1.2 * memory
+    assert int(memory_usage) > 0.8 * memory
+
+    assert int(wait_inflight) > 10 * 1000 * 1000
+
+    check_no_objects_after_drop(cluster, node_name=node_name)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
+    memory = 2279055040
+
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test"
+        " ("
+        "   key UInt32, value String"
+        " )"
+        " ENGINE=MergeTree()"
+        " ORDER BY key"
+        " SETTINGS"
+        " storage_policy='broken_s3'",
+    )
+    node.query("SYSTEM STOP MERGES s3_test")
+
+    broken_s3.setup_fake_upload(1000)
+    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
+
+    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"
+    node.query(
+        "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
+        f" SETTINGS max_memory_usage={2*memory}"
+        f", max_insert_block_size=50000000"
+        f", min_insert_block_size_rows=50000000"
+        f", min_insert_block_size_bytes=1000000000000",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    result = node.query(
+        "SELECT memory_usage"
+        " FROM system.query_log"
+        f" WHERE query_id='{query_id}'"
+        "   AND type!='QueryStart'"
+    )
+
+    assert int(result) < 1.2 * memory
+    assert int(result) > 0.8 * memory
+
+    check_no_objects_after_drop(cluster, node_name=node_name)

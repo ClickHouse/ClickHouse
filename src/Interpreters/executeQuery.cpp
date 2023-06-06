@@ -322,6 +322,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
     /// we still have enough span logs for the execution of external queries.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
+    if (query_span)
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
     auto query_start_time = std::chrono::system_clock::now();
 
@@ -666,9 +668,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
-            if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
-                context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+            const auto & query_settings = context->getSettingsRef();
+            if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+            {
+                if (!interpreter->supportsTransactions())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+            }
 
             if (!interpreter->ignoreQuota() && !quota_checked)
             {
@@ -837,6 +843,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
+                    elem.query_partitions = info.partitions;
                     elem.query_projections = info.projections;
                     elem.query_views = info.views;
                 }
@@ -901,6 +908,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
                 element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
                 element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+                element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
                 element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
                 element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
@@ -922,7 +930,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    can_use_query_cache = can_use_query_cache,
+                                    my_can_use_query_cache = can_use_query_cache,
                                     enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
                                     query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
@@ -940,7 +948,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 if (query_cache != nullptr
                     && pulling_pipeline
-                    && can_use_query_cache && enable_writes_to_query_cache
+                    && my_can_use_query_cache && enable_writes_to_query_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryCache();
@@ -1003,6 +1011,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             ProcessorProfileLogElement processor_elem;
                             processor_elem.event_time = elem.event_time;
                             processor_elem.event_time_microseconds = elem.event_time_microseconds;
+                            processor_elem.initial_query_id = elem.client_info.initial_query_id;
                             processor_elem.query_id = elem.client_info.current_query_id;
 
                             auto get_proc_id = [](const IProcessor & proc) -> UInt64
@@ -1071,7 +1080,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        log_queries,
                                        log_queries_min_type = settings.log_queries_min_type,
                                        log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                                       quota(quota),
+                                       my_quota(quota),
                                        status_info_to_query_log,
                                        implicit_txn_control,
                                        execute_implicit_tcl_query,
@@ -1082,8 +1091,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
-                if (quota)
-                    quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                if (my_quota)
+                    my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();

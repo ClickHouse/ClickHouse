@@ -121,9 +121,9 @@ SELECT
     x;
 
 -- semi-colon as pair delimiter
--- expected output: {'age':'31','name':'neymar','team':'psg'}
+-- expected output: {'age':'31','anotherkey':'anothervalue','name':'neymar','random_key':'value_with_comma,still_part_of_value:still_part_of_value','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;invalid1:invalid1,invalid2:invalid2', ':', ';') AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;random_key:value_with_comma,still_part_of_value:still_part_of_value;anotherkey:anothervalue', ':', ';') AS s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -414,10 +414,64 @@ WITH
 SELECT
     x; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 
+-- Should fail allowed because it exceeds the max number of pairs
+SET extract_kvp_max_pairs_per_row = 1;
+WITH
+    extractKeyValuePairs('key1:value1,key2:value2') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError LIMIT_EXCEEDED}
+
 -- { echoOn }
+
+SET extract_kvp_max_pairs_per_row = 2;
+-- Should be allowed because it no longer exceeds the max number of pairs
+-- expected output: {'key1':'value1','key2':'value2'}
+WITH
+    extractKeyValuePairs('key1:value1,key2:value2') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+SET extract_kvp_max_pairs_per_row = 0;
+-- Should be allowed because max pairs per row is set to 0 (unlimited)
+-- expected output: {'key1':'value1','key2':'value2'}
+WITH
+    extractKeyValuePairs('key1:value1,key2:value2') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
 -- should not fail because pair delimiters contains 8 characters, which is within the limit
 WITH
     extractKeyValuePairs('not_important', ':', '12345678', '\'') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+-- key value delimiter should be considered valid part of value
+WITH
+    extractKeyValuePairs('formula=1+2=3 argument1=1 argument2=2 result=3, char="=" char2== string="foo=bar"', '=') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
