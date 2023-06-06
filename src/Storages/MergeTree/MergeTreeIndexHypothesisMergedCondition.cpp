@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Functions/FunctionFactory.h>
 
@@ -35,21 +36,17 @@ public:
 namespace
 {
 
-template <bool use_ast>
-auto convertToCNF(ASTPtr expression, const ContextPtr & context, const QueryTreeNodePtr & table_expression)
+auto convertToCNF(ASTPtr expression, const ContextPtr &, const QueryTreeNodePtr &)
 {
-    if constexpr (use_ast)
-    {
-        return TreeCNFConverter::toCNF(expression);
-    }
-    else
-    {
-        auto query_tree_node = buildQueryTree(expression, context);
-        assert(table_expression);
-        QueryAnalysisPass pass(table_expression);
-        pass.run(query_tree_node, context);
-        return Analyzer::CNF::toCNF(query_tree_node, context);
-    }
+    return TreeCNFConverter::toCNF(expression);
+}
+
+auto convertToCNF(QueryTreeNodePtr expression, const ContextPtr & context, const QueryTreeNodePtr & table_expression)
+{
+    assert(table_expression);
+    QueryAnalysisPass pass(table_expression);
+    pass.run(expression, context);
+    return Analyzer::CNF::toCNF(expression, context);
 }
 
 Analyzer::CNF::AtomicFormula cloneAtomAndPushNot(const Analyzer::CNF::AtomicFormula & atom, const ContextPtr & context)
@@ -105,6 +102,32 @@ const auto & functionArguments(const Analyzer::CNF::AtomicFormula & atom)
     return atom.node_with_hash.node->as<FunctionNode &>().getArguments().getNodes();
 }
 
+QueryTreeNodePtr buildFilterNode(QueryTreeNodePtr query_tree, ContextPtr context)
+{
+    chassert(query_tree);
+    const auto & query_node = query_tree->as<QueryNode &>();
+    QueryTreeNodes filters;
+
+    if (query_node.hasWhere())
+        filters.push_back(query_node.getWhere()->clone());
+
+    if (query_node.hasPrewhere())
+        filters.push_back(query_node.getPrewhere()->clone());
+
+    if (filters.empty())
+        return nullptr;
+
+    if (filters.size() == 1)
+        return std::move(filters[0]);
+
+    auto and_function_resolver = FunctionFactory::instance().get("and", context);
+    auto filter_node = std::make_shared<FunctionNode>("and");
+    filter_node->getArguments().getNodes() = std::move(filters);
+    filter_node->resolveAsFunction(and_function_resolver);
+
+    return filter_node;
+}
+
 template <typename Node>
 class IndexImpl : public MergeTreeIndexhypothesisMergedCondition::IIndexImpl
 {
@@ -113,10 +136,16 @@ public:
         : context(std::move(context_))
         , table_expression(query_info.table_expression)
     {
-        auto ast_filter_node = buildFilterNode(query_info.query);
+        auto filter_node = [&]
+        {
+            if constexpr (is_ast)
+                return buildFilterNode(query_info.query);
+            else
+                return buildFilterNode(query_info.query_tree, context);
+        }();
 
-        if (ast_filter_node)
-            expression_cnf = std::make_unique<CNF>(convertToCNF<is_ast>(ast_filter_node, context, table_expression));
+        if (filter_node)
+            expression_cnf = std::make_unique<CNF>(convertToCNF(filter_node, context, table_expression));
         else
             expression_cnf = std::make_unique<CNF>(typename CNF::AndGroup{});
 
@@ -146,7 +175,16 @@ public:
         // TODO: move to index hypothesis
         std::vector<Node> compare_hypotheses_data;
         std::vector<typename CNF::OrGroup> hypotheses_data;
-        auto cnf = convertToCNF<is_ast>(hypothesis_index.index.expression_list_ast->children.front(), context, table_expression);
+
+        auto cnf = [&]
+        {
+            auto expression_ast = hypothesis_index.index.expression_list_ast->children.front();
+
+            if constexpr (is_ast)
+                return convertToCNF(expression_ast, context, table_expression);
+            else
+                return convertToCNF(buildQueryTree(expression_ast, context), context, table_expression);
+        }();
 
         if constexpr (is_ast)
             cnf.pullNotOutFunctions();
