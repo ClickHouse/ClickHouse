@@ -1148,41 +1148,9 @@ std::unique_ptr<ReadBuffer> StorageAzureSource::createAzureReadBuffer(const Stri
 std::unique_ptr<ReadBuffer> StorageAzureSource::createAsyncAzureReadBuffer(
     const String & key, const ReadSettings & read_settings, size_t object_size)
 {
-    auto context = getContext();
-
-    const auto & context_settings = context->getSettingsRef();
-    auto max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
-    auto max_single_read_retries = context_settings.azure_max_single_read_retries;
-
-    auto read_buffer_creator =
-        [this, read_settings, max_single_part_upload_size, max_single_read_retries]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<ReadBufferFromAzureBlobStorage>(
-            object_storage->getClient().get(),
-            path,
-            read_settings,
-            max_single_part_upload_size,
-            max_single_read_retries,
-            /* use_external_buffer */true,
-            read_until_position);
-    };
-
-    auto azure_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        StoredObjects{StoredObject{key, object_size}},
-        read_settings,
-        /* cache_log */nullptr);
-
     auto modified_settings{read_settings};
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-
-    auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-
-    auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(azure_impl), pool_reader, modified_settings,
-        context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
