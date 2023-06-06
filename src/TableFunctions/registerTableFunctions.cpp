@@ -73,7 +73,7 @@ void registerTableFunctions()
     registerTableFunctionExplain(factory);
 
 #if USE_AZURE_BLOB_STORAGE
-    registerTableFunctionAzure(factory);
+    registerTableFunctionAzureBlobStorage(factory);
 #endif
 
 
