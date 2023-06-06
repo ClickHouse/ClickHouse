@@ -56,6 +56,7 @@ class TestSetCapacity(unittest.TestCase):
                         "DesiredCapacity": desired_capacity,
                         "MinSize": min_size,
                         "MaxSize": max_size,
+                        "Instances": [],  # necessary for ins["HealthStatus"] check
                     }
                 ]
             }
