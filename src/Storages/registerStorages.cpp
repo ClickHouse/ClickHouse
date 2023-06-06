@@ -94,14 +94,10 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
-
-
 void registerStorageKeeperMap(StorageFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
-
 void registerStorageAzure(StorageFactory & factory);
-
 #endif
 
 void registerStorages()

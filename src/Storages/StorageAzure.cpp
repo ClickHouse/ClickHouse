@@ -60,6 +60,9 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+
 }
 
 namespace

@@ -20,11 +20,6 @@ struct AzureSimpleAccountConfiguration
     std::string storage_account_url;
 };
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 using AzureConnectionString = std::string;
 
 using AzureCredentials = std::variant<AzureSimpleAccountConfiguration, AzureConnectionString>;
