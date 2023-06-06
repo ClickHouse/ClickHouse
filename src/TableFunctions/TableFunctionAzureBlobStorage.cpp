@@ -14,7 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/StorageAzure.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -46,9 +46,9 @@ bool isConnectionString(const std::string & candidate)
 
 }
 
-StorageAzure::Configuration TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
+StorageAzureBlob::Configuration TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
 {
-    StorageAzure::Configuration configuration;
+    StorageAzureBlob::Configuration configuration;
 
     /// Supported signatures:
     ///
@@ -57,7 +57,7 @@ StorageAzure::Configuration TableFunctionAzureBlobStorage::parseArgumentsImpl(AS
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
-        StorageAzure::processNamedCollectionResult(configuration, *named_collection);
+        StorageAzureBlob::processNamedCollectionResult(configuration, *named_collection);
 
         configuration.blobs_paths = {configuration.blob_path};
 
@@ -202,11 +202,11 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        auto client = StorageAzure::createClient(configuration);
-        auto settings = StorageAzure::createSettings(context);
+        auto client = StorageAzureBlob::createClient(configuration);
+        auto settings = StorageAzureBlob::createSettings(context);
 
         auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
-        return StorageAzure::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
+        return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -219,8 +219,8 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto client = StorageAzure::createClient(configuration);
-    auto settings = StorageAzure::createSettings(context);
+    auto client = StorageAzureBlob::createClient(configuration);
+    auto settings = StorageAzureBlob::createSettings(context);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -228,7 +228,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = std::make_shared<StorageAzure>(
+    StoragePtr storage = std::make_shared<StorageAzureBlob>(
         configuration,
         std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
         context,

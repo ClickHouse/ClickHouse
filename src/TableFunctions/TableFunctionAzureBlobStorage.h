@@ -5,7 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageAzure.h>
+#include <Storages/StorageAzureBlob.h>
 
 
 namespace DB
@@ -46,7 +46,7 @@ public:
         return {"_path", "_file"};
     }
 
-    static StorageAzure::Configuration parseArgumentsImpl(ASTs & args, const ContextPtr & context, bool get_format_from_file = true);
+    static StorageAzureBlob::Configuration parseArgumentsImpl(ASTs & args, const ContextPtr & context, bool get_format_from_file = true);
 
 protected:
 
@@ -61,7 +61,7 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    mutable StorageAzure::Configuration configuration;
+    mutable StorageAzureBlob::Configuration configuration;
     ColumnsDescription structure_hint;
 };
 
