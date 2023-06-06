@@ -9,7 +9,6 @@
 #include <gtest/gtest.h>
 #include "base/Decimal.h"
 #include "base/types.h"
-#include "gtest/gtest.h"
 
 using namespace DB;
 
