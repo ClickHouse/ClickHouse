@@ -241,10 +241,8 @@ WriteBufferFromS3::~WriteBufferFromS3()
         LOG_INFO(log,
                  "WriteBufferFromS3 is not finalized in destructor. "
                  "It could be if an exception occurs. File is not written to S3. "
-                 "{}. "
-                 "Stack trace: {}",
-                 getLogDetails(),
-                 StackTrace().toString());
+                 "{}.",
+                 getLogDetails());
     }
 
     task_tracker->safeWaitAll();
