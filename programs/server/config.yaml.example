@@ -829,6 +829,10 @@ dictionaries_config: '*_dictionary.xml'
 #         # What compression method to use.
 #         method: zstd
 
+
+# Uncomment if you want to enable the compression codec "deflate_qpl". Default: false.
+# enable_deflate_qpl_codec: true
+
 # Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
 # Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
 distributed_ddl:

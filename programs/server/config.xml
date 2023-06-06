@@ -1321,6 +1321,10 @@
     </compression>
     -->
 
+    <!-- Uncomment if you want to enable the compression codec "deflate_qpl". Default: false.
+    <enable_deflate_qpl_codec>true</enable_deflate_qpl_codec>
+    -->
+
     <!-- Configuration of encryption. The server executes a command to
          obtain an encryption key at startup if such a command is
          defined, or encryption codecs will be disabled otherwise. The

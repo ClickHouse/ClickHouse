@@ -283,9 +283,10 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
+            bool enable_deflate_qpl_codec = context->getConfigRef().getBool("enable_deflate_qpl_codec", false);
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, enable_deflate_qpl_codec);
         }
     }
 
