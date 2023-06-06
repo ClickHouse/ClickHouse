@@ -577,7 +577,8 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->commit();
 }
 
 void DiskObjectStorage::applyNewSettings(
