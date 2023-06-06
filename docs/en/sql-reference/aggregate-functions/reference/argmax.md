@@ -90,7 +90,7 @@ select (argMax((a, b), b) as t).1 argMaxA, t.2 argMaxB from test;
 
 select argMax(a, b), max(b) from test where a is Null and b is Null;
 ┌─argMax(a, b)─┬─max(b)─┐
-│ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- Nulls are not skipped because only Null values are available
+│ ᴺᵁᴸᴸ         │   ᴺᵁᴸᴸ │ -- All aggregated rows contains at least one `NULL` value because of the filter, so all rows are skipped, therefore the result will be `NULL`
 └──────────────┴────────┘
 
 select argMax(a, (b,a)) from test;
