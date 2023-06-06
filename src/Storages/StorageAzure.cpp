@@ -251,7 +251,7 @@ AzureObjectStorage::SettingsPtr StorageAzure::createSettings(ContextPtr local_co
 
 void registerStorageAzure(StorageFactory & factory)
 {
-    factory.registerStorage("Azure", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("AzureBlobStorage", [](const StorageFactory::Arguments & args)
     {
         auto & engine_args = args.engine_args;
         if (engine_args.empty())
