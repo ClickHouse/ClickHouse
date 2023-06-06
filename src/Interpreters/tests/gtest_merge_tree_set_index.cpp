@@ -22,7 +22,7 @@ TEST(MergeTreeSetIndex, checkInRangeOne)
     auto context = Context::createGlobal(shared.get());
 
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}, nullptr}};
-    auto set = std::make_unique<MergeTreeSetIndex>(context, types, columns, std::move(mapping));
+    auto set = std::make_unique<MergeTreeSetIndex>(context, columns, types, std::move(mapping));
 
     // Left and right bounded
     std::vector<Range> ranges = {Range(1, true, 4, true)};
@@ -83,7 +83,7 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
     auto context = Context::createGlobal(shared.get());
 
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}, nullptr}, {1, 1, {}, {}, nullptr}};
-    auto set = std::make_unique<MergeTreeSetIndex>(context, types, columns, std::move(mapping));
+    auto set = std::make_unique<MergeTreeSetIndex>(context, columns, types, std::move(mapping));
 
     std::vector<Range> ranges = {Range(1), Range("a", true, "c", true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(1), Range('a', true, 'c', true)";
