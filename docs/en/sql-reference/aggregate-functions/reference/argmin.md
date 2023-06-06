@@ -95,7 +95,7 @@ select argMin(a, b), min(b) from test where a is Null and b is Null;
 
 select argMin(a, (b, a)), min(tuple(b, a)) from test;
 ┌─argMin(a, tuple(b, a))─┬─min(tuple(b, a))─┐
-│ d                      │ (NULL,NULL)      │ -- 'd' is the first Not null value for the min
+│ d                      │ (NULL,NULL)      │ -- 'd' is the first not Null value for the min
 └────────────────────────┴──────────────────┘
 
 select argMin((a, b), (b, a)), min(tuple(b, a)) from test;
