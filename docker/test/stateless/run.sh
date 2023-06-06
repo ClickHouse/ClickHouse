@@ -15,6 +15,7 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+# shellcheck disable=SC1091
 source /usr/share/clickhouse-test/ci/attach_gdb.lib
 
 # install test configs
