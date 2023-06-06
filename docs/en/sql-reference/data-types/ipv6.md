@@ -6,7 +6,7 @@ sidebar_label: IPv6
 
 ## IPv6
 
-IPv6 addresses. Stored in 16 bytes as UInt128.
+IPv6 addresses. Stored in 16 bytes as UInt128 big-endian.
 
 ### Basic Usage
 
