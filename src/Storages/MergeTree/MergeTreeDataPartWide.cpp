@@ -273,7 +273,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
         if (filename.empty())
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            auto filname = checksums.getFileNameOrHash(full_stream_name);
+            filename = checksums.getFileNameOrHash(full_stream_name);
         }
     });
     return filename;
