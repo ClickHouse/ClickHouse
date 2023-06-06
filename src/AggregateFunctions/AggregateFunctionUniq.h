@@ -101,6 +101,18 @@ struct AggregateFunctionUniqHLL12Data<UUID, false>
     static String getName() { return "uniqHLL12"; }
 };
 
+template <>
+struct AggregateFunctionUniqHLL12Data<IPv6, false>
+{
+    using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
+    Set set;
+
+    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
+
+    static String getName() { return "uniqHLL12"; }
+};
+
 template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_merge_>
 struct AggregateFunctionUniqHLL12DataForVariadic
 {
@@ -248,16 +260,16 @@ struct Adder
                 AggregateFunctionUniqUniquesHashSetData> || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T, Data::is_able_to_parallelize_merge>>)
         {
             const auto & column = *columns[0];
-            if constexpr (!std::is_same_v<T, String>)
+            if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
+            {
+                StringRef value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            }
+            else
             {
                 using ValueType = typename decltype(data.set)::value_type;
                 const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
                 data.set.insert(static_cast<ValueType>(AggregateFunctionUniqTraits<T>::hash(value)));
-            }
-            else
-            {
-                StringRef value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
         }
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T, Data::is_able_to_parallelize_merge>>)

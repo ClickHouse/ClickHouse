@@ -10,6 +10,7 @@
 
 #include <pcg-random/pcg_random.hpp>
 
+#include "Common/formatIPv6.h"
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
@@ -102,6 +103,13 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
 {
     writeVarUInt(s.size(), buf);
     buf.write(s.data(), s.size());
+}
+
+/// For historical reasons we store IPv6 as a String
+inline void writeIPv6Binary(const IPv6 & ip, WriteBuffer & buf)
+{
+    writeVarUInt(IPV6_BINARY_LENGTH, buf);
+    buf.write(reinterpret_cast<const char *>(&ip.toUnderType()), IPV6_BINARY_LENGTH);
 }
 
 inline void writeStringBinary(StringRef s, WriteBuffer & buf)
