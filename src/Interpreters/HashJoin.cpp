@@ -773,8 +773,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     size_t max_bytes = table_join->sizeLimits().max_bytes;
     if (max_bytes && context->getSettings().use_shrink_to_fit_in_hash_join)
     {
-        std::cerr << "WE BE SHRINKING" << std::endl;
-        data->unshrunken_blocks.emplace(block_to_save.allocatedBytes() - block_to_save.bytes(), data->blocks.end());
+        data->unshrunken_blocks.emplace(block_to_save.allocatedBytes() - block_to_save.bytes(), --data->blocks.end());
         // Memory used (as a fraction of max_bytes in join) before Block::shrinkToFit starts getting called
         constexpr float shrink_to_fit_threshold = 0.95f;
         while (total_bytes > shrink_to_fit_threshold * max_bytes && !data->unshrunken_blocks.empty())
