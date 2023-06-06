@@ -282,6 +282,8 @@ private:
     std::future<ReaderHolder> createReaderAsync();
 
     std::unique_ptr<ReadBuffer> createAzureReadBuffer(const String & key, size_t object_size);
+    std::unique_ptr<ReadBuffer> createAsyncAzureReadBuffer(
+        const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 
 }

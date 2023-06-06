@@ -294,8 +294,6 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
 
 ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
 {
-    LOG_INFO(&Poco::Logger::get("TableFunctionS3"), "getActualTableStructure    configuration.structure = {}  ",configuration.structure);
-
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
@@ -320,8 +318,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = parseColumnsListFromString(configuration.structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
-
-    LOG_INFO(&Poco::Logger::get("TableFunctionS3"), "executeImpl structre  = {}  structure_hint = {} ",configuration.structure, structure_hint.getAll().toString());
 
 
     StoragePtr storage = std::make_shared<StorageS3>(
