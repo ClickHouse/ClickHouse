@@ -381,7 +381,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
             const auto file_size = fs::file_size(file_segment_path);
             chassert(downloaded_size <= file_size);
             chassert(reserved_size >= file_size);
-            chassert(file_size <= range().right + 1);
+            chassert(file_size <= range().size());
             if (downloaded_size != file_size)
                 downloaded_size = file_size;
         }
