@@ -260,7 +260,8 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
-    void assertDatabaseExistsUnlocked(const String & database_name, std::vector<String> names) const TSA_REQUIRES(databases_mutex);
+    // As names we pass all the possible names that can be offered to user.
+    void assertDatabaseExistsUnlocked(const String & database_name, const String & suggested_name = "") const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
@@ -351,7 +352,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    TemporaryLockForUUIDDirectory(UUID uuid_);
+    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
