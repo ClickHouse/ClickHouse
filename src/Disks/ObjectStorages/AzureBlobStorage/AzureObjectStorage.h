@@ -127,8 +127,6 @@ public:
 
     bool isRemote() const override { return true; }
 
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> getClient() { return client; }
-
 private:
     const String name;
     /// client used to access the files in the Blob Storage cloud
