@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 import boto3  # type: ignore
+import hvac
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
 
+from env_helper import VAULT_URL, VAULT_TOKEN, VAULT_PATH, VAULT_MOUNT_POINT
 
 @dataclass
 class Token:
@@ -16,9 +18,15 @@ class Token:
 
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
-    if not client:
-        client = boto3.client("ssm", region_name="us-east-1")
-    return client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
+    if VAULT_URL:
+        if not client:
+            client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
+        parameter = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"][name]
+    else:
+        if not client:
+            client = boto3.client("ssm", region_name="us-east-1")
+        parameter = client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
+    return parameter
 
 
 ROBOT_TOKEN = None  # type: Optional[Token]
@@ -28,18 +36,31 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     global ROBOT_TOKEN
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
-    client = boto3.client("ssm", region_name="us-east-1")
-    parameters = client.describe_parameters(
-        ParameterFilters=[
-            {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
-        ]
-    )["Parameters"]
-    assert parameters
 
-    for token_name in [p["Name"] for p in parameters]:
-        value = get_parameter_from_ssm(token_name, True, client)
+    client = None
+    values = []
+
+    if VAULT_URL:
+        client = hvac.Client(url=VAULT_URL,token=VAULT_TOKEN)
+        parameters = client.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT_POINT,path=VAULT_PATH)["data"]["data"]
+        parameters = {key: value for key, value in parameters.items() if key.startswith(token_prefix_env_name)}
+        assert parameters
+        values = list(parameters.values())
+    else:
+        client = boto3.client("ssm", region_name="us-east-1")
+        parameters = client.describe_parameters(
+            ParameterFilters=[
+                {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
+            ]
+        )["Parameters"]
+        assert parameters
+        for token_name in [p["Name"] for p in parameters]:
+            value = get_parameter_from_ssm(token_name, True, client)
+            values.append(value)
+
+    for value in values:
         gh = Github(value, per_page=100)
-        # Do not spend additional request to API by accessin user.login unless
+        # Do not spend additional request to API by accessing user.login unless
         # the token is chosen by the remaining requests number
         user = gh.get_user()
         rest, _ = gh.rate_limiting
