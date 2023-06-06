@@ -2308,47 +2308,43 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
+    std::optional<UInt64> num_rows;
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns)
+    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings.max_parallel_replicas)))
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows = getTrivialCount(settings.max_parallel_replicas);
+        const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
 
-        if (num_rows)
-        {
-            const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
+        /// We will process it up to "WithMergeableState".
+        std::vector<char> state(agg_count.sizeOfData());
+        AggregateDataPtr place = state.data();
 
-            /// We will process it up to "WithMergeableState".
-            std::vector<char> state(agg_count.sizeOfData());
-            AggregateDataPtr place = state.data();
+        agg_count.create(place);
+        SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
 
-            agg_count.create(place);
-            SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+        agg_count.set(place, *num_rows);
 
-            agg_count.set(place, *num_rows);
+        auto column = ColumnAggregateFunction::create(func);
+        column->insertFrom(place);
 
-            auto column = ColumnAggregateFunction::create(func);
-            column->insertFrom(place);
+        Block header = analysis_result.before_aggregation->getResultColumns();
+        size_t arguments_size = desc.argument_names.size();
+        DataTypes argument_types(arguments_size);
+        for (size_t j = 0; j < arguments_size; ++j)
+            argument_types[j] = header.getByName(desc.argument_names[j]).type;
 
-            Block header = analysis_result.before_aggregation->getResultColumns();
-            size_t arguments_size = desc.argument_names.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = header.getByName(desc.argument_names[j]).type;
+        Block block_with_count{
+            {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
-            Block block_with_count{
-                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
-
-            auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
-            prepared_count->setStepDescription("Optimized trivial count");
-            query_plan.addStep(std::move(prepared_count));
-            from_stage = QueryProcessingStage::WithMergeableState;
-            analysis_result.first_stage = false;
-            return;
-        }
+        auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+        auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        prepared_count->setStepDescription("Optimized trivial count");
+        query_plan.addStep(std::move(prepared_count));
+        from_stage = QueryProcessingStage::WithMergeableState;
+        analysis_result.first_stage = false;
+        return;
     }
 
     /// Limitation on the number of columns to read.
