@@ -257,8 +257,10 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     bool res = true;
     getSerialization(column.name)->enumerateStreams([&](const auto & substream_path)
     {
-        String file_name = ISerialization::getFileNameForStream(column, substream_path);
-        if (!check_stream_exists(file_name))
+        auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        auto stream_name = checksums.getFileNameOrHash(full_stream_name);
+
+        if (!check_stream_exists(stream_name))
             res = false;
     });
 
