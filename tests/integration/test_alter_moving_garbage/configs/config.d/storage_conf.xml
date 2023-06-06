@@ -1,6 +1,4 @@
 <clickhouse>
-    <!-- allow_remote_fs_zero_copy_replication -->
-
     <storage_configuration>
         <disks>
             <s3>

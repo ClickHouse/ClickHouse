@@ -28,7 +28,7 @@ def cluster():
         cluster.shutdown()
 
 
-def create_table(node, table_name, **additional_settings):
+def create_table(node, table_name, additional_settings):
     settings = {
         "storage_policy": "two_disks",
         "old_parts_lifetime": 1,
@@ -52,21 +52,32 @@ def create_table(node, table_name, **additional_settings):
     node.query(create_table_statement)
 
 
-def test_create_table(cluster):
+@pytest.mark.parametrize("allow_remote_fs_zero_copy_replication", [False, True])
+def test_create_table(cluster, allow_remote_fs_zero_copy_replication):
     node = cluster.instances["node1"]
-    create_table(node, "test_table")
+
+    additional_settings = {}
+    table_name = "test_table"
+
+    if allow_remote_fs_zero_copy_replication:
+        # different names for logs readability
+        table_name = "test_table_zero_copy"
+        additional_settings["allow_remote_fs_zero_copy_replication"] = 1
+
+    create_table(node, table_name, additional_settings)
+
     node.query(
-        "INSERT INTO test_table SELECT toDate('2021-01-01') + INTERVAL number % 10 DAY, number, toString(sipHash64(number)) FROM numbers(100_000)"
+        f"INSERT INTO {table_name} SELECT toDate('2021-01-01') + INTERVAL number % 10 DAY, number, toString(sipHash64(number)) FROM numbers(100_000)"
     )
 
     stop_alter = False
 
     def alter():
         d = 0
-        node.query(f"ALTER TABLE test_table ADD COLUMN col0 String")
+        node.query(f"ALTER TABLE {table_name} ADD COLUMN col0 String")
         while not stop_alter:
             d = d + 1
-            node.query(f"DELETE FROM test_table WHERE id < {d}")
+            node.query(f"DELETE FROM {table_name} WHERE id < {d}")
             time.sleep(0.1)
 
     alter_thread = threading.Thread(target=alter)
@@ -76,12 +87,12 @@ def test_create_table(cluster):
         partition = f"2021-01-{i:02d}"
         try:
             node.query(
-                f"ALTER TABLE test_table MOVE PARTITION '{partition}' TO DISK 's3'",
+                f"ALTER TABLE {table_name} MOVE PARTITION '{partition}' TO DISK 's3'",
             )
         except QueryRuntimeException as e:
-            # PART_IS_TEMPORARILY_LOCKED
-            assert 384 == e.returncode
-            continue
+            if "PART_IS_TEMPORARILY_LOCKED" in str(e):
+                continue
+            raise e
 
         # clear old temporary directories wakes up every 1 second
         time.sleep(0.5)
