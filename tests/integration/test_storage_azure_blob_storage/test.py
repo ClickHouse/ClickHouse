@@ -400,17 +400,25 @@ def test_storage_azure_get_gzip(cluster, extension, method):
 def test_schema_inference_no_globs(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 String, column3 UInt32"
-    azure_query(node, f"CREATE TABLE test_schema_inference_src ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')")
+    azure_query(
+        node,
+        f"CREATE TABLE test_schema_inference_src ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')",
+    )
 
     query = f"insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
     azure_query(node, query)
 
-    azure_query(node, f"CREATE TABLE test_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv')")
+    azure_query(
+        node,
+        f"CREATE TABLE test_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv')",
+    )
 
     print(node.query("SHOW CREATE TABLE test_select_inference"))
 
     query = "select sum(column1), sum(length(column2)), sum(column3), min(_file), max(_path) from test_select_inference"
-    assert azure_query(node, query).splitlines() == ['499500\t2890\t332833500\ttest_schema_inference_no_globs.csv\tcont/test_schema_inference_no_globs.csv']
+    assert azure_query(node, query).splitlines() == [
+        "499500\t2890\t332833500\ttest_schema_inference_no_globs.csv\tcont/test_schema_inference_no_globs.csv"
+    ]
 
 
 def test_schema_inference_from_globs(cluster):
@@ -427,19 +435,24 @@ def test_schema_inference_from_globs(cluster):
             max_path = max(path, max_path)
             values = f"({i},{j},{i + j})"
 
-            azure_query(node, f"CREATE TABLE test_schema_{i}_{j} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames')")
+            azure_query(
+                node,
+                f"CREATE TABLE test_schema_{i}_{j} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames')",
+            )
 
             query = f"insert into test_schema_{i}_{j} VALUES {values}"
             azure_query(node, query)
 
-
-    azure_query(node, f"CREATE TABLE test_glob_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')")
+    azure_query(
+        node,
+        f"CREATE TABLE test_glob_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')",
+    )
 
     print(node.query("SHOW CREATE TABLE test_glob_select_inference"))
 
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from test_glob_select_inference"
     assert azure_query(node, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
-            bucket='cont', max_path=max_path
+            bucket="cont", max_path=max_path
         )
     ]
