@@ -20,6 +20,9 @@
 #include <Disks/WriteMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Disks/DirectoryIterator.h>
+#include <Common/ThreadPool.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 namespace DB
@@ -51,6 +54,8 @@ struct RelativePathWithMetadata
 
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
 
+class IObjectStorageIterator;
+using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
@@ -74,6 +79,8 @@ public:
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
+
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
