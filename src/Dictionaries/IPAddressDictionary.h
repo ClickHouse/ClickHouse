@@ -5,7 +5,6 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
@@ -18,6 +17,8 @@
 
 namespace DB
 {
+class Arena;
+
 class IPAddressDictionary final : public IDictionary
 {
 public:

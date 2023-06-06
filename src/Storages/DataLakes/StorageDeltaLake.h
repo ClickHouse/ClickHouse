@@ -18,7 +18,7 @@ struct StorageDeltaLakeName
     static constexpr auto name = "DeltaLake";
 };
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_PARQUET
 using StorageDeltaLakeS3 = IStorageDataLake<StorageS3, StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 #endif
 

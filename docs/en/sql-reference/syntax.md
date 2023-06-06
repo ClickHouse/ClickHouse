@@ -31,15 +31,15 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ClickHouse supports either SQL-style and C-style comments:
 
--   SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
--   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
+- SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
+- C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords
 
 Keywords are case-insensitive when they correspond to:
 
--   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
--   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
+- SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
+- Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
 
@@ -51,10 +51,10 @@ Keywords are not reserved; they are treated as such only in the corresponding co
 
 Identifiers are:
 
--   Cluster, database, table, partition, and column names.
--   Functions.
--   Data types.
--   [Expression aliases](#expression_aliases).
+- Cluster, database, table, partition, and column names.
+- Functions.
+- Data types.
+- [Expression aliases](#expression_aliases).
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
@@ -70,10 +70,10 @@ There are numeric, string, compound, and `NULL` literals.
 
 Numeric literal tries to be parsed:
 
--   First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
--   If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
--   If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
--   Otherwise, it returns an error.
+- First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
+- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- Otherwise, it returns an error.
 
 Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
@@ -86,8 +86,8 @@ Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`
 String literals must be enclosed in single quotes, double quotes are not supported.
 Escaping works either
 
--   using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
--   using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
+- using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
+- using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
 
 In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
 
@@ -209,17 +209,17 @@ An alias is a user-defined name for expression in a query.
 expr AS alias
 ```
 
--   `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
+- `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
 
     For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
     In the [CAST](./functions/type-conversion-functions.md#castx-t) function, the `AS` keyword has another meaning. See the description of the function.
 
--   `expr` — Any expression supported by ClickHouse.
+- `expr` — Any expression supported by ClickHouse.
 
     For example, `SELECT column_name * 2 AS double FROM some_table`.
 
--   `alias` — Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.
+- `alias` — Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.
 
     For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 

@@ -55,7 +55,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
 
 
 # Column TTL works only with wide parts, because it's very expensive to apply it for compact parts
@@ -517,7 +517,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_delete_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -529,7 +529,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_group_by_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -541,7 +541,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_where_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
             """.format(
                 suff=num_run, replica=node.name
             )

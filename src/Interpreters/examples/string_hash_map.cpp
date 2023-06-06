@@ -156,7 +156,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const cha
         }
         watch.stop();
 
-        std::cerr << "arena-memory " << pool.size() + map.getBufferSizeInBytes() << std::endl;
+        std::cerr << "arena-memory " << pool.allocatedBytes() + map.getBufferSizeInBytes() << std::endl;
         std::cerr << "single-run " << std::setprecision(3)
                   << watch.elapsedSeconds() << std::endl;
     }

@@ -22,10 +22,10 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Engine Parameters**
 
--   `host:port` — MySQL server endpoint.
--   `database` — MySQL database name.
--   `user` — MySQL user.
--   `password` — User password.
+- `host:port` — MySQL server endpoint.
+- `database` — MySQL database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Engine Settings
 
@@ -119,7 +119,7 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 
 The data of TIME type in MySQL is converted to microseconds in ClickHouse.
 
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws an exception and stops replication.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 

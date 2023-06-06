@@ -31,6 +31,7 @@
   "test_limited_replicated_fetches/test.py::test_limited_fetches",
   "test_materialized_mysql_database/test.py::test_network_partition_5_7",
   "test_materialized_mysql_database/test.py::test_network_partition_8_0",
+  "test_merge_tree_s3/test.py::test_store_cleanup_disk_s3",
   "test_mysql_database_engine/test.py::test_restart_server",
   "test_parts_delete_zookeeper/test.py::test_merge_doesnt_work_without_zookeeper",
   "test_quorum_inserts_parallel/test.py::test_parallel_quorum_actually_quorum",

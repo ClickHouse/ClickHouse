@@ -17,7 +17,7 @@ ENGINE = HDFS(URI, format)
 **Engine Parameters**
 
 - `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
--  `format` - specifies one of the available file formats. To perform
+- `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
@@ -58,11 +58,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel.
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
-    -   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+- Reads and writes can be parallel.
+- Not supported:
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
   
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -72,10 +72,10 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
--   `*` — Substitutes any number of any characters except `/` including empty string.
--   `?` — Substitutes any single character.
--   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--   `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
@@ -83,12 +83,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -145,7 +145,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -156,7 +156,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | rpc\_client\_connect\_timeout                         | 600 * 1000              |
 | rpc\_client\_read\_timeout                            | 3600 * 1000             |
 | rpc\_client\_write\_timeout                           | 3600 * 1000             |
-| rpc\_client\_socekt\_linger\_timeout                  | -1                      |
+| rpc\_client\_socket\_linger\_timeout                  | -1                      |
 | rpc\_client\_connect\_retry                           | 10                      |
 | rpc\_client\_timeout                                  | 3600 * 1000             |
 | dfs\_default\_replica                                 | 3                       |
@@ -176,7 +176,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | output\_write\_timeout                                | 3600 * 1000             |
 | output\_close\_timeout                                | 3600 * 1000             |
 | output\_packetpool\_size                              | 1024                    |
-| output\_heeartbeat\_interval                          | 10 * 1000               |
+| output\_heartbeat\_interval                          | 10 * 1000               |
 | dfs\_client\_failover\_max\_attempts                  | 15                      |
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
@@ -195,7 +195,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 #### ClickHouse extras {#clickhouse-extras}
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                  | -                    |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |libhdfs3\_conf                                         | ""                      |
@@ -230,9 +230,9 @@ libhdfs3 support HDFS namenode HA.
 
 ## Virtual Columns {#virtual-columns}
 
--   `_path` — Path to the file.
--   `_file` — Name of the file.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 **See Also**
 
--   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

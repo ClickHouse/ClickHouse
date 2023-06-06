@@ -18,10 +18,11 @@ class IInputFormat : public ISource
 {
 protected:
 
-    ReadBuffer * in [[maybe_unused]];
+    ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:
-    IInputFormat(Block header, ReadBuffer & in_);
+    // ReadBuffer can be nullptr for random-access formats.
+    IInputFormat(Block header, ReadBuffer * in_);
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
@@ -32,7 +33,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    ReadBuffer & getReadBuffer() const { return *in; }
+    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {

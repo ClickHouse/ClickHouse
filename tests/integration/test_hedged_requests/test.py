@@ -23,7 +23,7 @@ def started_cluster():
     NODES["node"] = cluster.add_instance(
         "node",
         stay_alive=True,
-        main_configs=["configs/remote_servers.xml"],
+        main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
         user_configs=["configs/users.xml"],
     )
 
@@ -126,6 +126,22 @@ def check_changing_replica_events(expected_count):
     # If server load is high we can see more than expected
     # replica change events, but never less than expected
     assert int(result) >= expected_count
+
+
+def check_if_query_sending_was_suspended():
+    result = NODES["node"].query(
+        "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
+    )
+
+    assert int(result) >= 1
+
+
+def check_if_query_sending_was_not_suspended():
+    result = NODES["node"].query(
+        "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
+    )
+
+    assert result == ""
 
 
 def update_configs(
@@ -341,3 +357,71 @@ def test_initial_receive_timeout(started_cluster):
     )
 
     assert "SOCKET_TIMEOUT" in result
+
+
+def test_async_connect(started_cluster):
+    update_configs()
+
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query("DROP TABLE IF EXISTS distributed_connect")
+
+    NODES["node"].query(
+        """CREATE TABLE distributed_connect (id UInt32, date Date) ENGINE =
+        Distributed('test_cluster_connect', 'default', 'test_hedged')"""
+    )
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1"
+    )
+    check_changing_replica_events(2)
+    check_if_query_sending_was_not_suspended()
+
+    # Restart server to reset connection pool state
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"
+    )
+    check_changing_replica_events(2)
+    check_if_query_sending_was_suspended()
+
+    NODES["node"].query("DROP TABLE distributed_connect")
+
+
+def test_async_query_sending(started_cluster):
+    update_configs(
+        node_1_sleep_after_receiving_query=5000,
+        node_2_sleep_after_receiving_query=5000,
+        node_3_sleep_after_receiving_query=5000,
+    )
+
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query("DROP TABLE IF EXISTS distributed_query_sending")
+
+    NODES["node"].query(
+        """CREATE TABLE distributed_query_sending (id UInt32, date Date) ENGINE =
+        Distributed('test_cluster_three_shards', 'default', 'test_hedged')"""
+    )
+
+    # Create big enough temporary table
+    NODES["node"].query("DROP TABLE IF EXISTS tmp")
+    NODES["node"].query(
+        "CREATE TEMPORARY TABLE tmp (number UInt64, s String) "
+        "as select number, randomString(number % 1000) from numbers(10000000)"
+    )
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1"
+    )
+    check_if_query_sending_was_not_suspended()
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1"
+    )
+    check_if_query_sending_was_suspended()
+
+    NODES["node"].query("DROP TABLE distributed_query_sending")

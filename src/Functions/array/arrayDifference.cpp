@@ -21,9 +21,6 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -41,6 +38,12 @@ struct ArrayDifferenceImpl
         if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64() || which.isDate32() || which.isDateTime())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
+        if (which.isUInt128() || which.isInt128())
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
+
+        if (which.isUInt256() || which.isInt256())
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
+
         if (which.isFloat32() || which.isFloat64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
@@ -55,7 +58,8 @@ struct ArrayDifferenceImpl
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale));
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayDifference cannot process values of type {}", expression_return->getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayDifference cannot process values of type {}", expression_return->getName());
     }
 
 
@@ -82,9 +86,7 @@ struct ArrayDifferenceImpl
 
                     ResultNativeType result_value;
                     bool overflow = common::subOverflow(
-                        static_cast<ResultNativeType>(curr.value),
-                        static_cast<ResultNativeType>(prev.value),
-                        result_value);
+                        static_cast<ResultNativeType>(curr.value), static_cast<ResultNativeType>(prev.value), result_value);
                     if (overflow)
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
@@ -141,28 +143,26 @@ struct ArrayDifferenceImpl
         ColumnPtr res;
 
         mapped = mapped->convertToFullColumnIfConst();
-        if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
-            executeType< UInt16,  Int32>(mapped, array, res) ||
-            executeType< UInt32,  Int64>(mapped, array, res) ||
-            executeType< UInt64,  Int64>(mapped, array, res) ||
-            executeType<  Int8 ,  Int16>(mapped, array, res) ||
-            executeType<  Int16,  Int32>(mapped, array, res) ||
-            executeType<  Int32,  Int64>(mapped, array, res) ||
-            executeType<  Int64,  Int64>(mapped, array, res) ||
-            executeType<Float32,Float64>(mapped, array, res) ||
-            executeType<Float64,Float64>(mapped, array, res) ||
-            executeType<Decimal32, Decimal32>(mapped, array, res) ||
-            executeType<Decimal64, Decimal64>(mapped, array, res) ||
-            executeType<Decimal128, Decimal128>(mapped, array, res) ||
-            executeType<Decimal256, Decimal256>(mapped, array, res) ||
-            executeType<DateTime64, Decimal64>(mapped, array, res))
+        if (executeType<UInt8, Int16>(mapped, array, res) || executeType<UInt16, Int32>(mapped, array, res)
+            || executeType<UInt32, Int64>(mapped, array, res) || executeType<UInt64, Int64>(mapped, array, res)
+            || executeType<Int8, Int16>(mapped, array, res) || executeType<Int16, Int32>(mapped, array, res)
+            || executeType<Int32, Int64>(mapped, array, res) || executeType<Int64, Int64>(mapped, array, res)
+            || executeType<UInt128, Int128>(mapped, array, res) || executeType<Int128, Int128>(mapped, array, res)
+            || executeType<UInt256, Int256>(mapped, array, res) || executeType<Int256, Int256>(mapped, array, res)
+            || executeType<Float32, Float64>(mapped, array, res) || executeType<Float64, Float64>(mapped, array, res)
+            || executeType<Decimal32, Decimal32>(mapped, array, res) || executeType<Decimal64, Decimal64>(mapped, array, res)
+            || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res)
+            || executeType<DateTime64, Decimal64>(mapped, array, res))
             return res;
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
     }
 };
 
-struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };
+struct NameArrayDifference
+{
+    static constexpr auto name = "arrayDifference";
+};
 using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArrayDifference>;
 
 REGISTER_FUNCTION(ArrayDifference)
