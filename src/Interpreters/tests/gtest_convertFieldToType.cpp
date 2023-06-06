@@ -56,7 +56,7 @@ TEST_P(ConvertFieldToTypeTest, convert)
     }
 }
 
-// Basically nuber of seconds in a day, works for UTC here
+// Basically, the number of seconds in a day works for UTC here
 const long long int Day = 24 * 60 * 60;
 
 // 123 is arbitrary value here
