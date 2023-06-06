@@ -81,7 +81,7 @@ def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = Azure('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'cont', 'test_create_connection_string', 'CSV')",
+        "CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'cont', 'test_create_connection_string', 'CSV')",
     )
 
 
@@ -89,7 +89,7 @@ def test_create_table_account_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_create_table_account_url (key UInt64, data String) Engine = Azure('http://azurite1:10000/devstoreaccount1',  'cont', 'test_create_connection_string', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+        "CREATE TABLE test_create_table_account_url (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont', 'test_create_connection_string', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
     )
 
 
@@ -97,7 +97,7 @@ def test_simple_write_account_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write (key UInt64, data String) Engine = Azure('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+        "CREATE TABLE test_simple_write (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
     )
     azure_query(node, "INSERT INTO test_simple_write VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write.csv"))
@@ -108,7 +108,7 @@ def test_simple_write_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = Azure('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;', 'cont', 'test_simple_write_c.csv', 'CSV')",
+        "CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
     azure_query(node, "INSERT INTO test_simple_write_connection_string VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_c.csv"))
@@ -119,7 +119,7 @@ def test_simple_write_named_collection_1(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write_named_collection_1 (key UInt64, data String) Engine = Azure(azure_conf1)",
+        "CREATE TABLE test_simple_write_named_collection_1 (key UInt64, data String) Engine = AzureBlobStorage(azure_conf1)",
     )
     azure_query(
         node, "INSERT INTO test_simple_write_named_collection_1 VALUES (1, 'a')"
@@ -132,7 +132,7 @@ def test_simple_write_named_collection_2(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write_named_collection_2 (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_simple_write_named_2.csv', format='CSV')",
+        "CREATE TABLE test_simple_write_named_collection_2 (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_simple_write_named_2.csv', format='CSV')",
     )
     azure_query(
         node, "INSERT INTO test_simple_write_named_collection_2 VALUES (1, 'a')"
@@ -150,7 +150,7 @@ def test_partition_by(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_partitioned_write ({table_format}) Engine = Azure('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
+        f"CREATE TABLE test_partitioned_write ({table_format}) Engine = AzureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_write VALUES {values}")
 
@@ -167,7 +167,7 @@ def test_partition_by_string_column(cluster):
     filename = "test_{_partition_id}.csv"
     azure_query(
         node,
-        f"CREATE TABLE test_partitioned_string_write ({table_format}) Engine = Azure('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
+        f"CREATE TABLE test_partitioned_string_write ({table_format}) Engine = AzureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_string_write VALUES {values}")
 
@@ -185,7 +185,7 @@ def test_partition_by_const_column(cluster):
     filename = "test_{_partition_id}.csv"
     azure_query(
         node,
-        f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = Azure('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
+        f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = AzureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
     assert values_csv == get_azure_file_content("test_88.csv")
@@ -195,7 +195,7 @@ def test_truncate(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_truncate (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_truncate.csv', format='CSV')",
+        "CREATE TABLE test_truncate (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_truncate.csv', format='CSV')",
     )
     azure_query(node, "INSERT INTO test_truncate VALUES (1, 'a')")
     assert get_azure_file_content("test_truncate.csv") == '1,"a"\n'
@@ -208,7 +208,7 @@ def test_simple_read_write(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_read_write (key UInt64, data String) Engine = Azure(azure_conf2, container='cont', blob_path='test_simple_read_write.csv', format='CSV')",
+        "CREATE TABLE test_simple_read_write (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_simple_read_write.csv', format='CSV')",
     )
 
     azure_query(node, "INSERT INTO test_simple_read_write VALUES (1, 'a')")
@@ -222,7 +222,7 @@ def test_create_new_files_on_insert(cluster):
 
     azure_query(
         node,
-        f"create table test_multiple_inserts(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_parquet', format='Parquet')",
+        f"create table test_multiple_inserts(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_parquet', format='Parquet')",
     )
     azure_query(node, "truncate table test_multiple_inserts")
     azure_query(
@@ -249,7 +249,7 @@ def test_overwrite(cluster):
 
     azure_query(
         node,
-        f"create table test_overwrite(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_parquet_overwrite', format='Parquet')",
+        f"create table test_overwrite(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_parquet_overwrite', format='Parquet')",
     )
     azure_query(node, "truncate table test_overwrite")
 
@@ -273,7 +273,7 @@ def test_insert_with_path_with_globs(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"create table test_insert_globs(a Int32, b String) ENGINE = Azure(azure_conf2, container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
+        f"create table test_insert_globs(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
     )
     node.query_and_get_error(
         f"insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
@@ -296,7 +296,7 @@ def test_put_get_with_globs(cluster):
 
             azure_query(
                 node,
-                f"CREATE TABLE test_{i}_{j} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
+                f"CREATE TABLE test_{i}_{j} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
             )
 
             query = f"insert into test_{i}_{j} VALUES {values}"
@@ -304,7 +304,7 @@ def test_put_get_with_globs(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_glob_select ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV')",
+        f"CREATE TABLE test_glob_select ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV')",
     )
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from test_glob_select"
     assert azure_query(node, query).splitlines() == [
@@ -328,7 +328,7 @@ def test_azure_glob_scheherazade(cluster):
                 unique_num = random.randint(1, 10000)
                 azure_query(
                     node,
-                    f"CREATE TABLE test_{i}_{unique_num} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
+                    f"CREATE TABLE test_{i}_{unique_num} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
                 )
                 query = f"insert into test_{i}_{unique_num} VALUES {values}"
                 azure_query(node, query)
@@ -345,7 +345,7 @@ def test_azure_glob_scheherazade(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_glob_select_scheherazade ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='night_*/tale.csv', format='CSV')",
+        f"CREATE TABLE test_glob_select_scheherazade ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='night_*/tale.csv', format='CSV')",
     )
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
     assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
@@ -387,7 +387,7 @@ def test_storage_azure_get_gzip(cluster, extension, method):
 
     azure_query(
         node,
-        f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = Azure(
+        f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = AzureBlobStorage(
                                 azure_conf2, container='cont', blob_path ='{filename}',
                                 format='CSV',
                                 compression='{method}')""",
@@ -402,7 +402,7 @@ def test_schema_inference_no_globs(cluster):
     table_format = "column1 UInt32, column2 String, column3 UInt32"
     azure_query(
         node,
-        f"CREATE TABLE test_schema_inference_src ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')",
+        f"CREATE TABLE test_schema_inference_src ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')",
     )
 
     query = f"insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
@@ -410,7 +410,7 @@ def test_schema_inference_no_globs(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv')",
+        f"CREATE TABLE test_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='test_schema_inference_no_globs.csv')",
     )
 
     print(node.query("SHOW CREATE TABLE test_select_inference"))
@@ -437,7 +437,7 @@ def test_schema_inference_from_globs(cluster):
 
             azure_query(
                 node,
-                f"CREATE TABLE test_schema_{i}_{j} ({table_format}) Engine = Azure(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames')",
+                f"CREATE TABLE test_schema_{i}_{j} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames')",
             )
 
             query = f"insert into test_schema_{i}_{j} VALUES {values}"
@@ -445,7 +445,7 @@ def test_schema_inference_from_globs(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_glob_select_inference Engine = Azure(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')",
+        f"CREATE TABLE test_glob_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')",
     )
 
     print(node.query("SHOW CREATE TABLE test_glob_select_inference"))
