@@ -85,7 +85,7 @@ public:
         EMPTY,
         /**
          * A newly created file segment never has DOWNLOADING state until call to getOrSetDownloader
-         * because each cache user might acquire multiple file segments and reads them one by one,
+         * because each cache user might acquire multiple file segments and read them one by one,
          * so only user which actually needs to read this segment earlier than others - becomes a downloader.
          */
         DOWNLOADING,
