@@ -101,6 +101,18 @@ struct AggregateFunctionUniqHLL12Data<UUID, false>
     static String getName() { return "uniqHLL12"; }
 };
 
+template <>
+struct AggregateFunctionUniqHLL12Data<IPv6, false>
+{
+    using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
+    Set set;
+
+    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
+
+    static String getName() { return "uniqHLL12"; }
+};
+
 template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_merge_>
 struct AggregateFunctionUniqHLL12DataForVariadic
 {

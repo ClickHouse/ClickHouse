@@ -117,7 +117,7 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
         else if (which.isIPv4())
             return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data<DataTypeIPv4::FieldType, is_able_to_parallelize_merge>>>(argument_types);
         else if (which.isIPv6())
-            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<String, is_able_to_parallelize_merge>>>(argument_types);
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<DataTypeIPv6::FieldType, is_able_to_parallelize_merge>>>(argument_types);
         else if (which.isTuple())
         {
             if (use_exact_hash_function)

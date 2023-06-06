@@ -21,6 +21,7 @@
 #include "DataTypes/Serializations/ISerialization.h"
 #include <base/IPv4andIPv6.h>
 #include "base/types.h"
+#include <Common/formatIPv6.h>
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
 
@@ -67,6 +68,31 @@ struct AggregateFunctionMapCombinatorData<String>
     static void readKey(String & key, ReadBuffer & buf)
     {
         readStringBinary(key, buf);
+    }
+};
+
+/// Specialization for IPv6 - for historical reasons it should be stored as FixedString(16)
+template <>
+struct AggregateFunctionMapCombinatorData<IPv6>
+{
+    struct IPv6Hash
+    {
+        using hash_type = std::hash<IPv6>;
+        using is_transparent = void;
+
+        size_t operator()(const IPv6 & ip) const { return hash_type{}(ip); }
+    };
+
+    using SearchType = IPv6;
+    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+
+    static void writeKey(const IPv6 & key, WriteBuffer & buf)
+    {
+        writeIPv6Binary(key, buf);
+    }
+    static void readKey(IPv6 & key, ReadBuffer & buf)
+    {
+        readIPv6Binary(key, buf);
     }
 };
 

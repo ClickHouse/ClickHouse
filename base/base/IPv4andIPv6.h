@@ -2,6 +2,7 @@
 
 #include <base/strong_typedef.h>
 #include <base/extended_types.h>
+#include <Common/formatIPv6.h>
 #include <Common/memcmpSmall.h>
 
 namespace DB
@@ -55,12 +56,13 @@ namespace DB
 
 namespace std
 {
+    /// For historical reasons we hash IPv6 as a FixedString(16)
     template <>
     struct hash<DB::IPv6>
     {
         size_t operator()(const DB::IPv6 & x) const
         {
-            return std::hash<DB::IPv6::UnderlyingType>()(x.toUnderType());
+            return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(&x.toUnderType()), IPV6_BINARY_LENGTH));
         }
     };
 
