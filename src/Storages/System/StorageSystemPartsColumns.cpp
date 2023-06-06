@@ -261,16 +261,17 @@ void StorageSystemPartsColumns::processNextStorage(
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-                String file_name = ISerialization::getFileNameForStream(subcolumn, subpath);
+                String full_stream_name = ISerialization::getFileNameForStream(subcolumn, subpath);
+                String stream_name = part->checksums.getFileNameOrHash(full_stream_name);
 
-                auto bin_checksum = part->checksums.files.find(file_name + ".bin");
+                auto bin_checksum = part->checksums.files.find(stream_name + ".bin");
                 if (bin_checksum != part->checksums.files.end())
                 {
                     size.data_compressed += bin_checksum->second.file_size;
                     size.data_uncompressed += bin_checksum->second.uncompressed_size;
                 }
 
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
+                auto mrk_checksum = part->checksums.files.find(stream_name + part->index_granularity_info.mark_type.getFileExtension());
                 if (mrk_checksum != part->checksums.files.end())
                     size.marks += mrk_checksum->second.file_size;
 

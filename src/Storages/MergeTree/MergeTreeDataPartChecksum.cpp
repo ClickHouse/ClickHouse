@@ -341,7 +341,7 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
     return ret;
 }
 
-std::optional<String> MergeTreeDataPartChecksums::getFileNameOrHash(const String & name) const
+String MergeTreeDataPartChecksums::getFileNameOrHash(const String & name) const
 {
     if (files.contains(name + ".bin"))
         return name;
@@ -350,7 +350,7 @@ std::optional<String> MergeTreeDataPartChecksums::getFileNameOrHash(const String
     if (files.contains(hash + ".bin"))
         return hash;
 
-    return std::nullopt;
+    return name;
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const

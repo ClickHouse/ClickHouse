@@ -1,4 +1,5 @@
 #include "IMergeTreeDataPart.h"
+#include "Common/SipHash.h"
 #include "Storages/MergeTree/IDataPartStorage.h"
 
 #include <optional>
@@ -1015,7 +1016,10 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+                    auto candidate_path = ISerialization::getFileNameForStream(part_column, substream_path) + ".bin";
+
+                    if (!getDataPartStorage().exists(candidate_path))
+                        candidate_path = sipHash128String(candidate_path) + ".bin";
 
                     /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
                     if (getDataPartStorage().exists(candidate_path) && getDataPartStorage().getFileSize(candidate_path) != 0)

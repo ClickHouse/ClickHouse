@@ -51,7 +51,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
+                auto full_stream_name = ISerialization::getFileNameForStream(column.name, substream_path);
+                auto stream_name = checksums.getFileNameOrHash(full_stream_name);
+                ++stream_counts[stream_name];
             });
     }
 
@@ -65,7 +67,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+            auto full_stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+            auto stream_name = checksums.getFileNameOrHash(full_stream_name);
+
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {

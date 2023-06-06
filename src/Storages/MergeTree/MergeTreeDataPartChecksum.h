@@ -89,7 +89,7 @@ struct MergeTreeDataPartChecksums
 
     UInt64 getTotalSizeOnDisk() const;
 
-    std::optional<String> getFileNameOrHash(const String & name) const;
+    String getFileNameOrHash(const String & name) const;
 };
 
 
