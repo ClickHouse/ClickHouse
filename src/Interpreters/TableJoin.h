@@ -232,8 +232,19 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
-    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
+
+    /// Join use nulls doen't make sense for semi and anti joins
+    /// Only columns from corresponding table should be used, values in other table are undefined.
+    bool forceNullableRight() const
+    {
+        return join_use_nulls && isLeftOrFull(kind()) && strictness() != JoinStrictness::Semi && strictness() != JoinStrictness::Anti;
+    }
+
+    bool forceNullableLeft() const
+    {
+        return join_use_nulls && isRightOrFull(kind()) && strictness() != JoinStrictness::Semi && strictness() != JoinStrictness::Anti;
+    }
+
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
