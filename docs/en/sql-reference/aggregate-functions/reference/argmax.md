@@ -80,7 +80,7 @@ select argMax(a, b), max(b) from test;
 
 select argMax(tuple(a), b) from test;
 ┌─argMax(tuple(a), b)─┐
-│ (NULL)              │ -- Tuple allows to get Null value.
+│ (NULL)              │ -- The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value
 └─────────────────────┘
 
 select (argMax((a, b), b) as t).1 argMaxA, t.2 argMaxB from test;
