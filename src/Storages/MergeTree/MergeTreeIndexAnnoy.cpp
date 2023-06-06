@@ -229,8 +229,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         return getUsefulRangesImpl<Annoy::Euclidean>(idx_granule);
     else if (distance_function == "cosineDistance")
         return getUsefulRangesImpl<Annoy::Angular>(idx_granule);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_function);
+    std::unreachable();
 }
 
 template <typename Distance>
