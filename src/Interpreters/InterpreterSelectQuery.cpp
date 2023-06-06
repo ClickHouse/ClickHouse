@@ -1529,7 +1529,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             // Thus, we don't actually need to check if projection is active.
             if (!query_info.projection && expressions.filter_info)
             {
-                LOG_TRACE(log, "executeImpl,  adding Row-level security filter; column_name {}, block {}",
+                LOG_TRACE(log, "executeImpl, adding Row-level security filter; column_name {}, block {}",
                     expressions.filter_info->column_name, query_plan.getCurrentDataStream().header.dumpStructure());
 
                 auto row_level_security_step = std::make_unique<FilterStep>(

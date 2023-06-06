@@ -369,7 +369,7 @@ void StorageMerge::read(
 
     /// What will be result structure depending on query processed stage in source tables?
     // Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, QueryProcessingStage::Complete /* processed_stage */);
-    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage );
+    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
@@ -677,7 +677,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
-        if (/* !view || */ allow_experimental_analyzer)
+        if ( !view ||  allow_experimental_analyzer)
         // if (!view ||  allow_experimental_analyzer)
         {
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "direct storage->read");
@@ -690,26 +690,26 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 max_block_size,
                 UInt32(streams_num));
         }
-        else if (!view)
-        {
-            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
-            /// The most intuitive way is to use InterpreterSelectQuery.
+        // else if (!view)
+        // {
+        //     /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+        //     /// The most intuitive way is to use InterpreterSelectQuery.
 
-            /// Intercept the settings
-            modified_context->setSetting("max_threads", streams_num);
-            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-            modified_context->setSetting("max_block_size", max_block_size);
+        //     /// Intercept the settings
+        //     modified_context->setSetting("max_threads", streams_num);
+        //     modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+        //     modified_context->setSetting("max_block_size", max_block_size);
 
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "creating InterpreterSelectQuery 1.0");
-            InterpreterSelectQuery interpreter(modified_query_info.query,
-                modified_context,
-                storage,
-                storage->getInMemoryMetadataPtr(), // view->getInMemoryMetadataPtr(),
-                // SelectQueryOptions(/* processed_stage*/));
-                SelectQueryOptions(processed_stage));
-                // SelectQueryOptions(QueryProcessingStage::WithMergeableState));
-            interpreter.buildQueryPlan(plan);
-        }
+        //     LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "creating InterpreterSelectQuery 1.0");
+        //     InterpreterSelectQuery interpreter(modified_query_info.query,
+        //         modified_context,
+        //         storage,
+        //         storage->getInMemoryMetadataPtr(), // view->getInMemoryMetadataPtr(),
+        //         // SelectQueryOptions(/* processed_stage*/));
+        //         SelectQueryOptions(processed_stage));
+        //         // SelectQueryOptions(QueryProcessingStage::WithMergeableState));
+        //     interpreter.buildQueryPlan(plan);
+        // }
         else
         {
             /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
