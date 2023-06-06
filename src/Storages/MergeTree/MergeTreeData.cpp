@@ -6353,6 +6353,13 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
         if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(ast, metadata_snapshot))
             return true;
 
+        if (query_settings.transform_set_with_monotonic_functions_for_analysis)
+        {
+            for (const auto & column : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+                if (column == ast->getColumnName())
+                    return true;
+        }
+
         if (query_settings.use_skip_indexes)
         {
             for (const auto & index : metadata_snapshot->getSecondaryIndices())

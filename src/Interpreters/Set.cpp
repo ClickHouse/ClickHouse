@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -426,13 +428,13 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns & set_elements, const DataTypes & set_types, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
+            return std::forward_as_tuple(l.key_index, l.transform_functions.size(), l.functions.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.transform_functions.size(), r.functions.size(), r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
@@ -443,10 +445,69 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         }), indexes_mapping.end());
 
     size_t tuple_size = indexes_mapping.size();
-    ordered_set.resize(tuple_size);
+    std::vector<KeyTuplePositionMapping> new_indexes_mapping;
+    new_indexes_mapping.reserve(tuple_size);
+    ordered_set.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
+    {
+        auto column = set_elements[indexes_mapping[i].tuple_index];
+        auto column_type = set_types[indexes_mapping[i].tuple_index];
+        bool transformed = false;
+        for (const auto & func : indexes_mapping[i].transform_functions)
+        {
+            if (func->type != ActionsDAG::ActionType::FUNCTION)
+                continue;
+
+            if (func->children.size() == 1)
+            {
+                std::tie(column, column_type)
+                    = KeyCondition::applyFunctionForColumnOfUnknownType(func->function_base, column_type, column);
+            }
+            else if (func->children.size() == 2)
+            {
+                const auto * left = func->children[0];
+                const auto * right = func->children[1];
+                if (left->column && isColumnConst(*left->column))
+                {
+                    auto left_arg_type = left->result_type;
+                    std::tie(column, column_type) = KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
+                        FunctionFactory::instance().get(func->function_base->getName(), context),
+                        left_arg_type, left->column, column_type, column);
+                }
+                else
+                {
+                    auto right_arg_type = right->result_type;
+                    std::tie(column, column_type) = KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
+                        FunctionFactory::instance().get(func->function_base->getName(), context),
+                        column_type, column, right_arg_type, right->column);
+                }
+            }
+            transformed = true;
+        }
+
+        if (transformed)
+        {
+            auto key_expr_type = recursiveRemoveLowCardinality(indexes_mapping[i].key_type);
+            DataTypePtr key_expr_type_not_null;
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
+                key_expr_type_not_null = nullable_type->getNestedType();
+            else
+                key_expr_type_not_null = key_expr_type;
+            bool cast_not_needed = ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
+                    && (isNativeInteger(column_type) || isDateTime(column_type))); /// Native integers and DateTime are accurately compared without cast.
+
+            if (!cast_not_needed && !key_expr_type_not_null->equals(*column_type))
+            {
+                /// TODO: try CAST column to correct type?
+                continue;
+            }
+        }
+        new_indexes_mapping.emplace_back(std::move(indexes_mapping[i]));
+        ordered_set.emplace_back(std::move(column));
+    }
+    indexes_mapping.swap(new_indexes_mapping);
+    tuple_size = ordered_set.size();
 
     Block block_to_sort;
     SortDescription sort_description;

@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <base/defines.h>
+#include <Poco/Logger.h>
 
 #include <algorithm>
 #include <cassert>
@@ -878,44 +879,39 @@ static Field applyFunctionForField(
 }
 
 /// The case when arguments may have types different than in the primary key.
-static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
+std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyFunctionForColumnOfUnknownType(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
-    const Field & arg_value)
+    const ColumnPtr arg_column)
 {
-    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
+    ColumnsWithTypeAndName arguments{{arg_column, arg_type, "x"}};
+
     DataTypePtr return_type = func->getResultType();
 
-    auto col = func->execute(arguments, return_type, 1);
+    auto col = func->execute(arguments, return_type, arg_column->size());
 
-    Field result = (*col)[0];
-
-    return {std::move(result), std::move(return_type)};
+    return {std::move(col), std::move(return_type)};
 }
 
-
 /// Same as above but for binary operators
-static std::pair<Field, DataTypePtr> applyBinaryFunctionForFieldOfUnknownType(
+std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
     const FunctionOverloadResolverPtr & func,
     const DataTypePtr & arg_type,
-    const Field & arg_value,
+    const ColumnPtr & arg_column,
     const DataTypePtr & arg_type2,
-    const Field & arg_value2)
+    const ColumnPtr & arg_column2)
 {
     ColumnsWithTypeAndName arguments{
-        {arg_type->createColumnConst(1, arg_value), arg_type, "x"}, {arg_type2->createColumnConst(1, arg_value2), arg_type2, "y"}};
+        {arg_column, arg_type, "x"}, {arg_column2, arg_type2, "y"}};
 
     FunctionBasePtr func_base = func->build(arguments);
 
     DataTypePtr return_type = func_base->getResultType();
 
-    auto col = func_base->execute(arguments, return_type, 1);
+    auto col = func_base->execute(arguments, return_type, arg_column->size());
 
-    Field result = (*col)[0];
-
-    return {std::move(result), std::move(return_type)};
+    return {std::move(col), std::move(return_type)};
 }
-
 
 static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
@@ -943,6 +939,71 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/// Collect a candidate chain to convert expr_name to an key expression
+bool KeyCondition::collectTransform(const String & expr_name, const ActionsDAG::Node * & cur_node, std::vector<const ActionsDAG::Node *> & chain, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+{
+    bool is_valid_chain = true;
+
+    while (is_valid_chain)
+    {
+        if (cur_node->result_name == expr_name)
+            break;
+
+        chain.push_back(cur_node);
+
+        if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
+        {
+            is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
+
+            const ActionsDAG::Node * next_node = nullptr;
+            for (const auto * arg : cur_node->children)
+            {
+                if (arg->column && isColumnConst(*arg->column))
+                    continue;
+
+                if (next_node)
+                    is_valid_chain = false;
+
+                next_node = arg;
+            }
+
+            if (!next_node)
+                is_valid_chain = false;
+
+            cur_node = next_node;
+        }
+        else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
+            cur_node = cur_node->children.front();
+        else
+            is_valid_chain = false;
+    }
+
+    return is_valid_chain;
+}
+
+/// Collect a chain to convert expr_name to an key expression
+bool KeyCondition::tryCollectBestTransformForExpr(const String & expr_name, std::vector<const ActionsDAG::Node *> & chain, size_t & out_key_column_num, DataTypePtr & out_key_column_type, std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+{
+    const auto & sample_block = key_expr->getSampleBlock();
+
+    for (const auto & node : key_expr->getNodes())
+    {
+        auto it = key_columns.find(node.result_name);
+        if (it != key_columns.end())
+        {
+            chain.clear();
+            const auto * cur_node = &node;
+            if (collectTransform(expr_name, cur_node, chain, always_monotonic))
+            {
+                out_key_column_num = it->second;
+                out_key_column_type = sample_block.getByName(it->first).type;
+                reverse(chain.begin(), chain.end());
+                return true;
+            }
+        }
+    }
+    return false;
+}
 /** When table's key has expression with these functions from a column,
   * and when a column in a query is compared with a constant, such as:
   * CREATE TABLE (x String) ORDER BY toDate(x)
@@ -973,12 +1034,13 @@ static std::set<std::string_view> date_time_parsing_functions = {
   * Instead, we can qualify only functions that do not transform the range (for example rounding),
   * which while not strictly monotonic, are monotonic everywhere on the input range.
   */
-bool KeyCondition::transformConstantWithValidFunctions(
+bool KeyCondition::transformConstColumnWithValidFunctions(
     ContextPtr context,
     const String & expr_name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
-    Field & out_value,
+    ColumnPtr const_column,
+    ColumnPtr & out_column,
     DataTypePtr & out_type,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
@@ -989,59 +1051,31 @@ bool KeyCondition::transformConstantWithValidFunctions(
         auto it = key_columns.find(node.result_name);
         if (it != key_columns.end())
         {
-            std::stack<const ActionsDAG::Node *> chain;
+            std::vector<const ActionsDAG::Node *> chain;
 
             const auto * cur_node = &node;
-            bool is_valid_chain = true;
-
-            while (is_valid_chain)
-            {
-                if (cur_node->result_name == expr_name)
-                    break;
-
-                chain.push(cur_node);
-
-                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
-                {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
-                    const ActionsDAG::Node * next_node = nullptr;
-                    for (const auto * arg : cur_node->children)
-                    {
-                        if (arg->column && isColumnConst(*arg->column))
-                            continue;
-
-                        if (next_node)
-                            is_valid_chain = false;
-
-                        next_node = arg;
-                    }
-
-                    if (!next_node)
-                        is_valid_chain = false;
-
-                    cur_node = next_node;
-                }
-                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
-                    cur_node = cur_node->children.front();
-                else
-                    is_valid_chain = false;
-            }
+            bool is_valid_chain = collectTransform(expr_name, cur_node, chain, always_monotonic);
 
             if (is_valid_chain)
             {
                 out_type = removeLowCardinality(out_type);
                 auto const_type = removeLowCardinality(cur_node->result_type);
-                auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
+                auto const_values = castColumnAccurateOrNull({const_column, out_type, ""}, const_type);
 
-                if (const_value.isNull())
-                    return false;
+                out_type = const_type;
+                auto tmp_column = out_type->createColumn();
+                for (size_t i = 0; i < const_values->size(); ++i)
+                {
+                    if (const_values->isNullAt(i)) /// CAST fail
+                        return false;
+                    tmp_column->insert((*const_values)[i]);
+                }
+                out_column = std::move(tmp_column);
 
                 while (!chain.empty())
                 {
-                    const auto * func = chain.top();
-                    chain.pop();
+                    const auto * func = chain.back();
+                    chain.pop_back();
 
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
@@ -1062,8 +1096,8 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
                     if (func->children.size() == 1)
                     {
-                        std::tie(const_value, const_type)
-                            = applyFunctionForFieldOfUnknownType(func_base, const_type, const_value);
+                        std::tie(out_column, out_type)
+                            = applyFunctionForColumnOfUnknownType(func_base, out_type, out_column);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1072,29 +1106,28 @@ bool KeyCondition::transformConstantWithValidFunctions(
                         if (left->column && isColumnConst(*left->column))
                         {
                             auto left_arg_type = left->result_type;
-                            auto left_arg_value = (*left->column)[0];
-                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
+                            std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func_base->getName(), context),
-                                left_arg_type, left_arg_value, const_type, const_value);
+                                left_arg_type, left->column, out_type, out_column);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
-                            auto right_arg_value = (*right->column)[0];
-                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
+                            std::tie(out_column, out_type) = applyBinaryFunctionForColumnOfUnknownType(
                                 FunctionFactory::instance().get(func_base->getName(), context),
-                                const_type, const_value, right_arg_type, right_arg_value);
+                                out_type, out_column, right_arg_type, right->column);
                         }
                     }
 
-                    if (const_value.isNull())
-                        return false;
+                    for (size_t i = 0; i < out_column->size(); ++i)
+                    {
+                        if (out_column->isNullAt(i)) /// Apply function fail
+                            return false;
+                    }
                 }
 
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
-                out_value = const_value;
-                out_type = const_type;
                 return true;
             }
         }
@@ -1121,12 +1154,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (out_value.isNull())
         return false;
 
-    return transformConstantWithValidFunctions(
+    ColumnPtr const_column = removeLowCardinality(out_type)->createColumnConst(1, out_value);
+
+    ColumnPtr out_column;
+
+    auto success = transformConstColumnWithValidFunctions(
         node.getTreeContext().getQueryContext(),
         expr_name,
         out_key_column_num,
         out_key_column_type,
-        out_value,
+        const_column,
+        out_column,
         out_type,
         [](const IFunctionBase & func, const IDataType & type)
         {
@@ -1141,6 +1179,10 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             }
             return true;
         });
+    if (success)
+        out_value = (*out_column)[0];
+
+    return success;
 }
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
@@ -1176,23 +1218,34 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    return transformConstantWithValidFunctions(
+    ColumnPtr const_column = removeLowCardinality(out_type)->createColumnConst(1, out_value);
+
+    ColumnPtr out_column;
+
+    bool success = transformConstColumnWithValidFunctions(
         node.getTreeContext().getQueryContext(),
         expr_name,
         out_key_column_num,
         out_key_column_type,
-        out_value,
+        const_column,
+        out_column,
         out_type,
         [](const IFunctionBase & func, const IDataType &)
         {
             return func.isDeterministic();
         });
+
+    if (success)
+        out_value = (*out_column)[0];
+
+    return success;
 }
 
 bool KeyCondition::tryPrepareSetIndex(
     const RPNBuilderFunctionTreeNode & func,
     RPNElement & out,
-    size_t & out_key_column_num)
+    size_t & out_key_column_num,
+    bool strict_condition)
 {
     const auto & left_arg = func.getArgumentAt(0);
 
@@ -1211,6 +1264,36 @@ bool KeyCondition::tryPrepareSetIndex(
             data_types.push_back(data_type);
             if (out_key_column_num < index_mapping.key_index)
                 out_key_column_num = index_mapping.key_index;
+        }
+        else if (
+            !strict_condition
+            && func.getTreeContext().getQueryContext()->getSettingsRef().transform_set_with_monotonic_functions_for_analysis
+            && node.getDAGNode())  /// Without DAGNode, there's no way to get the data type of the lhs if it doesn't match any key expression
+        {
+            auto always_monotonic = [](const IFunctionBase & f, const IDataType & type)
+            {
+                if (!f.hasInformationAboutMonotonicity())
+                    return false;
+                else
+                {
+                    /// Range is irrelevant in this case.
+                    auto monotonicity = f.getMonotonicityForRange(type, Field(), Field());
+                    if (!monotonicity.is_always_monotonic)
+                        return false;
+                }
+                return true;
+            };
+            std::vector<const ActionsDAG::Node *> chain;
+            DataTypePtr key_column_type;
+            if (tryCollectBestTransformForExpr(node.getColumnName(), chain, index_mapping.key_index, key_column_type, always_monotonic))
+            {
+                index_mapping.key_type = key_column_type;
+                index_mapping.transform_functions = std::move(chain);
+                indexes_mapping.push_back(index_mapping);
+                data_types.push_back(node.getDAGNode()->result_type);
+                if (out_key_column_num < index_mapping.key_index)
+                    out_key_column_num = index_mapping.key_index;
+            }
         }
     };
 
@@ -1253,7 +1336,7 @@ bool KeyCondition::tryPrepareSetIndex(
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
         prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(func.getTreeContext().getQueryContext(), prepared_set->getSetElements(), prepared_set->getDataTypes(), std::move(indexes_mapping));
 
     return true;
 }
@@ -1523,7 +1606,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, out, key_column_num))
+                if (tryPrepareSetIndex(func, out, key_column_num, strict_condition))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;
