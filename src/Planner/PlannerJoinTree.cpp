@@ -997,9 +997,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         plan_to_add_cast.addStep(std::move(cast_join_columns_step));
     };
 
-    /// Join use nulls doen't make sense for semi and anti joins
-    /// Only columns from corresponding table should be used, values in other table are undefined.
-    if (join_use_nulls && join_strictness != JoinStrictness::Semi && join_strictness != JoinStrictness::Anti)
+    if (join_use_nulls)
     {
         if (isFull(join_kind))
         {
