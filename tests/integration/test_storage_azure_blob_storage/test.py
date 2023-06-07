@@ -494,8 +494,10 @@ def test_simple_write_named_collection_1_table_function(cluster):
     )
 
     azure_query(
-        node, "TRUNCATE TABLE drop_table",
+        node,
+        "TRUNCATE TABLE drop_table",
     )
+
 
 def test_simple_write_named_collection_2_table_function(cluster):
     node = cluster.instances["node"]
