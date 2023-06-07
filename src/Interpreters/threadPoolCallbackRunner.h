@@ -13,7 +13,7 @@ namespace DB
 template <typename Result, typename Callback = std::function<Result()>>
 using ThreadPoolCallbackRunner = std::function<std::future<Result>(Callback &&, Priority)>;
 
-/// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrow()'.
+/// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool & pool, const std::string & thread_name)
 {
@@ -44,7 +44,10 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
 
         auto future = task->get_future();
 
-        my_pool->scheduleOrThrow([my_task = std::move(task)]{ (*my_task)(); }, priority);
+        /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
+        /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
+        /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
+        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ (*my_task)(); }, priority);
 
         return future;
     };

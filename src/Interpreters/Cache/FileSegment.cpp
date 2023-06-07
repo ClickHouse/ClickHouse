@@ -1,13 +1,14 @@
 #include "FileSegment.h"
 
-#include <base/getThreadId.h>
-#include <Common/scope_guard_safe.h>
-#include <base/hex.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <filesystem>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <base/getThreadId.h>
+#include <base/hex.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 
 #include <magic_enum.hpp>
 
@@ -399,6 +400,8 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
 FileSegment::State FileSegment::wait(size_t offset)
 {
+    OpenTelemetry::SpanHolder span{fmt::format("FileSegment::wait({})", key().toString())};
+
     auto lock = segment_guard.lock();
 
     if (downloader_id.empty() || offset < getCurrentWriteOffset(true))
