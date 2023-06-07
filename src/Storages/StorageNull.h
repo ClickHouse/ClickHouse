@@ -21,7 +21,6 @@ class StorageNull final : public IStorage
 friend class NullSource;
 friend class NullSinkToStorage;
 friend class StorageNullSink;
-friend class StorageNullSource;
 
 public:
     StorageNull(

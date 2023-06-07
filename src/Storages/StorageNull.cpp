@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/StorageNullSource.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
