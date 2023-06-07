@@ -536,9 +536,7 @@ include_directories(${CONFIG_INCLUDE_PATH})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
-if (ENABLE_RUST)
-    add_subdirectory (rust)
-endif()
+add_subdirectory (rust)
 
 add_subdirectory (base)
 add_subdirectory (src)

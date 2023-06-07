@@ -13,6 +13,11 @@
 #    include <openssl/sha.h>
 #endif
 
+#if USE_BLAKE3
+#    include <blake3.h>
+#include <Common/safe_cast.h>
+#endif
+
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 typedef std::pair<uint64_t, uint64_t> uint128;
 typedef uint128 (*HashFnApplier) (const char*, const size_t);
@@ -60,6 +65,27 @@ inline uint128 MD5Applier(const char* begin, const size_t size) {
 }
 #endif
 
+#if USE_BLAKE3
+inline uint128 Blake3Applier(const char* begin, const size_t size) {
+    uint64_t buf[4];
+
+#if defined(MEMORY_SANITIZER)
+    auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), buf);
+    __msan_unpoison(out_char_data, length);
+#else
+    auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), reinterpret_cast<unsigned char*>(buf));
+#endif
+    if (err_msg != nullptr)
+    {
+        auto err_st = std::string(err_msg);
+        blake3_free_char_pointer(err_msg);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
+    }
+
+    return {buf[0], buf[1]};
+}
+#endif
+
 inline HashFnApplier chooseHashFunction(HashFn hashFnType) {
         switch (hashFnType)
         {
@@ -73,8 +99,10 @@ inline HashFnApplier chooseHashFunction(HashFn hashFnType) {
             case HashFn::SHA256:
                 return &SHA256Applier;
 #endif
-            default:
-                return &SipHashApplier;
+#if USE_BLAKE3
+            case HashFn::BLAKE3:
+                return &Blake3Applier;
+#endif
         }
 }
 

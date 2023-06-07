@@ -352,12 +352,17 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::re2
             ch_contrib::re2_st
             ch_contrib::zlib
+            ch_rust::blake3
             pcg_random
             Poco::Foundation
 )
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
+endif()
+
+if (TARGET ch_rust::blake3)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_rust::blake3)
 endif()
 
 if (TARGET ch_contrib::crc32_s390x)
