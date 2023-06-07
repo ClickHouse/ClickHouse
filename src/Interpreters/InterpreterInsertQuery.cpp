@@ -290,7 +290,7 @@ Chain InterpreterInsertQuery::buildSink(
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
             query_ptr, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms);
+            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
     }
 
     return out;
