@@ -198,9 +198,9 @@ If host is not specified, the default host will be used (localhost).
 If port is not specified, the default port will be used (9000).
 If database is not specified, the default database will be used.
 
-User, password, and database can be specified in the connection string either in --user, --password, --database command line options.
+User, password, and database can be specified in the connection string either in `--user`, `--password`, `--database` command line options.
 
-The connection string must be specified in the first argument of clickhouse-client. The connection string can be combined with other [command-line-options](#command-line-options) except **--host(h)** and **--port**.
+The connection string must be specified in the first argument of clickhouse-client. The connection string can be combined with other [command-line-options](#command-line-options) except `--host(h)` and `--port`.
 
 ### Multiple hosts {#connection_string_multiple_hosts}
 
@@ -226,25 +226,25 @@ Connect to localhost using port 9000 in interactive, multiline mode.
 clickhouse-client "clickhouse://localhost:9000" -m
 ```
 
-Connect to localhost using port 9000 in interactive mode with the user specified in --user option.
+Connect to localhost using port 9000 in interactive mode with the user specified in `--user` option.
 
 ``` bash
 clickhouse-client "clickhouse://localhost:9000" --user default
 ```
 
-Connect to localhost using port 9000 in interactive mode with database 'my_database' specified in command line option
+Connect to localhost using port 9000 in interactive mode to `my_database` database specified in command line option
 
 ``` bash
 clickhouse-client "clickhouse://localhost:9000" --database my_database
 ```
 
-Connect to localhost using port 9000 in interactive mode with the database specified in the connection string.
+Connect to localhost using port 9000 in interactive mode to `my_database` database specified in the connection string.
 
 ``` bash
 clickhouse-client "clickhouse://localhost:9000/my_database"
 ```
 
-Connect to localhost using port 9000 in interactive mode with a database specified in the connection string and a secure connection using shorthanded 's' URI parameter.
+Connect to localhost using port 9000 in interactive mode to `my_database` database specified in the connection string and a secure connection using shorthanded 's' URI parameter.
 
 ```bash
 clickhouse-client "clickhouse://localhost/my_database?s"
