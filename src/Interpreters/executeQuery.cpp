@@ -702,6 +702,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
             {
+                if (async_insert_enabled)
+                {
+                    if (context->isGlobalContext())
+                        context = Context::createCopy(context);
+
+                    context->setSetting("async_insert", Field(0));
+                }
+
                 /// Save insertion table (not table function). TODO: support remote() table function.
                 auto table_id = insert_interpreter->getDatabaseTable();
                 if (!table_id.empty())
