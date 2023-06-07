@@ -649,6 +649,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!async_insert)
         {
+            if (insert_query && async_insert_enabled)
+            {
+                context = Context::createCopy(context);
+                context->setSetting("async_insert", Field(0));
+            }
+
             /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
             if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
             {
@@ -702,14 +708,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
             {
-                if (async_insert_enabled)
-                {
-                    if (context->isGlobalContext())
-                        context = Context::createCopy(context);
-
-                    context->setSetting("async_insert", Field(0));
-                }
-
                 /// Save insertion table (not table function). TODO: support remote() table function.
                 auto table_id = insert_interpreter->getDatabaseTable();
                 if (!table_id.empty())
