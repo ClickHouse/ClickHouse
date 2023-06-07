@@ -3,22 +3,29 @@ import time
 
 import pytest
 import threading
+import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
+# two replicas in remote_servers.xml
+REPLICA_COUNT = 2
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "node1",
-            main_configs=[
-                "configs/config.d/storage_conf.xml",
-            ],
-            with_minio=True,
-        )
+        for i in range(1, REPLICA_COUNT + 1):
+            cluster.add_instance(
+                f"node{i}",
+                main_configs=[
+                    "configs/config.d/storage_conf.xml",
+                    "configs/config.d/remote_servers.xml",
+                ],
+                with_minio=True,
+                with_zookeeper=True,
+            )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -28,7 +35,7 @@ def cluster():
         cluster.shutdown()
 
 
-def create_table(node, table_name, additional_settings):
+def create_table(node, table_name, replicated, additional_settings):
     settings = {
         "storage_policy": "two_disks",
         "old_parts_lifetime": 1,
@@ -38,55 +45,91 @@ def create_table(node, table_name, additional_settings):
     }
     settings.update(additional_settings)
 
+    table_engine = (
+        f"ReplicatedMergeTree('/clickhouse/tables/0/{table_name}', '{node.name}')"
+        if replicated
+        else "MergeTree()"
+    )
+
     create_table_statement = f"""
         CREATE TABLE {table_name} (
             dt Date,
             id Int64,
             data String,
             INDEX min_max (id) TYPE minmax GRANULARITY 3
-        ) ENGINE=MergeTree()
+        ) ENGINE = {table_engine}
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
-    node.query(create_table_statement)
+    if replicated:
+        node.query_with_retry(create_table_statement)
+    else:
+        node.query(create_table_statement)
 
 
-@pytest.mark.parametrize("allow_remote_fs_zero_copy_replication", [False, True])
-def test_create_table(cluster, allow_remote_fs_zero_copy_replication):
-    node = cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "allow_remote_fs_zero_copy_replication,replicated_engine",
+    [(False, False), (False, True), (True, True)],
+)
+def test_create_table(
+    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
+):
+    if replicated_engine:
+        nodes = list(cluster.instances.values())
+    else:
+        nodes = [cluster.instances["node1"]]
 
     additional_settings = {}
-    table_name = "test_table"
 
+    # different names for logs readability
+    table_name = "test_table"
     if allow_remote_fs_zero_copy_replication:
-        # different names for logs readability
         table_name = "test_table_zero_copy"
         additional_settings["allow_remote_fs_zero_copy_replication"] = 1
+    if replicated_engine:
+        table_name = table_name + "_replicated"
 
-    create_table(node, table_name, additional_settings)
+    for node in nodes:
+        create_table(node, table_name, replicated_engine, additional_settings)
 
-    node.query(
-        f"INSERT INTO {table_name} SELECT toDate('2021-01-01') + INTERVAL number % 10 DAY, number, toString(sipHash64(number)) FROM numbers(100_000)"
-    )
+    for i in range(1, 11):
+        partition = f"2021-01-{i:02d}"
+        random.choice(nodes).query(
+            f"INSERT INTO {table_name} SELECT toDate('{partition}'), number as id, toString(sipHash64(number, {i})) FROM numbers(10_000)"
+        )
+
+    def check_count():
+        if replicated_engine:
+            return random.choice(nodes).query_with_retry(
+                f"SELECT countDistinct(dt, data) FROM clusterAllReplicas(test_cluster, default.{table_name}) WHERE id % 100 = 0"
+            )
+        else:
+            return random.choice(nodes).query(
+                f"SELECT countDistinct(dt, data) FROM {table_name} WHERE id % 100 = 0"
+            )
+
+    assert check_count() == "1000\n"
 
     stop_alter = False
 
     def alter():
-        d = 0
-        node.query(f"ALTER TABLE {table_name} ADD COLUMN col0 String")
-        while not stop_alter:
-            d = d + 1
-            node.query(f"DELETE FROM {table_name} WHERE id < {d}")
+        random.choice(nodes).query(f"ALTER TABLE {table_name} ADD COLUMN col0 String")
+        for d in range(1, 100):
+            if stop_alter:
+                break
+            # I managed to reproduce issue with DELETE, but it can be any other lightweight mutation
+            # Do not delete rows with id % 100 = 0, because they are used in check_count to check that data is not corrupted
+            random.choice(nodes).query(f"DELETE FROM {table_name} WHERE id % 100 = {d}")
             time.sleep(0.1)
 
     alter_thread = threading.Thread(target=alter)
     alter_thread.start()
 
-    for i in range(1, 10):
+    for i in range(1, 11):
         partition = f"2021-01-{i:02d}"
         try:
-            node.query(
+            random.choice(nodes).query(
                 f"ALTER TABLE {table_name} MOVE PARTITION '{partition}' TO DISK 's3'",
             )
         except QueryRuntimeException as e:
@@ -94,8 +137,10 @@ def test_create_table(cluster, allow_remote_fs_zero_copy_replication):
                 continue
             raise e
 
-        # clear old temporary directories wakes up every 1 second
+        # Function to clear old temporary directories wakes up every 1 second, sleep to make sure it is called
         time.sleep(0.5)
 
     stop_alter = True
     alter_thread.join()
+
+    assert check_count() == "1000\n"
