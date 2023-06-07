@@ -360,12 +360,6 @@ struct FileSegmentsHolder : private boost::noncopyable
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
 
-    void moveTo(FileSegmentsHolder & holder)
-    {
-        holder.file_segments.insert(holder.file_segments.end(), file_segments.begin(), file_segments.end());
-        file_segments.clear();
-    }
-
 private:
     FileSegments file_segments{};
     const bool complete_on_dtor = true;
