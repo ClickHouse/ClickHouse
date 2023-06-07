@@ -317,6 +317,8 @@ ZooKeeper::ZooKeeper(
     , next_xid(args.initial_xid_value)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
+    LOG_INFO(log, "Initialize the XID to {}", args.initial_xid_value);
+
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -603,6 +605,8 @@ void ZooKeeper::sendThread()
                             std::piecewise_construct,
                             std::forward_as_tuple(info.request->xid),
                             std::forward_as_tuple());
+                        /// Let's actively end the current session if there has been the same xid in the operation queue.
+                        /// But normally the range of xid(1 ... 2~31-1) is large enough not to trigger this exception.
                         if (!inserted)
                             throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Have a conflict xid: {}", info.request->xid);
                         it->second.iter = operations_queue.insert(operations_queue.end(), info);

@@ -1,0 +1,6 @@
+<clickhouse>
+    <text_log>
+        <partition_by>toYYYYMMDD(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+    </text_log>
+</clickhouse>
