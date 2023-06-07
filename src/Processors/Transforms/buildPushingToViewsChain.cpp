@@ -444,7 +444,7 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, metadata_snapshot, context);
+        auto sink = storage->write(query_ptr, metadata_snapshot, context, /*async_insert=*/false);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));

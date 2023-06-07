@@ -282,7 +282,7 @@ Chain InterpreterInsertQuery::buildSink(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
+        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
