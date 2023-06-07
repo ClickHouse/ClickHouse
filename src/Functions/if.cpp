@@ -1116,6 +1116,32 @@ public:
 
         return res;
     }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        const ColumnWithTypeAndName & arg_cond = arguments[0];
+        if (!arg_cond.column || !isColumnConst(*arg_cond.column))
+            return {};
+
+        const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
+        if (!cond_const_col)
+            return {};
+
+        bool condition_value = cond_const_col->getValue<UInt8>();
+
+        const ColumnWithTypeAndName & arg_then = arguments[1];
+        const ColumnWithTypeAndName & arg_else = arguments[2];
+        const ColumnWithTypeAndName & potential_const_column = condition_value ? arg_then : arg_else;
+
+        if (!potential_const_column.column || !isColumnConst(*potential_const_column.column))
+            return {};
+
+        auto result = castColumn(potential_const_column, result_type);
+        if (!isColumnConst(*result))
+            return {};
+
+        return result;
+    }
 };
 
 }
