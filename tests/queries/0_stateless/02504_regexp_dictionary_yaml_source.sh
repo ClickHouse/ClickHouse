@@ -175,6 +175,70 @@ select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'pare
 select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs', 2);
 "
 
+# Test that things work the same for "simple" regexps that go through Hyperscan and "complex" regexps that go through RE2.
+# An easy way to force the use of RE2 is to disable Hyperscan.
+# This tree is constructed purposely so that text might (falsely) match leaf nodes without matching their corresponding parent nodes
+cat > "$yaml" <<EOL
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  paths:
+    - regexp: 'docs'
+      tag: 'ClickHouse Documentation'
+
+- regexp: 'github\.com'
+  tag: 'GitHub'
+  paths:
+    - regexp: 'docs'
+      tag: 'GitHub Documentation'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = false);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+"
+
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
