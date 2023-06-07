@@ -72,8 +72,8 @@ public:
     // Throws if job is FAILED or CANCELED. Returns or throws immediately if called on non-pending job.
     void wait() const;
 
-    // Wait for a job to reach any non PENDING status.
-    void waitNoThrow() const noexcept;
+    // Wait for a job to reach any non PENDING status. May throw if deadlock is detected.
+    void waitNoThrow() const;
 
     // Returns number of threads blocked by `wait()` or `waitNoThrow()` calls.
     size_t waitersCount() const;
@@ -92,10 +92,12 @@ public:
 private:
     friend class AsyncLoader;
 
-    void ok();
-    void failed(const std::exception_ptr & ptr);
-    void canceled(const std::exception_ptr & ptr);
-    void finish();
+    void waitImpl(std::unique_lock<std::mutex> & lock) const;
+
+    [[nodiscard]] size_t ok();
+    [[nodiscard]] size_t failed(const std::exception_ptr & ptr);
+    [[nodiscard]] size_t canceled(const std::exception_ptr & ptr);
+    [[nodiscard]] size_t finish();
 
     void scheduled(UInt64 job_id_);
     void enqueued();
@@ -108,7 +110,8 @@ private:
 
     mutable std::mutex mutex;
     mutable std::condition_variable finished;
-    mutable size_t waiters = 0;
+    mutable size_t waiters = 0; // All waiters, including suspended
+    mutable size_t suspended_waiters = 0;
     LoadStatus load_status{LoadStatus::PENDING};
     std::exception_ptr load_exception;
 
@@ -262,6 +265,7 @@ private:
         std::map<UInt64, LoadJobPtr> ready_queue; // FIFO queue of jobs to be executed in this pool. Map is used for faster erasing. Key is `ready_seqno`
         size_t max_threads; // Max number of workers to be spawn
         size_t workers = 0; // Number of currently executing workers
+        size_t suspended_workers = 0; // Number of workers that are blocked by `wait()` call on a job executing in the same pool (for deadlock resolution)
 
         bool isActive() const { return workers > 0 || !ready_queue.empty(); }
     };
@@ -349,8 +353,11 @@ public:
         bool is_executing = false;
     };
 
-    // For introspection and debug only, see `system.async_loader` table
+    // For introspection and debug only, see `system.async_loader` table.
     std::vector<JobState> getJobStates() const;
+
+    // For deadlock resolution. Should not be used directly.
+    void workerIsSuspended(size_t pool_id);
 
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);

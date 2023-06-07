@@ -950,3 +950,48 @@ TEST(AsyncLoader, DynamicPools)
     }
 
 }
+
+TEST(AsyncLoader, RecursiveJob)
+{
+    AsyncLoaderTest t(1);
+    t.loader.start();
+
+    struct MyJob {
+        AsyncLoader & loader;
+        std::atomic<int> jobs_left;
+
+        MyJob(AsyncLoader & loader_, int jobs)
+            : loader(loader_)
+            , jobs_left(jobs)
+        {}
+
+        void jobFunction(const LoadJobPtr & self)
+        {
+            int next = --jobs_left;
+            if (next > 0)
+            {
+                runJob(next, self->pool());
+            }
+        }
+
+        void runJob(int id, size_t pool_id)
+        {
+            auto job_func = [this] (const LoadJobPtr & self) {
+                jobFunction(self);
+            };
+            auto job = makeLoadJob({}, fmt::format("job{}", id), job_func);
+            auto task = makeLoadTask(loader, { job });
+            scheduleAndWaitLoadAllIn(pool_id, task);
+        }
+
+        void runJob()
+        {
+            runJob(jobs_left, 0);
+        }
+    };
+
+    MyJob job(t.loader, 10);
+    job.runJob();
+
+    // TODO(serxa): add more tests with concurrency
+}
