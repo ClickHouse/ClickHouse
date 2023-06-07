@@ -10,14 +10,14 @@
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
-#include <Processors/QueryPlan/PlanFragment.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <QueryCoordination/PlanFragment.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -174,7 +174,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    while (!stack.empty())
+    std::unordered_set<Node *> all_nodes;
+    for (auto & node : nodes)
+    {
+        all_nodes.insert(&node);
+    }
+
+    while (!stack.empty() && all_nodes.contains(stack.top().node))
     {
         auto & frame = stack.top();
 

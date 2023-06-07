@@ -3,22 +3,24 @@
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <base/getFQDNOrHostName.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
-#include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
@@ -117,6 +119,10 @@ struct QueryState
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
+
+    std::optional<FragmentsRequest> fragments_request;
+
+    std::optional<ExchangeDataRequest> exchange_data_request;
 
     void reset()
     {
@@ -230,6 +236,7 @@ private:
     void receiveHello();
     void receiveAddendum();
     bool receivePacket();
+    void receiveFragments();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();

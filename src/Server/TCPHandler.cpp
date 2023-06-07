@@ -42,6 +42,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <QueryCoordination/FragmentMgr.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -418,6 +419,15 @@ void TCPHandler::runImpl()
 
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
+
+            /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
+            if (state.fragments_request && query_context->getSettingsRef().allow_experimental_fragment
+                && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            {
+                FragmentMgr::getInstance().keepToProcessFragments(
+                    query_context->getInitialQueryId(), state.fragments_request->fragmentsRequest());
+                continue;
+            }
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1349,6 +1359,22 @@ bool TCPHandler::receivePacket()
             receiveQuery();
             return true;
 
+        case Protocol::Client::PlanFragments:
+            if (!state.empty())
+                receiveUnexpectedQuery();
+            receiveFragments();
+            return true;
+
+        case Protocol::Client::PlanFragmentsBeginProcess:
+            readStringBinary(state.query_id, *in);
+            FragmentMgr::getInstance().beginFragments(state.query_id);
+            return false;
+
+        case Protocol::Client::ExchangeData:
+            state.exchange_data_request.emplace();
+//            FragmentMgr::getInstance().receiveData(state.exchange_data_request);
+            return false;
+
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
             if (state.skipping_data)
@@ -1450,6 +1476,14 @@ void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
     readStringBinary(salt, *in, 32);
+}
+
+
+void TCPHandler::receiveFragments()
+{
+    receiveQuery();
+    /// TODO
+    // state.fragment_requests.read()
 }
 
 void TCPHandler::receiveQuery()
@@ -1702,6 +1736,10 @@ bool TCPHandler::receiveData(bool scalar)
     {
         /// 'input' table function.
         state.block_for_input = block;
+    }
+    else if (state.exchange_data_request)
+    {
+        FragmentMgr::getInstance().receiveData(state.exchange_data_request.value(), block);
     }
     else
     {

@@ -14,6 +14,7 @@ struct PlanNode
     std::vector<PlanNode *> children = {};
 
     PlanFragmentPtr fragment;
+    UInt32 plan_id;
 };
 
 using PlanNodePtr = std::shared_ptr<PlanNode>;

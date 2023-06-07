@@ -148,7 +148,11 @@ namespace Protocol
             IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-            MAX = MergeTreeReadTaskResponse,
+
+            PlanFragments = 11,             ///
+            PlanFragmentsBeginProcess = 12, ///
+            ExchangeData = 13,              ///
+            MAX = ExchangeData,
         };
 
         inline const char * toString(UInt64 packet)

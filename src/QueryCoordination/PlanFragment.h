@@ -4,12 +4,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExchangeStep.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <memory>
 
 namespace DB
 {
 
-enum PartitionType
+enum PartitionType : uint8_t
 {
     UNPARTITIONED,
     RANDOM,
@@ -35,10 +36,11 @@ class PlanFragment : public std::enable_shared_from_this<PlanFragment>
 public:
     using Node = QueryPlan::Node;
 
-    explicit PlanFragment(QueryPlanStepPtr step, DataPartition & partition) : data_partition(partition)
+    explicit PlanFragment(ContextMutablePtr & context_, QueryPlanStepPtr step, DataPartition & partition)
+        : context(context_), data_partition(partition)
     {
         query_plan.addStep(step);
-//        setFragmentInPlanTree(query_plan.getRootNode());
+        //        setFragmentInPlanTree(query_plan.getRootNode());
     }
 
     // add plan root
@@ -129,7 +131,13 @@ public:
 
     UInt32 getFragmentId() const { return fragment_id; }
 
+    void finalize();
+
+    void buildQueryPipeline();
+
 private:
+
+    ContextMutablePtr context;
 
     // id for this plan fragment
     UInt32 fragment_id;
@@ -153,11 +161,13 @@ private:
 
     DataPartition data_partition;
 
+    DataPartition output_partition;
+
     // if null, outputs the entire row produced by planRoot
     // ArrayList<Expr> outputExprs;
 
     // created in finalize() or set in setSink()
-//    DataSink sink;
+    Node * sink;
 
     // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment,
     // otherwise it is scheduled to the cluster node according to the DataPartition, the principle of minimum data movement.

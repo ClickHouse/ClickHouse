@@ -40,14 +40,13 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
-#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/ScanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -55,25 +54,27 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/ScanStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/PlanFragment.h>
-#include <Processors/QueryPlan/PlanNode.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/ExchangeStep.h>
-#include <Processors/Coordinator.h>
+#include <QueryCoordination/Coordinator.h>
+#include <QueryCoordination/PlanFragment.h>
+#include <QueryCoordination/PlanNode.h>
+#include <QueryCoordination/FragmentMgr.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/IStorage.h>
@@ -891,8 +892,23 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPl
     fragments.back()->dump(buffer);
     LOG_INFO(log, "Fragment dump: {}", buffer.str());
 
-    Coordinator coord(fragments, context);
-    coord.schedule();
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        Coordinator coord(fragments, context);
+        coord.schedule();
+
+        for (auto fragment : coord.localFragments())
+        {
+            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment);
+        }
+    }
+    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        for (auto fragment : fragments)
+        {
+            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment);
+        }
+    }
 
     return fragments;
 }

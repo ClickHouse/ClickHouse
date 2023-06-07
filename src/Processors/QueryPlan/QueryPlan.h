@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
+#include <QueryCoordination/PlanNode.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Processors/QueryPlan/PlanNode.h>
 
 #include <list>
 #include <memory>

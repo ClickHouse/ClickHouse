@@ -34,6 +34,7 @@ using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
+class FragmentsRequest;
 
 
 /** Connection with database server, to use by client.
@@ -109,6 +110,8 @@ public:
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+
+    void sendFragment(FragmentsRequest & fragment);
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 

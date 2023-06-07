@@ -1,14 +1,20 @@
 
-#include <Processors/Coordinator.h>
-#include <Processors/QueryPlan/ScanStep.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/ScanStep.h>
+#include <QueryCoordination/Coordinator.h>
 #include <Storages/IStorage.h>
+#include <QueryCoordination/IO/FragmentsRequest.h>
 
 namespace DB
 {
 
 void Coordinator::schedule()
 {
+    for (auto fragment : fragments)
+    {
+        fragment->finalize();
+    }
+
     // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment
 
     std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts;
@@ -85,12 +91,37 @@ void Coordinator::schedule()
         fragment_hosts->swap(local_fragment_hosts);
     }
 
-    // dump
+    // send
     for (auto [host, fragments_for_dump] : host_fragment_ids)
     {
         for (auto fragment : fragments_for_dump)
         {
-            LOG_INFO(&Poco::Logger::get("Coordinator"), "host {}, fragment_id {}", host, std::to_string(fragment->getFragmentId()));
+            if (host == local_shard_connection->getDescription())
+            {
+                local_fragments.emplace_back(fragment);
+            }
+            else
+            {
+                LOG_INFO(&Poco::Logger::get("Coordinator"), "host {}, fragment_id {}", host, std::to_string(fragment->getFragmentId()));
+                FragmentsRequest request; // query_id fragment dests
+                host_connection[host]->sendFragment(request);
+            }
+        }
+    }
+
+    // TODO send begin process
+    for (auto [host, fragments_for_dump] : host_fragment_ids)
+    {
+        for (auto fragment : fragments_for_dump)
+        {
+            if (host == local_shard_connection->getDescription())
+            {
+                // TODO local begin process
+            }
+            else
+            {
+                // TODO         host_connection[host]->sendBeginFragment();
+            }
         }
     }
 
