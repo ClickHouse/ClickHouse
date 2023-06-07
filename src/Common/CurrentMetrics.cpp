@@ -131,8 +131,14 @@
     M(DistributedInsertThreadsActive, "Number of threads used for INSERT into Distributed running a task.") \
     M(StorageS3Threads, "Number of threads in the StorageS3 thread pool.") \
     M(StorageS3ThreadsActive, "Number of threads in the StorageS3 thread pool running a task.") \
+    M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
+    M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
+    M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
+    M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
+    M(MergeTreeOutdatedPartsLoaderThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
+    M(MergeTreeOutdatedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
