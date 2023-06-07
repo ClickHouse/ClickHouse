@@ -52,7 +52,6 @@ public:
 
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ITER PREFIX {}", path_prefix);
     }
 
 private:
@@ -63,7 +62,6 @@ private:
         auto blob_list_response = client->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
 
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BLOB LIST SIZE {}", blobs_list.size());
         for (const auto & blob : blobs_list)
         {
             batch.emplace_back(
@@ -77,13 +75,9 @@ private:
         }
 
         if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
-        {
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "RETURN FALSE {}", blobs_list.size());
             return false;
-        }
 
         options.ContinuationToken = blob_list_response.NextPageToken;
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "RETURN TRUE {}", blobs_list.size());
         return true;
     }
 
@@ -222,6 +216,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
+            /* restricted_seek */true,
             read_until_position);
     };
 
