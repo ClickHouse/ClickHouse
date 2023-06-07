@@ -534,7 +534,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
-    if (is_null && !to_type.isNullable())
+    if (is_null && !to_type.isNullable() && !to_type.isLowCardinalityNullable())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);

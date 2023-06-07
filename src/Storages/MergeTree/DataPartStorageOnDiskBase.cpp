@@ -202,6 +202,13 @@ bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
     return volume->getDisk()->isRemote();
 }
 
+std::optional<String> DataPartStorageOnDiskBase::getCacheName() const
+{
+    if (volume->getDisk()->supportsCache())
+        return volume->getDisk()->getCacheName();
+    return std::nullopt;
+}
+
 bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
 {
     return volume->getDisk()->supportZeroCopyReplication();
