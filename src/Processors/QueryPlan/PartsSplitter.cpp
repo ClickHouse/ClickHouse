@@ -126,7 +126,9 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             return marks_in_current_layer < intersected_parts * 2;
         };
 
-        result_layers.emplace_back();
+        auto & current_layer = result_layers.emplace_back();
+        /// Map part_idx into index inside layer, used to merge marks from the same part into one reader
+        std::unordered_map<size_t, size_t> part_idx_in_layer;
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
@@ -140,11 +142,16 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
 
                 if (current.event == PartsRangesIterator::EventType::RangeEnd)
                 {
-                    result_layers.back().emplace_back(
-                        parts[part_idx].data_part,
-                        parts[part_idx].alter_conversions,
-                        parts[part_idx].part_index_in_query,
-                        MarkRanges{{current_part_range_begin[part_idx], current.range.end}});
+                    const auto & mark = MarkRange{current_part_range_begin[part_idx], current.range.end};
+                    auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
+                    if (it.second)
+                        current_layer.emplace_back(
+                            parts[part_idx].data_part,
+                            parts[part_idx].alter_conversions,
+                            parts[part_idx].part_index_in_query,
+                            MarkRanges{mark});
+                    else
+                        current_layer[it.first->second].ranges.push_back(mark);
 
                     current_part_range_begin.erase(part_idx);
                     current_part_range_end.erase(part_idx);
@@ -170,11 +177,17 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
         }
         for (const auto & [part_idx, last_mark] : current_part_range_end)
         {
-            result_layers.back().emplace_back(
-                parts[part_idx].data_part,
-                parts[part_idx].alter_conversions,
-                parts[part_idx].part_index_in_query,
-                MarkRanges{{current_part_range_begin[part_idx], last_mark + 1}});
+            const auto & mark = MarkRange{current_part_range_begin[part_idx], last_mark + 1};
+            auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
+
+            if (it.second)
+                result_layers.back().emplace_back(
+                    parts[part_idx].data_part,
+                    parts[part_idx].alter_conversions,
+                    parts[part_idx].part_index_in_query,
+                    MarkRanges{mark});
+            else
+                current_layer[it.first->second].ranges.push_back(mark);
 
             current_part_range_begin[part_idx] = current_part_range_end[part_idx];
         }

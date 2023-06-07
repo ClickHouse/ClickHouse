@@ -4,7 +4,7 @@ import unittest
 from dataclasses import dataclass
 from typing import Any, List
 
-from autoscale_runners_lambda.app import set_capacity, Queue
+from app import set_capacity, Queue
 
 
 @dataclass
