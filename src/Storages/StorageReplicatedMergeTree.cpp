@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/noexcept_scope.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
@@ -1935,6 +1936,30 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
     }
 }
 
+static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeeper, const String & replica_path,
+                                                    MergeTreeDataFormatVersion format_version, const String & covering_part_name)
+{
+#ifdef ABORT_ON_LOGICAL_ERROR
+    constexpr bool paranoid_check_for_covered_parts_default = true;
+#else
+    constexpr bool paranoid_check_for_covered_parts_default = false;
+#endif
+
+    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
+        "replicated_merge_tree_paranoid_check_on_drop_range", paranoid_check_for_covered_parts_default);
+    if (paranoid_check_for_covered_parts)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
+        Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
+        for (const auto & part_name : parts_remain)
+        {
+            auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+            if (drop_range_info.contains(part_info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, covering_part_name);
+        }
+    }
+}
 
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
@@ -1991,6 +2016,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
+    paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -2126,6 +2152,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
         removePartsFromZooKeeperWithRetries(parts_to_remove);
+        if (replace)
+            paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
         return true;
     }
 
@@ -2344,16 +2372,19 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
+            scope_guard part_temp_directory_lock;
 
             if (interserver_scheme != address.scheme)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            part_desc->res_part = fetcher.fetchSelectedPart(
+            auto [fetched_part, lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
+            part_desc->res_part = fetched_part;
+            part_temp_directory_lock = std::move(lock);
 
             /// TODO: check columns_version of fetched part
 
@@ -2422,6 +2453,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
+    if (replace)
+        paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
@@ -2460,6 +2493,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         auto timeouts = getHTTPTimeouts(getContext());
         auto credentials = getContext()->getInterserverCredentials();
         String interserver_scheme = getContext()->getInterserverScheme();
+        scope_guard part_temp_directory_lock;
 
         auto get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
@@ -2467,11 +2501,13 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interserver schemes are different: '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            return fetcher.fetchSelectedPart(
+            auto [fetched_part, lock]  = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
                 replicated_fetches_throttler, true);
+            part_temp_directory_lock = std::move(lock);
+            return fetched_part;
         };
 
         part = get_part();
@@ -2816,6 +2852,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored", total_entries_to_copy, source_queue.size() - total_entries_to_copy);
+    LOG_TRACE(log, "Parts in ZooKeeper after mimic: {}", fmt::join(zookeeper->getChildren(replica_path + "/parts"), ", "));
+    LOG_TRACE(log, "Enqueued fetches after mimic: {}", fmt::join(created_get_parts, ", "));
 }
 
 
@@ -4170,14 +4208,14 @@ bool StorageReplicatedMergeTree::fetchPart(
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     MergeTreeData::HardlinkedFiles hardlinked_files;
-    scope_guard part_to_clone_lock;
+    scope_guard part_directory_lock;
 
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
         {
             auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false, {});
-            part_to_clone_lock = std::move(lock);
+            part_directory_lock = std::move(lock);
             return cloned_part;
         };
     }
@@ -4195,7 +4233,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                     "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-            return fetcher.fetchSelectedPart(
+            auto [fetched_part, lock] =  fetcher.fetchSelectedPart(
                 metadata_snapshot,
                 getContext(),
                 part_name,
@@ -4212,6 +4250,8 @@ bool StorageReplicatedMergeTree::fetchPart(
                 "",
                 &tagger_ptr,
                 try_fetch_shared);
+            part_directory_lock = std::move(lock);
+            return fetched_part;
         };
     }
 
@@ -4355,6 +4395,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     auto timeouts = getHTTPTimeouts(getContext());
     auto credentials = getContext()->getInterserverCredentials();
     String interserver_scheme = getContext()->getInterserverScheme();
+    scope_guard part_temp_directory_lock;
 
     get_part = [&, address, timeouts, interserver_scheme, credentials]()
     {
@@ -4362,12 +4403,14 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
             throw Exception(ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH, "Interserver schemes are different: "
                 "'{}' != '{}', can't fetch part from {}", interserver_scheme, address.scheme, address.host);
 
-        return fetcher.fetchSelectedPart(
+        auto [fetched_part, lock] = fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
             interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
             replaced_disk);
+        part_temp_directory_lock = std::move(lock);
+        return fetched_part;
     };
 
     try
@@ -4779,7 +4822,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
     if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
@@ -4796,7 +4839,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
-    bool async_deduplicate = query_settings.async_insert && query_settings.async_insert_deduplicate && storage_settings_ptr->replicated_deduplication_window_for_async_inserts != 0 && query_settings.insert_deduplicate;
+    bool async_deduplicate = async_insert && query_settings.async_insert_deduplicate && storage_settings_ptr->replicated_deduplication_window_for_async_inserts != 0 && query_settings.insert_deduplicate;
     if (async_deduplicate)
         return std::make_shared<ReplicatedMergeTreeSinkWithAsyncDeduplicate>(
             *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
@@ -6634,8 +6677,7 @@ bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
-    auto table_lock = lockForShare(
-            RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto zookeeper = getZooKeeper();
 
     /// Now these parts are in Deleting state. If we fail to remove some of them we must roll them back to Outdated state.
@@ -6643,6 +6685,12 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     DataPartsVector parts = grabOldParts();
     if (parts.empty())
         return;
+
+    NOEXCEPT_SCOPE({ clearOldPartsAndRemoveFromZKImpl(zookeeper, std::move(parts)); });
+}
+
+void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts)
+{
 
     DataPartsVector parts_to_delete_only_from_filesystem;    // Only duplicates
     DataPartsVector parts_to_delete_completely;              // All parts except duplicates
@@ -6654,7 +6702,11 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         /// Broken part can be removed from zk by removePartAndEnqueueFetch(...) only.
         /// Removal without enqueueing a fetch leads to intersecting parts.
         if (part->is_duplicate || part->outdated_because_broken)
+        {
+            LOG_WARNING(log, "Will not remove part {} from ZooKeeper (is_duplicate: {}, outdated_because_broken: {})",
+                        part->name, part->is_duplicate, part->outdated_because_broken);
             parts_to_delete_only_from_filesystem.emplace_back(part);
+        }
         else
             parts_to_delete_completely.emplace_back(part);
     }
@@ -6680,7 +6732,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
             if (!rollback_parts.empty())
                 rollbackDeletingParts(rollback_parts);
         }
-        else  /// all parts was successfully removed
+        else  /// all parts were successfully removed
         {
             finally_remove_parts = parts_to_delete;
         }
@@ -6764,114 +6816,57 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(PartsToRemo
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries)
 {
+    auto zookeeper = getZooKeeper();
+    NameSet parts_to_retry_set;
+    removePartsFromZooKeeper(zookeeper, part_names, &parts_to_retry_set);
+
     size_t num_tries = 0;
-    bool success = false;
-
-    while (!success && (max_retries == 0 || num_tries < max_retries))
+    while (!parts_to_retry_set.empty() && (max_retries == 0 || num_tries < max_retries))
     {
-        try
-        {
-            ++num_tries;
-            success = true;
-
-            auto zookeeper = getZooKeeper();
-
-            Strings exists_paths;
-            exists_paths.reserve(part_names.size());
-            for (const String & part_name : part_names)
-            {
-                exists_paths.emplace_back(fs::path(replica_path) / "parts" / part_name);
-            }
-
-            auto exists_results = zookeeper->exists(exists_paths);
-
-            std::vector<std::future<Coordination::MultiResponse>> remove_futures;
-            remove_futures.reserve(part_names.size());
-            for (size_t i = 0; i < part_names.size(); ++i)
-            {
-                Coordination::ExistsResponse exists_resp = exists_results[i];
-                if (exists_resp.error == Coordination::Error::ZOK)
-                {
-                    Coordination::Requests ops;
-                    getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                    remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
-                }
-            }
-
-            for (auto & future : remove_futures)
-            {
-                auto response = future.get();
-
-                if (response.error == Coordination::Error::ZOK || response.error == Coordination::Error::ZNONODE)
-                    continue;
-
-                if (Coordination::isHardwareError(response.error))
-                {
-                    success = false;
-                    continue;
-                }
-
-                throw Coordination::Exception(response.error);
-            }
-        }
-        catch (Coordination::Exception & e)
-        {
-            success = false;
-
-            if (Coordination::isHardwareError(e.code))
-                tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            else
-                throw;
-        }
-
-        if (!success && num_tries < max_retries)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        zookeeper = getZooKeeper();
+        Strings parts_to_retry;
+        std::move(parts_to_retry_set.begin(), parts_to_retry_set.end(), std::back_inserter(parts_to_retry));
+        parts_to_retry_set.clear();
+        removePartsFromZooKeeper(zookeeper, parts_to_retry, &parts_to_retry_set);
+        ++num_tries;
     }
 
-    if (!success)
-        throw Exception(ErrorCodes::UNFINISHED, "Failed to remove parts from ZooKeeper after {} retries", num_tries);
+    if (!parts_to_retry_set.empty())
+        throw Exception(ErrorCodes::UNFINISHED, "Failed to remove {} parts from ZooKeeper after {} retries", parts_to_retry_set.size(), num_tries);
 }
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(
     zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names, NameSet * parts_should_be_retried)
+try
 {
     Strings exists_paths;
     std::vector<std::future<Coordination::MultiResponse>> remove_futures;
     exists_paths.reserve(part_names.size());
     remove_futures.reserve(part_names.size());
-    try
+    /// Exception can be thrown from loop
+    /// if zk session will be dropped
+    for (const String & part_name : part_names)
     {
-        /// Exception can be thrown from loop
-        /// if zk session will be dropped
-        for (const String & part_name : part_names)
-        {
-            exists_paths.emplace_back(fs::path(replica_path) / "parts" / part_name);
-        }
-
-        auto exists_results = zookeeper->exists(exists_paths);
-
-        for (size_t i = 0; i < part_names.size(); ++i)
-        {
-            auto exists_resp = exists_results[i];
-            if (exists_resp.error == Coordination::Error::ZOK)
-            {
-                Coordination::Requests ops;
-                getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
-            }
-            else
-            {
-                LOG_DEBUG(log, "There is no part {} in ZooKeeper, it was only in filesystem", part_names[i]);
-                // emplace invalid future so that the total number of futures is the same as part_names.size();
-                remove_futures.emplace_back();
-            }
-        }
+        exists_paths.emplace_back(fs::path(replica_path) / "parts" / part_name);
     }
-    catch (const Coordination::Exception & e)
+
+    auto exists_results = zookeeper->exists(exists_paths);
+
+    for (size_t i = 0; i < part_names.size(); ++i)
     {
-        if (parts_should_be_retried && Coordination::isHardwareError(e.code))
-            parts_should_be_retried->insert(part_names.begin(), part_names.end());
-        throw;
+        auto exists_resp = exists_results[i];
+        if (exists_resp.error == Coordination::Error::ZOK)
+        {
+            Coordination::Requests ops;
+            getRemovePartFromZooKeeperOps(part_names[i], ops, exists_resp.stat.numChildren > 0);
+            remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
+        }
+        else
+        {
+            LOG_DEBUG(log, "There is no part {} in ZooKeeper, it was only in filesystem", part_names[i]);
+            // emplace invalid future so that the total number of futures is the same as part_names.size();
+            remove_futures.emplace_back();
+        }
     }
 
     for (size_t i = 0; i < remove_futures.size(); ++i)
@@ -6884,20 +6879,26 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
         auto response = future.get();
         if (response.error == Coordination::Error::ZOK)
             continue;
-        else if (response.error == Coordination::Error::ZNONODE)
+
+        if (response.error == Coordination::Error::ZNONODE)
         {
             LOG_DEBUG(log, "There is no part {} in ZooKeeper, it was only in filesystem", part_names[i]);
-            continue;
         }
-        else if (Coordination::isHardwareError(response.error))
+        else
         {
             if (parts_should_be_retried)
                 parts_should_be_retried->insert(part_names[i]);
-            continue;
+
+            if (!Coordination::isHardwareError(response.error))
+                LOG_WARNING(log, "Cannot remove part {} from ZooKeeper: {}", part_names[i], Coordination::errorMessage(response.error));
         }
-        else
-            LOG_WARNING(log, "Cannot remove part {} from ZooKeeper: {}", part_names[i], Coordination::errorMessage(response.error));
     }
+}
+catch (...)
+{
+    if (parts_should_be_retried)
+        parts_should_be_retried->insert(part_names.begin(), part_names.end());
+    throw;
 }
 
 void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
@@ -7164,7 +7165,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
         }
 
-        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
@@ -7215,7 +7215,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
                 transaction.commit(&data_parts_lock);
                 if (replace)
-                    parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
+                    removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -7235,11 +7235,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        /// Forcibly remove replaced parts from ZooKeeper
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        /// Speedup removing of replaced parts from filesystem
-        parts_to_remove.clear();
         cleanup_thread.wakeup();
 
         lock2.reset();
@@ -7408,7 +7403,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
 
-        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
@@ -7445,7 +7439,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
                 transaction.commit(&src_data_parts_lock);
             }
 
@@ -7467,9 +7461,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        parts_to_remove.clear();
         cleanup_thread.wakeup();
         lock2.reset();
 

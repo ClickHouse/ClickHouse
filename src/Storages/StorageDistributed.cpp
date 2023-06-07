@@ -897,7 +897,7 @@ QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context);
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
     auto io = interpreter.execute();
     io.pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(io.pipeline);
@@ -1132,17 +1132,10 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
-
-    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage {} must have own data directory to enable asynchronous inserts",
-                        getName());
-    }
 
     auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
 
