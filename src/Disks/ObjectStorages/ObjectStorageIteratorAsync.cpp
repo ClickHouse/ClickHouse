@@ -25,7 +25,6 @@ void IObjectStorageIteratorAsync::nextBatch()
          current_batch = std::move(next_batch.batch);
          accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
          current_batch_iterator = current_batch.begin();
-         LOG_DEBUG(&Poco::Logger::get("DEBUG"), "HAS NEXT {}", next_batch.has_next);
          if (next_batch.has_next)
              outcome_future = scheduleBatch();
          else
@@ -78,6 +77,7 @@ bool IObjectStorageIteratorAsync::isValid()
     if (!is_initialized)
         nextBatch();
 
+    std::lock_guard lock(mutex);
     return current_batch_iterator != current_batch.end();
 }
 
@@ -86,16 +86,17 @@ RelativePathWithMetadata IObjectStorageIteratorAsync::current()
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
+    std::lock_guard lock(mutex);
     return *current_batch_iterator;
 }
 
 
 RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 {
-    std::lock_guard lock(mutex);
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
+    std::lock_guard lock(mutex);
     return current_batch;
 }
 
