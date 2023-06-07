@@ -9,7 +9,6 @@ ORDER BY type, L2Distance
 1	[0,0,10]
 5	[0,0,10.2]
 4	[0,0,9.7]
-Reference ARRAYs with non-matching dimension are rejected
 WHERE type, L2Distance, check that index is used
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
