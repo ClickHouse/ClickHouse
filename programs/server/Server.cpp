@@ -1438,15 +1438,12 @@ try
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
 
-    size_t async_insert_threads = config().getUInt("async_insert_threads", 16);
-    bool async_insert_queue_flush_on_shutdown = config().getBool("async_insert_queue_flush_on_shutdown", false);
-
-    if (async_insert_threads)
+    if (server_settings.async_insert_threads)
     {
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            async_insert_threads,
-            async_insert_queue_flush_on_shutdown));
+            server_settings.async_insert_threads,
+            server_settings.async_insert_queue_flush_on_shutdown));
     }
 
     size_t mark_cache_size = server_settings.mark_cache_size;
