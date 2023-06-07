@@ -6743,14 +6743,12 @@ size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     if (parts.empty())
         return total_parts_to_remove;
 
-    size_t res = 0;
-    NOEXCEPT_SCOPE({ res = clearOldPartsAndRemoveFromZKImpl(zookeeper, std::move(parts)); });
-    return res;
+    NOEXCEPT_SCOPE({ clearOldPartsAndRemoveFromZKImpl(zookeeper, std::move(parts)); });
+    return total_parts_to_remove;
 }
 
-size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts)
+void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts)
 {
-
     DataPartsVector parts_to_delete_only_from_filesystem;    // Only duplicates
     DataPartsVector parts_to_delete_completely;              // All parts except duplicates
     DataPartsVector parts_to_retry_deletion;                 // Parts that should be retried due to network problems
@@ -6861,8 +6859,6 @@ size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooK
         /// Otherwise nobody will try to remove them again (see grabOldParts).
         delete_parts_from_fs_and_rollback_in_case_of_error(parts_to_remove_from_filesystem, "old");
     }
-
-    return total_parts_to_remove;
 }
 
 

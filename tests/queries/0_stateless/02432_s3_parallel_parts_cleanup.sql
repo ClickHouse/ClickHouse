@@ -38,11 +38,7 @@ select count(), sum(n), sum(m) from rmt;
 -- New table can assign merges/mutations and can remove old parts
 create table rmt2 (n int, m int, k String) engine=ReplicatedMergeTree('/test/02432/{database}', '2') order by tuple()
     settings storage_policy = 's3_cache', allow_remote_fs_zero_copy_replication=1,
-<<<<<<< HEAD
-        max_part_removal_threads=10, concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,
-=======
-        concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
->>>>>>> master
+        concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,
         min_bytes_for_wide_part=0, min_rows_for_wide_part=0, max_replicated_merges_in_queue=1,
         old_parts_lifetime=0;
 
