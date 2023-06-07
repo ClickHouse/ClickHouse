@@ -55,21 +55,19 @@ void getHostAndPort(const Poco::URI & uri, std::vector<std::vector<std::string>>
 void getHostAndPort(
     Poco::URI & uri,
     std::vector<std::vector<std::string>> & hosts_and_ports_arguments,
-    const char * host_begin,
-    const char * host_end,
-    const char * right_part_start,
-    const char * connection_string_end)
+    std::string_view host_and_port,
+    std::string_view right_part)
 {
     // User info does not matter in sub URI
     auto uri_string = std::string(CONNECTION_URI_SCHEME);
-    if (host_begin != nullptr && host_begin != host_end)
+    if (!host_and_port.empty())
     {
         uri_string.append("//");
-        uri_string.append(host_begin, host_end);
+        uri_string.append(host_and_port);
     }
 
     // Right part from string includes '/database?[params]'
-    uri_string.append(right_part_start, connection_string_end);
+    uri_string.append(right_part);
     try
     {
         uri = Poco::URI(uri_string);
@@ -147,7 +145,7 @@ bool tryParseConnectionString(
         {
             if (*it == ',')
             {
-                getHostAndPort(uri, hosts_and_ports_arguments, last_host_begin, it, hosts_end, connection_string.end());
+                getHostAndPort(uri, hosts_and_ports_arguments, {last_host_begin, it}, {hosts_end, connection_string.end()});
                 last_host_begin = it + 1;
             }
         }
@@ -159,7 +157,7 @@ bool tryParseConnectionString(
             getHostAndPort(uri, hosts_and_ports_arguments);
         }
         else
-            getHostAndPort(uri, hosts_and_ports_arguments, last_host_begin, hosts_end, hosts_end, connection_string.end());
+            getHostAndPort(uri, hosts_and_ports_arguments, {last_host_begin, hosts_end}, {hosts_end, connection_string.end()});
 
         Poco::URI::QueryParameters params = uri.getQueryParameters();
         for (const auto & param : params)
