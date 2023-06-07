@@ -50,7 +50,8 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool async_insert) override;
 
     void truncate(
         const ASTPtr & /*query*/,
