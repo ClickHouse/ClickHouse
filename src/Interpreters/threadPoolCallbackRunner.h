@@ -44,6 +44,9 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
 
         auto future = task->get_future();
 
+        /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
+        /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
+        /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
         my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ (*my_task)(); }, priority);
 
         return future;
