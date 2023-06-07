@@ -344,7 +344,7 @@ private:
 
     /// Delete old parts from disk and from ZooKeeper. Returns the number of removed parts
     size_t clearOldPartsAndRemoveFromZK();
-    size_t clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
+    void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;

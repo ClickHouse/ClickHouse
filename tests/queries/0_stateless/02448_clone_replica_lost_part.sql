@@ -7,11 +7,11 @@ drop table if exists rmt2;
 create table rmt1 (n int) engine=ReplicatedMergeTree('/test/02448/{database}/rmt', '1') order by tuple()
     settings min_replicated_logs_to_keep=1, max_replicated_logs_to_keep=2, cleanup_delay_period=0, cleanup_delay_period_random_add=1,
     cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime=0, max_parts_to_merge_at_once=4,
-    merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=500;
+    merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000;
 create table rmt2 (n int) engine=ReplicatedMergeTree('/test/02448/{database}/rmt', '2') order by tuple()
     settings min_replicated_logs_to_keep=1, max_replicated_logs_to_keep=2, cleanup_delay_period=0, cleanup_delay_period_random_add=1,
     cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime=0, max_parts_to_merge_at_once=4,
-    merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=500;
+    merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=2000;
 
 -- insert part only on one replica
 system stop replicated sends rmt1;
@@ -141,7 +141,10 @@ system sync replica rmt2;
 -- merge through gap
 optimize table rmt2;
 -- give it a chance to cleanup log
-select sleep(2) format Null; -- increases probability of reproducing the issue
+
+select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
+            'select value from system.zookeeper where path=''//test/02448/' || currentDatabase() || '/rmt/replicas/1/is_lost'' and value=''1'''
+    ), 'LineAsString', 's String') settings max_threads=1 format Null;
 
 -- rmt1 will mimic rmt2, but will not be able to fetch parts for a while
 system stop replicated sends rmt2;
