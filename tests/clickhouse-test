@@ -286,11 +286,11 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
+                    p.*,
                     arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
-                    )) AS stacktraces,
-                    p.*
+                    )) AS stacktraces
                 FROM system.processes p
                 JOIN system.stack_trace s USING (query_id)
                 WHERE query NOT LIKE '%system.processes%'
@@ -307,11 +307,11 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
+                p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces,
-                p.*
+                )) AS stacktraces
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -1048,12 +1048,13 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
+                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
+                file = open(self.stdout_file, "rb")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="

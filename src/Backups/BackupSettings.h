@@ -32,6 +32,9 @@ struct BackupSettings
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
 
+    /// Whether the BACKUP command should decrypt files stored on encrypted disks.
+    bool decrypt_files_from_encrypted_disks = false;
+
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
