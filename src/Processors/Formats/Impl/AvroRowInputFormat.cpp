@@ -185,7 +185,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 tmp.size());
         else if (tmp.size() != field_type_size)
         {
-            /// Extent value to required size by adding paddinf.
+            /// Extent value to required size by adding padding.
             /// Check if value is negative or positive.
             if (tmp[0] & 128)
                 tmp = std::string(field_type_size - tmp.size(), 0xff) + tmp;
