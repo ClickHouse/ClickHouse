@@ -179,7 +179,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_MUTATIONS;
-    extern const int CANNOT_PERFORM_INDEX_ANALYSIS;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -7204,7 +7203,7 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
         query_context->getSettingsRef().max_threads);
 
     if (result_ptr->error())
-        throw Exception(ErrorCodes::CANNOT_PERFORM_INDEX_ANALYSIS, "Cannot estimate the number of granules to read");
+        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 
     LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
 
