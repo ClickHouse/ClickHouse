@@ -314,6 +314,7 @@ ZooKeeper::ZooKeeper(
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
+    , next_xid.store(args.initial_xid_value)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -1477,8 +1478,8 @@ XID ZooKeeper::getXID()
     }
 
     /// Log the reset operation.
-    LOG_INFO(log, "Reset the XID to avoid session expiration");
-    next_xid.exchange(1);
+    LOG_INFO(log, "Reset the XID to {} to avoid session expiration", args.initial_xid_value);
+    next_xid.store(args.initial_xid_value);
     xid = next_xid.fetch_add(1);
 
     return xid;

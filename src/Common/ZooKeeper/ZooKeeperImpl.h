@@ -227,7 +227,7 @@ private:
 
     int64_t session_id = 0;
 
-    std::atomic<XID> next_xid {1};
+    std::atomic<XID> next_xid;
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
     std::atomic_flag finalization_started;

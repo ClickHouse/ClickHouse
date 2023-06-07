@@ -203,6 +203,12 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
             get_priority_load_balancing.load_balancing = *load_balancing;
         }
+        else if (key == "set_zookeeper_xid_value")
+        {
+            initial_xid_value = config.getInt(config_name + "." + key);
+            if (initial_xid_value <= 0)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "The initial xid value should be 1 ~ (2^31 - 1)");
+        }
         else
             throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
     }
