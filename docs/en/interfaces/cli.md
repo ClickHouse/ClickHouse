@@ -168,7 +168,7 @@ clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
 
 where user_info is: ```user[:password]```
 and hosts_and_ports is a list of values: ```[host][:port],[host][:port]``` Port is not mandatory.
-and query_parameters is a list of parameter[=value]: ```param_name[=value]&param_name[=value]...``` value may not be required for some of parameters.
+and query_parameters is a list of parameter[=value]: ```param_name[=value]&param_name[=value]...``` value may not be required for some of parameters. Parameter names are case sensitive.
 
 Allowed query_parameters keys:
 
@@ -198,7 +198,7 @@ If host is not specified, the default host will be used (localhost).
 If port is not specified, the default port will be used (9000).
 If database is not specified, the default database will be used.
 
-User, password, and database can be specified in the connection string either in --user command line option.
+User, password, and database can be specified in the connection string either in --user, --password, --database command line options.
 
 The connection string must be specified in the first argument of clickhouse-client. The connection string can be combined with other [command-line-options](#command-line-options) except **--host(h)** and **--port**.
 
