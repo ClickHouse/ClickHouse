@@ -42,9 +42,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             return false;
     }
 
-    if (!granularity_p.parse(pos, granularity, expected))
-        return false;
-
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->part_of_create_index_query = true;
     index->set(index->expr, expr);
