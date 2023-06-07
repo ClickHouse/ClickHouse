@@ -5,13 +5,13 @@
 #include <iostream>
 #include <iomanip>
 #include <optional>
-#include <string_view>
 #include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
@@ -1248,6 +1248,9 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
+    bool has_connection_string = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = has_connection_string ? 2 : 1;
+
     /** We allow different groups of arguments:
         * - common arguments;
         * - arguments for any number of external tables each in form "--external args...",
@@ -1260,7 +1263,7 @@ void Client::readArguments(
     std::string prev_host_arg;
     std::string prev_port_arg;
 
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
 
@@ -1322,6 +1325,9 @@ void Client::readArguments(
             }
             else if (arg.starts_with("--host") || arg.starts_with("-h"))
             {
+                if (has_connection_string)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mixing connection string and --host/--port client arguments is prohibited");
+
                 std::string host_arg;
                 /// --host host
                 if (arg == "--host" || arg == "-h")
@@ -1353,6 +1359,9 @@ void Client::readArguments(
             }
             else if (arg.starts_with("--port"))
             {
+                if (has_connection_string)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mixing connection string and --host/--port client arguments is prohibited");
+
                 auto port_arg = String{arg};
                 /// --port port
                 if (arg == "--port")
