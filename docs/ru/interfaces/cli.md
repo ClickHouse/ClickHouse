@@ -120,7 +120,8 @@ clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
 
 где user_info - это: ```user[:password]```
 hosts_and_ports - это список значений: ```[host][:port],[host][:port]```. Port может быть не задан.
-query_parameters - это список пар ключ[=значение]: ```param_name[=value]&param_name[=value]...```. Значение может быть пустым
+query_parameters - это список пар ключ[=значение]: ```param_name[=value]&param_name[=value]...```. Значение может быть пустым.
+Имена параметров чувствительны к регистру.
 
 Допустимые ключи query_parameters:
 
