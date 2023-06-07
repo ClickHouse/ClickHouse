@@ -78,7 +78,6 @@ StorageAzureBlob::Configuration TableFunctionAzureBlobStorage::parseArgumentsImp
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
     configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
     configuration.is_connection_string = isConnectionString(configuration.connection_url);
 
     configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
@@ -194,7 +193,6 @@ void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, 
     auto & args = args_func.at(0)->children;
 
     configuration = parseArgumentsImpl(args, context);
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
 }
 
 ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(ContextPtr context) const
