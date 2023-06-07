@@ -679,7 +679,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
     bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) ||
                             table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
-                            isRightOrFull(kind) || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti ||
+                            isRightOrFull(kind) ||
                             multiple_disjuncts;
     if (save_key_columns)
     {

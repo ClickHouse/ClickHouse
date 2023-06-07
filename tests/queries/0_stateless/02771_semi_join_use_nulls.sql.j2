@@ -9,48 +9,39 @@ SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
 
 SET join_use_nulls = {{ join_use_nulls }};
 
--- FORMAT Null is used because one side is undefined (e.g. for SEMI LEFT only columns from the left side contain values)
-
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id) AS d
 USING (id)
-FORMAT Null
 ;
 
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id) AS d
 USING (id)
-FORMAT Null
 ;
 
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
-FORMAT Null
 ;
 
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
-FORMAT Null
 ;
 
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(1)) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(2)) AS id) AS d
 USING (id)
-FORMAT Null
 ;
 
 SELECT id > 1, d.id FROM (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
-FORMAT Null
 ;
 
 SELECT id > 1, d.idd FROM (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS id, 1 AS value) AS a
 {{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(toLowCardinality(0)) AS idd) AS d
 ON a.id = d.idd
-FORMAT Null
 ;
 
 {% endfor -%}
