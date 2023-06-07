@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS t_async_inserts_flush;
 
 CREATE TABLE t_async_inserts_flush (a UInt64) ENGINE = Memory;
