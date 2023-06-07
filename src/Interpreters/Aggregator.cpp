@@ -2161,6 +2161,14 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     }
 }
 
+
+void Aggregator::createStatesStream(AggregatedDataVariants & data_variants) const
+{
+    AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(place);
+    data_variants.without_key = place;
+}
+
 Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {
     size_t rows = 1;

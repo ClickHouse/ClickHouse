@@ -13,7 +13,6 @@ public:
 
 protected:
     Chunk generate() override { 
-        LOG_FATAL(&Poco::Logger::root(), "NullSource: '{}'.", "generate");
         return Chunk(); }
 };
 

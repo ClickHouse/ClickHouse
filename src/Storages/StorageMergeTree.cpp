@@ -212,10 +212,23 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "read");
+    auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    if (select.is_stream) {
+        auto subscriber = std::make_shared<Subscriber>(std::make_shared<Blocks>());
+        std::weak_ptr<Subscriber> subs_ptr = subscriber;
+
+        IStorage::addNewSubscriber(subscriber);
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<StreamSource>(storage_snapshot->getSampleBlockForColumns(column_names), subs_ptr));
+        readFromPipe(query_plan, Pipe::unitePipes(std::move(pipes)), column_names, storage_snapshot, query_info, local_context, getName());
+        auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+        snapshot_data.parts = {};
+        return;
+    }
+
     if (local_context->canUseParallelReplicasOnInitiator())
     {
-        LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "first if");
         auto table_id = getStorageID();
 
         const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
@@ -241,7 +254,6 @@ void StorageMergeTree::read(
     }
     else
     {
-        LOG_FATAL(&Poco::Logger::root(), "StorageMergeTree {}", "else");
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
             local_context, max_block_size, num_streams,

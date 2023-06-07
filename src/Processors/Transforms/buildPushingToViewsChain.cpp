@@ -22,7 +22,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
-#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -443,7 +442,6 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        LOG_FATAL(&Poco::Logger::root(), " {}", " else if (!no_destination)");
         auto sinks = storage->writeImpl(query_ptr, metadata_snapshot, context);
         for (auto sink : sinks) {
             metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());

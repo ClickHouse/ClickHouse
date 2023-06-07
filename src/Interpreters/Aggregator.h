@@ -1089,6 +1089,8 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
+    friend class AggregatingTransformStream;
+    friend class AggregatingTransform;
 
     /// Data structure of source blocks.
     Block header;
@@ -1419,6 +1421,8 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
+
+    void createStatesStream(AggregatedDataVariants & data_variants) const;
 
     static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };

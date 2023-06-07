@@ -25,7 +25,6 @@ public:
 
 protected:
     Chunk generate() override { 
-        LOG_FATAL(&Poco::Logger::root(), " {}", "generddte");
         if (subscriber.expired()) {
             return Chunk();
         }
@@ -40,7 +39,6 @@ protected:
 
         if (!blocks)
         {
-            LOG_FATAL(&Poco::Logger::root(), " {}", "if (vv!blocks)");
             auto subs = subscriber.lock();
             if (!subs->blocks) {
             }
@@ -68,7 +66,6 @@ protected:
                 }
                 else
                 {
-                    LOG_FATAL(&Poco::Logger::root(), " {}", "2bb");
                     if (!end_of_blocks)
                     {
                         end_of_blocks = true;
@@ -76,7 +73,6 @@ protected:
                     }
                     while (true)
                     {
-                        LOG_FATAL(&Poco::Logger::root(), " {}", "whilbbe (true)");
                         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
 
                         bool signaled = std::cv_status::no_timeout == subs->condition.wait_for(lock,

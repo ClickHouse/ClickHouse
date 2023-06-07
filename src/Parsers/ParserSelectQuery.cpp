@@ -66,6 +66,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_next("NEXT");
     ParserKeyword s_interpolate("INTERPOLATE");
     ParserKeyword s_stream("STREAM");
+    ParserKeyword s_last("LAST");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -96,6 +97,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
+    ASTPtr last;
 
     /// WITH expr_list
     {
@@ -468,6 +470,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    if (s_last.ignore(pos, expected)) {
+        if (!select_query->is_stream)
+            throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "LAST and STREAM have to use together");
+        if (!exp_elem.parse(pos, last, expected))
+            return false;
+    } 
+
     select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
@@ -484,6 +493,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
+    select_query->setExpression(ASTSelectQuery::Expression::LAST, std::move(last));
     return true;
 }
 

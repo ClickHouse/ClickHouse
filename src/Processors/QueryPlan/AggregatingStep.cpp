@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AggregatingTransformStream.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -101,7 +102,8 @@ AggregatingStep::AggregatingStep(
     SortDescription sort_description_for_merging_,
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_,
-    bool memory_bound_merging_of_aggregation_results_enabled_)
+    bool memory_bound_merging_of_aggregation_results_enabled_,
+    bool is_stream_)
     : ITransformingStep(
         input_stream_,
         appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
@@ -120,6 +122,7 @@ AggregatingStep::AggregatingStep(
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
+    , is_stream(is_stream_)
 {
     if (memoryBoundMergingWillBeUsed())
     {
@@ -222,8 +225,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     /* only_merge */ false,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
-
-                if (streams > 1)
+                if (is_stream) {
+                    auto aggregation_for_set = std::make_shared<AggregatingTransformStream>(input_header, transform_params_for_set);
+                    connect(*ports[i], aggregation_for_set->getInputs().front());
+                    ports[i] = &aggregation_for_set->getOutputs().front();
+                    processors.push_back(aggregation_for_set);
+                }
+                else if (streams > 1)
                 {
                     auto many_data = std::make_shared<ManyAggregatedData>(streams);
                     for (size_t j = 0; j < streams; ++j)
@@ -407,7 +415,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    if (is_stream) {
+        pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransformStream>(header, transform_params); });
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
+        aggregating = collector.detachProcessors(0);
+    }
+    else if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
         if (!storage_has_evenly_distributed_read)
