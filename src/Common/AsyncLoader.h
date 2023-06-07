@@ -261,7 +261,7 @@ private:
         std::unique_ptr<ThreadPool> thread_pool; // NOTE: we avoid using a `ThreadPool` queue to be able to move jobs between pools.
         std::map<UInt64, LoadJobPtr> ready_queue; // FIFO queue of jobs to be executed in this pool. Map is used for faster erasing. Key is `ready_seqno`
         size_t max_threads; // Max number of workers to be spawn
-        size_t workers = 0; // Number of currently execution workers
+        size_t workers = 0; // Number of currently executing workers
 
         bool isActive() const { return workers > 0 || !ready_queue.empty(); }
     };

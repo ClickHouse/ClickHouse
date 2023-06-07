@@ -35,7 +35,7 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 // Keep track of currently executing load jobs to be able to:
 // 1) Detect "wait dependent" deadlocks (when job A function waits for job B that depends on job A)
 // 2) Detect "priority inversion" deadlocks (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
-// 3) Detect "blocked pool" deadlocks (when job A in pool P waits for another ready job B in P, but B never starts because there is no free workers in P)
+// 3) Detect "blocked pool" deadlocks (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
 thread_local AsyncLoader * current_async_loader = nullptr;
 thread_local LoadJob * current_load_job = nullptr;
 
@@ -637,11 +637,8 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
         if (old_pool.priority <= new_pool.priority)
             return; // Never lower priority or change pool leaving the same priority
 
-        // Update priority and push job forward through ready queue if needed
-        UInt64 ready_seqno = info->second.ready_seqno;
-
         // Requeue job into the new pool queue without allocations
-        if (ready_seqno)
+        if (UInt64 ready_seqno = info->second.ready_seqno)
         {
             new_pool.ready_queue.insert(old_pool.ready_queue.extract(ready_seqno));
             if (canSpawnWorker(new_pool, lock))
