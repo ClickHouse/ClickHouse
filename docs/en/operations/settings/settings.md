@@ -3155,7 +3155,7 @@ Possible values:
 - Positive integer.
 - 0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
-Default value: `16`.
+Default value: the number of physical CPU cores.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
