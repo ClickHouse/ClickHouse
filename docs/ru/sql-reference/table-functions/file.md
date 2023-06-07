@@ -79,7 +79,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 -   `*` — заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
 -   `?` — заменяет ровно один любой символ.
--   `{some_string,another_string,yet_another_one}` — заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
+-   `{some_string,another_string,yet_another_one}` — заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`, причём строка может содержать `/`.
 -   `{N..M}` — заменяет любое число в интервале от `N` до `M` включительно (может содержать ведущие нули).
 
 Конструкция с `{}` аналогична табличной функции [remote](remote.md).
