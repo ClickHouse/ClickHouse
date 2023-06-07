@@ -2480,3 +2480,75 @@ Result:
 │                      286 │
 └──────────────────────────┘
 ```
+
+## generateRandomStructure
+
+Generates random table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+
+**Syntax**
+
+``` sql
+generateRandomStructure([number_of_columns, seed])
+```
+
+**Arguments**
+
+- `number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
+- `seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
+
+All arguments must be constant.
+
+**Returned value**
+
+- Randomly generated table structure.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT generateRandomStructure()
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure()─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 Decimal32(5), c2 Date, c3 Tuple(LowCardinality(String), Int128, UInt64, UInt16, UInt8, IPv6), c4 Array(UInt128), c5 UInt32, c6 IPv4, c7 Decimal256(64), c8 Decimal128(3), c9 UInt256, c10 UInt64, c11 DateTime │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT generateRandomStructure(1)
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure(1)─┐
+│ c1 Map(UInt256, UInt16)    │
+└────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT generateRandomStructure(NULL, 33)
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure(NULL, 33)─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70))) │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Note**: the maximum nesting depth of complex types (Array, Tuple, Map, Nested) is limited to 16.
+
+This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
+

@@ -136,6 +136,7 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
         bool try_detect_header = true;
+        bool trim_whitespaces = true;
     } csv;
 
     struct HiveText

@@ -12,6 +12,7 @@
                 <disk>s3</disk>
                 <max_size>100000000</max_size>
                 <path>./cache_s3/</path>
+                <cache_on_write_operations>1</cache_on_write_operations>
             </cache_s3>
         </disks>
         <policies>
