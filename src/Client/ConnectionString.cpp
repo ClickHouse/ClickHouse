@@ -61,7 +61,7 @@ void getHostAndPort(
     const char * connection_string_end)
 {
     // User info does not matter in sub URI
-    std::string uri_string = {CONNECTION_URI_SCHEME.begin(), CONNECTION_URI_SCHEME.end()};
+    auto uri_string = std::string(CONNECTION_URI_SCHEME);
     if (host_begin != nullptr && host_begin != host_end)
     {
         uri_string.append("//");
