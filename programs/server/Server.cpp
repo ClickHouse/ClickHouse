@@ -684,20 +684,35 @@ try
     });
 #endif
 
-    IOThreadPool::initialize(
+    getIOThreadPool().initialize(
         server_settings.max_io_thread_pool_size,
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
 
-    BackupsIOThreadPool::initialize(
+    getBackupsIOThreadPool().initialize(
         server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
-    OutdatedPartsLoadingThreadPool::initialize(
+    getActivePartsLoadingThreadPool().initialize(
+        server_settings.max_active_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_active_parts_loading_thread_pool_size);
+
+    getOutdatedPartsLoadingThreadPool().initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
-        0, // We don't need any threads one all the parts will be loaded
+        0, // We don't need any threads once all the parts will be loaded
         server_settings.max_outdated_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
+    getPartsCleaningThreadPool().initialize(
+        server_settings.max_parts_cleaning_thread_pool_size,
+        0, // We don't need any threads one all the parts will be deleted
+        server_settings.max_parts_cleaning_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1232,6 +1247,36 @@ try
             global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::Foreground, fg_pool_size ? fg_pool_size : getNumberOfPhysicalCPUCores());
             global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundLoad, bg_pool_size ? bg_pool_size : getNumberOfPhysicalCPUCores());
             global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundStartup, bg_pool_size ? bg_pool_size : getNumberOfPhysicalCPUCores());
+
+            getIOThreadPool().reloadConfiguration(
+                server_settings.max_io_thread_pool_size,
+                server_settings.max_io_thread_pool_free_size,
+                server_settings.io_thread_pool_queue_size);
+
+            getBackupsIOThreadPool().reloadConfiguration(
+                server_settings.max_backups_io_thread_pool_size,
+                server_settings.max_backups_io_thread_pool_free_size,
+                server_settings.backups_io_thread_pool_queue_size);
+
+            getActivePartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_active_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_active_parts_loading_thread_pool_size);
+
+            getOutdatedPartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_outdated_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_outdated_parts_loading_thread_pool_size);
+
+            /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+            getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+                server_settings.max_active_parts_loading_thread_pool_size
+            );
+
+            getPartsCleaningThreadPool().reloadConfiguration(
+                server_settings.max_parts_cleaning_thread_pool_size,
+                0, // We don't need any threads one all the parts will be deleted
+                server_settings.max_parts_cleaning_thread_pool_size);
 
             if (config->has("resources"))
             {
