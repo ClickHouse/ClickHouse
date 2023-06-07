@@ -126,6 +126,7 @@ def test_simple_write_named_collection_1(cluster):
     )
     print(get_azure_file_content("test_simple_write_named.csv"))
     assert get_azure_file_content("test_simple_write_named.csv") == '1,"a"\n'
+    azure_query(node, "TRUNCATE TABLE test_simple_write_named_collection_1")
 
 
 def test_simple_write_named_collection_2(cluster):
@@ -487,6 +488,14 @@ def test_simple_write_named_collection_1_table_function(cluster):
     print(get_azure_file_content("test_simple_write_named.csv"))
     assert get_azure_file_content("test_simple_write_named.csv") == '1,"a"\n'
 
+    azure_query(
+        node,
+        "CREATE TABLE drop_table (key UInt64, data String) Engine = AzureBlobStorage(azure_conf1)",
+    )
+
+    azure_query(
+        node, "TRUNCATE TABLE drop_table",
+    )
 
 def test_simple_write_named_collection_2_table_function(cluster):
     node = cluster.instances["node"]
