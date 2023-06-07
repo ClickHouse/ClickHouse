@@ -11,7 +11,10 @@ doctest = false
 test = false
 
 [dependencies]
-prql-compiler = "0.4.0"
-libc = "0.2"
+prql-compiler = "0.8.1"
+libc = "0.2.146"
 serde_json = "1.0"
 
+[profile.release-thinlto]
+inherits = "release"
+lto = "thin"
