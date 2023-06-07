@@ -649,6 +649,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!async_insert)
         {
+            /// For some storage engines (e.g. ReplicatedMergeTree) we still check the value of setting
+            /// when doing writes to determine if we are going to use async inserts
+            /// In case the setting is enabled but for some reason we use synchronous inserts
+            /// we need to disable it for this query so correct behaviour is produced
             if (insert_query && async_insert_enabled)
             {
                 context = Context::createCopy(context);
