@@ -15,7 +15,13 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL, DOCKER_USER, DOCKER_REPO
+from env_helper import (
+    GITHUB_WORKSPACE,
+    RUNNER_TEMP,
+    GITHUB_RUN_URL,
+    DOCKER_USER,
+    DOCKER_REPO,
+)
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
