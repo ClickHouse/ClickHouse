@@ -158,6 +158,116 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
+## Connection string {#connection_string}
+
+The connection string for clickhouse-client is presented in URI format:
+
+```text
+clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
+```
+
+where user_info is: ```user[:password]```
+and hosts_and_ports is a list of values: ```[host][:port],[host][:port]``` Port is not mandatory.
+and query_parameters is a list of parameter[=value]: ```param_name[=value]&param_name[=value]...``` value may not be required for some of parameters.
+
+Allowed query_parameters keys:
+
+- **secure** or shorthanded **s** - no value. If specified, client will connect to the server over a secure connection (TLS). See **secure** in [command-line-options](#command-line-options)
+
+These examples illustrate valid connection strings for clickhouse-client:
+
+```text
+clickhouse:
+clickhouse://localhost
+clickhouse://localhost:9000
+clickhouse://localhost/default
+clickhouse://default@localhost
+clickhouse://user:password@localhost
+clickhouse://user_name@localhost/some_database?secure
+clickhouse://host1:9000,host2:5000/some_database
+```
+
+The host component can either be an IP address or a host name. Put an IPv6 address in square brackets to specify it:
+
+```text
+clickhouse://[2001:db8::1234]
+```
+
+If user or/and password are not specified, default values will be used.
+If host is not specified, the default host will be used (localhost).
+If port is not specified, the default port will be used (9000).
+If database is not specified, the default database will be used.
+
+User, password, and database can be specified in the connection string either in --user command line option.
+
+The connection string must be specified in the first argument of clickhouse-client. The connection string can be combined with other [command-line-options](#command-line-options) except **--host(h)** and **--port**.
+
+### Multiple hosts {#connection_string_multiple_hosts}
+
+URI allows multiple hosts to be connected to, and the client will try to connect to those hosts using the order from URI and command line options. The hosts and ports in the URI accept comma-separated lists of values.
+
+If more than one host is supplied, or if a single host name is translated to more than one address, each host and address will be attempted one at a time until one is successful. The remaining hosts after successful connection in the list are not tried.
+
+### Percent encoding {#connection_string_uri_percent_encoding}
+
+Hosts, user name, password, database and query parameters should be [Percent-Encoded](https://en.wikipedia.org/wiki/URL_encoding) if values contain URI invalid characters.
+
+### Examples {#connection_string_examples}
+
+Connect to localhost using port 9000 and executes the query "SELECT 1".
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --query "SELECT 1"
+```
+
+Connect to localhost using port 9000 in interactive, multiline mode.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" -m
+```
+
+Connect to localhost using port 9000 in interactive mode with the user specified in --user option.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --user default
+```
+
+Connect to localhost using port 9000 in interactive mode with database 'my_database' specified in command line option
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --database my_database
+```
+
+Connect to localhost using port 9000 in interactive mode with the database specified in the connection string.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000/my_database"
+```
+
+Connect to localhost using port 9000 in interactive mode with a database specified in the connection string and a secure connection using shorthanded 's' URI parameter.
+
+```bash
+clickhouse-client "clickhouse://localhost/my_database?s"
+```
+
+Connect to default host using the default port, default user, and default database.
+
+``` bash
+clickhouse-client "clickhouse:"
+```
+
+Connect to the default host using the default port, using user user_name and no password.
+
+``` bash
+clickhouse-client "clickhouse://user_name@"
+```
+
+Connect to localhost using email user name. Symbol '@' is percent encoded to '%40'.
+
+``` bash
+clickhouse-client "clickhouse://some_user%40some_mail.com@localhost:9000"
+```
+
 ## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:

@@ -110,6 +110,116 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
+## Строка подключения {#connection_string}
+
+Строка подключения для clickhouse-client представлена в формате URI:
+
+```text
+clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
+```
+
+где user_info - это: ```user[:password]```
+hosts_and_ports - это список значений: ```[host][:port],[host][:port]```. Port может быть не задан.
+query_parameters - это список пар ключ[=значение]: ```param_name[=value]&param_name[=value]...```. Значение может быть пустым
+
+Допустимые ключи query_parameters:
+
+- **secure** или сокращенно **s** - без значение. Если параметр указан, то соединение с сервером будет осуществляться по защищенному каналу (TLS). См. **secure** в [command-line-options](#command-line-options).
+
+Эти примеры иллюстрируют допустимые строки подключения для clickhouse-client:
+
+```text
+clickhouse:
+clickhouse://localhost
+clickhouse://localhost:9000
+clickhouse://localhost/default
+clickhouse://default@localhost
+clickhouse://user:password@localhost
+clickhouse://имя_пользователя@localhost/some_database?secure
+clickhouse://host1:9000,host2:5000/some_database
+```
+
+Параметр host может быть либо IP-адресом, либо именем хоста. Для указания IPv6-адреса поместите его в квадратные скобки:
+
+```text
+clickhouse://[2001:db8::1234]
+```
+
+Если пользователь или/и пароль не указаны, будут использоваться значения по умолчанию.
+Если host не указан, будет использован хост по умолчанию (localhost).
+Если port не указан, будет использоваться порт по умолчанию (9000).
+Если база данных не указана, будет использоваться база данных по умолчанию (default).
+
+Пользователь, пароль и база данных могут быть указаны в строке подключения либо в опциях командной строки --user, --password, --database.
+
+Строка подключения должна быть указана в первом аргументе clickhouse-client. Строка подключения может комбинироваться с другими [параметрами командной строки] (#command-line-options) кроме **--host(h)** и **--port**.
+
+### Несколько хостов {#connection_string_multiple_hosts}
+
+URI позволяет подключаться к нескольким хостам, и клиент будет пытаться подключиться к этим хостам, используя порядок из URI и опций командной строки. Хосты и порты в URI принимают списки значений, разделенные запятыми.
+
+Если указано более одного хоста или если одно имя хоста транслируется в несколько адресов, Клиент будет будет пытаться подключится к каждому хосту и адресу в порядке в котором они встречаются в URI И опциях клиента, пока не будет установлено соединение. Соединение разрывается, если соединение установлено и аутентификация прошла успешно, остальные хосты в списке игнорируются.
+
+### Кодирование URI {#connection_string_uri_percent_encoding}
+
+Хосты, имя пользователя, пароль, имя базы данных, и параметры запроса должны быть [закодированы](https://ru.wikipedia.org/wiki/URL#%D0%9A%D0%BE%D0%B4%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_URL), если значения содержат невалидные символы URI.
+
+### Примеры {#connection_string_examples}
+
+Подключиться к localhost через порт 9000 и выполнить запрос "SELECT 1"
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --query "SELECT 1"
+```
+
+Подключиться к localhost через порт 9000 в интерактивном, многострочном режиме.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" -m
+```
+
+Подключиться к localhost через порт 9000 в интерактивном режиме с пользователем default, указанным в опции --user.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --user default
+```
+
+Подключиться к localhost, используя порт 9000 в интерактивном режиме с базой данных 'my_database', указанной в опции командной строки.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000" --database my_database
+```
+
+Подключиться к localhost через порт 9000 в интерактивном режиме с базой данных my_database, указанной в строке подключения.
+
+``` bash
+clickhouse-client "clickhouse://localhost:9000/my_database"
+```
+
+Подключиться к localhost через порт 9000 в интерактивном режиме с базой данных, указанной в строке подключения, и безопасным соединением с использованием сокращенного параметра URI 's'.
+
+``` bash
+clickhouse-client "clickhouse://localhost/my_database?s"
+```
+
+Подключиться к хосту по умолчанию с использованием порта по умолчанию, пользователя по умолчанию, и базы данных по умолчанию.
+
+``` bash
+clickhouse-client "clickhouse:"
+```
+
+Подключиться к хосту по умолчанию через порт по умолчанию, используя имя пользователя user_name без пароля.
+
+``` bash
+clickhouse-client "clickhouse://user_name@"
+```
+
+Подключиться к localhost, используя электронную почту, как имя пользователя. Символ '@' закодирован как '%40'.
+
+``` bash
+clickhouse-client "clickhouse://some_user%40some_mail.com@localhost:9000"
+```
+
 ## Конфигурирование {#interfaces_cli_configuration}
 
 В `clickhouse-client` можно передавать различные параметры (все параметры имеют значения по умолчанию) с помощью:
