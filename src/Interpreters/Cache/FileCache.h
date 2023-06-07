@@ -67,7 +67,8 @@ public:
      * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolderPtr getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolderPtr
+    getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -178,6 +179,8 @@ private:
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
     void assertInitialized() const;
+
+    size_t boundary_alignment;
 
     void assertCacheCorrectness();
 

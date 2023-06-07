@@ -5,9 +5,10 @@ import fnmatch
 import json
 import time
 
-import jwt
 import requests  # type: ignore
-import boto3  # type: ignore
+
+from lambda_shared.pr import TRUSTED_CONTRIBUTORS
+from lambda_shared.token import get_cached_access_token
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
@@ -66,106 +67,6 @@ NEED_RERUN_WORKFLOWS = {
     "PullRequestCI",
     "ReleaseBranchCI",
 }
-
-# Individual trusted contirbutors who are not in any trusted organization.
-# Can be changed in runtime: we will append users that we learned to be in
-# a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
-    e.lower()
-    for e in [
-        "achimbab",
-        "adevyatova ",  # DOCSUP
-        "Algunenano",  # Raúl Marín, Tinybird
-        "amosbird",
-        "AnaUvarova",  # DOCSUP
-        "anauvarova",  # technical writer, Yandex
-        "annvsh",  # technical writer, Yandex
-        "atereh",  # DOCSUP
-        "azat",
-        "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloudFlare
-        "BohuTANG",
-        "codyrobert",  # Flickerbox engineer
-        "cwurm",  # Employee
-        "damozhaeva",  # DOCSUP
-        "den-crane",
-        "flickerbox-tom",  # Flickerbox
-        "gyuton",  # DOCSUP
-        "hagen1778",  # Roman Khavronenko, seasoned contributor
-        "hczhcz",
-        "hexiaoting",  # Seasoned contributor
-        "ildus",  # adjust, ex-pgpro
-        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "ka1bi4",  # DOCSUP
-        "kirillikoff",  # DOCSUP
-        "kreuzerkrieg",
-        "lehasm",  # DOCSUP
-        "michon470",  # DOCSUP
-        "nikvas0",
-        "nvartolomei",
-        "olgarev",  # DOCSUP
-        "otrazhenia",  # Yandex docs contractor
-        "pdv-ru",  # DOCSUP
-        "podshumok",  # cmake expert from QRator Labs
-        "s-mx",  # Maxim Sabyanin, former employee, present contributor
-        "sevirov",  # technical writer, Yandex
-        "spongedu",  # Seasoned contributor
-        "taiyang-li",
-        "ucasFL",  # Amos Bird's friend
-        "vdimir",  # Employee
-        "vzakaznikov",
-        "YiuRULE",
-        "zlobober",  # Developer of YT
-        "ilejn",  # Arenadata, responsible for Kerberized Kafka
-        "thomoco",  # ClickHouse
-        "BoloniniD",  # Seasoned contributor, HSE
-        "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse Employee
-        "myrrc",  # Mike Kot, DoubleCloud
-        "thevar1able",  # ClickHouse Employee
-        "aalexfvk",
-        "MikhailBurdukov",
-    ]
-}
-
-
-def get_installation_id(jwt_token):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get("https://api.github.com/app/installations", headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    for installation in data:
-        if installation["account"]["login"] == "ClickHouse":
-            installation_id = installation["id"]
-    return installation_id
-
-
-def get_access_token(jwt_token, installation_id):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["token"]
-
-
-def get_key_and_app_from_aws():
-    secret_name = "clickhouse_github_secret_key"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-    )
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
 
 
 def is_trusted_contributor(pr_user_login, pr_user_orgs):
@@ -329,19 +230,6 @@ def label_manual_approve(pull_request, token):
     _exec_post_with_retry(url, token, data)
 
 
-def get_token_from_aws():
-    private_key, app_id = get_key_and_app_from_aws()
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    return get_access_token(encoded_jwt, installation_id)
-
-
 def get_workflow_jobs(workflow_description, token):
     jobs_url = (
         workflow_description.api_url + f"/attempts/{workflow_description.attempt}/jobs"
@@ -441,7 +329,7 @@ def check_workflow_completed(
 
 
 def main(event):
-    token = get_token_from_aws()
+    token = get_cached_access_token()
     event_data = json.loads(event["body"])
     print("The body received:", event["body"])
     workflow_description = get_workflow_description_from_event(event_data)

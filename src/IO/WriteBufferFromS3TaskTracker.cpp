@@ -4,12 +4,18 @@
 
 #include <IO/WriteBufferFromS3TaskTracker.h>
 
+namespace ProfileEvents
+{
+    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
+}
+
 namespace DB
 {
 
-WriteBufferFromS3::TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_)
+WriteBufferFromS3::TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
+    , max_tasks_inflight(max_tasks_inflight_)
 {}
 
 WriteBufferFromS3::TaskTracker::~TaskTracker()
@@ -28,103 +34,134 @@ ThreadPoolCallbackRunner<void> WriteBufferFromS3::TaskTracker::syncRunner()
     };
 }
 
-void WriteBufferFromS3::TaskTracker::waitReady()
-{
-    LOG_TEST(log, "waitReady, in queue {}", futures.size());
-
-    /// Exceptions are propagated
-    auto it = futures.begin();
-    while (it != futures.end())
-    {
-        chassert(it->valid());
-        if (it->wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-        {
-            ++it;
-            continue;
-        }
-
-        try
-        {
-            it->get();
-        } catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
-
-        it = futures.erase(it);
-    }
-
-    LOG_TEST(log, "waitReady ended, in queue {}", futures.size());
-}
-
 void WriteBufferFromS3::TaskTracker::waitAll()
 {
-    LOG_TEST(log, "waitAll, in queue {}", futures.size());
-
     /// Exceptions are propagated
     for (auto & future : futures)
     {
-        try
-        {
-            future.get();
-        } catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        future.get();
     }
     futures.clear();
+
+    std::lock_guard lock(mutex);
+    finished_futures.clear();
 }
 
 void WriteBufferFromS3::TaskTracker::safeWaitAll()
 {
-    LOG_TEST(log, "safeWaitAll, wait in queue {}", futures.size());
-
-    /// Exceptions are not propagated
-    for (auto & future : futures)
-    {
-        LOG_TEST(log, "safeWaitAll, wait future");
-
-        if (future.valid())
-            future.wait();
-    }
-
-    LOG_TEST(log, "safeWaitAll, get in queue {}", futures.size());
-
     for (auto & future : futures)
     {
         if (future.valid())
         {
             try
             {
+                /// Exceptions are not propagated
                 future.get();
             } catch (...)
             {
+                /// But at least they are printed
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
     }
     futures.clear();
-    LOG_TEST(log, "safeWaitAll ended, get in queue {}", futures.size());
+
+    std::lock_guard lock(mutex);
+    finished_futures.clear();
+}
+
+void WriteBufferFromS3::TaskTracker::waitIfAny()
+{
+    if (futures.empty())
+        return;
+
+    Stopwatch watch;
+
+    {
+        std::lock_guard lock(mutex);
+        for (auto & it : finished_futures)
+        {
+            /// actually that call might lock this thread until the future is set finally
+            /// however that won't lock us for long, the task is about to finish when the pointer appears in the `finished_futures`
+            it->get();
+
+            /// in case of exception in `it->get()`
+            /// it it not necessary to remove `it` from list `futures`
+            /// `TaskTracker` has to be destroyed after any exception occurs, for this `safeWaitAll` is called.
+            /// `safeWaitAll` handles invalid futures in the list `futures`
+            futures.erase(it);
+        }
+        finished_futures.clear();
+    }
+
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
 }
 
 void WriteBufferFromS3::TaskTracker::add(Callback && func)
 {
-    LOG_TEST(log, "add, in queue {}", futures.size());
+    /// All this fuzz is about 2 things. This is the most critical place of TaskTracker.
+    /// The first is not to fail insertion in the list `futures`.
+    /// In order to face it, the element is allocated at the end of the list `futures` in advance.
+    /// The second is not to fail the notification of the task.
+    /// In order to face it, the list element, which would be inserted to the list `finished_futures`,
+    /// is allocated in advance as an other list `pre_allocated_finished` with one element inside.
 
-    auto future = scheduler(std::move(func), 0);
-    auto exit_scope = scope_guard(
-        [&future]()
+    /// preallocation for the first issue
+    futures.emplace_back();
+    auto future_placeholder = std::prev(futures.end());
+
+    /// preallocation for the second issue
+    FinishedList pre_allocated_finished {future_placeholder};
+
+    Callback func_with_notification = [&, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
+    {
+        SCOPE_EXIT({
+            DENY_ALLOCATIONS_IN_SCOPE;
+
+            std::lock_guard lock(mutex);
+            finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
+            has_finished.notify_one();
+        });
+
+        my_func();
+    };
+
+    /// this move is nothrow
+    *future_placeholder = scheduler(std::move(func_with_notification), Priority{});
+
+    LOG_TEST(log, "add ended, in queue {}, limit {}", futures.size(), max_tasks_inflight);
+
+    waitTilInflightShrink();
+}
+
+void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
+{
+    if (!max_tasks_inflight)
+        return;
+
+    Stopwatch watch;
+
+    /// Alternative approach is to wait until at least futures.size() - max_tasks_inflight element are finished
+    /// However the faster finished task is collected the faster CH checks if there is an exception
+    /// The faster an exception is propagated the lesser time is spent for cancellation
+    while (futures.size() >= max_tasks_inflight)
+    {
+        std::unique_lock lock(mutex);
+
+        has_finished.wait(lock, [this] () TSA_REQUIRES(mutex) { return !finished_futures.empty(); });
+
+        for (auto & it : finished_futures)
         {
-            future.wait();
+            it->get();
+            futures.erase(it);
         }
-    );
 
-    futures.push_back(std::move(future));
+        finished_futures.clear();
+    }
 
-    exit_scope.release();
-    LOG_TEST(log, "add ended, in queue {}", futures.size());
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
 }
 
 bool WriteBufferFromS3::TaskTracker::isAsync() const
