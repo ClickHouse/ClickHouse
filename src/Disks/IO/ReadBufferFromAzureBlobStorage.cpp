@@ -56,6 +56,22 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     }
 }
 
+
+void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
+{
+    if (read_until_position)
+    {
+        read_until_position = 0;
+        if (initialized)
+        {
+            offset = getPosition();
+            resetWorkingBuffer();
+            initialized = false;
+        }
+    }
+
+}
+
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
     read_until_position = position;
