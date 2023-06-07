@@ -50,59 +50,94 @@ chown ubuntu: /home/ubuntu/.ssh -R
 mkdir -p /tmp/actions-hooks
 cat > /tmp/actions-hooks/common.sh << 'EOF'
 #!/bin/bash
-terminate-delayed() {
-  sleep=7
-  echo "Going to terminate the runner's instance in $sleep seconds"
-  INSTANCE_ID=$(ec2metadata --instance-id)
-  # We execute it with `at` to not have it as an orphan process, but launched independently
-  # GH Runners kill all remain processes
-  echo "sleep '$sleep'; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space or non-installed `at`
-  exit 0
-}
-
-terminate-and-exit() {
-  echo "Going to terminate the runner's instance"
-  INSTANCE_ID=$(ec2metadata --instance-id)
-  aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
-}
-
-check-terminating-metadata() {
-  # If there is a rebalance event, then the instance could die soon
-  # Let's don't wait for it and terminate proactively
-  if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
-    echo 'The received recommendation to rebalance, checking the uptime'
-    UPTIME=$(< /proc/uptime)
-    UPTIME=${UPTIME%%.*}
-    # We don't shutdown the instances younger than 30m
-    if (( 1800 < UPTIME )); then
-      # To not shutdown everything at once, use the 66% to survive
-      if (( $((RANDOM % 3)) == 0 )); then
-        echo 'The instance is older than 30m and won the roulette'
-        terminate-and-exit
-      fi
-      echo 'The instance is older than 30m, but is not chosen for rebalance'
-    else
-      echo 'The instance is younger than 30m, do not shut it down'
-    fi
-  fi
-
-  # Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
-  ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
-  if [ "$ASG_STATUS" == "Terminated" ]; then
-    INSTANCE_ID=$(ec2metadata --instance-id)
-    ASG_NAME=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='aws:autoscaling:groupName'].Value" --output text)
-    LIFECYCLE_HOOKS=$(aws autoscaling describe-lifecycle-hooks --auto-scaling-group-name "$ASG_NAME" --query "LifecycleHooks[].LifecycleHookName" --output text)
-    for LCH in $LIFECYCLE_HOOKS; do
-      aws autoscaling complete-lifecycle-action --lifecycle-action-result CONTINUE \
-        --lifecycle-hook-name "$LCH" --auto-scaling-group-name "$ASG_NAME" \
-        --instance-id "$INSTANCE_ID"
-    done
-    echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
-    terminate-and-exit
-  fi
-}
 EOF
+
+terminate_delayed() {
+    # The function for post hook to gracefully finish the job and then tear down
+    # The very specific sleep time is used later to determine in the main loop if
+    # the instance is tearing down
+    # IF `sleep` IS CHANGED, CHANGE ANOTHER VALUE IN `pgrep`
+    sleep=13.14159265358979323846
+    echo "Going to terminate the runner's instance in $sleep seconds"
+    INSTANCE_ID=$(ec2metadata --instance-id)
+    # We execute it with `at` to not have it as an orphan process, but launched independently
+    # GH Runners kill all remain processes
+    echo "sleep '$sleep'; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
+        aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space or non-installed `at`
+    exit 0
+}
+
+detect_delayed_termination() {
+    # The function look for very specific sleep with pi
+    if pgrep 'sleep 13.14159265358979323846'; then
+        echo 'The instance has delayed termination, sleep the same time to wait if it goes down'
+        sleep 14
+    fi
+}
+
+declare -f terminate_delayed >> /tmp/actions-hooks/common.sh
+
+terminate_and_exit() {
+    # Terminate instance and exit from the script instantly
+    echo "Going to terminate the runner's instance"
+    INSTANCE_ID=$(ec2metadata --instance-id)
+    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
+    exit 0
+}
+
+declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
+
+no_terminating_metadata() {
+    # The function check that instance could continue work
+    # Returns 1 if any of termination events are received
+    if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
+        echo 'Received recommendation to rebalance, checking the uptime'
+        UPTIME=$(< /proc/uptime)
+        UPTIME=${UPTIME%%.*}
+        # We don't shutdown the instances younger than 30m
+        if (( 1800 < UPTIME )); then
+            # To not shutdown everything at once, use the 66% to survive
+            if (( $((RANDOM % 3)) == 0 )); then
+                echo 'The instance is older than 30m and won the roulette'
+                return 1
+            fi
+            echo 'The instance is older than 30m, but is not chosen for rebalance'
+        else
+            echo 'The instance is younger than 30m, do not shut it down'
+        fi
+    fi
+
+    local ASG_STATUS
+    ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
+    if [ "$ASG_STATUS" == "Terminated" ]; then
+        echo 'The instance in ASG status Terminating:Wait'
+        return 1
+    fi
+}
+
+terminate_on_event() {
+    # If there is a rebalance event, then the instance could die soon
+    # Let's don't wait for it and terminate proactively
+    if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
+        terminate_and_exit
+    fi
+
+    # Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
+    ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
+    if [ "$ASG_STATUS" == "Terminated" ]; then
+        INSTANCE_ID=$(ec2metadata --instance-id)
+        ASG_NAME=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='aws:autoscaling:groupName'].Value" --output text)
+        LIFECYCLE_HOOKS=$(aws autoscaling describe-lifecycle-hooks --auto-scaling-group-name "$ASG_NAME" --query "LifecycleHooks[].LifecycleHookName" --output text)
+        for LCH in $LIFECYCLE_HOOKS; do
+            aws autoscaling complete-lifecycle-action --lifecycle-action-result CONTINUE \
+                --lifecycle-hook-name "$LCH" --auto-scaling-group-name "$ASG_NAME" \
+                --instance-id "$INSTANCE_ID"
+            true  # autoformat issue
+        done
+        echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
+        terminate_and_exit
+    fi
+}
 
 cat > /tmp/actions-hooks/pre-run.sh << EOF
 #!/bin/bash
@@ -123,7 +158,7 @@ source /tmp/actions-hooks/common.sh
 ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
 if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
   echo "The runner has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
-  terminate-delayed
+  terminate_delayed
 fi
 
 # shellcheck disable=SC2046
@@ -146,11 +181,13 @@ if [ "$(docker ps --all --quiet)" ]; then
     docker info && break || sleep 2
   done
   # Last chance, otherwise we have to terminate poor instance
-  docker info 1>/dev/null || { echo Docker unable to start; terminate-delayed ; }
+  docker info 1>/dev/null || { echo Docker unable to start; terminate_delayed ; }
 fi
 EOF
 
-source /tmp/actions-hooks/common.sh
+get_runner_token() {
+    /usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value
+}
 
 while true; do
     runner_pid=$(pgrep Runner.Listener)
@@ -158,19 +195,17 @@ while true; do
 
     if [ -z "$runner_pid" ]; then
         cd $RUNNER_HOME || exit 1
+        detect_delayed_termination
         # If runner is not active, check that it needs to terminate itself
         echo "Checking if the instance suppose to terminate"
-        check-terminating-metadata
-
-        echo "Receiving token"
-        RUNNER_TOKEN=$(/usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value)
+        no_terminating_metadata || terminate_on_event
 
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$RUNNER_TOKEN" --ephemeral \
+        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" --ephemeral \
           --runnergroup Default --labels "$LABELS" --work _work --name "$INSTANCE_ID"
 
         echo "Another one check to avoid race between runner and infrastructure"
-        check-terminating-metadata
+        no_terminating_metadata || terminate_on_event
 
         echo "Run"
         sudo -u ubuntu \
@@ -189,7 +224,16 @@ while true; do
             echo "The runner is launched $RUNNER_AGE seconds ago and still doesn't have launched Runner.Worker"
             if (( 60 < RUNNER_AGE )); then
                 echo "Check if the instance should tear down"
-                check-terminating-metadata
+                if ! no_terminating_metadata; then
+                    # Another check if the worker still didn't start
+                    if pgrep Runner.Worker; then
+                        echo "During the metadata check the job was assigned, continue"
+                        continue
+                    fi
+                    kill -9 "$runner_pid"
+                    sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
+                    terminate_on_event
+                fi
             fi
         fi
         sleep 5
