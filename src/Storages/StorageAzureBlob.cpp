@@ -124,8 +124,6 @@ void StorageAzureBlob::processNamedCollectionResult(StorageAzureBlob::Configurat
 
 StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
-    LOG_INFO(&Poco::Logger::get("StorageAzureBlob"), "get_format_from_file  = {}", get_format_from_file);
-
     StorageAzureBlob::Configuration configuration;
 
     /// Supported signatures:
@@ -857,7 +855,6 @@ StorageAzureBlobSource::Iterator::Iterator(
     }
     else
     {
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GLOBS BRANCH");
         const String key_prefix = blob_path_with_globs->substr(0, blob_path_with_globs->find_first_of("*?{"));
 
         /// We don't have to list bucket, because there is no asterisks.
@@ -870,11 +867,8 @@ StorageAzureBlobSource::Iterator::Iterator(
             return;
         }
 
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "KEY PREFIX {}", key_prefix);
         object_storage_iterator = object_storage->iterate(key_prefix);
 
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BLOBS BLOBS{}", *blob_path_with_globs);
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "REGEXP PATTERN {}", makeRegexpPatternFromGlobs(*blob_path_with_globs));
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(*blob_path_with_globs));
 
         if (!matcher->ok())
@@ -1105,7 +1099,6 @@ String StorageAzureBlobSource::getName() const
 StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
 {
     auto [current_key, info] = file_iterator->next();
-    LOG_DEBUG(log, "KEY {} SIZE {}", current_key, info.size_bytes);
     if (current_key.empty())
         return {};
 
@@ -1118,7 +1111,6 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
             format_settings, std::nullopt, std::nullopt,
             /* is_remote_fs */ true, compression_method);
 
-    LOG_DEBUG(log, "FORMAT {}", format);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 

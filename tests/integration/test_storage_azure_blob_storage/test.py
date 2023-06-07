@@ -47,6 +47,7 @@ def azure_query(node, query, try_num=3, settings={}):
                 if error in str(ex):
                     retry = True
                     print(f"Try num: {i}. Having retriable error: {ex}")
+                    time.sleep(i)
                     break
             if not retry or i == try_num - 1:
                 raise Exception(ex)
