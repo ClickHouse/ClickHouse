@@ -44,8 +44,8 @@ TEST(IOResourceStaticResourceManager, Smoke)
 
 TEST(IOResourceStaticResourceManager, Prioritization)
 {
-    std::optional<Int64> last_priority;
-    auto check = [&] (Int64 priority)
+    std::optional<Priority> last_priority;
+    auto check = [&] (Priority priority)
     {
         // Lock is not required here because this is called during request execution and we have max_requests = 1
         if (last_priority)
