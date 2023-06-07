@@ -766,7 +766,7 @@ public:
                 DBMS_DEFAULT_BUFFER_SIZE,
                 configuration_.request_settings,
                 std::nullopt,
-                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelWrite"),
+                threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
             3);
