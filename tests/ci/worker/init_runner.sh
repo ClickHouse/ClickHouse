@@ -71,8 +71,20 @@ check-terminating-metadata() {
   # If there is a rebalance event, then the instance could die soon
   # Let's don't wait for it and terminate proactively
   if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
-    echo 'The runner received rebalance recommendation, we are terminating'
-    terminate-and-exit
+    echo 'The received recommendation to rebalance, checking the uptime'
+    UPTIME=$(< /proc/uptime)
+    UPTIME=${UPTIME%%.*}
+    # We don't shutdown the instances younger than 30m
+    if (( 1800 < UPTIME )); then
+      # To not shutdown everything at once, use the 66% to survive
+      if (( $((RANDOM % 3)) == 0 )); then
+        echo 'The instance is older than 30m and won the roulette'
+        terminate-and-exit
+      fi
+      echo 'The instance is older than 30m, but is not chosen for rebalance'
+    else
+      echo 'The instance is younger than 30m, do not shut it down'
+    fi
   fi
 
   # Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
