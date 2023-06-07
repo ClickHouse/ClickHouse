@@ -128,20 +128,21 @@ bool tryParseConnectionString(
     else
         hosts_end_pos = hosts_or_user_info_end_pos;
 
-    auto hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
-                                                             : connection_string.end();
+    const auto * hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
+                                                                     : connection_string.end();
 
     try
     {
-        // Poco::URI doesn't support several hosts in URI.
-        // Split string clickhouse:[user_info]host1:port1, ... , hostN:portN[database]?[query_parameters]
-        // into multiple string for each host:
-        // clickhouse:[user_info]host1:port1[database]?[query_parameters]
-        // ...
-        // clickhouse:[user_info]hostN:portN[database]?[query_parameters]
+        /** Poco::URI doesn't support several hosts in URI.
+          * Split string clickhouse:[user_info]host1:port1, ... , hostN:portN[database]?[query_parameters]
+          * into multiple string for each host:
+          * clickhouse:[user_info]host1:port1[database]?[query_parameters]
+          * ...
+          * clickhouse:[user_info]hostN:portN[database]?[query_parameters]
+          */
         Poco::URI uri;
-        auto last_host_begin = connection_string.begin() + offset;
-        for (auto it = last_host_begin; it != hosts_end; ++it)
+        const auto * last_host_begin = connection_string.begin() + offset;
+        for (const auto * it = last_host_begin; it != hosts_end; ++it)
         {
             if (*it == ',')
             {
@@ -198,7 +199,7 @@ bool tryParseConnectionString(
         }
 
         const auto & database_name = uri.getPath();
-        size_t start_symbol = database_name.size() > 0u && database_name[0] == '/' ? 1u : 0u;
+        size_t start_symbol = !database_name.empty() && database_name[0] == '/' ? 1u : 0u;
         if (database_name.size() > start_symbol)
         {
             common_arguments.push_back("--database");
