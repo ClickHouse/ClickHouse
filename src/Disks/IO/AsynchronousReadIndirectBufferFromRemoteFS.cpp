@@ -116,12 +116,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.priority = base_priority + priority;
-
-    if (bytes_to_ignore)
-    {
-        request.ignore = bytes_to_ignore;
-        bytes_to_ignore = 0;
-    }
+    request.ignore = bytes_to_ignore;
     return reader.submit(request);
 }
 
@@ -163,8 +158,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
 {
-    read_until_position = impl->getFileSize();
-    impl->setReadUntilPosition(*read_until_position);
+    setReadUntilPosition(impl->getFileSize());
 }
 
 
@@ -226,11 +220,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
         chassert(memory.size() == read_settings.prefetch_buffer_size || memory.size() == read_settings.remote_fs_buffer_size);
         std::tie(size, offset) = impl->readInto(memory.data(), memory.size(), file_offset_of_buffer_end, bytes_to_ignore);
-        bytes_to_ignore = 0;
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, size);
     }
+
+    bytes_to_ignore = 0;
 
     chassert(size >= offset);
 
@@ -267,7 +262,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+        new_pos = static_cast<size_t>(getPosition()) + offset;
     }
     else
     {
@@ -275,13 +270,15 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
     }
 
     /// Position is unchanged.
-    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
+    if (new_pos == static_cast<size_t>(getPosition()))
         return new_pos;
 
     bool read_from_prefetch = false;
     while (true)
     {
-        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
+        /// The first condition implies bytes_to_ignore = 0.
+        if (!working_buffer.empty() && file_offset_of_buffer_end - working_buffer.size() <= new_pos &&
+            new_pos <= file_offset_of_buffer_end)
         {
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
@@ -318,6 +315,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
+    bytes_to_ignore = 0;
 
     if (read_until_position && new_pos > *read_until_position)
     {
@@ -351,6 +349,12 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
     }
 
     return new_pos;
+}
+
+
+off_t AsynchronousReadIndirectBufferFromRemoteFS::getPosition()
+{
+    return file_offset_of_buffer_end - available() + bytes_to_ignore;
 }
 
 
