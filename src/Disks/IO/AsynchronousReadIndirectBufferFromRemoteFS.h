@@ -40,7 +40,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override { return file_offset_of_buffer_end - available(); }
+    off_t getPosition() override;
 
     String getFileName() const override;
 
@@ -89,6 +89,8 @@ private:
 
     std::string current_reader_id;
 
+    /// If nonzero then working_buffer is empty.
+    /// If a prefetch is in flight, the prefetch task has been instructed to ignore this many bytes.
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
