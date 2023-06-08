@@ -15,7 +15,6 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
-class SeekableReadBufferFactory;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -48,9 +47,7 @@ class ParquetBlockInputFormat : public IInputFormat
 {
 public:
     ParquetBlockInputFormat(
-        // exactly one of these two is nullptr
-        ReadBuffer * buf,
-        std::unique_ptr<SeekableReadBufferFactory> buf_factory,
+        ReadBuffer & buf,
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
@@ -234,7 +231,6 @@ private:
         };
     };
 
-    std::unique_ptr<SeekableReadBufferFactory> buf_factory;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;

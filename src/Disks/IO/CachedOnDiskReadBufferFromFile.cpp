@@ -124,7 +124,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     else
     {
         CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, offset, size, create_settings);
+        file_segments = cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings);
     }
 
     /**
@@ -529,6 +529,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
+    OpenTelemetry::SpanHolder span{
+        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment.key().toString(), bytes_to_predownload)};
+
     if (bytes_to_predownload)
     {
         /// Consider this case. Some user needed segment [a, b] and downloaded it partially.
@@ -795,6 +798,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (file_segments->empty())
         return false;
 
+    const size_t original_buffer_size = internal_buffer.size();
+
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
         try
@@ -819,6 +824,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     file_segment.completePartAndResetDownloader();
                 }
             }
+
+            if (use_external_buffer && !internal_buffer.empty())
+                internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment.isDownloader());
         }
@@ -845,6 +853,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     chassert(!internal_buffer.empty());
+
+    /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
+    /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
+    if (use_external_buffer && read_type == ReadType::CACHED && settings.local_fs_buffer_size < internal_buffer.size())
+        internal_buffer.resize(settings.local_fs_buffer_size);
 
     // Pass a valid external buffer for implementation_buffer to read into.
     // We then take it back with another swap() after reading is done.
@@ -932,18 +945,23 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-#ifdef ABORT_ON_LOGICAL_ERROR
             const size_t new_file_offset = file_offset_of_buffer_end + size;
-            chassert(new_file_offset - 1 <= file_segment.range().right);
             const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+            if (new_file_offset > file_segment.range().right + 1)
+            {
+                auto file_segment_path = file_segment.getPathInLocalCache();
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Read unexpected size. File size: {}, file path: {}, file segment info: {}",
+                    fs::file_size(file_segment_path), file_segment_path, file_segment.getInfoForLog());
+            }
             if (new_file_offset > file_segment_write_offset)
             {
-                LOG_TRACE(
-                    log, "Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Read unexpected size. Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
                     size, file_offset_of_buffer_end, file_segment.range().toString(), file_segment_write_offset);
-                chassert(false);
             }
-#endif
         }
         else
         {
@@ -1206,7 +1224,7 @@ off_t CachedOnDiskReadBufferFromFile::getPosition()
 
 void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
-    if (!CachedObjectStorage::canUseReadThroughCache()
+    if (!CachedObjectStorage::canUseReadThroughCache(settings)
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
 }
