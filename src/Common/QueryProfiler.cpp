@@ -2,6 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/TraceSender.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
@@ -12,6 +13,11 @@
 
 #include <random>
 
+namespace CurrentMetrics
+{
+    extern const Metric CreatedTimersInQueryProfiler;
+    extern const Metric ActiveTimersInQueryProfiler;
+}
 
 namespace ProfileEvents
 {
@@ -117,6 +123,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
         timer_id.emplace(local_timer_id);
+        CurrentMetrics::add(CurrentMetrics::CreatedTimersInQueryProfiler);
     }
 }
 
@@ -137,6 +144,7 @@ void Timer::set(UInt32 period)
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
         throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+    CurrentMetrics::add(CurrentMetrics::ActiveTimersInQueryProfiler);
 }
 
 void Timer::stop()
@@ -147,7 +155,9 @@ void Timer::stop()
         struct itimerspec timer_spec = {.it_interval = stop_timer, .it_value = stop_timer};
         int err = timer_settime(*timer_id, 0, &timer_spec, nullptr);
         if (err)
-            throwFromErrno("Failed to stop query profiler timer", ErrorCodes::LOGICAL_ERROR);
+            LOG_ERROR(log, "Failed to stop query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to stop query profiler timer");
+        CurrentMetrics::sub(CurrentMetrics::ActiveTimersInQueryProfiler);
     }
 }
 
@@ -157,7 +167,7 @@ Timer::~Timer()
     {
         cleanup();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(log);
     }
@@ -173,6 +183,7 @@ void Timer::cleanup()
         chassert(!err && "Failed to delete query profiler timer");
 
         timer_id.reset();
+        CurrentMetrics::sub(CurrentMetrics::CreatedTimersInQueryProfiler);
     }
 }
 #endif
@@ -235,7 +246,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
     {
         cleanup();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(log);
     }
