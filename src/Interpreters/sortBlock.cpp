@@ -5,6 +5,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
 
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
 
 namespace DB
 {
@@ -190,16 +193,17 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     }
 }
 
-bool isIdentityPermutation(const IColumn::Permutation & permutation)
+bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
 
-    if (permutation.empty())
+    size_t size = limit == 0 ? permutation.size() : limit;
+    if (size == 0)
         return true;
 
-    size_t size = permutation.size();
     size_t i = 0;
 
+#if defined(__SSE2__)
     if (size >= 8)
     {
         static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
@@ -228,6 +232,7 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation)
                 return false;
         }
     }
+#endif
 
     for (; i < size; ++i)
         if (permutation[i] != (permutation[i - 1] + 1))
@@ -272,7 +277,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (permutation.empty())
         return;
 
-    if (isIdentityPermutation(permutation))
+    if (isIdentityPermutation(permutation, limit))
         return;
 
     size_t columns = block.columns();
