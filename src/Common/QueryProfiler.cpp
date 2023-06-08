@@ -153,9 +153,14 @@ void Timer::stop()
 
 Timer::~Timer()
 {
-    try {
+    try
+    {
         cleanup();
-    } catch(...) {}
+    }
+    catch(...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 void Timer::cleanup()
