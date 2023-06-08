@@ -988,17 +988,18 @@ void FileCache::cleanup()
 
 void FileCache::cleanupThreadFunc()
 {
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
-
     try
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
+        assertCacheCorrectness();
+#endif
+
         cleanup();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
     }
 
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
