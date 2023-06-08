@@ -1,5 +1,8 @@
+#include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <list>
 #include <barrier>
 #include <chrono>
 #include <mutex>
@@ -956,42 +959,67 @@ TEST(AsyncLoader, RecursiveJob)
     AsyncLoaderTest t(1);
     t.loader.start();
 
-    struct MyJob {
-        AsyncLoader & loader;
-        std::atomic<int> jobs_left;
-
-        MyJob(AsyncLoader & loader_, int jobs)
+    // An example of component with an asynchronous loading interface (a complicated one)
+    class MyComponent : boost::noncopyable {
+    public:
+        MyComponent(AsyncLoader & loader_, int jobs)
             : loader(loader_)
             , jobs_left(jobs)
         {}
 
-        void jobFunction(const LoadJobPtr & self)
+        [[nodiscard]] LoadTaskPtr loadAsync()
         {
-            int next = --jobs_left;
-            if (next > 0)
-            {
-                runJob(next, self->pool());
-            }
+            return load_task = loadAsyncImpl(jobs_left);
         }
 
-        void runJob(int id, size_t pool_id)
+        bool isLoaded() const
+        {
+            return jobs_left == 0;
+        }
+
+    private:
+        [[nodiscard]] LoadTaskPtr loadAsyncImpl(int id)
         {
             auto job_func = [this] (const LoadJobPtr & self) {
                 jobFunction(self);
             };
             auto job = makeLoadJob({}, fmt::format("job{}", id), job_func);
             auto task = makeLoadTask(loader, { job });
-            scheduleAndWaitLoadAllIn(pool_id, task);
+            return task;
         }
 
-        void runJob()
+        void jobFunction(const LoadJobPtr & self)
         {
-            runJob(jobs_left, 0);
+            int next = --jobs_left;
+            if (next > 0)
+                scheduleAndWaitLoadAllIn(self->pool(), loadAsyncImpl(next));
         }
+
+        AsyncLoader & loader;
+        std::atomic<int> jobs_left;
+        // It is a good practice to keep load task inside the component:
+        // 1) to make sure it outlives its load jobs;
+        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        LoadTaskPtr load_task;
     };
 
-    MyJob job(t.loader, 10);
-    job.runJob();
-
-    // TODO(serxa): add more tests with concurrency
+    for (double jobs_per_thread : std::array{0.5, 1.0, 2.0})
+    {
+        for (size_t threads = 1; threads <= 32; threads *= 2)
+        {
+            t.loader.setMaxThreads(0, threads);
+            std::list<MyComponent> components;
+            LoadTaskPtrs tasks;
+            size_t size = static_cast<size_t>(jobs_per_thread * threads);
+            tasks.reserve(size);
+            for (size_t j = 0; j < size; j++)
+            {
+                components.emplace_back(t.loader, 5);
+                tasks.emplace_back(components.back().loadAsync());
+            }
+            scheduleAndWaitLoadAll(tasks);
+            for (const auto & component: components)
+                ASSERT_TRUE(component.isLoaded());
+        }
+    }
 }
