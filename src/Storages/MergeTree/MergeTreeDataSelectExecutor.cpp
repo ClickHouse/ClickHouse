@@ -16,6 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -948,25 +949,52 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::list<DataSkippingIndexAndCondition> useful_indices;
     std::map<std::pair<String, size_t>, MergedDataSkippingIndexAndCondition> merged_indices;
+    std::unordered_set<std::string> ignored_index_names;
+
+    if (use_skip_indexes && settings.ignore_data_skipping_indices.changed)
+    {
+        const auto & indices = settings.ignore_data_skipping_indices.toString();
+        Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
+        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+        Expected expected;
+
+        /// Use an unordered list rather than string vector
+        auto parse_single_id_or_literal = [&]
+        {
+            String str;
+            if (!parseIdentifierOrStringLiteral(pos, expected, str))
+                return false;
+
+            ignored_index_names.insert(std::move(str));
+            return true;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
+    }
 
     if (use_skip_indexes)
     {
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
         {
-            auto index_helper = MergeTreeIndexFactory::instance().get(index);
-            if (index_helper->isMergeable())
-            {
-                auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
-                if (inserted)
-                    it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
 
-                it->second.addIndex(index_helper);
-            }
-            else
+            auto index_helper = MergeTreeIndexFactory::instance().get(index);
+            if (!ignored_index_names.contains(index.name))
             {
-                auto condition = index_helper->createIndexCondition(query_info, context);
-                if (!condition->alwaysUnknownOrTrue())
-                    useful_indices.emplace_back(index_helper, condition);
+                if (index_helper->isMergeable())
+                {
+                    auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
+                    if (inserted)
+                        it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+
+                    it->second.addIndex(index_helper);
+                }
+                else
+                {
+                    auto condition = index_helper->createIndexCondition(query_info, context);
+                    if (!condition->alwaysUnknownOrTrue())
+                        useful_indices.emplace_back(index_helper, condition);
+                }
             }
         }
     }
