@@ -176,13 +176,16 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
     {
         static constexpr size_t field_type_size = sizeof(typename DecimalType::FieldType);
         decoder.decodeString(tmp);
-        if (tmp.size() != field_type_size)
+        if (tmp.size() > field_type_size)
             throw ParsingException(
                 ErrorCodes::CANNOT_PARSE_UUID,
-                "Cannot parse type {}, expected binary data with size {}, got {}",
+                "Cannot parse type {}, expected binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
                 field_type_size,
                 tmp.size());
+        else if (tmp.size() != field_type_size)
+            /// Add padding with 0-bytes.
+            tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
 
         typename DecimalType::FieldType field;
         ReadBufferFromString buf(tmp);
