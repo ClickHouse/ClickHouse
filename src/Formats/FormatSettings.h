@@ -137,6 +137,7 @@ struct FormatSettings
         String custom_delimiter;
         bool try_detect_header = true;
         bool trim_whitespaces = true;
+        bool skip_whitespaces_tabs = true;
     } csv;
 
     struct HiveText
