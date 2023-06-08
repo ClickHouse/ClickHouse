@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TABLE IF EXISTS default.test_log;
 CREATE TABLE default.test_log
 (
