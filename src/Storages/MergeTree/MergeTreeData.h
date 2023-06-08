@@ -1060,6 +1060,9 @@ public:
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
+    /// TODO: make enabled by default in the next release if no problems found.
+    bool allowRemoveStaleMovingParts() const;
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;

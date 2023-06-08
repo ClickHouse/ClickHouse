@@ -250,7 +250,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
-    cloned_part.part->is_temp = true;
+    cloned_part.part->is_temp = data->allowRemoveStaleMovingParts();
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
     cloned_part.part->loadVersionMetadata();
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
@@ -270,10 +270,11 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     {
         LOG_INFO(log,
             "Failed to swap {}. Active part doesn't exist (containing part {}). "
-            "Possible it was merged or mutated. Will remove copy on path '{}'",
+            "Possible it was merged or mutated. Part on path '{}' {}",
             cloned_part.part->name,
             active_part ? active_part->name : "doesn't exist",
-            cloned_part.part->getDataPartStorage().getFullPath());
+            cloned_part.part->getDataPartStorage().getFullPath(),
+            data->allowRemoveStaleMovingParts() ? "will be removed" : "will remain intact (set <allow_remove_stale_moving_parts> in config.xml, exercise caution when using)");
         return;
     }
 
