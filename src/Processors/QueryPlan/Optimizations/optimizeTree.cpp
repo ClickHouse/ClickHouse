@@ -115,7 +115,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     while (!stack.empty())
     {
         {
-            /// NOTE: frame cannot be safely used after adding new elements to stack
+            /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
 
             if (frame.next_child == 0)
