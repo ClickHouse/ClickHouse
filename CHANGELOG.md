@@ -210,7 +210,7 @@
 * Fix assert in SpanHolder::finish() with fibers [#49673](https://github.com/ClickHouse/ClickHouse/pull/49673) ([Kruglov Pavel](https://github.com/Avogar)).
 * Fix short circuit functions and mutations with sparse arguments [#49716](https://github.com/ClickHouse/ClickHouse/pull/49716) ([Anton Popov](https://github.com/CurtizJ)).
 * Fix writing appended files to incremental backups [#49725](https://github.com/ClickHouse/ClickHouse/pull/49725) ([Vitaly Baranov](https://github.com/vitlibar)).
-* Ignore LWD column in checkPartDynamicColumns [#49737](https://github.com/ClickHouse/ClickHouse/pull/49737) ([Alexander Gololobov](https://github.com/davenger)).
+* Fix "There is no physical column _row_exists in table" error occurring during lightweight delete mutation on a table with Object column. [#49737](https://github.com/ClickHouse/ClickHouse/pull/49737) ([Alexander Gololobov](https://github.com/davenger)).
 * Fix msan issue in randomStringUTF8(uneven number) [#49750](https://github.com/ClickHouse/ClickHouse/pull/49750) ([Robert Schulze](https://github.com/rschu1ze)).
 * Fix aggregate function kolmogorovSmirnovTest [#49768](https://github.com/ClickHouse/ClickHouse/pull/49768) ([FFFFFFFHHHHHHH](https://github.com/FFFFFFFHHHHHHH)).
 * Fix settings aliases in native protocol [#49776](https://github.com/ClickHouse/ClickHouse/pull/49776) ([Azat Khuzhin](https://github.com/azat)).
