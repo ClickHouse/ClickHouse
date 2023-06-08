@@ -107,7 +107,10 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto result_ast = query_node_typed.toAST();
+
+    // In case of cross-replication we don't know what database is used for the table.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
 
     while (true)
     {
