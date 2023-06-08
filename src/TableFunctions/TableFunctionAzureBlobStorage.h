@@ -46,7 +46,9 @@ public:
         return {"_path", "_file"};
     }
 
-    static StorageAzureBlob::Configuration parseArgumentsImpl(ASTs & args, const ContextPtr & context, bool get_format_from_file = true);
+    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
+
+    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
 
 protected:
 

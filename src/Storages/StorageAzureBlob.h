@@ -136,7 +136,6 @@ private:
         const String & format_name,
         const ContextPtr & ctx);
 
-
 };
 
 class StorageAzureBlobSource : public ISource, WithContext
