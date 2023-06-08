@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest because uniqTheta
+
 {# this test checks backward compatibility of aggregate functions States against IPv4, IPv6 types #}
 
 {% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,50) order by ip" %}
