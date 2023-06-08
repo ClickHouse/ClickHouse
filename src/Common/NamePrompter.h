@@ -23,28 +23,11 @@ public:
     static std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings)
     {
         DistanceIndexQueue queue;
-        for (size_t i = 0; i < prompting_strings.size(); ++i){
+        for (size_t i = 0; i < prompting_strings.size(); ++i)
             appendToQueue(i, name, queue, prompting_strings);
-        }
         return release(queue, prompting_strings);
     }
 
-    static std::string getBestMatch(const std::string& name, const std::vector<std::string>& prompting_strings)
-    {
-        size_t min_distance = std::numeric_limits<size_t>::max();
-        std::string best_match;
-
-        for (const std::string& prompt : prompting_strings)
-        {
-            size_t distance = levenshteinDistance(prompt, name);
-            if (distance < min_distance)
-            {
-                min_distance = distance;
-                best_match = prompt;
-            }
-        }
-        return best_match;
-    }
 private:
     static size_t levenshteinDistance(const String & lhs, const String & rhs)
     {
@@ -126,16 +109,6 @@ public:
     std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings) const
     {
         return prompter.getHints(name, prompting_strings);
-    }
-
-    std::string getHint(const String & name) const
-    {
-        return prompter.getBestMatch(name, getAllRegisteredNames());
-    }
-
-    std::string getHint(const String & name, const std::vector<String> & prompting_strings) const
-    {
-        return prompter.getBestMatch(name, prompting_strings);
     }
 
     void appendHintsMessage(String & error_message, const String & name) const
