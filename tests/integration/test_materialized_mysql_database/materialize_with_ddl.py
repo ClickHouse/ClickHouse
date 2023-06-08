@@ -379,6 +379,46 @@ def drop_table_with_materialized_mysql_database(
         "",
     )
 
+    mysql_node.query(
+        "CREATE TABLE test_database_drop.test_table_3 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query("INSERT INTO test_database_drop.test_table_3 VALUES(1), (2)")
+    check_query(
+        clickhouse_node,
+        "SHOW TABLES FROM test_database_drop FORMAT TSV",
+        "test_table_2\ntest_table_3\n",
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
+        "1\n2\n",
+    )
+    mysql_node.query("TRUNCATE test_database_drop.test_table_3")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
+        "",
+    )
+
+    mysql_node.query(
+        "CREATE TABLE test_database_drop.test_table_4 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query("INSERT INTO test_database_drop.test_table_4 VALUES(1), (2)")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
+        "1\n2\n",
+    )
+    with mysql_node.alloc_connection() as mysql:
+        mysql.query("USE test_database_drop")
+        mysql.query("TRUNCATE test_table_4")
+
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
+        "",
+    )
+
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
 

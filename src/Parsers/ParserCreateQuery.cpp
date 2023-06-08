@@ -139,9 +139,9 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = name->as<ASTIdentifier &>().name();
-    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
     index->set(index->expr, expr);
     index->set(index->type, type);
+    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
     node = index;
 
     return true;
