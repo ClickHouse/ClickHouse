@@ -4116,7 +4116,7 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 This happens due to different parsing pipelines:
   - `toDateTime('2000-01-01 00:00:00')` creates a new DateTime in a usual way, and thus `session_timezone` setting from query context is applied.
-  - `2000-01-01 00:00:00` is parsed to a DateTime inheriting type of `d` column, including DateTime's time zone, and `session_timezone` has no impact on this value.
+  - `2000-01-01 00:00:00` is parsed to a DateTime inheriting type of `d` column, including its time zone, and `session_timezone` has no impact on this value.
 
 Possible values:
 

@@ -163,15 +163,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 ## serverTimeZone
 
 Returns the default timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
-If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
 
 **Syntax**
 
 ``` sql
 serverTimeZone()
 ```
-
-Alias: `ServerTimezone`, `servertimezone`.
 
 **Returned value**
 

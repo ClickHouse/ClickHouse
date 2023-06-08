@@ -484,6 +484,7 @@ russian
 rw
 sasl
 schemas
+servertimezone
 simdjson
 skippingerrors
 sparsehash
