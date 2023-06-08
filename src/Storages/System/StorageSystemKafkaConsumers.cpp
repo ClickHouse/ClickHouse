@@ -25,8 +25,8 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"table", std::make_shared<DataTypeString>()},
         {"consumer_id", std::make_shared<DataTypeString>()}, //(number? or string? - single clickhouse table can have many consumers)
         {"assignments.topic", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
+        {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"last_exception_time", std::make_shared<DataTypeDateTime>()},
         {"last_exception", std::make_shared<DataTypeString>()},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
@@ -56,15 +56,12 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     auto & assigments_topics = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_topics_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
-    size_t assigments_topics_last_offset = 0;
 
-    auto & assigments_partition_id = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & assigments_partition_id = assert_cast<ColumnInt32 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_partition_id_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
-    size_t assigments_partition_id_last_offset = 0;
 
-    auto & assigments_current_offset = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & assigments_current_offset = assert_cast<ColumnUInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_current_offset_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
-    size_t assigments_current_offset_last_offset = 0;
 
 
     auto & last_exception_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
@@ -79,59 +76,93 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
+    size_t last_assignment_num = 0;
 
-    auto add_row = [&](const DatabaseTablesIteratorPtr & it)
+    auto add_row = [&](const DatabaseTablesIteratorPtr & it, StorageKafka * storage_kafka_ptr)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
         {
             return;
         }
 
-        std::string fake_database = "fake_kafka_database";
-        // database.insertData(fake_database.data(), fake_database.size());
-        database.insertData(it->databaseName().data(), it->databaseName().size());
+        std::string database_str = it->databaseName();
+        std::string table_str = it->name();
 
-        std::string fake_table = "fake_kafka_table";
-        // table.insertData(fake_table.data(), fake_table.size());
-        table.insertData(it->name().data(), it->name().size());
+        for (auto consumer : storage_kafka_ptr->consumers)
+        {
+            auto & cpp_consumer = consumer->consumer;
 
-        std::string fake_consumer_id = "fake_consumer_id";
-        consumer_id.insertData(fake_consumer_id.data(), fake_consumer_id.size());
+            database.insertData(database_str.data(), database_str.size());
+            table.insertData(table_str.data(), table_str.size());
 
-        std::string fake_assigments_topic_1 = "fake_assigments_topic_1";
-        std::string fake_assigments_topic_2 = "fake_assigments_topic_2";
-        assigments_topics.insertData(fake_assigments_topic_1.data(), fake_assigments_topic_1.size());
-        assigments_topics.insertData(fake_assigments_topic_2.data(), fake_assigments_topic_2.size());
-        assigments_topics_last_offset += 2;
-        assigments_topics_offsets.push_back(assigments_topics_last_offset);
+            std::string consumer_id_str = cpp_consumer->get_member_id();
+            consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
 
-        std::string fake_partition_id_1 = "fake_partition_id_1";
-        std::string fake_partition_id_2 = "fake_partition_id_2";
-        assigments_partition_id.insertData(fake_partition_id_1.data(), fake_partition_id_1.size());
-        assigments_partition_id.insertData(fake_partition_id_2.data(), fake_partition_id_2.size());
-        assigments_partition_id_last_offset += 2;
-        assigments_partition_id_offsets.push_back(assigments_partition_id_last_offset);
+            if (consumer->assignment.has_value() && consumer->assignment.value().size() > 0)
+            {
+                for (const auto & assignment : consumer->assignment.value())
+                {
+                    const auto & topic_str = assignment.get_topic();
+                    assigments_topics.insertData(topic_str.data(), topic_str.size());
 
-        std::string fake_current_offset_1 = "fake_current_offset_1";
-        std::string fake_current_offset_2 = "fake_current_offset_2";
-        assigments_current_offset.insertData(fake_current_offset_1.data(), fake_current_offset_1.size());
-        assigments_current_offset.insertData(fake_current_offset_2.data(), fake_current_offset_2.size());
-        assigments_current_offset_last_offset += 2;
-        assigments_current_offset_offsets.push_back(assigments_current_offset_last_offset);
+                    assigments_partition_id.insert(assignment.get_partition());
+                    assigments_current_offset.insert(assignment.get_offset());
+                }
+                last_assignment_num += consumer->assignment.value().size();
 
-        last_exception_time.insert(0);
+            }
+            else
+            {
+                std::string fake_assigments_topic = "no assigned topic";
+                assigments_topics.insertData(fake_assigments_topic.data(), fake_assigments_topic.size());
 
-        std::string fake_last_exception = "fake_last_exception";
-        last_exception.insertData(fake_last_exception.data(), fake_last_exception.size());
+                assigments_partition_id.insert(0);
+                assigments_current_offset.insert(0);
 
-        last_poll_time.insert(0);
-        num_messages_read.insert(0);
-        last_commit_time.insert(0);
-        num_commits.insert(0);
-        last_rebalance_time.insert(0);
-        num_rebalance_revocations.insert(0);
-        num_rebalance_assigments.insert(0);
-        is_currently_used.insert(0);
+                last_assignment_num += 1;
+            }
+            assigments_topics_offsets.push_back(last_assignment_num);
+            assigments_partition_id_offsets.push_back(last_assignment_num);
+            assigments_current_offset_offsets.push_back(last_assignment_num);
+
+
+
+            // std::string fake_assigments_topic_1 = "fake_assigments_topic_1";
+            // std::string fake_assigments_topic_2 = "fake_assigments_topic_2";
+            // assigments_topics.insertData(fake_assigments_topic_1.data(), fake_assigments_topic_1.size());
+            // assigments_topics.insertData(fake_assigments_topic_2.data(), fake_assigments_topic_2.size());
+            // assigments_topics_last_offset += 2;
+            // assigments_topics_offsets.push_back(assigments_topics_last_offset);
+
+            // std::string fake_partition_id_1 = "fake_partition_id_1";
+            // std::string fake_partition_id_2 = "fake_partition_id_2";
+            // assigments_partition_id.insertData(fake_partition_id_1.data(), fake_partition_id_1.size());
+            // assigments_partition_id.insertData(fake_partition_id_2.data(), fake_partition_id_2.size());
+            // assigments_partition_id_last_offset += 2;
+            // assigments_partition_id_offsets.push_back(assigments_partition_id_last_offset);
+
+            // std::string fake_current_offset_1 = "fake_current_offset_1";
+            // std::string fake_current_offset_2 = "fake_current_offset_2";
+            // assigments_current_offset.insertData(fake_current_offset_1.data(), fake_current_offset_1.size());
+            // assigments_current_offset.insertData(fake_current_offset_2.data(), fake_current_offset_2.size());
+            // assigments_current_offset_last_offset += 2;
+            // assigments_current_offset_offsets.push_back(assigments_current_offset_last_offset);
+
+            last_exception_time.insert(0);
+
+            std::string fake_last_exception = "fake_last_exception";
+            last_exception.insertData(fake_last_exception.data(), fake_last_exception.size());
+
+            last_poll_time.insert(0);
+            num_messages_read.insert(0);
+            last_commit_time.insert(0);
+            num_commits.insert(0);
+            last_rebalance_time.insert(0);
+            num_rebalance_revocations.insert(0);
+            num_rebalance_assigments.insert(0);
+            is_currently_used.insert(0);
+        }
+
     };
 
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
@@ -146,7 +177,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 StoragePtr storage = iterator->table();
                 if (auto * kafka_table = dynamic_cast<StorageKafka *>(storage.get()))
                 {
-                    add_row(iterator);
+                    add_row(iterator, kafka_table);
                 }
             }
         }

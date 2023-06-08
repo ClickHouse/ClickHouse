@@ -23,6 +23,8 @@ class Configuration;
 namespace DB
 {
 
+class StorageSystemKafkaConsumers;
+
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
@@ -142,6 +144,8 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+
+    friend class DB::StorageSystemKafkaConsumers;
 };
 
 }
