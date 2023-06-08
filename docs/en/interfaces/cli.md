@@ -166,13 +166,13 @@ The connection string for clickhouse-client is presented in URI format:
 clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
 ```
 
-where user_info is: ```user[:password]```
-and hosts_and_ports is a list of values: ```[host][:port],[host][:port]``` Port is not mandatory.
-and query_parameters is a list of parameter[=value]: ```param_name[=value]&param_name[=value]...``` value may not be required for some of parameters. Parameter names are case sensitive.
+where user_info is: `user[:password]`
+and hosts_and_ports is a list of values: `[host][:port],[host][:port]` Port is not mandatory.
+and query_parameters is a list of parameter[=value]: `param_name[=value]&param_name[=value]...` value may not be required for some of the parameters. Parameter names are case sensitive.
 
 Allowed query_parameters keys:
 
-- **secure** or shorthanded **s** - no value. If specified, client will connect to the server over a secure connection (TLS). See **secure** in [command-line-options](#command-line-options)
+- `secure` or shorthanded `s` - no value. If specified, client will connect to the server over a secure connection (TLS). See `secure` in [command-line-options](#command-line-options)
 
 These examples illustrate valid connection strings for clickhouse-client:
 
@@ -210,11 +210,11 @@ If more than one host is supplied, or if a single host name is translated to mor
 
 ### Percent encoding {#connection_string_uri_percent_encoding}
 
-Hosts, user name, password, database and query parameters should be [Percent-Encoded](https://en.wikipedia.org/wiki/URL_encoding) if values contain URI invalid characters.
+Hosts, user name, password, database, and query parameters should be [Percent-Encoded](https://en.wikipedia.org/wiki/URL_encoding) if values contain invalid URI characters.
 
 ### Examples {#connection_string_examples}
 
-Connect to localhost using port 9000 and executes the query "SELECT 1".
+Connect to localhost using port 9000 and execute the query "SELECT 1".
 
 ``` bash
 clickhouse-client "clickhouse://localhost:9000" --query "SELECT 1"
@@ -232,7 +232,7 @@ Connect to localhost using port 9000 in interactive mode with the user specified
 clickhouse-client "clickhouse://localhost:9000" --user default
 ```
 
-Connect to localhost using port 9000 in interactive mode to `my_database` database specified in command line option
+Connect to localhost using port 9000 in interactive mode to `my_database` database specified in the command line option.
 
 ``` bash
 clickhouse-client "clickhouse://localhost:9000" --database my_database
@@ -250,7 +250,7 @@ Connect to localhost using port 9000 in interactive mode to `my_database` databa
 clickhouse-client "clickhouse://localhost/my_database?s"
 ```
 
-Connect to default host using the default port, default user, and default database.
+Connect to default host using default port, default user, and default database.
 
 ``` bash
 clickhouse-client "clickhouse:"
@@ -262,7 +262,7 @@ Connect to the default host using the default port, using user user_name and no 
 clickhouse-client "clickhouse://user_name@"
 ```
 
-Connect to localhost using email user name. Symbol '@' is percent encoded to '%40'.
+Connect to localhost using email as the user name. `@` symbol is percent encoded to `%40`.
 
 ``` bash
 clickhouse-client "clickhouse://some_user%40some_mail.com@localhost:9000"
