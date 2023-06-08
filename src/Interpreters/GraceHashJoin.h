@@ -90,8 +90,7 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    /// reserve_num for reserving space in hash table.
-    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin();
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(Block block);
