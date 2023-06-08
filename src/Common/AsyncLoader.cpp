@@ -1,5 +1,6 @@
 #include <Common/AsyncLoader.h>
 
+#include <limits>
 #include <optional>
 #include <base/defines.h>
 #include <base/scope_guard.h>
@@ -242,9 +243,9 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
             .thread_pool = std::make_unique<ThreadPool>(
                 init.metric_threads,
                 init.metric_active_threads,
-                init.max_threads,
-                /* max_free_threads = */ 0,
-                init.max_threads),
+                /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
+                /* max_free_threads = */ 0, // We do not require free threads
+                /* queue_size = */0), // Unlimited queue to avoid blocking during worker spawning
             .max_threads = init.max_threads
         });
 }
@@ -476,8 +477,8 @@ void AsyncLoader::setMaxThreads(size_t pool, size_t value)
 {
     std::unique_lock lock{mutex};
     auto & p = pools[pool];
-    p.thread_pool->setMaxThreads(value);
-    p.thread_pool->setQueueSize(value); // Keep queue size equal max threads count to avoid blocking during spawning
+    // Note that underlying `ThreadPool` always has unlimited `queue_size` and `max_threads`.
+    // Worker management is done by `AsyncLoader` based on `Pool::max_threads + Pool::suspended_workers` instead.
     p.max_threads = value;
     if (!is_running)
         return;
