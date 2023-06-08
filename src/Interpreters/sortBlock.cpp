@@ -190,6 +190,78 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     }
 }
 
+bool isIdentityPermutation(const IColumn::Permutation & permutation)
+{
+    static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
+
+    if (permutation.empty())
+        return true;
+
+    size_t size = permutation.size();
+    size_t i = 0;
+
+    if (size >= 8)
+    {
+        static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
+
+        __m128i permutation_add_vector = { 8, 8 };
+        __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
+
+        const UInt64 * permutation_data = static_cast<const UInt64 *>(permutation.data());
+
+        static constexpr size_t unroll_count = 8;
+        size_t size_unrolled = (size / unroll_count) * unroll_count;
+
+        for (; i < size_unrolled; i += 8)
+        {
+            UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
+
+            for (size_t j = 0; j < 4; ++j)
+            {
+                __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
+                __m128i permutation_equals_vector = _mm_cmpeq_epi64(permutation_data_vector, permutation_compare_values_vectors[j]);
+                permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
+                permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
+            }
+
+            if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
+                return false;
+        }
+    }
+
+    for (; i < size; ++i)
+        if (permutation[i] != (permutation[i - 1] + 1))
+            return false;
+
+    return true;
+}
+
+template <typename Comparator>
+bool isAlreadySortedImpl(size_t rows, Comparator compare)
+{
+    /** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
+     * Constants - at random.
+     */
+    static constexpr size_t num_rows_to_try = 10;
+    if (rows > num_rows_to_try * 5)
+    {
+        for (size_t i = 1; i < num_rows_to_try; ++i)
+        {
+            size_t prev_position = rows * (i - 1) / num_rows_to_try;
+            size_t curr_position = rows * i / num_rows_to_try;
+
+            if (compare(curr_position, prev_position))
+                return false;
+        }
+    }
+
+    for (size_t i = 1; i < rows; ++i)
+        if (compare(i, i - 1))
+            return false;
+
+    return true;
+}
+
 }
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
@@ -200,30 +272,14 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (permutation.empty())
         return;
 
+    if (isIdentityPermutation(permutation))
+        return;
+
     size_t columns = block.columns();
     for (size_t i = 0; i < columns; ++i)
     {
         auto & column_to_sort = block.getByPosition(i).column;
         column_to_sort = column_to_sort->permute(permutation, limit);
-    }
-}
-
-void stableSortBlock(Block & block, const SortDescription & description)
-{
-    if (!block)
-        return;
-
-    IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, permutation);
-
-    if (permutation.empty())
-        return;
-
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & column_to_sort = block.getByPosition(i).column;
-        column_to_sort = column_to_sort->permute(permutation, 0);
     }
 }
 
@@ -240,33 +296,28 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
     if (!block)
         return true;
 
-    size_t rows = block.rows();
-
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool is_collation_required = false;
 
-    PartialSortingLess less(columns_with_sort_desc);
-
-    /** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
-     * Constants - at random.
-     */
-    static constexpr size_t num_rows_to_try = 10;
-    if (rows > num_rows_to_try * 5)
+    for (auto & column_with_sort_desc : columns_with_sort_desc)
     {
-        for (size_t i = 1; i < num_rows_to_try; ++i)
+        if (isCollationRequired(column_with_sort_desc.description))
         {
-            size_t prev_position = rows * (i - 1) / num_rows_to_try;
-            size_t curr_position = rows * i / num_rows_to_try;
-
-            if (less(curr_position, prev_position))
-                return false;
+            is_collation_required = true;
+            break;
         }
     }
 
-    for (size_t i = 1; i < rows; ++i)
-        if (less(i, i - 1))
-            return false;
+    size_t rows = block.rows();
 
-    return true;
+    if (is_collation_required)
+    {
+        PartialSortingLessWithCollation less(columns_with_sort_desc);
+        return isAlreadySortedImpl(rows, less);
+    }
+
+    PartialSortingLess less(columns_with_sort_desc);
+    return isAlreadySortedImpl(rows, less);
 }
 
 }
