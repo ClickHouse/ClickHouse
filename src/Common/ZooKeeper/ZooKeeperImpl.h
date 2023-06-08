@@ -126,6 +126,7 @@ public:
     bool isExpired() const override { return requests_queue.isFinished(); }
 
     int32_t getConnectedNodeIdx() const override { return connected_hosts_idx; }
+    int32_t getConnectionXid() const override { return next_xid.load(); }
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.

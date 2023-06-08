@@ -552,6 +552,7 @@ public:
     void setServerCompletelyStarted();
 
     int32_t getConnectedHostIdx() const;
+    int32_t getConnectionXid() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
 

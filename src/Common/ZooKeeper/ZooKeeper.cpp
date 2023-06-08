@@ -1326,6 +1326,11 @@ String ZooKeeper::getConnectedHost() const
     return "";
 }
 
+int32_t ZooKeeper::getConnectionXid() const
+{
+    return impl->getConnectionXid();
+}
+
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
     if (responses.empty())
