@@ -3238,7 +3238,7 @@ Possible values:
 - Positive integer.
 - 0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
-Default value: `16`.
+Default value: `max_threads`.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
