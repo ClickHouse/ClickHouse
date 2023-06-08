@@ -7,7 +7,7 @@ from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
+    "node1", main_configs=["configs/named_collections.xml"], user_configs=["configs/users.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
     "node2",

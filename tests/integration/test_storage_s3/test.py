@@ -55,7 +55,7 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml"],
+            user_configs=["configs/access.xml", "configs/users.xml"],
         )
         cluster.add_instance(
             "s3_max_redirects",

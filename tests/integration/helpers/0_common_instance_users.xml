@@ -1,11 +1,7 @@
 <clickhouse>
     <users>
         <default>
-            <grants>
-                <query>GRANT ACCESS MANAGEMENT ON *.* WITH GRANT OPTION</query>
-                <query>GRANT ALL ON *.* WITH GRANT OPTION</query>
-                <query>GRANT USE NAMED COLLECTION ON * WITH GRANT OPTION</query>
-            </grants>
+            <access_management>1</access_management>
         </default>
     </users>
 </clickhouse>
