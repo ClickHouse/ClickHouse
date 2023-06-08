@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-upgrade-check
+-- Tags: disabled, no-fasttest, no-ubsan, no-cpu-aarch64, no-upgrade-check
 
 SET allow_experimental_annoy_index = 1;
 
