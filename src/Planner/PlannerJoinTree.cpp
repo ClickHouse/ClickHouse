@@ -106,7 +106,11 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
             storage_id.getFullTableName());
     }
 
-    query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
 }
 
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
@@ -873,10 +877,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
+    JoinStrictness join_strictness = join_node.getStrictness();
 
     std::optional<bool> join_constant;
 
-    if (join_node.getStrictness() == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
     if (join_constant)

@@ -1536,6 +1536,13 @@ private:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     mutable TemporaryParts temporary_parts;
+
+    /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
+    /// Note: it could be very rough.
+    bool canUseParallelReplicasBasedOnPKAnalysis(
+        ContextPtr query_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
