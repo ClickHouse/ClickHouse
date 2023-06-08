@@ -15,15 +15,6 @@
 namespace DB
 {
 
-struct AzureSimpleAccountConfiguration
-{
-    std::string storage_account_url;
-};
-
-using AzureConnectionString = std::string;
-
-using AzureCredentials = std::variant<AzureSimpleAccountConfiguration, AzureConnectionString>;
-
 class StorageAzureBlob : public IStorage
 {
 public:
@@ -73,7 +64,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTPtr partition_by_);
 
-    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
     static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
@@ -190,6 +181,7 @@ public:
         void createFilterAST(const String & any_key);
         bool is_finished = false;
         bool is_initialized = false;
+        std::mutex next_mutex;
     };
 
     StorageAzureBlobSource(
