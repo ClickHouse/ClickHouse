@@ -122,6 +122,7 @@
     </policies>
 
 </storage_configuration>
+<allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 
 <merge_tree>
     <temporary_directories_lifetime>1</temporary_directories_lifetime>
