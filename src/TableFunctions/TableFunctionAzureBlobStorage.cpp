@@ -2,7 +2,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-//#include <IO/S3Common.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -15,7 +14,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageAzureBlob.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>

@@ -957,9 +957,6 @@ StorageS3::StorageS3(
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-
-    LOG_INFO(&Poco::Logger::get("StorageS3"), "constructor columns  = {}", columns.toString());
-
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
     for (const auto & column : virtual_columns)
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
