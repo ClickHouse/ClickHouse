@@ -762,7 +762,7 @@ bool TableJoin::allowParallelHashJoin() const
     return true;
 }
 
-ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context)
+ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
 {
     ASTPtr expression_list = rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());

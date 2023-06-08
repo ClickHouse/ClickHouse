@@ -217,7 +217,7 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context);
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
