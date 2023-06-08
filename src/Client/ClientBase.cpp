@@ -89,14 +89,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-static const NameSet exit_strings
-{
-    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
-    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
-    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
-};
-
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -285,7 +277,7 @@ public:
     static Int32 cancelled_status() { return exit_after_signals.load(); }
 };
 
-/// This signal handler is set only for SIGINT.
+/// This signal handler is set for SIGINT and SIGQUIT.
 void interruptSignalHandler(int signum)
 {
     if (QueryInterruptHandler::try_stop())
@@ -323,6 +315,9 @@ void ClientBase::setupSignalHandler()
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+    if (sigaction(SIGQUIT, &new_act, nullptr))
         throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
