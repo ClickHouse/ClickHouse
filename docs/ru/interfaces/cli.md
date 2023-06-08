@@ -118,14 +118,14 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 clickhouse://[user_info@][hosts_and_ports][/dbname][?query_parameters]
 ```
 
-где user_info - это: ```user[:password]```
-hosts_and_ports - это список значений: ```[host][:port],[host][:port]```. Port может быть не задан.
-query_parameters - это список пар ключ[=значение]: ```param_name[=value]&param_name[=value]...```. Значение может быть пустым.
+где user_info - это: `user[:password]`
+hosts_and_ports - это список значений: `[host][:port],[host][:port]`. Port может быть не задан.
+query_parameters - это список пар ключ[=значение]: `param_name[=value]&param_name[=value]...`. Значение может быть пустым.
 Имена параметров чувствительны к регистру.
 
 Допустимые ключи query_parameters:
 
-- **secure** или сокращенно **s** - без значение. Если параметр указан, то соединение с сервером будет осуществляться по защищенному каналу (TLS). См. **secure** в [command-line-options](#command-line-options).
+- `secure` или сокращенно `s` - без значение. Если параметр указан, то соединение с сервером будет осуществляться по защищенному каналу (TLS). См. `secure` в [command-line-options](#command-line-options).
 
 Эти примеры иллюстрируют допустимые строки подключения для clickhouse-client:
 
@@ -215,7 +215,7 @@ clickhouse-client "clickhouse:"
 clickhouse-client "clickhouse://user_name@"
 ```
 
-Подключиться к localhost, используя электронную почту, как имя пользователя. Символ '@' закодирован как '%40'.
+Подключиться к localhost, используя электронную почту, как имя пользователя. Символ `@` закодирован как `%40`.
 
 ``` bash
 clickhouse-client "clickhouse://some_user%40some_mail.com@localhost:9000"
