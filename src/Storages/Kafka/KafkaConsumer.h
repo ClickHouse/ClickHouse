@@ -20,6 +20,8 @@ namespace Poco
 namespace DB
 {
 
+class StorageSystemKafkaConsumers;
+
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class KafkaConsumer
@@ -111,6 +113,9 @@ private:
     /// Return number of messages with an error.
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
+
+    friend class DB::StorageSystemKafkaConsumers;
+
 };
 
 }
