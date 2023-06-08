@@ -86,7 +86,9 @@ namespace ErrorCodes
 }
 
 #if USE_UNWIND
-Timer::Timer():log(&Poco::Logger::get("Timer")){}
+Timer::Timer()
+    : log(&Poco::Logger::get("Timer"))
+{}
 
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
 {
