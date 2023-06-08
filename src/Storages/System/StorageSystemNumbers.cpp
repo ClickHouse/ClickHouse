@@ -7,6 +7,8 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
 
 
 namespace DB
@@ -127,7 +129,7 @@ Pipe StorageSystemNumbers::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t num_streams)
@@ -144,6 +146,17 @@ Pipe StorageSystemNumbers::read(
         num_streams = 1;
 
     Pipe pipe;
+
+    assert(column_names.size() == 1);
+
+    const auto & columns = storage_snapshot->getMetadataForQuery()->columns;
+    auto col_desc = KeyDescription::parse(column_names[0], columns, context);
+    KeyCondition condition(query_info, context, column_names, col_desc.expression, {});
+
+    FieldRef left(1);
+    FieldRef right(20);
+
+    std::cout << "Condition result: " << condition.mayBeTrueInRange(1, &left, &right, columns.getAll().getTypes());
 
     if (num_streams > 1 && !even_distribution && limit)
     {

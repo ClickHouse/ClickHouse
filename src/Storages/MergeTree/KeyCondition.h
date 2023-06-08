@@ -79,6 +79,11 @@ public:
         shrinkToIncludedIfPossible();
     }
 
+    static Range createBlank()
+    {
+        return Range(Null::Value::Null, false, Null::Value::Null, false);
+    }
+
     static Range createWholeUniverse()
     {
         return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
@@ -167,6 +172,18 @@ public:
         return less(x, right) || (right_included && equals(x, right));
     }
 
+    /// right than x
+    bool rightThan(const Range & x) const
+    {
+        return less(x.right, left) || (equals(left, x.right) && !(left_included && x.right_included));
+    }
+
+    /// left than x
+    bool leftThan(const Range & x) const
+    {
+        return less(right, x.left) || (equals(right, x.left) && !(x.left_included && right_included));
+    }
+
     bool intersectsRange(const Range & r) const
     {
         /// r to the left of me.
@@ -178,6 +195,57 @@ public:
             return false;
 
         return true;
+    }
+
+    /// If me near by r, they can be combined to a continuous range.
+    /// TODO If filed is integer, case like [2, 3], [4, 5] is excluded.
+    bool nearByWith(const Range & r) const
+    {
+        /// me locates at left
+        if (equals(right, r.left) && ((right_included && !r.left_included) || (!right_included && r.left_included)))
+            return true;
+
+        /// r locate left
+        if (equals(r.right, left) && ((r.right_included && !left_included) || (r.right_included && !left_included)))
+            return true;
+
+        return false;
+    }
+
+    std::optional<Range> intersectWith(const Range & r) const
+    {
+        if (!intersectsRange(r))
+            return {};
+
+        bool left_bound_use_mine = true;
+        bool right_bound_use_mine = true;
+
+        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+            left_bound_use_mine = false;
+
+        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+            right_bound_use_mine = false;
+
+        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
+    }
+
+    std::optional<Range> unionWith(const Range & r) const
+    {
+        if (!intersectsRange(r))
+            return {};
+
+        bool left_bound_use_mine = false;
+        bool right_bound_use_mine = false;
+
+        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+            left_bound_use_mine = true;
+
+        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+            right_bound_use_mine = true;
+
+        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
     }
 
     bool containsRange(const Range & r) const
@@ -203,8 +271,54 @@ public:
         std::swap(left_included, right_included);
     }
 
+    /// [1, 2]
+    bool fullBounded()
+    {
+        return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
+    }
+
+    /// (-inf, +inf)
+    bool isInfinite()
+    {
+        return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
+    }
+
+    bool isBlank()
+    {
+        return left == Null::Value::Null && right == Null::Value::Null;
+    }
+
+    std::vector<Range> invertToRanges()
+    {
+        std::vector<Range> ranges;
+        /// case: [1, 3] -> (-inf, 1), (3, +inf)
+        if (fullBounded())
+        {
+            ranges.push_back({NEGATIVE_INFINITY, !right_included, left, !left_included});
+            ranges.push_back({right, !right_included, POSITIVE_INFINITY, !left_included});
+        }
+        else if(isInfinite())
+        {
+            ranges.push_back(createBlank());
+        }
+        else /// case: (-inf, 1] or [1, +inf)
+        {
+            Range r = *this;
+            std::swap(r.left, r.right);
+            if (r.left.isPositiveInfinity())
+                r.left = NEGATIVE_INFINITY;
+            if (r.right.isNegativeInfinity())
+                r.right = POSITIVE_INFINITY;
+            std::swap(r.left_included, r.right_included);
+            ranges.push_back(r);
+        }
+        return ranges;
+    }
+
     String toString() const;
 };
+
+using Ranges = std::vector<Range>;
 
 /** Condition on the index.
   *
@@ -338,6 +452,16 @@ public:
         bool single_point = false);
 
     bool matchesExactContinuousRange() const;
+
+    /// Extract plain ranges of the condition. Plain ranges must:
+    ///     1. have no intersection in all ranges
+    ///     2. ordered by left side
+    /// Example:
+    ///     query: (k > 1 and key < 5) or (k > 3 and k < 10) or key in (2, 12)
+    ///     original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
+    ///     plain ranges: (1, 10), [12, 12]
+    /// Note that only support one column key condition.
+    bool extractPlainRanges(std::vector<Range> ranges) const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
