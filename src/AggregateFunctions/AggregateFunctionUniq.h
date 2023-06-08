@@ -167,6 +167,25 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     static String getName() { return "uniqExact"; }
 };
 
+/// For historical reasons IPv6 is treated as FixedString(16)
+template <bool is_able_to_parallelize_merge_>
+struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
+{
+    using Key = UInt128;
+
+    /// When creating, the hash table must be small.
+    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
+    using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
+
+    Set set;
+
+    constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = false;
+
+    static String getName() { return "uniqExact"; }
+};
+
 template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_merge_>
 struct AggregateFunctionUniqExactDataForVariadic : AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
 {
@@ -275,12 +294,7 @@ struct Adder
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T, Data::is_able_to_parallelize_merge>>)
         {
             const auto & column = *columns[0];
-            if constexpr (!std::is_same_v<T, String>)
-            {
-                data.set.template insert<const T &, use_single_level_hash_table>(
-                    assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-            }
-            else
+            if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
                 StringRef value = column.getDataAt(row_num);
 
@@ -290,6 +304,11 @@ struct Adder
                 hash.get128(key);
 
                 data.set.template insert<const UInt128 &, use_single_level_hash_table>(key);
+            }
+            else
+            {
+                data.set.template insert<const T &, use_single_level_hash_table>(
+                    assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
             }
         }
 #if USE_DATASKETCHES
