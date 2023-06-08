@@ -17,4 +17,4 @@ serde_json = "1.0"
 
 [profile.release-thinlto]
 inherits = "release"
-lto = "thin"
+lto = true
