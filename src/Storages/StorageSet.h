@@ -24,7 +24,7 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
