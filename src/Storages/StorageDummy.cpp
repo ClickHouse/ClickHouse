@@ -9,8 +9,9 @@
 namespace DB
 {
 
-StorageDummy::StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_)
+StorageDummy::StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_)
     : IStorage(table_id_)
+    , object_columns(std::move(object_columns_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
