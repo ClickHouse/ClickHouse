@@ -85,7 +85,7 @@ public:
         EMPTY,
         /**
          * A newly created file segment never has DOWNLOADING state until call to getOrSetDownloader
-         * because each cache user might acquire multiple file segments and reads them one by one,
+         * because each cache user might acquire multiple file segments and read them one by one,
          * so only user which actually needs to read this segment earlier than others - becomes a downloader.
          */
         DOWNLOADING,
@@ -359,12 +359,6 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
-
-    void moveTo(FileSegmentsHolder & holder)
-    {
-        holder.file_segments.insert(holder.file_segments.end(), file_segments.begin(), file_segments.end());
-        file_segments.clear();
-    }
 
 private:
     FileSegments file_segments{};
