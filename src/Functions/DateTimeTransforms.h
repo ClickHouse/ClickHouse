@@ -1449,18 +1449,14 @@ struct Transformer
             {
                 bool check_range_result = true;
 
-                if constexpr (std::is_same_v<ToType, DataTypeDate>)
-                {
-                    check_range_result = vec_from[i] >= 0 && vec_from[i] <= DATE_LUT_MAX_DAY_NUM;
-                }
-                else if constexpr (std::is_same_v<ToType, DataTypeDateTime>)
+                if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
                 {
                     check_range_result = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
                 }
 
                 if (!check_range_result)
                 {
-                    if (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                    if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                     {
                         vec_to[i] = 0;
                         if (vec_null_map_to)
