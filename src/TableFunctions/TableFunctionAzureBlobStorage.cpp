@@ -44,10 +44,8 @@ bool isConnectionString(const std::string & candidate)
 
 }
 
-StorageAzureBlob::Configuration TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
+void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
 {
-    StorageAzureBlob::Configuration configuration;
-
     /// Supported signatures:
     ///
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
@@ -59,10 +57,8 @@ StorageAzureBlob::Configuration TableFunctionAzureBlobStorage::parseArgumentsImp
 
         configuration.blobs_paths = {configuration.blob_path};
 
-        if (configuration.format == "auto" && get_format_from_file)
+        if (configuration.format == "auto")
             configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
-
-        return configuration;
     }
 
     if (engine_args.size() < 3 || engine_args.size() > 8)
@@ -172,10 +168,8 @@ StorageAzureBlob::Configuration TableFunctionAzureBlobStorage::parseArgumentsImp
 
     configuration.blobs_paths = {configuration.blob_path};
 
-    if (configuration.format == "auto" && get_format_from_file)
+    if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
-
-    return configuration;
 }
 
 void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -190,8 +184,43 @@ void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, 
 
     auto & args = args_func.at(0)->children;
 
-    configuration = parseArgumentsImpl(args, context);
+    parseArgumentsImpl(args, context);
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
 }
+
+
+void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
+{
+    if (tryGetNamedCollectionWithOverrides(args, context))
+    {
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
+    }
+    else
+    {
+        if (args.size() < 3 || args.size() > 8)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage Azure requires 3 to 7 arguments: "
+                            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
+
+        auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+        if (args.size() == 3)
+        {
+            /// Add format=auto before structure argument.
+            args.push_back(std::make_shared<ASTLiteral>("auto"));
+            args.push_back(structure_literal);
+        }
+        else if (args.size() == 4)
+        {
+            args.push_back(structure_literal);
+        }
+    }
+}
+
 
 ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(ContextPtr context) const
 {
