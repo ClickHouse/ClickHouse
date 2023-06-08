@@ -163,6 +163,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
+        /// NOTE: optimizePrewhere can modify the stack.
         optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
         enableMemoryBoundMerging(*stack.back().node, nodes);
