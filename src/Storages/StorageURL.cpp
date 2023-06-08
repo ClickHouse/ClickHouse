@@ -248,7 +248,7 @@ StorageURLSource::StorageURLSource(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
 
         auto first_option = uri_options.begin();
-        auto [actual_uri, buf_factory] = getFirstAvailableURIAndReadBuffer(
+        auto [actual_uri, buf] = getFirstAvailableURIAndReadBuffer(
             first_option,
             uri_options.end(),
             context,
@@ -262,10 +262,11 @@ StorageURLSource::StorageURLSource(
             uri_options.size() == 1);
 
         curr_uri = actual_uri;
+        read_buf = std::move(buf);
 
         try
         {
-            total_size += buf_factory->getFileSize();
+            total_size += getFileSizeFromReadBuffer(*read_buf);
         }
         catch (...)
         {
@@ -273,16 +274,17 @@ StorageURLSource::StorageURLSource(
         }
 
         // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
-        auto input_format = FormatFactory::instance().getInputRandomAccess(
+        auto input_format = FormatFactory::instance().getInput(
             format,
-            std::move(buf_factory),
+            *read_buf,
             sample_block,
             context,
             max_block_size,
-            /* is_remote_fs */ true,
-            compression_method,
             format_settings,
-            download_threads);
+            download_threads,
+            /*max_download_threads*/ std::nullopt,
+            /* is_remote_fs */ true,
+            compression_method);
 
         QueryPipelineBuilder builder;
         builder.init(Pipe(input_format));
@@ -348,7 +350,7 @@ Chunk StorageURLSource::generate()
     return {};
 }
 
-std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> StorageURLSource::getFirstAvailableURIAndReadBuffer(
+std::tuple<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
     ContextPtr context,
@@ -376,40 +378,38 @@ std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> StorageURLSource::getFirstAv
         setCredentials(credentials, request_uri);
 
         const auto settings = context->getSettings();
-        auto res = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-            request_uri,
-            http_method,
-            callback,
-            timeouts,
-            credentials,
-            settings.max_http_get_redirects,
-            settings.max_read_buffer_size,
-            read_settings,
-            headers,
-            &context->getRemoteHostFilter(),
-            delay_initialization,
-            /* use_external_buffer */ false,
-            /* skip_url_not_found_error */ skip_url_not_found_error);
 
-        if (options > 1)
+        try
         {
-            // Send a HEAD request to check availability.
-            try
-            {
-                res->getFileInfo();
-            }
-            catch (...)
-            {
-                if (first_exception_message.empty())
-                    first_exception_message = getCurrentExceptionMessage(false);
+            auto res = std::make_unique<ReadWriteBufferFromHTTP>(
+                request_uri,
+                http_method,
+                callback,
+                timeouts,
+                credentials,
+                settings.max_http_get_redirects,
+                settings.max_read_buffer_size,
+                read_settings,
+                headers,
+                &context->getRemoteHostFilter(),
+                delay_initialization,
+                /* use_external_buffer */ false,
+                /* skip_url_not_found_error */ skip_url_not_found_error);
 
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                continue;
-            }
+            return std::make_tuple(request_uri, std::move(res));
         }
+        catch (...)
+        {
+            if (options == 1)
+                throw;
 
-        return std::make_tuple(request_uri, std::move(res));
+            if (first_exception_message.empty())
+                first_exception_message = getCurrentExceptionMessage(false);
+
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+            continue;
+        }
     }
 
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
@@ -598,7 +598,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         if (it == urls_to_check.cend())
             return nullptr;
 
-        auto [_, buf_factory] = StorageURLSource::getFirstAvailableURIAndReadBuffer(
+        auto [_, buf] = StorageURLSource::getFirstAvailableURIAndReadBuffer(
             it,
             urls_to_check.cend(),
             context,
@@ -612,7 +612,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             false);
         ++it;
         return wrapReadBufferWithCompressionMethod(
-            buf_factory->getReader(),
+            std::move(buf),
             compression_method,
             static_cast<int>(context->getSettingsRef().zstd_window_log_max));
     };
@@ -803,7 +803,7 @@ Pipe StorageURLWithFailover::read(
 }
 
 
-SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;
