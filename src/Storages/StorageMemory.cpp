@@ -159,7 +159,7 @@ void StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
