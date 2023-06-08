@@ -179,8 +179,8 @@ public:
         std::unique_ptr<re2::RE2> matcher;
 
         void createFilterAST(const String & any_key);
-        bool is_finished = false;
-        bool is_initialized = false;
+        std::atomic<bool> is_finished = false;
+        std::atomic<bool> is_initialized = false;
         std::mutex next_mutex;
     };
 
