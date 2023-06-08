@@ -10,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTWithAliasPending.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +39,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (ast->as<ASTWithAliasPending>())
+        visitASTWithAliasPending(ast);
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
@@ -124,6 +127,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 
     /// Keep the original alias.
     ast->setAlias(alias);
+}
+
+void ReplaceQueryParameterVisitor::visitASTWithAliasPending(ASTPtr & ast)
+{
+    auto ast_with_alias_pending = ast->as<ASTWithAliasPending &>();
+    const auto & alias_param = ast_with_alias_pending.query_parameter->as<ASTQueryParameter &>();
+    setAlias(ast_with_alias_pending.wrapped_ast, getParamValue(alias_param.name));
+    ast = ast_with_alias_pending.wrapped_ast;
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
