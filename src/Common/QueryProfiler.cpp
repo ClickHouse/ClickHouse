@@ -145,8 +145,7 @@ void Timer::stop()
         struct itimerspec timer_spec = {.it_interval = stop_timer, .it_value = stop_timer};
         int err = timer_settime(*timer_id, 0, &timer_spec, nullptr);
         if (err)
-            LOG_ERROR(log, "Failed to stop query profiler timer {}", errnoToString());
-        chassert(!err && "Failed to stop query profiler timer");
+            throwFromErrno("Failed to stop query profiler timer", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
