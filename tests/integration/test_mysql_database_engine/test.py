@@ -12,6 +12,7 @@ cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     with_mysql=True,
     stay_alive=True,
 )
