@@ -192,6 +192,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
     }
+    else if (which_type.isDateTime64() && which_from_type.isDate())
+    {
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.get<UInt16>()));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
+    }
+    else if (which_type.isDateTime64() && which_from_type.isDate32())
+    {
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.get<Int32>())));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
+    }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
@@ -534,7 +550,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
-    if (is_null && !to_type.isNullable())
+    if (is_null && !to_type.isNullable() && !to_type.isLowCardinalityNullable())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);

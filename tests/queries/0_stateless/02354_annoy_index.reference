@@ -1,0 +1,118 @@
+--- Test with Array ---
+WHERE type, L2Distance
+1	[0,0,10]
+2	[0,0,10.5]
+3	[0,0,9.5]
+4	[0,0,9.7]
+5	[0,0,10.2]
+ORDER BY type, L2Distance
+1	[0,0,10]
+5	[0,0,10.2]
+4	[0,0,9.7]
+WHERE type, L2Distance, check that index is used
+Expression ((Projection + Before ORDER BY))
+  Limit (preliminary LIMIT (without OFFSET))
+    ReadFromMergeTree (default.tab)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 3/3
+      Skip
+        Name: annoy_index
+        Description: annoy GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/3
+ORDER BY type, L2Distance, check that index is used
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 3/3
+          Skip
+            Name: annoy_index
+            Description: annoy GRANULARITY 1
+            Parts: 1/1
+            Granules: 3/3
+parameter annoy_index_search_k_nodes
+parameter max_limit_for_ann_queries
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 3/3
+--- Test with Tuple ---
+WHERE type, L2Distance
+1	(0,0,10)
+2	(0,0,10.5)
+3	(0,0,9.5)
+4	(0,0,9.7)
+5	(0,0,10.2)
+ORDER BY type, L2Distance
+1	(0,0,10)
+5	(0,0,10.2)
+4	(0,0,9.7)
+WHERE type, L2Distance, check that index is used
+Expression ((Projection + Before ORDER BY))
+  Limit (preliminary LIMIT (without OFFSET))
+    ReadFromMergeTree (default.tab)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 3/3
+      Skip
+        Name: annoy_index
+        Description: annoy GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/3
+ORDER BY type, L2Distance, check that index is used
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 3/3
+          Skip
+            Name: annoy_index
+            Description: annoy GRANULARITY 1
+            Parts: 1/1
+            Granules: 3/3
+parameter annoy_index_search_k_nodes
+parameter max_limit_for_ann_queries
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 3/3
+--- Test alternative metric (cosine distance) and non-default NumTrees ---
+WHERE type, L2Distance
+1	[0,0,10]
+2	[0,0,10.5]
+3	[0,0,9.5]
+4	[0,0,9.7]
+5	[0,0,10.2]
+ORDER BY type, L2Distance
+1	[0,0,10]
+5	[0,0,10.2]
+4	[0,0,9.7]
+--- Negative tests ---
