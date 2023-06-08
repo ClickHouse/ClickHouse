@@ -41,7 +41,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -183,7 +183,7 @@ public:
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
-    static std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> getFirstAvailableURIAndReadBuffer(
+    static std::tuple<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -205,6 +205,7 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
 
+    std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
