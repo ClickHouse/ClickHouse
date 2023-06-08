@@ -544,6 +544,12 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
+    /// Get the current connected node idx.
+    virtual int32_t getConnectedNodeIdx() const = 0;
+
+    /// Get the xid of current connection.
+    virtual int32_t getConnectionXid() const = 0;
+
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 

@@ -551,10 +551,9 @@ public:
 
     void setServerCompletelyStarted();
 
-    String getConnectedZooKeeperHost() const { return connected_zk_host; }
-    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
-    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
-    UInt64 getConnectedTime() const { return connected_time; }
+    int32_t getConnectedHostIdx() const;
+    String getConnectedHostPort() const;
+    int32_t getConnectionXid() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -620,11 +619,6 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
-
-    String connected_zk_host;
-    UInt16 connected_zk_port;
-    size_t connected_zk_index;
-    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 

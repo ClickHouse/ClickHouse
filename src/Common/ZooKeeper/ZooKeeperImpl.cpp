@@ -446,6 +446,14 @@ void ZooKeeper::connect(
                 }
                 connected = true;
 
+                for (size_t idx = 0; idx < args.hosts.size(); ++idx)
+                {
+                    if (args.hosts[idx] != node.address.toString())
+                        continue;
+                    connected_hosts_idx = static_cast<int32_t>(idx);
+                    break;
+                }
+
                 if (connected_callback.has_value())
                     (*connected_callback)(i, node);
 
@@ -911,6 +919,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
+
+    /// Reset the idx.
+    connected_hosts_idx = -1;
 
     auto expire_session_if_not_expired = [&]
     {

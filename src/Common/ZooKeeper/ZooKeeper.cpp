@@ -1312,6 +1312,19 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
+int32_t ZooKeeper::getConnectedHostIdx() const
+{
+    return impl->getConnectedNodeIdx();
+}
+
+String ZooKeeper::getConnectedHost() const
+{
+    int32_t idx = impl->getConnectedNodeIdx();
+    if (0 <= idx && idx < static_cast<int32_t>(args.hosts.size()))
+        return args.hosts[idx];
+
+    return "";
+}
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {

@@ -125,6 +125,8 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
+    int32_t getConnectedNodeIdx() const override { return connected_hosts_idx; }
+
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
     bool hasReachedDeadline() const override;
@@ -220,6 +222,9 @@ private:
 
     zkutil::ZooKeeperArgs args;
     std::optional<ConnectedCallback> connected_callback = {};
+
+    /// The n member of the array 'args.hosts' is now being connected.
+    int32_t connected_hosts_idx = -1;
 
     /// Fault injection
     void maybeInjectSendFault();
