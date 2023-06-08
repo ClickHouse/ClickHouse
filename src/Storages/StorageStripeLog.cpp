@@ -394,7 +394,7 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
