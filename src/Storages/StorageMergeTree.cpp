@@ -2067,7 +2067,13 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
                 part->checkMetadata();
 
-                results.emplace_back(part->name, true, "");
+                auto partHash = part->checksums.getTotalChecksumUInt128();
+                std::string msg;
+                if (cryptographic_mode) {
+                    msg = fmt::format("Hash: {}", getHexUIntLowercase(partHash.second) + getHexUIntLowercase(partHash.first));
+                }
+                results.emplace_back(part->name, true, msg);
+
             }
             catch (const Exception & ex)
             {
