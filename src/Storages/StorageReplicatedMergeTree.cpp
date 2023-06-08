@@ -6062,6 +6062,11 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             queue_entry_to_wait_for = entry_name;
             break;
         }
+        else if (!exists)
+        {
+            LOG_DEBUG(log, "Queue entry {} does not already exist on {} replica", entry_name, replica);
+            continue;
+        }
         else if (!entry.log_entry_id.empty())
         {
             /// Check if the id matches rather than just contents. This entry
