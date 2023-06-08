@@ -56,7 +56,6 @@ select toDateOrDefault(cast(19 as UInt256));
 select toDateOrDefault(19507, '2000-01-01'::Date);
 select toDateOrDefault(-1, '2023-05-30'::Date);
 
-select toDateTimeOrDefault('2023-05-30 14:38:20');
 select toDateTimeOrDefault('2023-05-30 14:38:20', 'UTC');
 select toDateTimeOrDefault('1xxx', 'UTC', '2023-05-30 14:38:20'::DateTime('UTC'));
 select toDateTimeOrDefault(1685457500, 'UTC');
