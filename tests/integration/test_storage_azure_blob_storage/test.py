@@ -25,6 +25,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["configs/named_collections.xml"],
+            user_configs=["configs/disable_profilers.xml"],
             with_azurite=True,
         )
         cluster.start()
@@ -34,13 +35,14 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, try_num=3, settings={}):
+def azure_query(node, query, try_num=10, settings={}):
     for i in range(try_num):
         try:
             return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
+                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "DB::Exception: Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
             ]
             retry = False
             for error in retriable_errors:
