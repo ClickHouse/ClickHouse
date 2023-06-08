@@ -149,6 +149,9 @@ private:
 /// It's needed, when you have to access to the internals of the column,
 /// or when you need to perform operation with two columns
 /// and their structure must be equal (e.g. compareAt).
+void convertToFullIfConst(Chunk & chunk);
+void convertToFullIfLowCardinality(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
+void convertToFullIfNeeded(Chunk & chunk);
 
 }

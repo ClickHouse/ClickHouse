@@ -263,23 +263,23 @@ void QueryCache::Writer::finalizeWrite()
 
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
-        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
         return;
     }
 
     if (squash_partial_results)
     {
-        // Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
-        // compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
-        // served later on from the query cache.
+        /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
+        /// compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
+        /// served later on from the query cache.
 
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
 
         for (auto & chunk : query_result->chunks)
         {
-            convertToFullIfSparse(chunk);
+            convertToFullIfNeeded(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
