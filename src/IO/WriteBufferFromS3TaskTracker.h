@@ -49,6 +49,8 @@ private:
     /// waitTilInflightShrink waits til the number of in-flight tasks beyond the limit `max_tasks_inflight`.
     void waitTilInflightShrink() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
+    void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
+
     const bool is_async;
     ThreadPoolCallbackRunner<void> scheduler;
     const size_t max_tasks_inflight;
