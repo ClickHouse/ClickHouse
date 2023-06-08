@@ -39,7 +39,7 @@ public:
 
             /// Timezone is passed in query_context, but on CH-Client we have no query context,
             /// and each time we modify client's global context
-            const auto global_context = DB::CurrentThread::get().getGlobalContext();
+            const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
             if (global_context)
             {
                 context_timezone = extractTimezoneFromContext(global_context);
