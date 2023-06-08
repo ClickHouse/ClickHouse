@@ -707,8 +707,9 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
     for (const auto & sample_column : saved_block_sample_.getColumnsWithTypeAndName())
     {
         ColumnWithTypeAndName column = block.getByName(sample_column.name);
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
+
+        /// There's no optimization for right side const columns. Remove constness if any.
+        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
 
         if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
         {
@@ -716,8 +717,9 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
             column.type = removeLowCardinality(column.type);
         }
 
-        /// There's no optimization for right side const columns. Remove constness if any.
-        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+        if (sample_column.column->isNullable())
+            JoinCommon::convertColumnToNullable(column);
+
         structured_block.insert(std::move(column));
     }
 
