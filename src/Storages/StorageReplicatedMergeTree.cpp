@@ -1390,6 +1390,12 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
         new_pinned_part_uuids->fromString(s);
         new_pinned_part_uuids->stat = stat;
 
+        /// No queries could be run in parallel with pinned_part_uuids
+        /// updating, otherwise that query could be started without
+        /// pinned_part_uuids, then it will receive some UUIds from remote
+        /// shard, and only then pinned_part_uuids will be set, and this will
+        /// lead to duplicated data.
+        auto exclusive_lock = lockExclusively(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         pinned_part_uuids = new_pinned_part_uuids;
     }
 }
