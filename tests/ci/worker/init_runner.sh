@@ -214,7 +214,22 @@ while true; do
           ./run.sh &
         sleep 15
     else
-        echo "Runner is working with pid $runner_pid, nothing to do"
+        echo "Runner is working with pid $runner_pid, checking the metadata in background"
+        if TERMINATION_DATA=$(curl -s --fail http://169.254.169.254/latest/meta-data/spot/instance-action); then
+            # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html#instance-action-metadata
+            _action=$(jq '.action' -r <<< "$TERMINATION_DATA")
+            _time=$(jq '.time | fromdate' <<< "$TERMINATION_DATA")
+            _until_action=$((_time - $(date +%s)))
+            echo "Received the $_action event that will be effective in $_until_action seconds"
+            if (( _until_action <= 30 )); then
+                echo "The action $_action will be done in $_until_action, killing the runner and exit"
+                # Kill the runner to not allow it cancelling the job
+                kill -9 "$runner_pid"
+                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
+                terminate_and_exit
+            fi
+
+        fi
         # The runner does not provide a way to determine, if it runs the job,
         # neither the way to determine if it just litens. But there should be a
         # process for Runner.Worker. So if the runner just hangs around for long,
