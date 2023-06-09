@@ -1428,6 +1428,28 @@ Result:
 └──────┴─────────────────────────────────────┘
 ```
 
+Query:
+
+``` sql
+WITH
+    now() AS ts_now,
+    formatDateTime(ts_around, '%b %e %T') AS syslog_arg
+SELECT
+    ts_now,
+    syslog_arg,
+    parseDateTimeBestEffort(syslog_arg)
+FROM (SELECT arrayJoin([ts_now - 30, ts_now + 30]) AS ts_around);
+```
+
+Result:
+
+```response
+┌──────────────ts_now─┬─syslog_arg──────┬─parseDateTimeBestEffort(syslog_arg)─┐
+│ 2023-06-09 16:04:30 │ Jun  9 16:04:00 │                 2023-06-09 16:04:00 │
+│ 2023-06-09 16:04:30 │ Jun  9 16:05:00 │                 2022-06-09 16:05:00 │
+└─────────────────────┴─────────────────┴─────────────────────────────────────┘
+```
+
 **See Also**
 
 - [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
