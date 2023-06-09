@@ -677,6 +677,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
+        bool direct_read = false;
+
         if ( !view ||  allow_experimental_analyzer)
         // if (!view ||  allow_experimental_analyzer)
         {
@@ -689,6 +691,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 processed_stage,
                 max_block_size,
                 UInt32(streams_num));
+            direct_read = true;
         }
         // else if (!view)
         // {
@@ -742,10 +745,74 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
             }
         }
-
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),
             BuildQueryPipelineSettings::fromContext(modified_context));
+        if (auto * source_step_with_filter = typeid_cast<SourceStepWithFilter *>(plan.getRootNode()->step.get()))
+        {
+            auto row_policy_filter = modified_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
+
+            if (row_policy_filter)
+            {
+
+
+                // row_policy_filter->expression
+                // auto pipe_columns = builder.getHeader().getNamesAndTypesList();
+
+
+                ASTPtr expr = row_policy_filter->expression;
+
+                // auto * select_ast = expr /* query_ast */ ->as<ASTSelectQuery>();
+                // assert(select_ast);
+
+                // select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+                // auto expr_list = select_ast->select();
+                // expr_list->children.push_back(expr);
+                // String filter_column_name = expr_list->children.at(0)->getColumnName();
+                // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column_name: {} ", filter_column_name);
+
+                auto syntax_result = TreeRewriter(modified_context).analyze(expr, builder->getHeader().getNamesAndTypesList() /* pipe_columns*/);
+                // auto syntax_result = TreeRewriter(local_context).analyze(expr, NamesAndTypesList());
+                auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, modified_context};
+
+                auto filter_dag_ptr = expression_analyzer.getActionsDAG(true, false);
+
+
+                auto filter_actions = std::make_shared<ExpressionActions>(filter_dag_ptr, ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+                auto required_columns = filter_actions->getRequiredColumns();
+
+                for (const auto & req_col : required_columns)
+                {
+                    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "req_col: {}", req_col);
+                }
+
+
+
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
+                    filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
+
+
+                auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
+                std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
+
+                Names required_columns_sorted = required_columns;
+                std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
+
+                Names filter_columns;
+
+
+                std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
+                    required_columns.begin(), required_columns.end(),
+                    std::inserter(filter_columns, filter_columns.begin()));
+
+
+
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "SourceStepWithFilter detected");
+                source_step_with_filter->addFilter(filter_dag_ptr, filter_columns.front());
+            }
+        }
+
+
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
     {
@@ -1073,7 +1140,7 @@ void ReadFromMerge::convertingSourceStream(
     });
 
 
-    bool explicit_row_policy_filter_needed = true;
+    bool explicit_row_policy_filter_needed = false;
 
     if (explicit_row_policy_filter_needed)
     {
