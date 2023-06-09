@@ -848,7 +848,7 @@ private:
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
-QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
+TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
@@ -898,7 +898,7 @@ QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context);
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
@@ -948,8 +948,14 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
-        auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
-        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
+        auto resolved_remote_storage_id = remote_storage_id;
+        // In case of cross-replication we don't know what database is used for the table.
+        // `storage_id.hasDatabase()` can return false only on the initiator node.
+        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+        if (remote_storage_id.hasDatabase())
+            resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns(), distributed_storage_snapshot->object_columns);
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -1006,6 +1012,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
+
             replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
@@ -1019,6 +1026,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
+
             in_function_subquery_node = std::move(temporary_table_expression_node);
         }
         else
@@ -1062,9 +1070,8 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
     }
     else
     {
@@ -1138,17 +1145,10 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
-
-    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage {} must have own data directory to enable asynchronous inserts",
-                        getName());
-    }
 
     auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
 

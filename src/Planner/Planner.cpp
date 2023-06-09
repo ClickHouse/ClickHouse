@@ -44,6 +44,7 @@
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
