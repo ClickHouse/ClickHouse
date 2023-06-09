@@ -57,6 +57,7 @@ public:
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
+        batch.clear();
         auto outcome = client->ListBlobs(options);
         auto blob_list_response = client->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
@@ -73,11 +74,11 @@ private:
                     {}});
         }
 
-        options.ContinuationToken = blob_list_response.NextPageToken;
-        if (blob_list_response.HasPage())
-            return true;
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            return false;
 
-        return false;
+        options.ContinuationToken = blob_list_response.NextPageToken;
+        return true;
     }
 
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
@@ -215,6 +216,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
+            /* restricted_seek */true,
             read_until_position);
     };
 
