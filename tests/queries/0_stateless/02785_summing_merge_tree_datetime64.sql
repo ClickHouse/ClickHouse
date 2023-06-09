@@ -10,3 +10,4 @@ INSERT INTO summing_merge_tree_datetime64 SELECT 1 pk, '2023-05-01 23:55:55.100'
 INSERT INTO summing_merge_tree_datetime64 SELECT 1 pk, '2023-05-01 23:55:55.100' timestamp, 5 value;
 
 SELECT * FROM summing_merge_tree_datetime64 FINAL;
+DROP TABLE summing_merge_tree_datetime64;
