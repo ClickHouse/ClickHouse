@@ -3,6 +3,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnSet.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -893,50 +894,62 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
-// void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
-//     const SelectQueryOptions & select_query_options,
-//     const PlannerContextPtr & planner_context,
-//     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
-// {
-//     PreparedSets::SubqueriesForSets subqueries_for_sets;
+void addBuildSubqueriesForSetsStepIfNeeded(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const PlannerContextPtr & planner_context,
+    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+{
+    auto subqueries = planner_context->getPreparedSets().detachSubqueries();
+    std::unordered_set<const FutureSet *> useful_sets;
 
-//     for (const auto & actions_to_execute : result_actions_to_execute)
-//     {
-//         for (const auto & node : actions_to_execute->getNodes())
-//         {
-//             const auto & set_key = node.result_name;
-//             auto * planner_set = planner_context->getSetOrNull(set_key);
-//             if (!planner_set)
-//                 continue;
+    PreparedSets::SubqueriesForSets subqueries_for_sets;
 
-//             if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
-//                 continue;
+    for (const auto & actions_to_execute : result_actions_to_execute)
+    {
+        for (const auto & node : actions_to_execute->getNodes())
+        {
+            if (node.column)
+            {
+                const IColumn * column = node.column.get();
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                    column = &column_const->getDataColumn();
 
-//             auto subquery_options = select_query_options.subquery();
-//             Planner subquery_planner(
-//                 planner_set->getSubqueryNode(),
-//                 subquery_options,
-//                 planner_context->getGlobalPlannerContext());
-//             subquery_planner.buildQueryPlanIfNeeded();
+                if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                    useful_sets.insert(column_set->getData().get());
+            }
+        }
+    }
 
-//             const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-//             SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-//             bool tranform_null_in = settings.transform_null_in;
-//             auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.set.get()); };
+    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
+    subqueries.erase(it, subqueries.end());
 
-//             SubqueryForSet subquery_for_set;
-//             subquery_for_set.key = set_key;
-//             subquery_for_set.set_in_progress = set;
-//             subquery_for_set.set = planner_set->getSet();
-//             subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
-//             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+    for (auto & subquery : subqueries)
+    {
+        auto & subquery_for_set = subquery.set->getSubquery();
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(
+            subquery_for_set.query_tree,
+            subquery_options,
+            planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
 
-//             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
-//         }
-//     }
+        subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+    }
 
-//     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
-// }
+    //addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            planner_context->getQueryContext());
+
+        query_plan.addStep(std::move(step));
+    }
+}
 
 /// Support for `additional_result_filter` setting
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
@@ -1197,7 +1210,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectSets(query_tree, *planner_context, select_query_options);
+    collectSets(query_tree, *planner_context); //, select_query_options);
     collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
@@ -1497,20 +1510,8 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
     {
-        auto subqueries = planner_context->getPreparedSets().detachSubqueries();
-
-        if (!subqueries.empty())
-        {
-            auto step = std::make_unique<DelayedCreatingSetsStep>(
-                query_plan.getCurrentDataStream(),
-                std::move(subqueries),
-                planner_context->getQueryContext());
-
-            query_plan.addStep(std::move(step));
-        }
-
         //addCreatingSetsStep(query_plan, planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()), planner_context->getQueryContext());
-        //addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
     }
 }
 

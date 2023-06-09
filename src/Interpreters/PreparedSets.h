@@ -29,6 +29,9 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 class InterpreterSelectWithUnionQuery;
 
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+
 /// Represents a set in a query that might be referenced at analysis time and built later during execution.
 /// Also it can represent a constant set that is ready to use.
 /// At analysis stage the FutureSets are created but not necessarily filled. Then for non-constant sets there
@@ -131,6 +134,7 @@ public:
 
     /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;
+    QueryTreeNodePtr query_tree;
 };
 
 class FutureSetFromSubquery : public FutureSet, public std::enable_shared_from_this<FutureSetFromSubquery>
@@ -152,6 +156,8 @@ public:
     DataTypes getTypes() const override;
 
     // void addStorage(StoragePtr storage) { subquery.table = std::move(storage); }
+
+    SubqueryForSet & getSubquery() { return subquery; }
 
 private:
     //SetPtr set;

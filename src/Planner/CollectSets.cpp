@@ -28,9 +28,9 @@ namespace
 class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
 public:
-    explicit CollectSetsVisitor(PlannerContext & planner_context_, const SelectQueryOptions & select_query_options_)
+    explicit CollectSetsVisitor(PlannerContext & planner_context_) //, const SelectQueryOptions & select_query_options_)
         : planner_context(planner_context_)
-        , select_query_options(select_query_options_)
+        //, select_query_options(select_query_options_)
     {}
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -95,12 +95,12 @@ public:
             if (sets.getFuture(set_key))
                 return;
 
-            auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(
-                in_second_argument,
-                subquery_options,
-                planner_context.getGlobalPlannerContext());
-            subquery_planner.buildQueryPlanIfNeeded();
+            // auto subquery_options = select_query_options.subquery();
+            // Planner subquery_planner(
+            //     in_second_argument,
+            //     subquery_options,
+            //     planner_context.getGlobalPlannerContext());
+            // subquery_planner.buildQueryPlanIfNeeded();
 
             // const auto & settings = planner_context.getQueryContext()->getSettingsRef();
             // SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
@@ -109,7 +109,8 @@ public:
 
             SubqueryForSet subquery_for_set;
             subquery_for_set.key = planner_context.createSetKey(in_second_argument);
-            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+            subquery_for_set.query_tree = in_second_argument;
+            //subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
             /// TODO
             sets.addFromSubquery(set_key, std::move(subquery_for_set), settings, nullptr);
@@ -132,14 +133,14 @@ public:
 
 private:
     PlannerContext & planner_context;
-    const SelectQueryOptions & select_query_options;
+    //const SelectQueryOptions & select_query_options;
 };
 
 }
 
-void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context, const SelectQueryOptions & select_query_options)
+void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context) //, const SelectQueryOptions & select_query_options)
 {
-    CollectSetsVisitor visitor(planner_context, select_query_options);
+    CollectSetsVisitor visitor(planner_context); //, select_query_options);
     visitor.visit(node);
 }
 
