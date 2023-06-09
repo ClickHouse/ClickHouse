@@ -1267,6 +1267,9 @@ void Client::readArguments(
     {
         std::string_view arg = argv[arg_num];
 
+        if (has_connection_string)
+            validateConnectionStringClientOption(arg);
+
         if (arg == "--external")
         {
             in_external_group = true;
@@ -1325,9 +1328,6 @@ void Client::readArguments(
             }
             else if (arg.starts_with("--host") || arg.starts_with("-h"))
             {
-                if (has_connection_string)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mixing a connection string and --host argument is prohibited");
-
                 std::string host_arg;
                 /// --host host
                 if (arg == "--host" || arg == "-h")
@@ -1359,9 +1359,6 @@ void Client::readArguments(
             }
             else if (arg.starts_with("--port"))
             {
-                if (has_connection_string)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mixing a connection string and --port argument is prohibited");
-
                 auto port_arg = String{arg};
                 /// --port port
                 if (arg == "--port")
