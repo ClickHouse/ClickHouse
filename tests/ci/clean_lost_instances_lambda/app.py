@@ -204,6 +204,7 @@ def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[str]:
         for instance_id, stats in LOST_INSTANCES.items()
         if stats.recently_offline and instance_id in instance_ids
     }
+    print("The remained LOST_INSTANCES: ", LOST_INSTANCES)
 
     return [
         instance_id
@@ -214,6 +215,20 @@ def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[str]:
 
 def continue_lifecycle_hooks(delete_offline_runners: bool) -> None:
     """The function to trigger CONTINUE for instances' lifectycle hooks"""
+    client = boto3.client("ec2")
+    reservations = client.describe_instances(
+        Filters=[
+            {"Name": "tag-key", "Values": ["github:runner-type"]},
+            {"Name": "instance-state-name", "Values": ["shutting-down", "terminated"]},
+        ],
+    )["Reservations"]
+    # flatten the reservation into instances
+    terminated_instances = [
+        instance["InstanceId"]
+        for reservation in reservations
+        for instance in reservation["Instances"]
+    ]
+
     asg_client = boto3.client("autoscaling")
     as_groups = asg_client.describe_auto_scaling_groups(
         Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}]
@@ -229,14 +244,20 @@ def continue_lifecycle_hooks(delete_offline_runners: bool) -> None:
         if not lifecycle_hooks:
             continue
         for instance in asg["Instances"]:
-            if (
-                instance["LifecycleState"] == "Terminating:Wait"
-                and instance["HealthStatus"] == "Unhealthy"
-            ):
-                print(
-                    f"The instance {instance['InstanceId']} is waiting for "
-                    "lyfecycle continue"
-                )
+            continue_instance = False
+            if instance["LifecycleState"] == "Terminating:Wait":
+                if instance["HealthStatus"] == "Unhealthy":
+                    print(f"The instance {instance['InstanceId']} is Unhealthy")
+                    continue_instance = True
+                elif (
+                    instance["HealthStatus"] == "Healthy"
+                    and instance["InstanceId"] in terminated_instances
+                ):
+                    print(
+                        f"The instance {instance['InstanceId']} is already terminated"
+                    )
+                    continue_instance = True
+            if continue_instance:
                 if delete_offline_runners:
                     for lch in lifecycle_hooks:
                         print(f"Continue lifecycle hook {lch['LifecycleHookName']}")
