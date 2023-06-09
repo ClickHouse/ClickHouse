@@ -26,21 +26,20 @@ using namespace std::literals::string_view_literals;
 
 constexpr auto CONNECTION_URI_SCHEME = "clickhouse:"sv;
 
-void uriDecode(std::string & uri_encoded_string, bool plus_as_space)
+std::string uriDecode(const std::string & uri_encoded_string, bool plus_as_space)
 {
-    std::string temp;
-    Poco::URI::decode(uri_encoded_string, temp, plus_as_space);
-    std::swap(temp, uri_encoded_string);
+    std::string decoded_string;
+    Poco::URI::decode(uri_encoded_string, decoded_string, plus_as_space);
+    return decoded_string;
 }
 
 void getHostAndPort(const Poco::URI & uri, std::vector<std::vector<std::string>> & hosts_and_ports_arguments)
 {
-    auto host = uri.getHost();
     std::vector<std::string> host_and_port;
+    auto host = uri.getHost();
     if (!host.empty())
     {
-        uriDecode(host, false);
-        host_and_port.push_back("--host="s + host);
+        host_and_port.push_back("--host="s + uriDecode(host, false));
     }
 
     // Port can be written without host (":9000"). Empty host name equals to default host.
@@ -52,7 +51,7 @@ void getHostAndPort(const Poco::URI & uri, std::vector<std::vector<std::string>>
         hosts_and_ports_arguments.push_back(std::move(host_and_port));
 }
 
-void getHostAndPort(
+void buildConnectionString(
     Poco::URI & uri,
     std::vector<std::vector<std::string>> & hosts_and_ports_arguments,
     std::string_view host_and_port,
@@ -96,13 +95,13 @@ bool tryParseConnectionString(
     std::vector<std::string> & common_arguments,
     std::vector<std::vector<std::string>> & hosts_and_ports_arguments)
 {
+    if (connection_string == CONNECTION_URI_SCHEME)
+        return true;
+
     if (!connection_string.starts_with(CONNECTION_URI_SCHEME))
         return false;
 
-    if (connection_string.size() == CONNECTION_URI_SCHEME.size())
-        return true;
-
-    auto offset = CONNECTION_URI_SCHEME.size();
+    size_t offset = CONNECTION_URI_SCHEME.size();
     if ((connection_string.substr(offset).starts_with("//")))
         offset += 2;
 
@@ -146,7 +145,7 @@ bool tryParseConnectionString(
         {
             if (*it == ',')
             {
-                getHostAndPort(uri, hosts_and_ports_arguments, {last_host_begin, it}, {hosts_end, connection_string.end()});
+                buildConnectionString(uri, hosts_and_ports_arguments, {last_host_begin, it}, {hosts_end, connection_string.end()});
                 last_host_begin = it + 1;
             }
         }
@@ -154,11 +153,11 @@ bool tryParseConnectionString(
         if (uri.empty())
         {
             // URI has no host specified
-            uri = std::string{connection_string.begin(), connection_string.end()};
+            uri = std::string(connection_string);
             getHostAndPort(uri, hosts_and_ports_arguments);
         }
         else
-            getHostAndPort(uri, hosts_and_ports_arguments, {last_host_begin, hosts_end}, {hosts_end, connection_string.end()});
+            buildConnectionString(uri, hosts_and_ports_arguments, {last_host_begin, hosts_end}, {hosts_end, connection_string.end()});
 
         Poco::URI::QueryParameters params = uri.getQueryParameters();
         for (const auto & param : params)
@@ -166,12 +165,12 @@ bool tryParseConnectionString(
             if (param.first == "secure" || param.first == "s")
             {
                 if (!param.second.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "secure URI argument does not require value");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "secure URI query parameter does not require value");
 
                 common_arguments.push_back(makeArgument(param.first));
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI argument {} is unknown", param.first);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI query parameter {} is unknown", param.first);
         }
 
         auto user_info = uri.getUserInfo();
@@ -180,21 +179,27 @@ bool tryParseConnectionString(
             // Poco::URI doesn't decode user name/password by default.
             // But ClickHouse allows to have users with email user name like: 'john@some_mail.com'
             // john@some_mail.com should be percent-encoded: 'john%40some_mail.com'
-            uriDecode(user_info, true);
             std::string::size_type pos = user_info.find(':');
             if (pos != std::string::npos)
             {
                 common_arguments.push_back("--user");
-                common_arguments.push_back(user_info.substr(0, pos));
+                common_arguments.push_back(uriDecode(user_info.substr(0, pos), true));
 
                 ++pos; // Skip ':'
                 common_arguments.push_back("--password");
-                common_arguments.push_back(user_info.substr(pos));
+                if (user_info.size() > pos + 1)
+                    common_arguments.push_back(uriDecode(user_info.substr(pos), true));
+                else
+                {
+                    // in case of user_info == 'user:', ':' is specified, but password is empty
+                    // then add password argument "\n" which means: Ask user for a password.
+                    common_arguments.push_back("\n");
+                }
             }
             else
             {
                 common_arguments.push_back("--user");
-                common_arguments.push_back(user_info);
+                common_arguments.push_back(uriDecode(user_info, true));
             }
         }
 
@@ -209,7 +214,7 @@ bool tryParseConnectionString(
     catch (const Poco::URISyntaxException & invalid_uri_exception)
     {
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid connection string {}: {}", connection_string, invalid_uri_exception.what());
+                            "Invalid connection string '{}': {}", connection_string, invalid_uri_exception.what());
     }
 
     return true;
