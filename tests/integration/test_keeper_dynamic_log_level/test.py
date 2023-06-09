@@ -36,7 +36,8 @@ def test_adjust_log_level(start_cluster):
                 privileged=True,
                 user="root",
             )
-        ) == 0
+        )
+        == 0
     )
 
     # Adjust log level.
@@ -80,6 +81,7 @@ def test_adjust_log_level(start_cluster):
                 privileged=True,
                 user="root",
             )
-        ) >= 1
+        )
+        >= 1
     )
 
