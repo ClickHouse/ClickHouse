@@ -3,4 +3,6 @@
         <enable_the_endpoint_id_with_zookeeper_name_prefix>1</enable_the_endpoint_id_with_zookeeper_name_prefix>
         <number_of_free_entries_in_pool_to_execute_mutation>8</number_of_free_entries_in_pool_to_execute_mutation>
     </merge_tree>
+
+    <replicated_merge_tree_paranoid_check_on_drop_range>1</replicated_merge_tree_paranoid_check_on_drop_range>
 </clickhouse>
