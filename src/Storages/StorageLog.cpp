@@ -770,6 +770,8 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     marks_loaded = true;
     num_marks_saved = 0;
+    total_rows = 0;
+    total_bytes = 0;
     getContext()->dropMMappedFileCache();
 }
 
