@@ -54,8 +54,6 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-    if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -74,7 +72,6 @@ def get_image_name(check_name):
 
 
 def get_run_command(
-    check_name,
     builds_path,
     repo_tests_path,
     result_path,
@@ -107,16 +104,10 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-    volume_with_broken_test = (
-        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
-        if "analyzer" in check_name
-        else ""
-    )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"{volume_with_broken_test} "
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
@@ -335,7 +326,6 @@ def main():
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
-        check_name,
         packages_path,
         repo_tests_path,
         result_path,

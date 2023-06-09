@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -99,7 +100,6 @@ public:
                 "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
 

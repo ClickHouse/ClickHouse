@@ -313,11 +313,6 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
     auto res = cloneFinalized();
-    /* Compact required not to share dictionary.
-     * If `shared` flag is not set `cloneFinalized` will return shallow copy
-     * and `nestedToNullable` will mutate source column.
-     */
-    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
     assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
     return res;
 }
@@ -490,8 +485,13 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
-    auto new_column_unique = Dictionary::compact(dictionary.getColumnUnique(), sub_positions);
-    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions));
+    /// Create column with new indexes and old dictionary.
+    /// Dictionary is shared, but will be recreated after compactInplace call.
+    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
+    /// Will create new dictionary.
+    column->compactInplace();
+
+    return column;
 }
 
 void ColumnLowCardinality::compactInplace()
@@ -589,7 +589,7 @@ size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, s
                     column.getName());
 }
 
-void ColumnLowCardinality::Index::attachPositions(MutableColumnPtr positions_)
+void ColumnLowCardinality::Index::attachPositions(ColumnPtr positions_)
 {
     positions = std::move(positions_);
     updateSizeOfType();
@@ -820,23 +820,21 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
     shared = true;
 }
 
-void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & positions)
+void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
 {
-    column_unique = compact(getColumnUnique(), positions);
-    shared = false;
-}
+    auto new_column_unique = column_unique->cloneEmpty();
 
-MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & positions)
-{
-    auto new_column_unique = unique.cloneEmpty();
+    auto & unique = getColumnUnique();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
-    auto indexes = mapUniqueIndex(*positions);
+    auto indexes = mapUniqueIndex(positions->assumeMutableRef());
     auto sub_keys = unique.getNestedColumn()->index(*indexes, 0);
     auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
 
     positions = IColumn::mutate(new_indexes->index(*positions, 0));
-    return new_column_unique;
+    column_unique = std::move(new_column_unique);
+
+    shared = false;
 }
 
 ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const

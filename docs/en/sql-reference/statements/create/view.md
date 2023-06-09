@@ -235,7 +235,7 @@ Most common uses of live view tables include:
 - Watching metrics from system tables using periodic refresh.
 
 **See Also**
-- [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
+-   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
 
 ## Window View [Experimental]
 
@@ -364,4 +364,3 @@ The window view is useful in the following scenarios:
 ## Related Content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

@@ -9,6 +9,8 @@ if (WITH_COVERAGE)
   # disable coverage for contib files and build with optimisations
   if (COMPILER_CLANG)
       add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
   endif()
 endif()
 
@@ -88,7 +90,7 @@ add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
-add_contrib (google-protobuf-cmake google-protobuf)
+add_contrib (protobuf-cmake protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -105,7 +107,6 @@ add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
 add_contrib (h3-cmake h3)
 add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
-add_contrib (libfiu-cmake libfiu)
 
 if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
@@ -135,28 +136,27 @@ add_contrib (aws-cmake
 )
 
 add_contrib (base64-cmake base64)
-if (NOT ARCH_S390X)
 add_contrib (simdjson-cmake simdjson)
-endif()
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-if (NOT OS_DARWIN)
+
+if (ENABLE_CURL_BUILD)
     add_contrib (curl-cmake curl)
     add_contrib (azure-cmake azure)
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
+
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
 add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
 add_contrib (nats-io-cmake nats-io)
-add_contrib (isa-l-cmake isa-l)
-add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
+add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
@@ -178,29 +178,19 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
-
-if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
-    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
-elseif(ENABLE_QPL)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with SSE 4.2 or higher")
-endif()
-if (ENABLE_QPL)
-    add_contrib (idxd-config-cmake idxd-config)
-    add_contrib (qpl-cmake qpl) # requires: idxd-config
-else()
-    message(STATUS "Not using QPL")
-endif ()
-
+add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
+
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
+
 add_contrib (annoy-cmake annoy)
+
 add_contrib (xxHash-cmake xxHash)
 
-add_contrib (libbcrypt-cmake libbcrypt)
-
 add_contrib (google-benchmark-cmake google-benchmark)
+
 add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

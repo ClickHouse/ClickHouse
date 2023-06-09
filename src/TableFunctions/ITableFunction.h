@@ -4,7 +4,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
-#include <Common/FunctionDocumentation.h>
+#include <Common/Documentation.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
@@ -97,7 +97,7 @@ private:
 /// Properties of table function that are independent of argument types and parameters.
 struct TableFunctionProperties
 {
-    FunctionDocumentation documentation;
+    Documentation documentation;
 
     /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
       *

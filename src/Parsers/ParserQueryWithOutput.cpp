@@ -16,9 +16,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
-#include <Parsers/ParserShowColumnsQuery.h>
 #include <Parsers/ParserShowEngineQuery.h>
-#include <Parsers/ParserShowIndexesQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -28,8 +26,7 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include <Common/Exception.h>
-#include <Common/assert_cast.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -38,9 +35,7 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
-    ParserShowColumnsQuery show_columns_p;
     ParserShowEnginesQuery show_engine_p;
-    ParserShowIndexesQuery show_indexes_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
@@ -69,9 +64,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
-        || show_columns_p.parse(pos, query, expected)
         || show_engine_p.parse(pos, query, expected)
-        || show_indexes_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_cache_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
@@ -102,12 +95,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserStringLiteral out_file_p;
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
-
-        ParserKeyword s_append("APPEND");
-        if (s_append.ignore(pos, expected))
-        {
-            query_with_output.is_outfile_append = true;
-        }
 
         ParserKeyword s_stdout("AND STDOUT");
         if (s_stdout.ignore(pos, expected))

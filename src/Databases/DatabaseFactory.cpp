@@ -14,6 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -318,7 +319,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
+            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
         }
         else
         {

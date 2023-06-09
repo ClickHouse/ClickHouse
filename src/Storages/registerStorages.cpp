@@ -34,9 +34,7 @@ void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
 void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
-#if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
-#endif
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
 #endif
@@ -96,10 +94,6 @@ void registerStorageSQLite(StorageFactory & factory);
 
 void registerStorageKeeperMap(StorageFactory & factory);
 
-#if USE_AZURE_BLOB_STORAGE
-void registerStorageAzureBlob(StorageFactory & factory);
-#endif
-
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -132,10 +126,7 @@ void registerStorages()
     registerStorageCOS(factory);
     registerStorageOSS(factory);
     registerStorageHudi(factory);
-
-    #if USE_PARQUET
     registerStorageDeltaLake(factory);
-    #endif
 
     #if USE_AVRO
     registerStorageIceberg(factory);
@@ -195,10 +186,6 @@ void registerStorages()
     #endif
 
     registerStorageKeeperMap(factory);
-
-    #if USE_AZURE_BLOB_STORAGE
-    registerStorageAzureBlob(factory);
-    #endif
 }
 
 }

@@ -940,8 +940,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
                 {
-                    auto set = column_set->getData();
-                    if (set && set->isCreated() && set->getTotalRowCount() == 0)
+                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;
                 }
             }

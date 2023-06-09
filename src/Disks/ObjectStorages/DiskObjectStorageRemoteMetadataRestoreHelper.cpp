@@ -98,7 +98,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(object.remote_path, metadata);
+        updateObjectMetadata(object.absolute_path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
@@ -356,7 +356,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
     std::vector<std::future<void>> results;
-    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithMetadata & objects)
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithSize & objects)
     {
         std::vector<String> keys_names;
         for (const auto & object : objects)
@@ -389,8 +389,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         return true;
     };
 
-    RelativePathsWithMetadata children;
-    source_object_storage->listObjects(restore_information.source_path, children, /* max_keys= */ 0);
+    RelativePathsWithSize children;
+    source_object_storage->findAllFiles(restore_information.source_path, children, /* max_keys= */ 0);
 
     restore_files(children);
 
@@ -472,7 +472,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         || disk->object_storage_root_path != restore_information.source_path;
 
     std::set<String> renames;
-    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const RelativePathsWithMetadata & objects)
+    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const RelativePathsWithSize & objects)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
@@ -539,8 +539,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         return true;
     };
 
-    RelativePathsWithMetadata children;
-    source_object_storage->listObjects(restore_information.source_path + "operations/", children, /* max_keys= */ 0);
+    RelativePathsWithSize children;
+    source_object_storage->findAllFiles(restore_information.source_path + "operations/", children, /* max_keys= */ 0);
     restore_file_operations(children);
 
     if (restore_information.detached)

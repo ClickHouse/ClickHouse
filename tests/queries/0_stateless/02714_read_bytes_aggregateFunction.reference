@@ -1,6 +1,0 @@
-UInt64	1	8
-UInt64	10	80
-UInt64	1000	8000
-AggregateFunction(argMax, String, DateTime)	1	80
-AggregateFunction(argMax, String, DateTime)	10	800
-AggregateFunction(argMax, String, DateTime)	1000	80000

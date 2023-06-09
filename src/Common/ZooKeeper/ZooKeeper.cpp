@@ -15,7 +15,6 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -30,8 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 }
 
@@ -111,25 +108,6 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
-
-        Poco::Net::SocketAddress address = impl->getConnectedAddress();
-
-        connected_zk_host = address.host().toString();
-        connected_zk_port = address.port();
-
-        connected_zk_index = 0;
-
-        if (args.hosts.size() > 1)
-        {
-            for (size_t i = 0; i < args.hosts.size(); i++)
-            {
-                if (args.hosts[i] == address.toString())
-                {
-                    connected_zk_index = i;
-                    break;
-                }
-            }
-        }
     }
     else if (args.implementation == "testkeeper")
     {
@@ -358,31 +336,6 @@ void ZooKeeper::createAncestors(const std::string & path)
             break;
         createIfNotExists(path.substr(0, pos), "");
         ++pos;
-    }
-}
-
-void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
-{
-    std::vector<std::string> paths_to_check;
-    size_t pos = 1;
-    while (true)
-    {
-        pos = path.find('/', pos);
-        if (pos == std::string::npos)
-            break;
-        paths_to_check.emplace_back(path.substr(0, pos));
-        ++pos;
-    }
-
-    MultiExistsResponse response = exists(paths_to_check);
-
-    for (size_t i = 0; i < paths_to_check.size(); ++i)
-    {
-        if (response[i].error != Coordination::Error::ZOK)
-        {
-            /// Ephemeral nodes cannot have children
-            requests.emplace_back(makeCreateRequest(paths_to_check[i], "", CreateMode::Persistent));
-        }
     }
 }
 
@@ -865,7 +818,7 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion() const
+DB::KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return impl->getApiVersion();
 }
@@ -1326,6 +1279,7 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     return request;
 }
 
+
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
@@ -1384,31 +1338,6 @@ String getSequentialNodeName(const String & prefix, UInt64 number)
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
     return name;
-}
-
-void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    if (config.has("zookeeper") && config.has("keeper"))
-        throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
-}
-
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
-}
-
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
-{
-    if (config.has("zookeeper"))
-        return "zookeeper";
-
-    if (config.has("keeper"))
-        return "keeper";
-
-    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
-        return "keeper_server";
-
-    throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
 }
 
 }
