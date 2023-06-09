@@ -2357,7 +2357,7 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     uint8_t keeper_version{0};
     DB::ReadBufferFromOwnString buf(get_response.data);
     DB::readIntText(keeper_version, buf);
-    EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
+    EXPECT_EQ(keeper_version, static_cast<uint8_t>(latest_keeper_api_version));
 }
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
