@@ -231,7 +231,7 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
         auto settings = StorageAzureBlob::createSettings(context);
 
         auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
-        return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
+        return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context, false);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -263,6 +263,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
         String{},
         /// No format_settings for table function Azure
         std::nullopt,
+        /* distributed_processing */ false,
         nullptr);
 
     storage->startup();

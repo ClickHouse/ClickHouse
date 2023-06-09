@@ -62,6 +62,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
+        bool distributed_processing_,
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
@@ -107,7 +108,8 @@ public:
         AzureObjectStorage * object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        ContextPtr ctx,
+        bool distributed_processing = false);
 
 private:
     std::string name;
@@ -141,7 +143,18 @@ private:
 class StorageAzureBlobSource : public ISource, WithContext
 {
 public:
-    class Iterator : WithContext
+    class IIterator : public WithContext
+    {
+    public:
+        IIterator(ContextPtr context_):WithContext(context_) {}
+        virtual ~IIterator() = default;
+        virtual RelativePathWithMetadata next() = 0;
+        virtual size_t getTotalSize() const = 0;
+
+        RelativePathWithMetadata operator ()() { return next(); }
+    };
+
+    class Iterator : public IIterator
     {
     public:
         Iterator(
@@ -154,9 +167,9 @@ public:
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs_);
 
-        RelativePathWithMetadata next();
-        size_t getTotalSize() const;
-        ~Iterator() = default;
+        RelativePathWithMetadata next() override;
+        size_t getTotalSize() const override;
+        ~Iterator() override = default;
 
      private:
         AzureObjectStorage * object_storage;
@@ -183,6 +196,17 @@ public:
         std::mutex next_mutex;
     };
 
+    class ReadIterator : public IIterator
+    {
+    public:
+        explicit ReadIterator(ContextPtr context_, const ReadTaskCallback & callback_)
+            : IIterator(context_), callback(callback_) {}
+        RelativePathWithMetadata next() override { return {callback(), {}}; }
+        size_t getTotalSize() const override { return 0; }
+    private:
+        ReadTaskCallback callback;
+    };
+
     StorageAzureBlobSource(
         const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format_,
@@ -195,7 +219,7 @@ public:
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
-        std::shared_ptr<Iterator> file_iterator_);
+        std::shared_ptr<IIterator> file_iterator_);
 
     ~StorageAzureBlobSource() override;
 
@@ -216,7 +240,7 @@ private:
     String compression_hint;
     AzureObjectStorage * object_storage;
     String container;
-    std::shared_ptr<Iterator> file_iterator;
+    std::shared_ptr<IIterator> file_iterator;
 
     struct ReaderHolder
     {
