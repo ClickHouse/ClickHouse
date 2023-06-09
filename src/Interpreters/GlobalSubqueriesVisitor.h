@@ -170,7 +170,7 @@ public:
             else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
                 auto io = interpreter->execute();
                 io.pipeline.complete(std::move(table_out));
                 CompletedPipelineExecutor executor(io.pipeline);

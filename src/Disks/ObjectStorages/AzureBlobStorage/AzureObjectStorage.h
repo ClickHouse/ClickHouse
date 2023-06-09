@@ -8,10 +8,7 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
-
-#if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
-#endif
 
 namespace Poco
 {

@@ -6,7 +6,7 @@ sidebar_position: 105
 # argMin
 
 Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
-Both parts the `arg` and the `min` behave as [aggregate functions](../index.md), they both [skip `Null`](../index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/en/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
@@ -103,12 +103,12 @@ SELECT argMin((a, b), (b, a)), min(tuple(b, a)) FROM test;
 │ (NULL,NULL)                      │ (NULL,NULL)      │ -- argMin returns (NULL,NULL) here because `Tuple` allows to don't skip `NULL` and min(tuple(b, a)) in this case is minimal value for this dataset
 └──────────────────────────────────┴──────────────────┘
 
-select argMin(a, tuple(b)) from test;
+SELECT argMin(a, tuple(b)) FROM test;
 ┌─argMax(a, tuple(b))─┐
-│ d                   │ -- `Tuple` can be used in `min` to not skip rows with `NULL` values as b. 
+│ d                   │ -- `Tuple` can be used in `min` to not skip rows with `NULL` values as b.
 └─────────────────────┘
 ```
 
 **See also**
 
-- [Tuple](../../data-types/tuple.md)
+- [Tuple](/docs/en/sql-reference/data-types/tuple.md)
