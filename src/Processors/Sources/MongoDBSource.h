@@ -53,7 +53,7 @@ private:
     const bool is_wire_protocol_old;
     std::unique_ptr<Poco::MongoDB::Cursor> old_cursor;
     std::unique_ptr<Poco::MongoDB::OpMsgCursor> new_cursor;
-    Int64 cursorID_ = 0;
+    Int64 cursor_id = 0;
 };
 
 /// Converts MongoDB Cursor to a stream of Blocks

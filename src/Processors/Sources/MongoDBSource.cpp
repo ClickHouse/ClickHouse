@@ -371,8 +371,8 @@ bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_)
 {
     Poco::MongoDB::Database db("config");
     Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_);
-    auto _wireVersion = doc->getInteger("maxWireVersion");
-    return _wireVersion < Poco::MongoDB::Database::WireVersion::VER_36;
+    auto wire_version = doc->getInteger("maxWireVersion");
+    return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
 }
 
 
@@ -413,20 +413,20 @@ Poco::MongoDB::Document::Vector MongoDBCursor::nextDocuments(Poco::MongoDB::Conn
     if (is_wire_protocol_old)
     {
         auto response = old_cursor->next(connection);
-        cursorID_ = response.cursorID();
+        cursor_id = response.cursorID();
         return std::move(response.documents());
     }
     else
     {
         auto response = new_cursor->next(connection);
-        cursorID_ = new_cursor->cursorID();
+        cursor_id = new_cursor->cursorID();
         return std::move(response.documents());
     }
 }
 
 Int64 MongoDBCursor::cursorID() const
 {
-    return cursorID_;
+    return cursor_id;
 }
 
 
