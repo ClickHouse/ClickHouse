@@ -30,6 +30,7 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
+#include <QueryPipeline/printPipeline.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -898,9 +899,13 @@ QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
     auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context);
-    auto io = interpreter.execute();
-    io.pipeline.complete(std::move(table_out));
-    CompletedPipelineExecutor executor(io.pipeline);
+
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
+    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+
+    pipeline.complete(std::move(table_out));
+    CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
