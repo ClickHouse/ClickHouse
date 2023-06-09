@@ -165,28 +165,17 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 ## toDate {#todate}
 
-Cиноним: `DATE`.
-
-## toDateOrZero {#todateorzero}
-
-## toDateOrNull {#todateornull}
-
-## toDateOrDefault {#todateordefault}
-
-Конвертирует аргумент в значение [Date](/docs/ru/sql-reference/data-types/date.md) data type. 
-Если получен недопустимый аргумент, то возвращает значение по умолчанию (нижняя граница [Date](/docs/ru/sql-reference/data-types/date.md). Значение по умолчанию может быть указано вторым аргументом.
-Похожа на [toDate](#todate).
+Конвертирует аргумент в значение [Date](/docs/ru/sql-reference/data-types/date.md).
 
 **Синтаксис**
 
 ``` sql
-toDateOrDefault(expr [, default_value])
+toDate(expr)
 ```
 
 **Аргументы**
 
-- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
-- `default_value` — Значение по умолчанию. [Date](/docs/ru/sql-reference/data-types/date.md) 
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 
 Если `expr` является числом выглядит как UNIX timestamp (больше чем 65535), оно интерпретируется как DateTime, затем обрезается до Date учитывавая текущую часовой пояс. Если `expr` является числом и меньше чем 65536, оно интерпретируется как количество дней с 1970-01-01.
 
@@ -199,46 +188,101 @@ toDateOrDefault(expr [, default_value])
 Запрос:
 
 ``` sql
-SELECT
-    toDateOrDefault('2021-01-01', '2023-01-01'::Date),
-    toDateOrDefault('xx2021-01-01', '2023-01-01'::Date);
+SELECT toDate('2022-12-30'), toDate(1685457500);
 ```
 
 Результат:
 
 ```response
-┌─toDateOrDefault('2021-01-01', CAST('2023-01-01', 'Date'))─┬─toDateOrDefault('xx2021-01-01', CAST('2023-01-01', 'Date'))─┐
-│                                                2021-01-01 │                                                  2023-01-01 │
-└───────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘
+┌─toDate('2022-12-30')─┬─toDate(1685457500)─┐
+│           2022-12-30 │         2023-05-30 │
+└──────────────────────┴────────────────────┘
 ```
 
-**Смотрите также**
-- [toDate](#todate)
-- [toDate32OrDefault](#todate32ordefault)
 
-## toDateTime {#todatetime}
+## toDateOrZero {#todateorzero}
 
-## toDateTimeOrZero {#todatetimeorzero}
+Как [toDate](#todate), но в случае неудачи возвращает нижнюю границу [Date](/docs/ru/sql-reference/data-types/date.md)). Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
 
-## toDateTimeOrNull {#todatetimeornull}
+**Пример**
 
-## toDateTimeOrDefault {#todatetimeordefault}
+Запрос:
 
-Конвертирует аргумент в значение [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
-Если получен недопустимый аргумент, то возвращает значение по умолчанию (нижняя граница [DateTime](/docs/ru/sql-reference/data-types/datetime.md)). Значение по умолчанию может быть указано третьим аргументом.
-Похожа на [toDateTime](#todatetime).
+``` sql
+SELECT toDateOrZero('2022-12-30'), toDateOrZero('');
+```
+
+Результат:
+
+```response
+┌─toDateOrZero('2022-12-30')─┬─toDateOrZero('')─┐
+│                 2022-12-30 │       1970-01-01 │
+└────────────────────────────┴──────────────────┘
+```
+
+
+## toDateOrNull {#todateornull}
+
+Как [toDate](#todate), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateOrNull('2022-12-30'), toDateOrNull('');
+```
+
+Результат:
+
+```response
+┌─toDateOrNull('2022-12-30')─┬─toDateOrNull('')─┐
+│                 2022-12-30 │             ᴺᵁᴸᴸ │
+└────────────────────────────┴──────────────────┘
+```
+
+
+## toDateOrDefault {#todateordefault}
+
+Как [toDate](#todate), но в случае неудачи возвращает значение по умолчанию (или второй аргумент (если указан), или нижняя граница [Date](/docs/ru/sql-reference/data-types/date.md)).
 
 **Синтаксис**
 
 ``` sql
-toDateTimeOrDefault(expr, [, time_zone [, default_value]])
+toDateOrDefault(expr [, default_value])
+```
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateOrDefault('2022-12-30'), toDateOrDefault('', '2023-01-01'::Date);
+```
+
+Результат:
+
+```response
+┌─toDateOrDefault('2022-12-30')─┬─toDateOrDefault('', CAST('2023-01-01', 'Date'))─┐
+│                    2022-12-30 │                                      2023-01-01 │
+└───────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+
+## toDateTime {#todatetime}
+
+Конвертирует аргумент в значение [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
+
+**Синтаксис**
+
+``` sql
+toDateTime(expr[, time_zone ])
 ```
 
 **Аргументы**
 
-- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md). 
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 - `time_zone` — Часовой пояс. [String](/docs/ru/sql-reference/data-types/string.md).
-- `default_value` — Значение по умолчанию. [DateTime](/docs/ru/sql-reference/data-types/datetime.md) 
 
 Если `expr` является числом, оно интерпретируется как количество секунд от начала unix эпохи.
 
@@ -251,21 +295,86 @@ toDateTimeOrDefault(expr, [, time_zone [, default_value]])
 Запрос:
 
 ``` sql
-SELECT
-    toDateTimeOrDefault('2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC')),
-    toDateTimeOrDefault('xx2021-01-01', 'UTC', '2023-01-01'::DateTime('UTC'));
+SELECT toDateTime('2022-12-30 13:44:17'), toDateTime(1685457500, 'UTC');
 ```
 
 Результат:
 
 ```response
-┌─toDateTimeOrDefault('2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┬─toDateTimeOrDefault('xx2021-01-01', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┐
-│                                                               2021-01-01 00:00:00 │                                                                 2023-01-01 00:00:00 │
-└───────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+┌─toDateTime('2022-12-30 13:44:17')─┬─toDateTime(1685457500, 'UTC')─┐
+│               2022-12-30 13:44:17 │           2023-05-30 14:38:20 │
+└───────────────────────────────────┴───────────────────────────────┘
 ```
 
-**Смотрите также**
-- [toDateTime](#todatetime)
+
+## toDateTimeOrZero {#todatetimeorzero}
+
+Как [toDateTime](#todatetime), но в случае неудачи возвращает нижнюю границу [DateTime](/docs/ru/sql-reference/data-types/datetime.md)). Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('');
+```
+
+Результат:
+
+```response
+┌─toDateTimeOrZero('2022-12-30 13:44:17')─┬─toDateTimeOrZero('')─┐
+│                     2022-12-30 13:44:17 │  1970-01-01 00:00:00 │
+└─────────────────────────────────────────┴──────────────────────┘
+```
+
+
+## toDateTimeOrNull {#todatetimeornull}
+
+Как [toDateTime](#todatetime), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('');
+```
+
+Result:
+
+```response
+┌─toDateTimeOrNull('2022-12-30 13:44:17')─┬─toDateTimeOrNull('')─┐
+│                     2022-12-30 13:44:17 │                 ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┴──────────────────────┘
+```
+
+
+## toDateTimeOrDefault {#todatetimeordefault}
+
+Как [toDateTime](#todatetime), но в случае неудачи возвращает значение по умолчанию (или третий аргумент (если указан), или нижняя граница [DateTime](/docs/ru/sql-reference/data-types/datetime.md)).
+
+**Синтаксис**
+
+``` sql
+toDateTimeOrDefault(expr, [, time_zone [, default_value]])
+```
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateTimeOrDefault('2022-12-30 13:44:17'), toDateTimeOrDefault('', 'UTC', '2023-01-01'::DateTime('UTC'));
+```
+
+Результат:
+
+```response
+┌─toDateTimeOrDefault('2022-12-30 13:44:17')─┬─toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┐
+│                        2022-12-30 13:44:17 │                                                     2023-01-01 00:00:00 │
+└────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## toDate32 {#todate32}
 
@@ -386,6 +495,14 @@ SELECT
 │                                              1930-01-01 │                                                2020-01-01 │
 └─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
+
+## toDateTime64
+
+## toDateTime64OrZero
+
+## toDateTime64OrNull
+
+## toDateTime64OrDefault
 
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
