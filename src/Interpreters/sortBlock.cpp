@@ -201,6 +201,9 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
     if (size == 0)
         return true;
 
+    if (permutation[0] != 0)
+        return false;
+
     size_t i = 0;
 
 #if defined(__SSE2__)
@@ -234,6 +237,7 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
     }
 #endif
 
+    i = std::max(i, static_cast<size_t>(1));
     for (; i < size; ++i)
         if (permutation[i] != (permutation[i - 1] + 1))
             return false;
