@@ -1252,6 +1252,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         mark_broken();
         return res;
     }
+    catch (const Poco::TimeoutException &)
+    {
+        throw;
+    }
     catch (...)
     {
         mark_broken();
