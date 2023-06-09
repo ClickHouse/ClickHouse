@@ -283,7 +283,7 @@ void KeeperStorage::initializeSystemNodes()
     }
 
     // insert child system nodes
-    for (const auto & [path, data] : child_system_paths_with_data)
+    for (const auto & [path, data] : keeper_context->system_nodes_with_data)
     {
         assert(keeper_api_version_path.starts_with(keeper_system_path));
         Node child_system_node;

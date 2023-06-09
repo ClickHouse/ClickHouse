@@ -119,6 +119,8 @@ KeeperServer::KeeperServer(
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
+    keeper_context->initialize(config);
+
     keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 

@@ -486,7 +486,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+    return toString(static_cast<uint8_t>(Coordination::latest_keeper_api_version));
 }
 
 String CreateSnapshotCommand::run()
