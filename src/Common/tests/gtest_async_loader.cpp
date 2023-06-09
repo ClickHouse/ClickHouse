@@ -954,6 +954,69 @@ TEST(AsyncLoader, DynamicPools)
 
 }
 
+TEST(AsyncLoader, SubJobs)
+{
+    AsyncLoaderTest t(1);
+    t.loader.start();
+
+    // An example of component with an asynchronous loading interface
+    class MyComponent : boost::noncopyable {
+    public:
+        MyComponent(AsyncLoader & loader_, int jobs)
+            : loader(loader_)
+            , jobs_left(jobs)
+        {}
+
+        [[nodiscard]] LoadTaskPtr loadAsync()
+        {
+            auto job_func = [this] (const LoadJobPtr &) {
+                auto sub_job_func = [this] (const LoadJobPtr &) {
+                    --jobs_left;
+                };
+                LoadJobSet jobs;
+                for (size_t j = 0; j < jobs_left; j++)
+                    jobs.insert(makeLoadJob({}, fmt::format("sub job {}", j), sub_job_func));
+                scheduleAndWaitLoadAll(makeLoadTask(loader, std::move(jobs)));
+            };
+            auto job = makeLoadJob({}, "main job", job_func);
+            return load_task = makeLoadTask(loader, { job });
+        }
+
+        bool isLoaded() const
+        {
+            return jobs_left == 0;
+        }
+
+    private:
+        AsyncLoader & loader;
+        std::atomic<int> jobs_left;
+        // It is a good practice to keep load task inside the component:
+        // 1) to make sure it outlives its load jobs;
+        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        LoadTaskPtr load_task;
+    };
+
+    for (double jobs_per_thread : std::array{0.5, 1.0, 2.0})
+    {
+        for (size_t threads = 1; threads <= 32; threads *= 2)
+        {
+            t.loader.setMaxThreads(0, threads);
+            std::list<MyComponent> components;
+            LoadTaskPtrs tasks;
+            size_t size = static_cast<size_t>(jobs_per_thread * threads);
+            tasks.reserve(size);
+            for (size_t j = 0; j < size; j++)
+            {
+                components.emplace_back(t.loader, 5);
+                tasks.emplace_back(components.back().loadAsync());
+            }
+            scheduleAndWaitLoadAll(tasks);
+            for (const auto & component: components)
+                ASSERT_TRUE(component.isLoaded());
+        }
+    }
+}
+
 TEST(AsyncLoader, RecursiveJob)
 {
     AsyncLoaderTest t(1);
