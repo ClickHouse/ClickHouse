@@ -12,12 +12,13 @@ from typing import Dict
 
 from github import Github
 
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from commit_status_helper import get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
+from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from tee_popen import TeePopen
 
@@ -117,7 +118,7 @@ if __name__ == "__main__":
         message = "Skipped, not labeled with 'pr-performance'"
         report_url = GITHUB_RUN_URL
         post_commit_status(
-            commit, status, report_url, message, check_name_with_group, pr_info
+            gh, pr_info.sha, check_name_with_group, message, status, report_url
         )
         sys.exit(0)
 
@@ -130,7 +131,7 @@ if __name__ == "__main__":
             "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
         )
 
-    rerun_helper = RerunHelper(commit, check_name_with_group)
+    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -219,12 +220,6 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
 
-    def too_many_slow(msg):
-        match = re.search(r"(|.* )(\d+) slower.*", msg)
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
-        threshold = 5
-        return int(match.group(2).strip()) > threshold if match else False
-
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -242,7 +237,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower() or too_many_slow(message.lower()):
+        if "errors" in message.lower():
             status = "failure"
         # TODO: Remove until here
     except Exception:
@@ -272,7 +267,7 @@ if __name__ == "__main__":
         report_url = uploaded["report.html"]
 
     post_commit_status(
-        commit, status, report_url, message, check_name_with_group, pr_info
+        gh, pr_info.sha, check_name_with_group, message, status, report_url
     )
 
     if status == "error":

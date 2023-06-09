@@ -24,7 +24,7 @@ private:
     std::size_t last_accessed_index = 0;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant = true);
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0);
 
     ALWAYS_INLINE inline const Token & operator[](size_t index)
     {

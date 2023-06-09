@@ -9,8 +9,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
-#include <AggregateFunctions/Helpers.h>
-#include <AggregateFunctions/FactoryHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -32,7 +30,6 @@
 
 namespace DB
 {
-
 struct Settings;
 
 enum class StatisticsFunctionKind
@@ -46,25 +43,27 @@ enum class StatisticsFunctionKind
 };
 
 
-template <typename T, size_t _level>
+template <typename T, StatisticsFunctionKind _kind, size_t _level>
 struct StatFuncOneArg
 {
     using Type1 = T;
     using Type2 = T;
     using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
-    using Data = VarMoments<ResultType, _level>;
+    using Data = std::conditional_t<is_decimal<T>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
 
+    static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 1;
 };
 
-template <typename T1, typename T2, template <typename> typename Moments>
+template <typename T1, typename T2, StatisticsFunctionKind _kind>
 struct StatFuncTwoArg
 {
     using Type1 = T1;
     using Type2 = T2;
     using ResultType = std::conditional_t<std::is_same_v<T1, T2> && std::is_same_v<T1, Float32>, Float32, Float64>;
-    using Data = Moments<ResultType>;
+    using Data = std::conditional_t<_kind == StatisticsFunctionKind::corr, CorrMoments<ResultType>, CovarMoments<ResultType>>;
 
+    static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 2;
 };
 
@@ -81,18 +80,41 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_, StatisticsFunctionKind kind_)
+    explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
-        , src_scale(0), kind(kind_)
-    {
-        chassert(!argument_types_.empty());
-        if (isDecimal(argument_types_.front()))
-            src_scale = getDecimalScale(*argument_types_.front());
-    }
+        , src_scale(0)
+    {}
+
+    AggregateFunctionVarianceSimple(const IDataType & data_type, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
+        , src_scale(getDecimalScale(data_type))
+    {}
 
     String getName() const override
     {
-        return String(magic_enum::enum_name(kind));
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
+            return "varPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
+            return "varSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
+            return "stddevPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
+            return "stddevSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
+            return "skewPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
+            return "skewSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
+            return "kurtPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
+            return "kurtSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::covarPop)
+            return "covarPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::covarSamp)
+            return "covarSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
+            return "corr";
+        UNREACHABLE();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -107,9 +129,8 @@ public:
         {
             if constexpr (is_decimal<T1>)
             {
-                this->data(place).add(
-                    convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(
-                        static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], src_scale));
+                this->data(place).add(static_cast<ResultType>(
+                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value));
             }
             else
                 this->data(place).add(
@@ -137,29 +158,64 @@ public:
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();
 
-        switch (kind)
+        if constexpr (is_decimal<T1>)
         {
-            case StatisticsFunctionKind::varPop:
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
+                dst.push_back(data.getPopulation(src_scale * 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
+                dst.push_back(data.getSample(src_scale * 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
+                dst.push_back(sqrt(data.getPopulation(src_scale * 2)));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
+                dst.push_back(sqrt(data.getSample(src_scale * 2)));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
             {
+                Float64 var_value = data.getPopulation(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3(src_scale * 3) / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
+            {
+                Float64 var_value = data.getSample(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3(src_scale * 3) / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
+            {
+                Float64 var_value = data.getPopulation(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4(src_scale * 4) / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
+            {
+                Float64 var_value = data.getSample(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4(src_scale * 4) / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+        }
+        else
+        {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
                 dst.push_back(data.getPopulation());
-                break;
-            }
-            case StatisticsFunctionKind::varSamp:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
                 dst.push_back(data.getSample());
-                break;
-            }
-            case StatisticsFunctionKind::stddevPop:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
                 dst.push_back(sqrt(data.getPopulation()));
-                break;
-            }
-            case StatisticsFunctionKind::stddevSamp:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
                 dst.push_back(sqrt(data.getSample()));
-                break;
-            }
-            case StatisticsFunctionKind::skewPop:
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
             {
                 ResultType var_value = data.getPopulation();
 
@@ -167,10 +223,8 @@ public:
                     dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
-
-                break;
             }
-            case StatisticsFunctionKind::skewSamp:
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
             {
                 ResultType var_value = data.getSample();
 
@@ -178,10 +232,8 @@ public:
                     dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
-
-                break;
             }
-            case StatisticsFunctionKind::kurtPop:
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
             {
                 ResultType var_value = data.getPopulation();
 
@@ -189,10 +241,8 @@ public:
                     dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
-
-                break;
             }
-            case StatisticsFunctionKind::kurtSamp:
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
             {
                 ResultType var_value = data.getSample();
 
@@ -200,78 +250,31 @@ public:
                     dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
-
-                break;
             }
-            case StatisticsFunctionKind::covarPop:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::covarPop)
                 dst.push_back(data.getPopulation());
-                break;
-            }
-            case StatisticsFunctionKind::covarSamp:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::covarSamp)
                 dst.push_back(data.getSample());
-                break;
-            }
-            case StatisticsFunctionKind::corr:
-            {
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
                 dst.push_back(data.get());
-                break;
-            }
         }
     }
 
 private:
     UInt32 src_scale;
-    StatisticsFunctionKind kind;
 };
 
 
-struct Settings;
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-namespace
-{
-
-template <template <typename> typename FunctionTemplate, StatisticsFunctionKind kind>
-AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-{
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    AggregateFunctionPtr res;
-    const DataTypePtr & data_type = argument_types[0];
-    if (isDecimal(data_type))
-        res.reset(createWithDecimalType<FunctionTemplate>(*data_type, argument_types, kind));
-    else
-        res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types, kind));
-
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                        argument_types[0]->getName(), name);
-    return res;
-}
-
-template <template <typename, typename> typename FunctionTemplate, StatisticsFunctionKind kind>
-AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-{
-    assertNoParameters(name, parameters);
-    assertBinary(name, argument_types);
-
-    AggregateFunctionPtr res(createWithTwoBasicNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types, kind));
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments for aggregate function {}",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
-
-    return res;
-}
-
-}
+template <typename T> using AggregateFunctionVarPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varPop, 2>>;
+template <typename T> using AggregateFunctionVarSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varSamp, 2>>;
+template <typename T> using AggregateFunctionStddevPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevPop, 2>>;
+template <typename T> using AggregateFunctionStddevSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevSamp, 2>>;
+template <typename T> using AggregateFunctionSkewPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::skewPop, 3>>;
+template <typename T> using AggregateFunctionSkewSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::skewSamp, 3>>;
+template <typename T> using AggregateFunctionKurtPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::kurtPop, 4>>;
+template <typename T> using AggregateFunctionKurtSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::kurtSamp, 4>>;
+template <typename T1, typename T2> using AggregateFunctionCovarPopSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarPop>>;
+template <typename T1, typename T2> using AggregateFunctionCovarSampSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarSamp>>;
+template <typename T1, typename T2> using AggregateFunctionCorrSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::corr>>;
 
 }

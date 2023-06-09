@@ -1,21 +1,19 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <base/getThreadId.h>
-#include <base/sleep.h>
-#include <Common/EventNotifier.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/Exception.h>
+#include <Common/EventNotifier.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/getThreadId.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -299,8 +297,11 @@ ZooKeeper::~ZooKeeper()
     {
         finalize(false, false, "Destructor called");
 
-        send_thread.join();
-        receive_thread.join();
+        if (send_thread.joinable())
+            send_thread.join();
+
+        if (receive_thread.joinable())
+            receive_thread.join();
     }
     catch (...)
     {
@@ -341,32 +342,28 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-    if (args.enable_fault_injections_during_startup)
-        setupFaultDistributions();
+    /// It makes sense (especially, for async requests) to inject a fault in two places:
+    /// pushRequest (before request is sent) and receiveEvent (after request was executed).
+    if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
+    {
+        send_inject_fault.emplace(args.send_fault_probability);
+    }
+    if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
+    {
+        recv_inject_fault.emplace(args.recv_fault_probability);
+    }
 
     connect(nodes, args.connection_timeout_ms * 1000);
 
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
 
-    try
-    {
-        send_thread = ThreadFromGlobalPool([this] { sendThread(); });
-        receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+    send_thread = ThreadFromGlobalPool([this] { sendThread(); });
+    receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-        initApiVersion();
+    initApiVersion();
 
-        ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to connect to ZooKeeper");
-
-        send_thread.join();
-        receive_thread.join();
-
-        throw;
-    }
+    ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
 
 
@@ -433,8 +430,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address;
-
                 break;
             }
             catch (...)
@@ -450,8 +445,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
-
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -563,6 +556,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
                         static_cast<int32_t>(err), errorMessage(err));
 }
 
+
 void ZooKeeper::sendThread()
 {
     setThreadName("ZooKeeperSend");
@@ -577,8 +571,6 @@ void ZooKeeper::sendThread()
 
             auto now = clock::now();
             auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(args.session_timeout_ms / 3);
-
-            maybeInjectSendSleep();
 
             if (next_heartbeat_time > now)
             {
@@ -652,7 +644,6 @@ void ZooKeeper::receiveThread()
         Int64 waited_us = 0;
         while (!requests_queue.isFinished())
         {
-            maybeInjectRecvSleep();
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
@@ -667,8 +658,8 @@ void ZooKeeper::receiveThread()
                     earliest_operation = operations.begin()->second;
                     auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
                     if (now > earliest_operation_deadline)
-                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
-                                        args.operation_timeout_ms, earliest_operation->request->getPath());
+                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline already expired) for path: {}",
+                                        earliest_operation->request->getPath());
                     max_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
                 }
             }
@@ -685,12 +676,12 @@ void ZooKeeper::receiveThread()
             {
                 if (earliest_operation)
                 {
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms, toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
+                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout");
 
             }
 
@@ -722,7 +713,8 @@ void ZooKeeper::receiveEvent()
     ZooKeeperResponsePtr response;
     UInt64 elapsed_ms = 0;
 
-    maybeInjectRecvFault();
+    if (unlikely(recv_inject_fault) && recv_inject_fault.value()(thread_local_rng))
+        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
 
     if (xid == PING_XID)
     {
@@ -912,7 +904,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             }
 
             /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
+            if (send_thread.joinable())
+                send_thread.join();
         }
 
         /// Set expired flag after we sent close event
@@ -929,7 +922,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             tryLogCurrentException(log);
         }
 
-        if (!error_receive)
+        if (!error_receive && receive_thread.joinable())
             receive_thread.join();
 
         {
@@ -1070,14 +1063,15 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             }
         }
 
-        maybeInjectSendFault();
+        if (unlikely(send_inject_fault) && send_inject_fault.value()(thread_local_rng))
+            throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on send)");
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
             if (requests_queue.isFinished())
                 throw Exception(Error::ZSESSIONEXPIRED, "Session expired");
 
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout");
         }
     }
     catch (...)
@@ -1089,7 +1083,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-KeeperApiVersion ZooKeeper::getApiVersion() const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return keeper_api_version;
 }
@@ -1329,7 +1323,7 @@ void ZooKeeper::close()
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
-        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
+        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout");
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
@@ -1394,61 +1388,4 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-
-void ZooKeeper::setServerCompletelyStarted()
-{
-    if (!args.enable_fault_injections_during_startup)
-        setupFaultDistributions();
-}
-
-void ZooKeeper::setupFaultDistributions()
-{
-    /// It makes sense (especially, for async requests) to inject a fault in two places:
-    /// pushRequest (before request is sent) and receiveEvent (after request was executed).
-    if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
-    {
-        LOG_INFO(log, "ZK send fault: {}%", args.send_fault_probability * 100);
-        send_inject_fault.emplace(args.send_fault_probability);
-    }
-    if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
-    {
-        LOG_INFO(log, "ZK recv fault: {}%", args.recv_fault_probability * 100);
-        recv_inject_fault.emplace(args.recv_fault_probability);
-    }
-    if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
-    {
-        LOG_INFO(log, "ZK send sleep: {}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
-        send_inject_sleep.emplace(args.send_sleep_probability);
-    }
-    if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
-    {
-        LOG_INFO(log, "ZK recv sleep: {}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
-        recv_inject_sleep.emplace(args.recv_sleep_probability);
-    }
-    inject_setup.test_and_set();
-}
-
-void ZooKeeper::maybeInjectSendFault()
-{
-    if (unlikely(inject_setup.test() && send_inject_fault && send_inject_fault.value()(thread_local_rng)))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
-}
-
-void ZooKeeper::maybeInjectRecvFault()
-{
-    if (unlikely(inject_setup.test() && recv_inject_fault && recv_inject_fault.value()(thread_local_rng)))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
-}
-
-void ZooKeeper::maybeInjectSendSleep()
-{
-    if (unlikely(inject_setup.test() && send_inject_sleep && send_inject_sleep.value()(thread_local_rng)))
-        sleepForMilliseconds(args.send_sleep_ms);
-}
-
-void ZooKeeper::maybeInjectRecvSleep()
-{
-    if (unlikely(inject_setup.test() && recv_inject_sleep && recv_inject_sleep.value()(thread_local_rng)))
-        sleepForMilliseconds(args.recv_sleep_ms);
-}
 }

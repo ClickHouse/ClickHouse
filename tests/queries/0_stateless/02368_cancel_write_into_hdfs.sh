@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-debug
-# FIXME https://github.com/ClickHouse/ClickHouse/issues/47207
+# Tags: no-fasttest, no-stress
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

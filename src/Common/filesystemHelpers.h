@@ -95,7 +95,6 @@ void setModificationTime(const std::string & path, time_t time);
 time_t getChangeTime(const std::string & path);
 
 bool isSymlink(const fs::path & path);
-bool isSymlinkNoThrow(const fs::path & path);
 fs::path readSymlink(const fs::path & path);
 
 }

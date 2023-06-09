@@ -12,7 +12,7 @@
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --input-shadow-color: rgba(0, 255, 0, 1);
-            --error-color: white;
+            --error-color: red;
             --legend-background: rgba(255, 255, 255, 0.75);
             --title-color: #666;
             --text-color: black;
@@ -76,7 +76,7 @@
         #charts
         {
             height: 100%;
-            display: flex;
+            display: none;
             flex-flow: row wrap;
             gap: 1rem;
         }
@@ -121,19 +121,6 @@
         .unconnected #url {
             width: 100%;
         }
-        .unconnected #button-options {
-            display: grid;
-            grid-auto-flow: column;
-            grid-auto-columns: 1fr;
-            gap: 0.3rem;
-        }
-        .unconnected #user {
-            margin-right: 0;
-            width: auto;
-        }
-        .unconnected #password {
-            width: auto;
-        }
         #user {
             margin-right: 0.25rem;
             width: 50%;
@@ -149,15 +136,7 @@
             width: 100%;
 
             display: flex;
-            flex-flow: row nowrap;
-        }
-        .unconnected #username-password {
-            width: 100%;
-
-            gap: 0.3rem;
-
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            flex-flow: row nowrap;  
         }
 
         .inputs #chart-params {
@@ -198,10 +177,7 @@
         .themes {
             float: right;
             font-size: 20pt;
-            gap: 0.3rem;
-
-            display: flex;
-            justify-content: center;
+            margin-bottom: 1rem;
         }
 
         #toggle-dark, #toggle-light {
@@ -230,8 +206,6 @@
         }
 
         #add, #reload {
-            padding: .25rem 0.5rem;
-            text-align: center;
             font-weight: bold;
             user-select: none;
             cursor: pointer;
@@ -240,24 +214,16 @@
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
-            margin-right: 1rem !important;
-            margin-left: 0rem;
+            margin-right: 0 !important;
+            margin-left: 1rem;
             margin-bottom: 1rem;
         }
-
-        /* .unconnected #reload {
-            margin-left: 3px;
-        } */
 
         #add:hover, #reload:hover {
             background: var(--button-background-color);
         }
 
         #auth-error {
-            align-self: center;
-            width: 60%;
-            padding: .5rem;
-
             color: var(--error-color);
 
             display: flex;
@@ -386,15 +352,15 @@
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
             </div>
         </div>
-        <div id="button-options">
-            <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-            <input id="add" type="button" value="Add chart" style="display: none;">
+        <div>
             <input id="reload" type="button" value="Reload">
+            <input id="add" type="button" value="Add chart" style="display: none;">
+            <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
             <div id="chart-params"></div>
         </div>
     </form>
-    <div id="auth-error"></div>
 </div>
+<div id="auth-error"></div>
 <div id="charts"></div>
 <script>
 
@@ -424,21 +390,10 @@ if (location.protocol != 'file:') {
     user = 'default';
 }
 
+const errorCodeRegex = /Code: (\d+)/
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
 }
-const errorMessages = [
-    {
-        regex: /TypeError: Failed to fetch/,
-        messageFunc: () => 'Error authenticating with database. Please check your connection url and try again.',
-    },
-    {
-        regex: /Code: (\d+)/,
-        messageFunc: (match) => {
-            return errorCodeMessageMap[match[1]]
-        }
-    }
-]
 
 /// This is just a demo configuration of the dashboard.
 
@@ -814,6 +769,21 @@ document.getElementById('reload').addEventListener('click', e => {
     reloadAll();
 });
 
+function showReloadIfNeeded() {
+    const is_any_field_changed = (host != document.getElementById('url').value
+                               || user != document.getElementById('user').value
+                               || password != document.getElementById('password').value);
+    if (is_any_field_changed) {
+        document.getElementById('reload').style.display = '';
+    } else {
+        document.getElementById('reload').style.display = 'none';
+    }
+}
+
+document.getElementById('password').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('user').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('url').addEventListener('input', e => { showReloadIfNeeded(); })
+
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
 
@@ -905,12 +875,14 @@ async function draw(idx, chart, url_params, query) {
     }
 
     if (error) {
-        const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
-        if (errorMatch) {
-            const match = error.match(errorMatch.regex)
-            const message = errorMatch.messageFunc(match)
-            const authError = new Error(message)
-            throw authError
+        const errorMatch = error.match(errorCodeRegex)
+        if (errorMatch && errorMatch[1]) {
+            const code = errorMatch[1]
+            if (errorCodeMessageMap[code]) {
+                const authError = new Error(errorCodeMessageMap[code])
+                authError.code = code
+                throw authError
+            }
         }
     }
 
@@ -978,8 +950,7 @@ async function draw(idx, chart, url_params, query) {
 
 function showAuthError(message) {
     const charts = document.querySelector('#charts');
-    charts.style.height = '0px';
-    charts.style.opacity = '0';
+    charts.style.display = 'none';
     const add = document.querySelector('#add');
     add.style.display = 'none';
 
@@ -990,8 +961,7 @@ function showAuthError(message) {
 
 function hideAuthError() {
     const charts = document.querySelector('#charts');
-    charts.style.height = 'auto';
-    charts.style.opacity = '1';
+    charts.style.display = 'flex';
 
     const authError = document.querySelector('#auth-error');
     authError.textContent = '';
@@ -1002,13 +972,13 @@ let firstLoad = true;
 
 async function drawAll() {
     let params = getParamsForURL();
-    const chartsArray = document.getElementsByClassName('chart');
+    const charts = document.getElementsByClassName('chart');
 
     if (!firstLoad) {
         hideAuthError();
     }
     await Promise.all([...Array(queries.length)].map(async (_, i) => {
-        return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
+        return draw(i, charts[i], params, queries[i].query).catch((e) => {
             if (!firstLoad) {
                 showAuthError(e.message);
             }
@@ -1025,9 +995,6 @@ async function drawAll() {
             element.classList.remove('unconnected');
             const add = document.querySelector('#add');
             add.style.display = 'block';
-        } else {
-            const charts = document.querySelector('#charts')
-            charts.style.height = '0px';
         }
     })
 }

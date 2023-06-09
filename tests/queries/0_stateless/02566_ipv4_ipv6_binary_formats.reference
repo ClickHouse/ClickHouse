@@ -6,7 +6,7 @@ Arrow
 2001:db8:11a3:9d7:1f34:8a2e:7a0:765d	127.0.0.1
 Parquet
 ipv6	Nullable(FixedString(16))					
-ipv4	Nullable(UInt32)					
+ipv4	Nullable(Int64)					
 2001:db8:11a3:9d7:1f34:8a2e:7a0:765d	127.0.0.1
 ORC
 ipv6	Nullable(String)					

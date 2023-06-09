@@ -8,6 +8,7 @@
 
 #if USE_AWS_S3
 
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 
 #include <Disks/DiskLocal.h>
@@ -18,7 +19,9 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include <IO/S3Common.h>
 
+#include <Storages/StorageS3Settings.h>
 #include <Core/ServerUUID.h>
 #include <Common/Macros.h>
 
@@ -84,10 +87,10 @@ public:
 private:
     static String getServerUUID()
     {
-        UUID server_uuid = ServerUUID::get();
-        if (server_uuid == UUIDHelpers::Nil)
+        DB::UUID server_uuid = DB::ServerUUID::get();
+        if (server_uuid == DB::UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-        return toString(server_uuid);
+        return DB::toString(server_uuid);
     }
 };
 
@@ -174,6 +177,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
 #else
 
-void registerDiskS3(DB::DiskFactory &, bool /* global_skip_access_check */) {}
+void registerDiskS3(DiskFactory &, bool /* global_skip_access_check */) {}
 
 #endif

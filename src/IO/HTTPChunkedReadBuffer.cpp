@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -33,7 +33,7 @@ size_t HTTPChunkedReadBuffer::readChunkHeader()
     } while (!in->eof() && isHexDigit(*in->position()));
 
     if (res > max_chunk_size)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit (max size: {})", max_chunk_size);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit");
 
     /// NOTE: If we want to read any chunk extensions, it should be done here.
 

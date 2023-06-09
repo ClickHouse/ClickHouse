@@ -27,28 +27,21 @@ namespace
     }
 
 
-    void formatONClause(const AccessRightsElement & element, const IAST::FormatSettings & settings)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
-        if (element.isGlobalWithParameter())
-        {
-            if (element.any_parameter)
-                settings.ostr << "*";
-            else
-                settings.ostr << backQuoteIfNeed(element.parameter);
-        }
-        else if (element.any_database)
+        if (any_database)
         {
             settings.ostr << "*.*";
         }
         else
         {
-            if (!element.database.empty())
-                settings.ostr << backQuoteIfNeed(element.database) << ".";
-            if (element.any_table)
+            if (!database.empty())
+                settings.ostr << backQuoteIfNeed(database) << ".";
+            if (any_table)
                 settings.ostr << "*";
             else
-                settings.ostr << backQuoteIfNeed(element.table);
+                settings.ostr << backQuoteIfNeed(table);
         }
     }
 
@@ -77,16 +70,15 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if (element.sameDatabaseAndTableAndParameter(next_element))
-                {
+                if ((element.database == next_element.database) && (element.any_database == next_element.any_database)
+                    && (element.table == next_element.table) && (element.any_table == next_element.any_table))
                     next_element_on_same_db_and_table = true;
-                }
             }
 
             if (!next_element_on_same_db_and_table)
             {
                 settings.ostr << " ";
-                formatONClause(element, settings);
+                formatONClause(element.database, element.any_database, element.table, element.any_table, settings);
             }
         }
 
@@ -119,6 +111,7 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
+                  << (settings.hilite ? hilite_keyword : "") << ((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "") << (settings.hilite ? hilite_none : "")
                   << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
                   << (settings.hilite ? IAST::hilite_none : "");
 
@@ -147,8 +140,6 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                             "ASTGrantQuery can contain either roles or access rights elements "
                             "to grant or revoke, not both of them");
     }
-    else if (current_grants)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
     else
         formatElementsWithoutOptions(access_rights_elements, settings);
 
@@ -162,9 +153,6 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
-
-        if (replace_access || replace_granted_roles)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH REPLACE OPTION" << (settings.hilite ? hilite_none : "");
     }
 }
 

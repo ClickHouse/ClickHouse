@@ -6,9 +6,8 @@ sidebar_label: "ANSI\u517C\u5BB9\u6027"
 
 # ClickHouse SQL方言 与ANSI SQL的兼容性{#ansi-sql-compatibility-of-clickhouse-sql-dialect}
 
-:::note
-本文参考Annex G所著的[ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8)标准.
-:::
+!!! note "注"
+    本文参考Annex G所著的[ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8)标准.
 
 ## 行为差异 {#differences-in-behaviour}
 

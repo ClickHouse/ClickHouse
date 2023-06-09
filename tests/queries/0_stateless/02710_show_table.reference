@@ -1,5 +1,0 @@
-CREATE TABLE default.t_2710_show_table\n(\n    `n1` UInt32,\n    `s` String\n)\nENGINE = Log
-CREATE TABLE default.t_2710_show_table\n(\n    `n1` UInt32,\n    `s` String\n)\nENGINE = Log
-CREATE TABLE default.t_2710_show_table\n(\n    `n1` UInt32,\n    `s` String\n)\nENGINE = Log
-CREATE DATABASE t_2710_db\nENGINE = Atomic
-CREATE DATABASE t_2710_db\nENGINE = Atomic

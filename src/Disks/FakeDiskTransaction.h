@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Disks/IDiskTransaction.h>
-#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {
@@ -67,11 +66,6 @@ public:
         bool /*autocommit */ = true) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
-    }
-
-    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
-    {
-        disk.writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
     }
 
     void removeFile(const std::string & path) override

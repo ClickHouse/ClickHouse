@@ -45,7 +45,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+:::warning
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -60,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
 
     Column Data Type — `Int8`.
 

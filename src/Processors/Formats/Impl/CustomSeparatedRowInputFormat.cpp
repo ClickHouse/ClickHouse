@@ -44,7 +44,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         format_settings_,
         std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
         format_settings_.custom.try_detect_header)
-    , buf(std::move(buf_)), ignore_spaces(ignore_spaces_)
+    , buf(std::move(buf_))
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
     /// the exact number of columns in data (because it can contain unknown columns). So, if field_delimiter and row_after_delimiter are

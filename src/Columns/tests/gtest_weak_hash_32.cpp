@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Common/WeakHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 #include <unordered_map>
 #include <iostream>
@@ -26,7 +26,9 @@ using namespace DB;
 template <typename T>
 void checkColumn(
     const WeakHash32::Container & hash,
-    const PaddedPODArray<T> & eq_class)
+    const PaddedPODArray<T> & eq_class,
+    size_t allowed_collisions = 0,
+    size_t max_collisions_to_print = 10)
 {
     ASSERT_EQ(hash.size(), eq_class.size());
 
@@ -49,6 +51,41 @@ void checkColumn(
                 ASSERT_EQ(it->second, hash[i]);
             }
         }
+    }
+
+    /// Check have not many collisions.
+    {
+        std::unordered_map<UInt32, T> map;
+        size_t num_collisions = 0;
+
+        std::stringstream collisions_str;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        collisions_str.exceptions(std::ios::failbit);
+
+        for (size_t i = 0; i < eq_class.size(); ++i)
+        {
+            auto & val = eq_class[i];
+            auto it = map.find(hash[i]);
+
+            if (it == map.end())
+                map[hash[i]] = val;
+            else if (it->second != val)
+            {
+                ++num_collisions;
+
+                if (num_collisions <= max_collisions_to_print)
+                {
+                    collisions_str << "Collision:\n";
+                }
+
+                if (num_collisions > allowed_collisions)
+                {
+                    std::cerr << collisions_str.rdbuf();
+                    break;
+                }
+            }
+        }
+
+        ASSERT_LE(num_collisions, allowed_collisions);
     }
 }
 
@@ -337,7 +374,10 @@ TEST(WeakHash32, ColumnString2)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+    /// Now there is single collision between 'k' * 544 and 'q' * 2512 (which is calculated twice)
+    size_t allowed_collisions = 4;
+
+    checkColumn(hash.getData(), data, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnString3)
@@ -677,7 +717,8 @@ TEST(WeakHash32, ColumnTupleUInt64String)
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq);
+    size_t allowed_collisions = 8;
+    checkColumn(hash.getData(), eq, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnTupleUInt64FixedString)
@@ -762,5 +803,10 @@ TEST(WeakHash32, ColumnTupleUInt64Array)
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+    /// There are 2 collisions right now (repeated 2 times each):
+    /// (0, [array of size 1212 with values 7]) vs (0, [array of size 2265 with values 17])
+    /// (0, [array of size 558 with values 5]) vs (1, [array of size 879 with values 21])
+
+    size_t allowed_collisions = 8;
+    checkColumn(hash.getData(), eq_data, allowed_collisions);
 }

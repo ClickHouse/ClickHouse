@@ -70,6 +70,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
+    String result_name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
 
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
@@ -81,7 +82,6 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     ColumnPtr result_column;
     DataTypePtr result_type;
-    String result_name = ast->getColumnName();
     for (const auto & action_node : actions->getOutputs())
     {
         if ((action_node->result_name == result_name) && action_node->column)

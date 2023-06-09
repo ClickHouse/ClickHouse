@@ -13,19 +13,19 @@ from github import Github
 
 from build_download_helper import get_build_name_for_check
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from commit_status_helper import post_commit_status
 from compress_files import compress_fast
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
+from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
-from build_check import get_release_or_pr
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -181,11 +181,10 @@ if __name__ == "__main__":
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
 
     check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
 
-    rerun_helper = RerunHelper(commit, check_name)
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -211,7 +210,12 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
 
-    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
+    if pr_info.number == 0:
+        version = get_version_from_repo()
+        release_or_pr = f"{version.major}.{version.minor}"
+    else:
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
 
     # This check run separately from other checks because it requires exclusive
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
@@ -289,7 +293,7 @@ if __name__ == "__main__":
     )
 
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
+    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(

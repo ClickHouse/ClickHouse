@@ -1,6 +1,6 @@
 #include <Common/VersionNumber.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include <cstdlib>
+#include <iostream>
 
 namespace DB
 {
@@ -10,21 +10,29 @@ VersionNumber::VersionNumber(std::string version_string)
     if (version_string.empty())
         return;
 
-    ReadBufferFromString rb(version_string);
-    while (!rb.eof())
+    char * start = &version_string.front();
+    char * end = start;
+    const char * eos = &version_string.back() + 1;
+
+    do
     {
-        Int64 value;
-        if (!tryReadIntText(value, rb))
-            break;
+        Int64 value = strtol(start, &end, 10);
         components.push_back(value);
-        if (!checkChar('.', rb))
-            break;
+        start = end + 1;
     }
+    while (start < eos && (end < eos && *end == '.'));
 }
 
 std::string VersionNumber::toString() const
 {
-    return fmt::format("{}", fmt::join(components, "."));
+    std::string str;
+    for (Int64 v : components)
+    {
+        if (!str.empty())
+            str += '.';
+        str += std::to_string(v);
+    }
+    return str;
 }
 
 int VersionNumber::compare(const VersionNumber & rhs) const

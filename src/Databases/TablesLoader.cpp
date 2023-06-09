@@ -8,14 +8,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Common/CurrentMetrics.h>
 #include <numeric>
-
-namespace CurrentMetrics
-{
-    extern const Metric TablesLoaderThreads;
-    extern const Metric TablesLoaderThreadsActive;
-}
 
 namespace DB
 {
@@ -25,14 +18,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
+
+void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+{
+    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+    {
+        LOG_INFO(log, "{}%", processed * 100.0 / total);
+        watch.restart();
+    }
+}
+
 TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
-    : global_context(global_context_)
-    , databases(std::move(databases_))
-    , strictness_mode(strictness_mode_)
-    , referential_dependencies("ReferentialDeps")
-    , loading_dependencies("LoadingDeps")
-    , all_loading_dependencies("LoadingDeps")
-    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive)
+: global_context(global_context_)
+, databases(std::move(databases_))
+, strictness_mode(strictness_mode_)
+, referential_dependencies("ReferentialDeps")
+, loading_dependencies("LoadingDeps")
+, all_loading_dependencies("LoadingDeps")
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");
@@ -165,7 +169,7 @@ void TablesLoader::removeUnresolvableDependencies()
 }
 
 
-void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool_)
+void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
 {
     /// Compatibility setting which should be enabled by default on attach
     /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
@@ -177,12 +181,12 @@ void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool_)
 
     for (size_t level = 0; level != tables_to_load.size(); ++level)
     {
-        startLoadingTables(pool_, load_context, tables_to_load[level], level);
-        pool_.wait();
+        startLoadingTables(pool, load_context, tables_to_load[level], level);
+        pool.wait();
     }
 }
 
-void TablesLoader::startLoadingTables(ThreadPool & pool_, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
+void TablesLoader::startLoadingTables(ThreadPool & pool, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
 {
     size_t total_tables = metadata.parsed_tables.size();
 
@@ -190,7 +194,7 @@ void TablesLoader::startLoadingTables(ThreadPool & pool_, ContextMutablePtr load
 
     for (const auto & table_id : tables_to_load)
     {
-        pool_.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
+        pool.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
         {
             const auto & path_and_query = metadata.parsed_tables[table_name];
             databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);

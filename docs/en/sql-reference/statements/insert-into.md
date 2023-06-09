@@ -4,7 +4,7 @@ sidebar_position: 33
 sidebar_label: INSERT INTO
 ---
 
-# INSERT INTO Statement
+# INSERT INTO Statement 
 
 Inserts data into a table.
 
@@ -64,8 +64,8 @@ INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 
 If a list of columns does not include all existing columns, the rest of the columns are filled with:
 
-- The values calculated from the `DEFAULT` expressions specified in the table definition.
-- Zeros and empty strings, if `DEFAULT` expressions are not defined.
+-   The values calculated from the `DEFAULT` expressions specified in the table definition.
+-   Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
 Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
@@ -89,20 +89,13 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/docs/en/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/en/interfaces/http/).
-
-:::note
-If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
-```sql
-INSERT INTO table SETTINGS ... FORMAT format_name data_set
-```
-:::
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
 
 ## Constraints
 
 If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-## Inserting the Results of SELECT
+## Inserting the Results of `SELECT`
 
 **Syntax**
 
@@ -129,7 +122,7 @@ To insert a default value instead of `NULL` into a column with not nullable data
 INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
 ```
 
-Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause.
+Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
 
 Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
@@ -191,7 +184,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
-INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table) 
     VALUES (100, 'inserted via remote()');
 SELECT * FROM simple_table;
 ```
@@ -208,22 +201,22 @@ Result:
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
-- Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by a partition key before uploading it to ClickHouse.
+-   Add data in fairly large batches, such as 100,000 rows at a time.
+-   Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 
-- Data is added in real time.
-- You upload data that is usually sorted by time.
+-   Data is added in real time.
+-   You upload data that is usually sorted by time.
 
 It's also possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To enable the asynchronous mode, switch on the [async_insert](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous insertions are supported only over HTTP protocol, and deduplication is not supported for them.
 
 **See Also**
 
-- [async_insert](../../operations/settings/settings.md#async-insert)
-- [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
-- [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
-- [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
-- [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
-- [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
-- [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)
+-   [async_insert](../../operations/settings/settings.md#async-insert)
+-   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
+-   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+-   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
+-   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
+-   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
+-   [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)

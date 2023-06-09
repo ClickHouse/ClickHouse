@@ -7,6 +7,7 @@
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
+#include <Poco/Version.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <unordered_set>
 
 namespace DB
 {
@@ -165,29 +165,36 @@ Pipe StorageMongoDB::read(
     return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
 }
 
-SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
+SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
     connectIfNotConnected();
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
+struct KeysCmp
+{
+    constexpr bool operator()(const auto & lhs, const auto & rhs) const
+    {
+        return lhs == rhs || ((lhs == "table") && (rhs == "collection")) || ((rhs == "table") && (lhs == "collection"));
+    }
+};
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
         validateNamedCollection(
             *named_collection,
-            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
+            std::unordered_multiset<std::string_view, std::hash<std::string_view>, KeysCmp>{"host", "port", "user", "password", "database", "collection", "table"},
             {"options"});
 
-        configuration.host = named_collection->getAny<String>({"host", "hostname"});
+        configuration.host = named_collection->get<String>("host");
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->getAny<String>({"user", "username"});
+        configuration.username = named_collection->get<String>("user");
         configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->getAny<String>({"database", "db"});
-        configuration.table = named_collection->getAny<String>({"collection", "table"});
+        configuration.database = named_collection->get<String>("database");
+        configuration.table = named_collection->getOrDefault<String>("collection", named_collection->getOrDefault<String>("table", ""));
         configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else

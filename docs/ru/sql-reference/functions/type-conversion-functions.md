@@ -553,44 +553,6 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 └────────────┴───────┘
 ```
 
-## toDecimalString
-
-Принимает любой численный тип первым аргументом, возвращает строковое десятичное представление числа с точностью, заданной вторым аргументом.
-
-**Синтаксис**
-
-``` sql
-toDecimalString(number, scale)
-```
-
-**Параметры**
-
--   `number` — Значение любого числового типа: [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md), [Float](/docs/ru/sql-reference/data-types/float.md), [Decimal](/docs/ru/sql-reference/data-types/decimal.md),
--   `scale` — Требуемое количество десятичных знаков после запятой, [UInt8](/docs/ru/sql-reference/data-types/int-uint.md).
-    * Значение `scale` для типов [Decimal](/docs/ru/sql-reference/data-types/decimal.md) и [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md) должно не превышать 77 (так как это наибольшее количество значимых символов для этих типов),
-    * Значение `scale` для типа [Float](/docs/ru/sql-reference/data-types/float.md) не должно превышать 60.
-
-**Возвращаемое значение**
-
--   Строка ([String](/docs/en/sql-reference/data-types/string.md)), представляющая собой десятичное представление входного числа с заданной длиной дробной части.
-    При необходимости число округляется по стандартным правилам арифметики.
-
-**Пример использования**
-
-Запрос:
-
-``` sql
-SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
-```
-
-Результат:
-
-```response
-┌─toDecimalString(CAST('64.32', 'Float64'), 5)┐
-│ 64.32000                                    │
-└─────────────────────────────────────────────┘
-```
-
 ## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
 
 ## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}

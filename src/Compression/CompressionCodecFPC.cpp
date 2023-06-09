@@ -109,42 +109,28 @@ void registerCodecFPC(CompressionCodecFactory & factory)
     auto method_code = static_cast<UInt8>(CompressionMethodByte::FPC);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        /// Set default float width to 4.
-        UInt8 float_width = 4;
+        UInt8 float_width = 0;
         if (column_type != nullptr)
             float_width = getFloatBytesSize(*column_type);
 
         UInt8 level = CompressionCodecFPC::DEFAULT_COMPRESSION_LEVEL;
         if (arguments && !arguments->children.empty())
         {
-            if (arguments->children.size() > 2)
+            if (arguments->children.size() > 1)
             {
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-                                "FPC codec must have from 0 to 2 parameters, given {}", arguments->children.size());
+                                "FPC codec must have 1 parameter, given {}", arguments->children.size());
             }
 
             const auto * literal = arguments->children.front()->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec argument must be unsigned integer");
+            if (!literal)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec argument must be integer");
 
             level = literal->value.safeGet<UInt8>();
             if (level < 1 || level > CompressionCodecFPC::MAX_COMPRESSION_LEVEL)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec level must be between {} and {}",
                                 1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
-
-            if (arguments->children.size() == 2)
-            {
-                literal = arguments->children[1]->as<ASTLiteral>();
-                if (!literal || !isInt64OrUInt64FieldType(literal->value.getType()))
-                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec argument must be unsigned integer");
-
-                size_t user_float_width = literal->value.safeGet<UInt64>();
-                if (user_float_width != 4 && user_float_width != 8)
-                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Float size for FPC codec can be 4 or 8, given {}", user_float_width);
-                float_width = static_cast<UInt8>(user_float_width);
-            }
         }
-
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
     factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);

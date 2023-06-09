@@ -211,14 +211,9 @@ public:
     void flush()
     {
         auto * file_buffer = tryGetFileBuffer();
-        if (file_buffer)
-        {
-            /// Fsync file system if needed
-            if (log_file_settings.force_sync)
-                file_buffer->sync();
-            else
-                file_buffer->next();
-        }
+        /// Fsync file system if needed
+        if (file_buffer && log_file_settings.force_sync)
+            file_buffer->sync();
     }
 
     uint64_t getStartIndex() const
@@ -279,17 +274,7 @@ private:
         flush();
 
         if (log_file_settings.max_size != 0)
-        {
-            int res = -1;
-            do
-            {
-                res = ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
-            }
-            while (res < 0 && errno == EINTR);
-
-            if (res != 0)
-                LOG_WARNING(log, "Could not ftruncate file. Error: {}, errno: {}", errnoToString(), errno);
-        }
+            ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
 
         if (log_file_settings.compress_logs)
             compressed_buffer.reset();

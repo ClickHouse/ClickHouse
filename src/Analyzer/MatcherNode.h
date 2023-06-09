@@ -148,7 +148,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl() const override;
 
 private:
     explicit MatcherNode(MatcherNodeType matcher_type_,

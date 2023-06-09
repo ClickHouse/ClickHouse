@@ -20,6 +20,9 @@ DataStream ITransformingStep::createOutputStream(
 {
     DataStream output_stream{.header = std::move(output_header)};
 
+    if (stream_traits.preserves_distinct_columns)
+        output_stream.distinct_columns = input_stream.distinct_columns;
+
     output_stream.has_single_port = stream_traits.returns_single_stream
                                      || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
 
@@ -45,6 +48,21 @@ QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders 
         transformPipeline(*pipelines.front(), settings);
 
     return std::move(pipelines.front());
+}
+
+void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet & distinct_columns)
+{
+    if (distinct_columns.empty())
+        return;
+
+    for (const auto & column : distinct_columns)
+    {
+        if (!res_header.has(column))
+        {
+            distinct_columns.clear();
+            break;
+        }
+    }
 }
 
 void ITransformingStep::describePipeline(FormatSettings & settings) const

@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
-#include <algorithm>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -335,7 +334,6 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
-    rx.set_indent_multiline(false);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -434,7 +432,6 @@ ReplxxLineReader::ReplxxLineReader(
     };
 
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
-#endif
 
     /// Rebind regular incremental search to C-T.
     ///
@@ -446,6 +443,7 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
+#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -518,12 +516,6 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
-}
-
-void ReplxxLineReader::disableBracketedPaste()
-{
-    bracketed_paste_enabled = false;
-    rx.disable_bracketed_paste();
 }
 
 }

@@ -348,6 +348,10 @@
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
     -->
 
+    <!-- Number of workers to recycle connections in background (see also drain_timeout).
+         If the pool is full, connection will be drained synchronously. -->
+    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
@@ -475,14 +479,6 @@
     <allow_plaintext_password>1</allow_plaintext_password>
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
-
-    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
-         Accepted values are: 'plaintext_password', 'sha256_password', 'double_sha1_password', 'bcrypt_password'.
-      -->
-    <default_password_type>sha256_password</default_password_type>
-
-    <!-- Work factor for bcrypt_password authentication type-->
-    <bcrypt_workfactor>12</bcrypt_workfactor>
 
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
@@ -711,20 +707,13 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
-
-        <!-- Number of seconds since last access a role is stored in the Role Cache -->
-        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
-    <!-- Comma-separated list of prefixes for user-defined settings.
-         The server will allow to set these settings, and retrieve them with the getSetting function.
-         They are also logged in the query_log, similarly to other settings, but have no special effect.
-         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
-    -->
-    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+    <!-- Comma-separated list of prefixes for user-defined settings. -->
+    <custom_settings_prefixes></custom_settings_prefixes>
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
@@ -908,11 +897,6 @@
             <replica>
                 <host>127.0.0.10</host>
                 <port>9000</port>
-            </replica>
-            <!-- Unavailable replica -->
-            <replica>
-                <host>127.0.0.11</host>
-                <port>1234</port>
             </replica>
         </shard>
 	</parallel_replicas>
@@ -1142,16 +1126,6 @@
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
         -->
 
-        <!--
-            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
-            Example:
-                event_date, event_time
-                event_date, type, query_id
-                event_date, event_time, initial_query_id
-
-        <order_by>event_date, event_time, initial_query_id</order_by>
-        -->
-
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
           -->
@@ -1313,14 +1287,10 @@
     <!-- Configuration of external dictionaries. See:
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
-    <dictionaries_config>*_dictionary.*ml</dictionaries_config>
+    <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
     <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
-
-    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
-     If not specified they will be stored locally. -->
-    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
+    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1544,10 +1514,10 @@
 
     <!-- Configuration for the query cache -->
     <!-- <query_cache> -->
-    <!--     <max_size_in_bytes>1073741824</max_size_in_bytes> -->
+    <!--     <size>1073741824</size> -->
     <!--     <max_entries>1024</max_entries> -->
-    <!--     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes> -->
-    <!--     <max_entry_size_in_rows>30000000</max_entry_size_in_rows> -->
+    <!--     <max_entry_size>1048576</max_entry_size> -->
+    <!--     <max_entry_rows>30000000</max_entry_rows> -->
     <!-- </query_cache> -->
 
     <!-- Uncomment if enable merge tree metadata cache -->

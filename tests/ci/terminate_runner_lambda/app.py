@@ -1,48 +1,101 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import sys
+import json
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, List
+from collections import namedtuple
+from typing import Any, Dict, List, Tuple
 
 import boto3  # type: ignore
-
-from lambda_shared import RunnerDescriptions, list_runners
-from lambda_shared.token import get_access_token_by_key_app, get_cached_access_token
-
-
-@dataclass
-class CachedInstances:
-    time: int
-    value: dict
-    updating: bool = False
+import requests  # type: ignore
+import jwt
 
 
-cached_instances = CachedInstances(0, {})
-
-
-def get_cached_instances() -> dict:
-    """return cached instances description with updating it once per five minutes"""
-    if time.time() - 250 < cached_instances.time or cached_instances.updating:
-        return cached_instances.value
-    # Indicate that the value is updating now, so the cached value can be
-    # used. The first setting and close-to-ttl are not counted as update
-    if cached_instances.time != 0 or time.time() - 300 < cached_instances.time:
-        cached_instances.updating = True
-    ec2_client = boto3.client("ec2")
-    instances_response = ec2_client.describe_instances(
-        Filters=[{"Name": "instance-state-name", "Values": ["running"]}]
+def get_key_and_app_from_aws() -> Tuple[str, int]:
+    secret_name = "clickhouse_github_secret_key"
+    session = boto3.session.Session()
+    client = session.client(
+        service_name="secretsmanager",
     )
-    cached_instances.time = int(time.time())
-    cached_instances.value = {
-        instance["InstanceId"]: instance
-        for reservation in instances_response["Reservations"]
-        for instance in reservation["Instances"]
+    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+    data = json.loads(get_secret_value_response["SecretString"])
+    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
+
+
+def get_installation_id(jwt_token: str) -> int:
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github.v3+json",
     }
-    cached_instances.updating = False
-    return cached_instances.value
+    response = requests.get("https://api.github.com/app/installations", headers=headers)
+    response.raise_for_status()
+    data = response.json()
+    for installation in data:
+        if installation["account"]["login"] == "ClickHouse":
+            installation_id = installation["id"]
+            break
+
+    return installation_id  # type: ignore
+
+
+def get_access_token(jwt_token: str, installation_id: int) -> str:
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    response = requests.post(
+        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+        headers=headers,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data["token"]  # type: ignore
+
+
+RunnerDescription = namedtuple(
+    "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
+)
+RunnerDescriptions = List[RunnerDescription]
+
+
+def list_runners(access_token: str) -> RunnerDescriptions:
+    headers = {
+        "Authorization": f"token {access_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    response = requests.get(
+        "https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100",
+        headers=headers,
+    )
+    response.raise_for_status()
+    data = response.json()
+    total_runners = data["total_count"]
+    runners = data["runners"]
+
+    total_pages = int(total_runners / 100 + 1)
+    for i in range(2, total_pages + 1):
+        response = requests.get(
+            f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100",
+            headers=headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+        runners += data["runners"]
+
+    print("Total runners", len(runners))
+    result = []
+    for runner in runners:
+        tags = [tag["name"] for tag in runner["labels"]]
+        desc = RunnerDescription(
+            id=runner["id"],
+            name=runner["name"],
+            tags=tags,
+            offline=runner["status"] == "offline",
+            busy=runner["busy"],
+        )
+        result.append(desc)
+    return result
 
 
 def how_many_instances_to_kill(event_data: dict) -> Dict[str, int]:
@@ -72,67 +125,46 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     return instances_by_zone
 
 
-def main(access_token: str, event: dict) -> Dict[str, List[str]]:
-    start = time.time()
-    print("Got event", json.dumps(event, sort_keys=True).replace("\n", ""))
+def main(
+    github_secret_key: str, github_app_id: int, event: dict
+) -> Dict[str, List[str]]:
+    print("Got event", json.dumps(event, sort_keys=True, indent=4))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
-    # Getting ASG and instances' descriptions from the API
-    # We don't kill instances that alive for less than 10 minutes, since they
-    # could be not in the GH active runners yet
-    print(f"Check other hosts from the same ASG {event['AutoScalingGroupName']}")
-    asg_client = boto3.client("autoscaling")
-    as_groups_response = asg_client.describe_auto_scaling_groups(
-        AutoScalingGroupNames=[event["AutoScalingGroupName"]]
-    )
-    assert len(as_groups_response["AutoScalingGroups"]) == 1
-    asg = as_groups_response["AutoScalingGroups"][0]
-    asg_instance_ids = [instance["InstanceId"] for instance in asg["Instances"]]
-    instance_descriptions = get_cached_instances()
-    # The instances launched less than 10 minutes ago
-    immune_ids = [
-        instance["InstanceId"]
-        for instance in instance_descriptions.values()
-        if start - instance["LaunchTime"].timestamp() < 600
-    ]
-    # if the ASG's instance ID not in instance_descriptions, it's most probably
-    # is not cached yet, so we must mark it as immuned
-    immune_ids.extend(
-        iid for iid in asg_instance_ids if iid not in instance_descriptions
-    )
-    print("Time spent on the requests to AWS: ", time.time() - start)
+
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": github_app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    access_token = get_access_token(encoded_jwt, installation_id)
 
     runners = list_runners(access_token)
-    runner_ids = set(runner.name for runner in runners)
     # We used to delete potential hosts to terminate from GitHub runners pool,
     # but the documentation states:
     # --- Returning an instance first in the response data does not guarantee its termination
     # so they will be cleaned out by ci_runners_metrics_lambda eventually
 
     instances_to_kill = []
-    total_to_kill = 0
     for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
-        total_to_kill += num_to_kill
         if num_to_kill > len(candidates):
             raise Exception(
-                f"Required to kill {num_to_kill}, but have only {len(candidates)}"
-                f" candidates in AV {zone}"
+                f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
             )
 
         delete_for_av = []  # type: RunnerDescriptions
         for candidate in candidates:
-            if candidate in immune_ids:
-                print(
-                    f"Candidate {candidate} started less than 10 minutes ago, won't touch a child"
-                )
-                break
-            if candidate not in runner_ids:
+            if candidate not in set(runner.name for runner in runners):
                 print(
                     f"Candidate {candidate} was not in runners list, simply delete it"
                 )
                 instances_to_kill.append(candidate)
-                break
+
+        for candidate in candidates:
             if len(delete_for_av) + len(instances_to_kill) == num_to_kill:
                 break
             if candidate in instances_to_kill:
@@ -151,33 +183,21 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
 
         if len(delete_for_av) < num_to_kill:
             print(
-                f"Checked all candidates for av {zone}, get to delete "
-                f"{len(delete_for_av)}, but still cannot get required {num_to_kill}"
+                f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}"
             )
 
         instances_to_kill += [runner.name for runner in delete_for_av]
 
-    if len(instances_to_kill) < total_to_kill:
-        for instance in asg_instance_ids:
-            if instance in immune_ids:
-                continue
-            for runner in runners:
-                if runner.name == instance and not runner.busy:
-                    print(f"Runner {runner.name} is not busy and can be deleted")
-                    instances_to_kill.append(runner.name)
-
-            if total_to_kill <= len(instances_to_kill):
-                print("Got enough instances to kill")
-                break
+    print("Got instances to kill: ", ", ".join(instances_to_kill))
 
     response = {"InstanceIDs": instances_to_kill}
-    print("Got instances to kill: ", response)
-    print("Time spent on the request: ", time.time() - start)
+    print(response)
     return response
 
 
 def handler(event: dict, context: Any) -> Dict[str, List[str]]:
-    return main(get_cached_access_token(), event)
+    private_key, app_id = get_key_and_app_from_aws()
+    return main(private_key, app_id, event)
 
 
 if __name__ == "__main__":
@@ -209,8 +229,6 @@ if __name__ == "__main__":
     else:
         with open(args.private_key_path, "r") as key_file:
             private_key = key_file.read()
-
-    token = get_access_token_by_key_app(private_key, args.app_id)
 
     sample_event = {
         "AutoScalingGroupARN": "arn:aws:autoscaling:us-east-1:<account-id>:autoScalingGroup:d4738357-2d40-4038-ae7e-b00ae0227003:autoScalingGroupName/my-asg",
@@ -256,4 +274,4 @@ if __name__ == "__main__":
         "Cause": "SCALE_IN",
     }
 
-    main(token, sample_event)
+    main(private_key, args.app_id, sample_event)

@@ -747,7 +747,7 @@ namespace
       */
     template<typename IntType>
     requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
     {
         const IntType * data_copy_begin_ptr = nullptr;
         size_t offsets_size = offsets.size();
@@ -842,7 +842,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
-        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
+        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
         return res;
     }
 #endif
@@ -910,6 +910,9 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
+
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
@@ -927,11 +930,11 @@ ColumnPtr ColumnVector<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [my_compressed = std::move(compressed), column_size = data_size]
+        [compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

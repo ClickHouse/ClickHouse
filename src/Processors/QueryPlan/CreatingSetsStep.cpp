@@ -1,4 +1,3 @@
-#include <exception>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -22,6 +21,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -61,7 +61,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         settings.out << "Set: ";
 
     settings.out << description << '\n';
@@ -69,7 +69,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         map.add("Set", description);
 }
 
@@ -134,11 +134,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     for (auto & [description, subquery_for_set] : subqueries_for_sets)
     {
         if (!subquery_for_set.hasSource())
-        {
-            subquery_for_set.promise_to_fill_set.set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::LOGICAL_ERROR, "Subquery for set {} has no source", subquery_for_set.key)));
             continue;
-        }
 
         auto plan = subquery_for_set.detachSource();
 

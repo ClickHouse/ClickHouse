@@ -14,7 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
 }
 
@@ -186,7 +186,7 @@ void ArrayJoinAction::execute(Block & block)
 
                 const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
                 if (!is_unaligned && !array.hasEqualOffsets(*any_array))
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
 
                 current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
                 current.type = type->getNestedType();

@@ -10,7 +10,6 @@
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -103,12 +102,6 @@ void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
     buf->setSubBuffer(in_);
 }
 
-void CSVRowInputFormat::resetParser()
-{
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
-}
-
 static void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
@@ -153,9 +146,7 @@ void CSVFormatReader::skipFieldDelimiter()
 template <bool read_string>
 String CSVFormatReader::readCSVFieldIntoString()
 {
-    if (format_settings.csv.trim_whitespaces) [[likely]]
-        skipWhitespacesAndTabs(*buf);
-
+    skipWhitespacesAndTabs(*buf);
     String field;
     if constexpr (read_string)
         readCSVString(field, *buf, format_settings.csv);
@@ -203,6 +194,7 @@ void CSVFormatReader::skipHeaderRow()
 template <bool is_header>
 std::vector<String> CSVFormatReader::readRowImpl()
 {
+
     std::vector<String> fields;
     do
     {
@@ -282,8 +274,7 @@ bool CSVFormatReader::readField(
     bool is_last_file_column,
     const String & /*column_name*/)
 {
-    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
-        skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');

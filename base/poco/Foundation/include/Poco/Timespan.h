@@ -67,7 +67,19 @@ public:
     void swap(Timespan & timespan);
     /// Swaps the Timespan with another one.
 
-    auto operator<=>(const Timespan & ts) const = default;
+    bool operator==(const Timespan & ts) const;
+    bool operator!=(const Timespan & ts) const;
+    bool operator>(const Timespan & ts) const;
+    bool operator>=(const Timespan & ts) const;
+    bool operator<(const Timespan & ts) const;
+    bool operator<=(const Timespan & ts) const;
+
+    bool operator==(TimeDiff microSeconds) const;
+    bool operator!=(TimeDiff microSeconds) const;
+    bool operator>(TimeDiff microSeconds) const;
+    bool operator>=(TimeDiff microSeconds) const;
+    bool operator<(TimeDiff microSeconds) const;
+    bool operator<=(TimeDiff microSeconds) const;
 
     Timespan operator+(const Timespan & d) const;
     Timespan operator-(const Timespan & d) const;
@@ -200,6 +212,78 @@ inline int Timespan::useconds() const
 inline Timespan::TimeDiff Timespan::totalMicroseconds() const
 {
     return _span;
+}
+
+
+inline bool Timespan::operator==(const Timespan & ts) const
+{
+    return _span == ts._span;
+}
+
+
+inline bool Timespan::operator!=(const Timespan & ts) const
+{
+    return _span != ts._span;
+}
+
+
+inline bool Timespan::operator>(const Timespan & ts) const
+{
+    return _span > ts._span;
+}
+
+
+inline bool Timespan::operator>=(const Timespan & ts) const
+{
+    return _span >= ts._span;
+}
+
+
+inline bool Timespan::operator<(const Timespan & ts) const
+{
+    return _span < ts._span;
+}
+
+
+inline bool Timespan::operator<=(const Timespan & ts) const
+{
+    return _span <= ts._span;
+}
+
+
+inline bool Timespan::operator==(TimeDiff microSeconds) const
+{
+    return _span == microSeconds;
+}
+
+
+inline bool Timespan::operator!=(TimeDiff microSeconds) const
+{
+    return _span != microSeconds;
+}
+
+
+inline bool Timespan::operator>(TimeDiff microSeconds) const
+{
+    return _span > microSeconds;
+}
+
+
+inline bool Timespan::operator>=(TimeDiff microSeconds) const
+{
+    return _span >= microSeconds;
+}
+
+
+inline bool Timespan::operator<(TimeDiff microSeconds) const
+{
+    return _span < microSeconds;
+}
+
+
+inline bool Timespan::operator<=(TimeDiff microSeconds) const
+{
+    return _span <= microSeconds;
 }
 
 

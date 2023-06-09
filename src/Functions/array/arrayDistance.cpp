@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -356,7 +356,7 @@ private:
             {
                 ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
                 throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[row] - prev_offset,
@@ -423,7 +423,7 @@ private:
             if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
                 throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[0],

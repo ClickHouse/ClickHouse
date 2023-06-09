@@ -25,13 +25,6 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
-void CurrentThread::updatePerformanceCountersIfNeeded()
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->updatePerformanceCountersIfNeeded();
-}
-
 bool CurrentThread::isInitialized()
 {
     return current_thread;
@@ -64,23 +57,6 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
-{
-    /// NOTE: this method could be called at early server startup stage
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    return current_thread->getInternalTextLogsQueue();
-}
-
-InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    return current_thread->getInternalProfileEventsQueue();
-}
-
 void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                                 LogsLevel client_logs_level)
 {
@@ -89,40 +65,49 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
+void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->setFatalErrorCallback(callback);
+}
 
-ThreadGroupPtr CurrentThread::getGroup()
+std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
+{
+    /// NOTE: this method could be called at early server startup stage
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
+        return nullptr;
+
+    return current_thread->getInternalTextLogsQueue();
+}
+
+void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachInternalProfileEventsQueue(queue);
+}
+
+InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
+        return nullptr;
+
+    return current_thread->getInternalProfileEventsQueue();
+}
+
+ThreadGroupStatusPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;
 
     return current_thread->getThreadGroup();
-}
-
-std::string_view CurrentThread::getQueryId()
-{
-    if (unlikely(!current_thread))
-        return {};
-
-    return current_thread->getQueryId();
-}
-
-MemoryTracker * CurrentThread::getUserMemoryTracker()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    auto * tracker = current_thread->memory_tracker.getParent();
-    while (tracker && tracker->level != VariableContext::User)
-        tracker = tracker->getParent();
-
-    return tracker;
-}
-
-void CurrentThread::flushUntrackedMemory()
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->flushUntrackedMemory();
 }
 
 }

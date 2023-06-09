@@ -43,8 +43,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-
 
 namespace DB
 {
@@ -53,7 +51,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -63,7 +60,6 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : IStorage(table_id_)
@@ -74,36 +70,12 @@ StoragePostgreSQL::StoragePostgreSQL(
     , log(&Poco::Logger::get("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = getTableStructureFromData(pool, remote_table_name, remote_table_schema, context_);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
-ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
-    const postgres::PoolWithFailoverPtr & pool_,
-    const String & table,
-    const String & schema,
-    const ContextPtr & context_)
-{
-    const bool use_nulls = context_->getSettingsRef().external_table_functions_use_nulls;
-    auto connection_holder = pool_->get();
-    auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), table, schema, use_nulls).physical_columns;
-
-    if (!columns_info)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
-
-    return ColumnsDescription{columns_info->columns};
-}
 
 Pipe StoragePostgreSQL::read(
     const Names & column_names_,
@@ -119,9 +91,7 @@ Pipe StoragePostgreSQL::read(
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_,
-        column_names_,
-        storage_snapshot->metadata->getColumns().getOrdinary(),
+        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
@@ -225,7 +195,7 @@ public:
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
     /// any dimension number array into text format, because it encloses in '[]' and for postgres it must be '{}'.
     /// Check if array[...] syntax from PostgreSQL will be applicable.
-    static void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
+    void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
         const auto & nested = array_type->getNestedType();
@@ -233,7 +203,7 @@ public:
 
         if (!isArray(nested))
         {
-            parseArrayContent(array, data_type, ostr);
+            writeText(clickhouseToPostgresArray(array, data_type), ostr);
             return;
         }
 
@@ -247,7 +217,7 @@ public:
 
             if (!isArray(nested_array_type->getNestedType()))
             {
-                parseArrayContent(iter->get<Array>(), nested, ostr);
+                writeText(clickhouseToPostgresArray(iter->get<Array>(), nested), ostr);
             }
             else
             {
@@ -260,36 +230,17 @@ public:
 
     /// Conversion is done via column casting because with writeText(Array..) got incorrect conversion
     /// of Date and DateTime data types and it added extra quotes for values inside array.
-    static void parseArrayContent(const Array & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
+    static std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
     {
-        auto nested_type = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-        auto array_column = ColumnArray::create(createNested(nested_type));
+        auto nested = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
+        auto array_column = ColumnArray::create(createNested(nested));
         array_column->insert(array_field);
+        WriteBufferFromOwnString ostr;
+        data_type->getDefaultSerialization()->serializeText(*array_column, 0, ostr, FormatSettings{});
 
-        const IColumn & nested_column = array_column->getData();
-        const auto serialization = nested_type->getDefaultSerialization();
-
-        FormatSettings settings;
-        settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
-
-        if (nested_type->isNullable())
-            nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
-
-        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
-        const bool quoted = !isUUID(nested_type);
-
-        writeChar('{', ostr);
-        for (size_t i = 0, size = array_field.size(); i < size; ++i)
-        {
-            if (i != 0)
-                writeChar(',', ostr);
-
-            if (quoted)
-                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
-            else
-                serialization->serializeText(nested_column, i, ostr, settings);
-        }
-        writeChar('}', ostr);
+        /// ostr is guaranteed to be at least '[]', i.e. size is at least 2 and 2 only if ostr.str() == '[]'
+        assert(ostr.str().size() >= 2);
+        return '{' + std::string(ostr.str().begin() + 1, ostr.str().end() - 1) + '}';
     }
 
     static MutableColumnPtr createNested(DataTypePtr nested)
@@ -314,7 +265,6 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
-        else if (which.isUUID())                         nested_column = ColumnUUID::create();
         else if (which.isDateTime64())
         {
             nested_column = ColumnDecimal<DateTime64>::create(0, 6);
@@ -393,7 +343,6 @@ private:
         PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
                        const ColumnsWithTypeAndName & columns, const String & on_conflict_)
             : Inserter(connection_)
-            , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
             buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
@@ -406,14 +355,12 @@ private:
             }
             buf << ") ";
             buf << on_conflict_;
-            connection.prepare(statement_name, buf.str());
-            prepared = true;
+            connection.prepare("insert", buf.str());
         }
 
         void complete() override
         {
-            connection.unprepare(statement_name);
-            prepared = false;
+            connection.unprepare("insert");
             tx.commit();
         }
 
@@ -422,24 +369,8 @@ private:
             pqxx::params params;
             params.reserve(row.size());
             params.append_multi(row);
-            tx.exec_prepared(statement_name, params);
+            tx.exec_prepared("insert", params);
         }
-
-        ~PreparedInsert() override
-        {
-            try
-            {
-                if (prepared)
-                    connection.unprepare(statement_name);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        const String statement_name;
-        bool prepared = false;
     };
 
     StorageMetadataPtr metadata_snapshot;
@@ -451,46 +382,36 @@ private:
 
 
 SinkToStoragePtr StoragePostgreSQL::write(
-        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
-{
-    StoragePostgreSQL::Configuration configuration;
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
-    if (require_table)
-        required_arguments.insert("table");
-
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
-
-    configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
-    if (configuration.addresses_expr.empty())
-    {
-        configuration.host = named_collection.getAny<String>({"host", "hostname"});
-        configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
-        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-    }
-
-    configuration.username = named_collection.getAny<String>({"username", "user"});
-    configuration.password = named_collection.get<String>("password");
-    configuration.database = named_collection.getAny<String>({"db", "database"});
-    if (require_table)
-        configuration.table = named_collection.get<String>("table");
-    configuration.schema = named_collection.getOrDefault<String>("schema", "");
-    configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
-
-    return configuration;
-}
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
+        validateNamedCollection(
+            *named_collection,
+            {"user", "password", "database", "table"},
+            {"schema", "on_conflict", "addresses_expr", "host", "port"});
+
+        configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
+        if (configuration.addresses_expr.empty())
+        {
+            configuration.host = named_collection->get<String>("host");
+            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+        }
+
+        configuration.username = named_collection->get<String>("user");
+        configuration.password = named_collection->get<String>("password");
+        configuration.database = named_collection->get<String>("database");
+        configuration.table = named_collection->get<String>("table");
+        configuration.schema = named_collection->getOrDefault<String>("schema", "");
+        configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
     }
     else
     {
@@ -507,10 +428,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;
@@ -552,12 +473,10 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.getContext(),
             configuration.schema,
             configuration.on_conflict);
     },
     {
-        .supports_schema_inference = true,
         .source_access_type = AccessType::POSTGRES,
     });
 }

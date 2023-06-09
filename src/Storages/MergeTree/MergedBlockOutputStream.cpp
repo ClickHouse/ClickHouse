@@ -2,7 +2,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -119,11 +118,21 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("MergedBlockOutputStream");
+    }
+}
+
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
-
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
@@ -166,7 +175,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
-        new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+        new_part->setColumns(part_columns, serialization_infos);
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
@@ -276,14 +285,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
         new_part->getColumns().writeText(*out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
-    }
-
-    {
-        /// Write a file with a description of columns.
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
-        DB::writeIntText(new_part->getMetadataVersion(), *out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }

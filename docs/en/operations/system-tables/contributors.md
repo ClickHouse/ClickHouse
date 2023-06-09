@@ -7,7 +7,7 @@ Contains information about contributors. The order is random at query execution 
 
 Columns:
 
-- `name` (String) — Contributor (author) name from git log.
+-   `name` (String) — Contributor (author) name from git log.
 
 **Example**
 

@@ -8,9 +8,8 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 包含已执行查询的相关信息，例如：开始时间、处理持续时间、错误消息。
 
-:::note
-此表不包含以下内容的摄取数据 `INSERT` 查询。
-:::
+!!! note "注"
+    此表不包含以下内容的摄取数据 `INSERT` 查询。
 
 您可以更改query_log的设置，在服务器配置的 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 部分。
 

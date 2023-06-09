@@ -11,13 +11,12 @@ from termcolor import colored
 import sys
 
 COLORMAP = {
-    "success": colored("success", "green"),
-    "failure": colored("failure", "red"),
-    "error": colored("error", "red"),
-    "pending": colored("pending", "yellow"),
-    "not run": colored("not run", "white"),
+    "success": colored("success", 'green'),
+    "failure": colored("failure", 'red'),
+    "error": colored("error", 'red'),
+    "pending": colored("pending", 'yellow'),
+    "not run": colored("not run", 'white'),
 }
-
 
 def _filter_statuses(statuses):
     """
@@ -70,7 +69,7 @@ if __name__ == "__main__":
     date_since = datetime.datetime.strptime(args.since, "%Y-%m-%d %H:%M:%S")
 
     gh = Github(args.token)
-    repo = gh.get_repo("ClickHouse/ClickHouse")
+    repo = gh.get_repo('ClickHouse/ClickHouse')
     commits = get_commits(repo, date_since)
 
     longest_header = []
@@ -102,6 +101,6 @@ if __name__ == "__main__":
         result_data.append(current_result)
 
     if sys.stdout.isatty():
-        longest_header = [colored(h, "white", attrs=["bold"]) for h in longest_header]
+        longest_header = [colored(h, 'white', attrs=['bold']) for h in longest_header]
 
     print(tabulate.tabulate(result_data, headers=longest_header, tablefmt="grid"))

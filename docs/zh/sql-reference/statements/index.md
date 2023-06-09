@@ -10,7 +10,7 @@ sidebar_position: 31
 
 -   [SELECT](../../sql-reference/statements/select/index.md)
 -   [INSERT INTO](../../sql-reference/statements/insert-into.md)
--   [CREATE](../../sql-reference/statements/create.md)
+-   [CREATE](../../sql-reference/statements/create/index.md)
 -   [ALTER](../../sql-reference/statements/alter/index.md)
 -   [SYSTEM](../../sql-reference/statements/system.md)
 -   [SHOW](../../sql-reference/statements/show.md)
@@ -20,7 +20,7 @@ sidebar_position: 31
 -   [CHECK TABLE](../../sql-reference/statements/check-table.mdx)
 -   [DESCRIBE TABLE](../../sql-reference/statements/describe-table.mdx)
 -   [DETACH](../../sql-reference/statements/detach.mdx)
--   [DROP](../../sql-reference/statements/drop.md)
+-   [DROP](../../sql-reference/statements/drop)
 -   [EXISTS](../../sql-reference/statements/exists.md)
 -   [KILL](../../sql-reference/statements/kill.mdx)
 -   [OPTIMIZE](../../sql-reference/statements/optimize.mdx)

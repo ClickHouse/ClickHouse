@@ -266,9 +266,8 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 执行时 `INSERT` 查询时，将省略的输入列值替换为相应列的默认值。 此选项仅适用于 [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) 和 [TabSeparated](../../interfaces/formats.md#tabseparated) 格式。
 
-:::note
-启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
-:::
+!!! note "注"
+    启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
 
 可能的值:
 

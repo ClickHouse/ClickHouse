@@ -1,6 +1,5 @@
 #include <Analyzer/LambdaNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -10,10 +9,9 @@
 namespace DB
 {
 
-LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_)
+LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_)
     : IQueryTreeNode(children_size)
     , argument_names(std::move(argument_names_))
-    , result_type(std::move(result_type_))
 {
     auto arguments_list_node = std::make_shared<ListNode>();
     auto & nodes = arguments_list_node->getNodes();
@@ -64,20 +62,20 @@ void LambdaNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const
 {
-    return std::make_shared<LambdaNode>(argument_names, getExpression(), result_type);
+    return std::make_shared<LambdaNode>(argument_names, getExpression());
 }
 
-ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr LambdaNode::toASTImpl() const
 {
     auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
 
     auto tuple_function = std::make_shared<ASTFunction>();
     tuple_function->name = "tuple";
-    tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
+    tuple_function->children.push_back(children[arguments_child_index]->toAST());
     tuple_function->arguments = tuple_function->children.back();
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
-    lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
+    lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST());
 
     auto lambda_function_ast = std::make_shared<ASTFunction>();
     lambda_function_ast->name = "lambda";

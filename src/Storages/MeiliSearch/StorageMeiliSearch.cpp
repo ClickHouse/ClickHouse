@@ -18,7 +18,6 @@
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
 
 namespace DB
 {
@@ -38,25 +37,10 @@ StorageMeiliSearch::StorageMeiliSearch(
     : IStorage(table_id), config{config_}, log(&Poco::Logger::get("StorageMeiliSearch (" + table_id.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = getTableStructureFromData(config);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-}
-
-ColumnsDescription StorageMeiliSearch::getTableStructureFromData(const MeiliSearchConfiguration & config_)
-{
-    MeiliSearchColumnDescriptionFetcher fetcher(config_);
-    fetcher.addParam(doubleQuoteString("limit"), "1");
-    return fetcher.fetchColumnsDescription();
 }
 
 String convertASTtoStr(ASTPtr ptr)
@@ -115,7 +99,7 @@ Pipe StorageMeiliSearch::read(
         for (const auto & el : query_params->children)
         {
             auto str = el->getColumnName();
-            auto it = std::find(str.begin(), str.end(), '=');
+            auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
                 throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 
@@ -137,7 +121,7 @@ Pipe StorageMeiliSearch::read(
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, route, kv_pairs_params));
 }
 
-SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     LOG_TRACE(log, "Trying update index: {}", config.index);
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
@@ -145,7 +129,7 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
         validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
@@ -191,7 +175,6 @@ void registerStorageMeiliSearch(StorageFactory & factory)
             return std::make_shared<StorageMeiliSearch>(args.table_id, config, args.columns, args.constraints, args.comment);
         },
         {
-            .supports_schema_inference = true,
             .source_access_type = AccessType::MEILISEARCH,
         });
 }

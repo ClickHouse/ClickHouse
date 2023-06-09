@@ -132,9 +132,6 @@ function run_tests()
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    clickhouse-test "00001_select_1" > /dev/null ||:
-    clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')" ||:
-
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
         --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
@@ -173,7 +170,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 fi
 
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
-rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compress tables.

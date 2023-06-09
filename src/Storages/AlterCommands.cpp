@@ -719,7 +719,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
-    /// Unwrap some nested and check for valid conversions
+    /// Unwrap some nested and check for valid conevrsions
     while (true)
     {
         /// types are equal, obviously pure metadata alter
@@ -749,9 +749,10 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
+        if (nullable_to)
         {
-            from = nullable_from->getNestedType().get();
+            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
+            from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -1090,11 +1091,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                              "in a single ALTER query", backQuote(column_name));
 
             if (command.codec)
-            {
-                if (all_columns.hasAlias(column_name))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
-            }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1119,20 +1116,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
                         backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
-            }
-
-            /// The change of data type to/from Object is broken, so disable it for now
-            if (command.data_type)
-            {
-                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
-                const auto old_data_type = all_columns.getColumn(options, column_name).type;
-
-                if (command.data_type->getName().contains("Object")
-                    || old_data_type->getName().contains("Object"))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed",
-                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
             if (command.isRemovingProperty())

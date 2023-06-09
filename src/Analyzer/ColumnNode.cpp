@@ -91,12 +91,12 @@ QueryTreeNodePtr ColumnNode::cloneImpl() const
     return std::make_shared<ColumnNode>(column, getSourceWeakPointer());
 }
 
-ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr ColumnNode::toASTImpl() const
 {
     std::vector<std::string> column_identifier_parts;
 
     auto column_source = getColumnSourceOrNull();
-    if (column_source && options.fully_qualified_identifiers)
+    if (column_source)
     {
         auto node_type = column_source->getNodeType();
         if (node_type == QueryTreeNodeType::TABLE ||
@@ -110,18 +110,8 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
             }
             else if (auto * table_node = column_source->as<TableNode>())
             {
-                if (!table_node->getTemporaryTableName().empty())
-                {
-                    column_identifier_parts = { table_node->getTemporaryTableName() };
-                }
-                else
-                {
-                    const auto & table_storage_id = table_node->getStorageID();
-                    if (table_storage_id.hasDatabase() && options.qualify_indentifiers_with_database)
-                        column_identifier_parts = { table_storage_id.getDatabaseName(), table_storage_id.getTableName() };
-                    else
-                        column_identifier_parts = { table_storage_id.getTableName() };
-                }
+                const auto & table_storage_id = table_node->getStorageID();
+                column_identifier_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
             }
         }
     }

@@ -32,6 +32,7 @@ ORDER BY name, column;
 
 
 SET mutations_sync = 0;
+SET allow_experimental_lightweight_delete = 1;
 
 -- delete some rows using LWD
 DELETE FROM lwd_test WHERE (id % 3) = 0;

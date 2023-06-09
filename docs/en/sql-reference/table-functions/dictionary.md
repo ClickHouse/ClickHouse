@@ -1,11 +1,11 @@
 ---
 slug: /en/sql-reference/table-functions/dictionary
 sidebar_position: 54
-sidebar_label: dictionary
+sidebar_label: dictionary function
 title: dictionary
 ---
 
-Displays the [dictionary](../../sql-reference/dictionaries/index.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
+Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 
 **Syntax**
 
@@ -15,7 +15,7 @@ dictionary('dict')
 
 **Arguments**
 
-- `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
+-   `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -56,4 +56,4 @@ Result:
 
 **See Also**
 
-- [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
+-   [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)

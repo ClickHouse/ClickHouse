@@ -3,8 +3,8 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
-#include <map>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -58,7 +58,6 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    BackupPtr getBaseBackup() const override { return base_backup; }
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
     size_t getNumEntries() const override;
@@ -74,24 +73,23 @@ public:
     UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
-    void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
+    BackupEntryPtr readFile(const String & file_name) const override;
+    BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const override;
+    void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
-    bool supportsWritingInMultipleThreads() const override { return !use_archive; }
+    bool supportsWritingInMultipleThreads() const override { return !use_archives; }
 
 private:
+    using FileInfo = IBackupCoordination::FileInfo;
+    class BackupEntryFromBackupImpl;
+
     void open(const ContextPtr & context);
     void close();
-
-    void openArchive();
-    void closeArchive();
+    void closeArchives();
 
     /// Writes the file ".backup" containing backup's metadata.
-    void writeBackupMetadata() TSA_REQUIRES(mutex);
-    void readBackupMetadata() TSA_REQUIRES(mutex);
+    void writeBackupMetadata();
+    void readBackupMetadata();
 
     /// Checks that a new backup doesn't exist yet.
     void checkBackupDoesntExist() const;
@@ -104,14 +102,16 @@ private:
 
     void removeAllFilesAfterFailure();
 
+    String getArchiveNameWithSuffix(const String & suffix) const;
+    std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
+    std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
+
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
-
     const String backup_name_for_logging;
-    const bool use_archive;
     const ArchiveParams archive_params;
+    const bool use_archives;
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
@@ -119,11 +119,6 @@ private:
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
-
     std::optional<UUID> uuid;
     time_t timestamp = 0;
     size_t num_files = 0;
@@ -138,10 +133,10 @@ private:
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
-    std::shared_ptr<IArchiveReader> archive_reader;
-    std::shared_ptr<IArchiveWriter> archive_writer;
+    mutable std::unordered_map<String /* archive_suffix */, std::shared_ptr<IArchiveReader>> archive_readers;
+    std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
+    String current_archive_suffix;
     String lock_file_name;
-
     bool writing_finalized = false;
     bool deduplicate_files = true;
     const Poco::Logger * log;

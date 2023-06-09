@@ -8,7 +8,6 @@
 
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/ComparisonTupleEliminationVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
@@ -452,14 +451,10 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 
 /// Replacing scalar subqueries with constant values.
 void executeScalarSubqueries(
-    ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze, bool is_create_parameterized_view)
+    ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{
-        WithContext{context}, subquery_depth, scalars,
-        local_scalars, only_analyze, is_create_parameterized_view,
-        /*replace_only_to_literals=*/ false, /*max_literal_size=*/ std::nullopt};
-
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, local_scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -1226,7 +1221,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze, select_options.is_create_parameterized_view);
+    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1343,7 +1338,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1431,13 +1426,6 @@ void TreeRewriter::normalize(
     /// compatibility.
     if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
-
-    if (settings.optimize_move_to_prewhere)
-    {
-        /// Required for PREWHERE
-        ComparisonTupleEliminationVisitor::Data data_comparison_tuple_elimination;
-        ComparisonTupleEliminationVisitor(data_comparison_tuple_elimination).visit(query);
-    }
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);

@@ -450,14 +450,11 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
     {
         const auto & rhs_sparse = assert_cast<const ColumnSparse &>(rhs);
         PaddedPODArray<Int8> nested_result;
-        values->compareColumn(
-            rhs_sparse.getValuesColumn(),
-            rhs_sparse.getValueIndex(rhs_row_num),
+        values->compareColumn(rhs_sparse.getValuesColumn(), rhs_sparse.getValueIndex(rhs_row_num),
             nullptr, nested_result, direction, nan_direction_hint);
 
         const auto & offsets_data = getOffsetsData();
-        compare_results.resize(size());
-        std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
+        compare_results.resize_fill(_size, nested_result[0]);
         for (size_t i = 0; i < offsets_data.size(); ++i)
             compare_results[offsets_data[i]] = nested_result[i + 1];
     }
@@ -473,7 +470,7 @@ int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 
 bool ColumnSparse::hasEqualValues() const
 {
-    size_t num_defaults = getNumberOfDefaultRows();
+    size_t num_defaults = getNumberOfDefaults();
     if (num_defaults == _size)
         return true;
 
@@ -515,7 +512,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
     else
         values->getPermutation(direction, stability, limit + 1, null_direction_hint, perm);
 
-    size_t num_of_defaults = getNumberOfDefaultRows();
+    size_t num_of_defaults = getNumberOfDefaults();
     size_t row = 0;
 
     const auto & offsets_data = getOffsetsData();
@@ -680,7 +677,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    if (getNumberOfDefaultRows() == 0)
+    if (getNumberOfDefaults() == 0)
     {
         size_t min_idx = 1;
         size_t max_idx = 1;
@@ -712,12 +709,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
-}
-
-UInt64 ColumnSparse::getNumberOfDefaultRows() const
-{
-    return _size - offsets->size();
+    return static_cast<double>(getNumberOfDefaults()) / _size;
 }
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
@@ -738,9 +730,9 @@ ColumnPtr ColumnSparse::compress() const
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_values_compressed = std::move(values_compressed), my_offsets_compressed = std::move(offsets_compressed), size = size()]
+        [values_compressed = std::move(values_compressed), offsets_compressed = std::move(offsets_compressed), size = size()]
         {
-            return ColumnSparse::create(my_values_compressed->decompress(), my_offsets_compressed->decompress(), size);
+            return ColumnSparse::create(values_compressed->decompress(), offsets_compressed->decompress(), size);
         });
 }
 

@@ -17,6 +17,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = false, /// TODO: it seem to actually be true. Check it later.
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -27,17 +28,9 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-FillingStep::FillingStep(
-    const DataStream & input_stream_,
-    SortDescription sort_description_,
-    SortDescription fill_description_,
-    InterpolateDescriptionPtr interpolate_description_,
-    bool use_with_fill_by_sorting_prefix_)
+FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_, InterpolateDescriptionPtr interpolate_description_)
     : ITransformingStep(input_stream_, FillingTransform::transformHeader(input_stream_.header, sort_description_), getTraits())
-    , sort_description(std::move(sort_description_))
-    , fill_description(std::move(fill_description_))
-    , interpolate_description(interpolate_description_)
-    , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
+    , sort_description(std::move(sort_description_)), interpolate_description(interpolate_description_)
 {
     if (!input_stream_.has_single_port)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
@@ -47,11 +40,8 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return std::make_shared<FillingNoopTransform>(header, fill_description);
-
-        return std::make_shared<FillingTransform>(
-            header, sort_description, fill_description, std::move(interpolate_description), use_with_fill_by_sorting_prefix);
+        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        return std::make_shared<FillingTransform>(header, sort_description, std::move(interpolate_description), on_totals);
     });
 }
 

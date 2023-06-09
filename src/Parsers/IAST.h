@@ -200,16 +200,15 @@ public:
         // Newline or whitespace.
         char nl_or_ws;
 
-        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool show_secrets_ = true)
-            : ostr(ostr_), one_line(one_line_), show_secrets(show_secrets_)
+        FormatSettings(WriteBuffer & ostr_, bool one_line_)
+            : ostr(ostr_), one_line(one_line_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
-            show_secrets(other.show_secrets)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -251,26 +250,12 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
-    // Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
-    // You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
-    String formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const;
+    // A simple way to add some user-readable context to an error message.
+    String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true) const;
+    String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true); }
+    String formatForErrorMessage() const { return formatWithSecretsHidden(0, true); }
 
-    /*
-     * formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
-     * behaviour is due to the fact such functions are called from Client which knows nothing about
-     * access rights and settings. Moreover, the only use case for displaying secrets are backups,
-     * and backup tools use only direct input and ignore logs and error messages.
-     */
-    String formatForLogging(size_t max_length = 0) const
-    {
-        return formatWithPossiblyHidingSensitiveData(max_length, true, false);
-    }
-
-    String formatForErrorMessage() const
-    {
-        return formatWithPossiblyHidingSensitiveData(0, true, false);
-    }
-
+    /// If an AST has secret parts then formatForLogging() will replace them with the placeholder '[HIDDEN]'.
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
     void cloneChildren();
@@ -283,7 +268,6 @@ public:
         Delete,
         Create,
         Drop,
-        Undrop,
         Rename,
         Optimize,
         Check,

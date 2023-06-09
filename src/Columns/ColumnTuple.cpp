@@ -552,22 +552,17 @@ ColumnPtr ColumnTuple::compress() const
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_compressed = std::move(compressed)]() mutable
+        [compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
+            for (auto & column : compressed)
                 column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            return ColumnTuple::create(compressed);
         });
 }
 
 double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 {
     return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
-}
-
-UInt64 ColumnTuple::getNumberOfDefaultRows() const
-{
-    return getNumberOfDefaultRowsImpl<ColumnTuple>();
 }
 
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const

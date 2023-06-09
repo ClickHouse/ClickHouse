@@ -78,7 +78,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -188,11 +187,6 @@ namespace
     };
 
     using ReplaceFunctionNowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowData>, true>;
-
-    inline UInt32 now()
-    {
-        return static_cast<UInt32>(Poco::Timestamp().epochMicroseconds() / 1000000);
-    }
 
     class ToIdentifierMatcher
     {
@@ -730,12 +724,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 
     if (!is_time_column_func_now)
     {
-        auto query_ = select_query->clone();
+        auto query = select_query->clone();
         DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query_);
+        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query);
 
         WindowFunctionMatcher::Data query_info_data;
-        WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
+        WindowFunctionMatcher::Visitor(query_info_data).visit(query);
 
         auto order_by = std::make_shared<ASTExpressionList>();
         auto order_by_elem = std::make_shared<ASTOrderByElement>();
@@ -754,12 +748,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     return select_with_union_query;
 }
 
-ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id_)
+ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id)
 {
     /// We will create a query to create an internal table.
     auto inner_create_query = std::make_shared<ASTCreateQuery>();
-    inner_create_query->setDatabase(inner_table_id_.getDatabaseName());
-    inner_create_query->setTable(inner_table_id_.getTableName());
+    inner_create_query->setDatabase(inner_table_id.getDatabaseName());
+    inner_create_query->setTable(inner_table_id.getTableName());
 
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
@@ -1025,7 +1019,7 @@ void StorageWindowView::threadFuncFireProc()
 
     std::lock_guard lock(fire_signal_mutex);
     /// TODO: consider using time_t instead (for every timestamp in this class)
-    UInt32 timestamp_now = now();
+    UInt32 timestamp_now = static_cast<UInt32>(std::time(nullptr));
 
     while (next_fire_signal <= timestamp_now)
     {
@@ -1164,10 +1158,6 @@ StorageWindowView::StorageWindowView(
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Experimental WINDOW VIEW feature is not supported with new infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
-
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -1200,7 +1190,7 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(now());
+        next_fire_signal = getWindowUpperBound(static_cast<UInt32>(std::time(nullptr)));
 
     std::exchange(has_inner_table, true);
     if (!attach_)
@@ -1213,7 +1203,7 @@ StorageWindowView::StorageWindowView(
         if (has_inner_target_table)
         {
             /// create inner target table
-            auto create_context_ = Context::createCopy(context_);
+            auto create_context = Context::createCopy(context_);
             auto target_create_query = std::make_shared<ASTCreateQuery>();
             target_create_query->setDatabase(table_id_.database_name);
             target_create_query->setTable(generateTargetTableName(table_id_));
@@ -1224,9 +1214,9 @@ StorageWindowView::StorageWindowView(
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, query.storage->ptr());
 
-            InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
-            create_interpreter_.setInternal(true);
-            create_interpreter_.execute();
+            InterpreterCreateQuery create_interpreter(target_create_query, create_context);
+            create_interpreter.setInternal(true);
+            create_interpreter.execute();
         }
     }
 
@@ -1469,7 +1459,7 @@ void StorageWindowView::writeIntoWindowView(
                 column.type = std::make_shared<DataTypeDateTime>();
             else
                 column.type = std::make_shared<DataTypeDateTime>(timezone);
-            column.column = column.type->createColumnConst(0, Field(now()));
+            column.column = column.type->createColumnConst(0, Field(std::time(nullptr)));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
@@ -1549,7 +1539,7 @@ void StorageWindowView::writeIntoWindowView(
     auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
+    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
     output->addTableLock(lock);
 
     if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))
@@ -1614,7 +1604,7 @@ void StorageWindowView::drop()
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
     /// because otherwise will be a deadlock.
-    dropInnerTableIfAny(false, getContext());
+    dropInnerTableIfAny(true, getContext());
 }
 
 void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
@@ -1628,7 +1618,7 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync, /* ignore_sync_setting */ true);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {

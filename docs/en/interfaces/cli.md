@@ -119,7 +119,7 @@ When processing a query, the client shows:
 1.  Progress, which is updated no more than 10 times per second (by default). For quick queries, the progress might not have time to be displayed.
 2.  The formatted query after parsing, for debugging.
 3.  The result in the specified format.
-4.  The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
+4.  The number of lines in the result, the time passed, and the average speed of query processing.
 
 You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press Ctrl+C a second time, the client will exit.
 
@@ -148,8 +148,8 @@ Format a query as usual, then place the values that you want to pass from the ap
 {<name>:<data type>}
 ```
 
-- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
-- `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as a parameter, in that case you would need to use `Identifier` as a data type.
+-   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+-   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as a parameter, in that case you would need to use `Identifier` as a data type.
 
 #### Example {#example}
 
@@ -162,37 +162,37 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 
-- From the Command Line
+-   From the Command Line
 
     Command-line options override the default values and settings in configuration files.
 
-- Configuration files.
+-   Configuration files.
 
     Settings in the configuration files override the default values.
 
 ### Command Line Options {#command-line-options}
 
-- `--host, -h` – The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
-- `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
-- `--user, -u` – The username. Default value: default.
-- `--password` – The password. Default value: empty string.
-- `--ask-password` - Prompt the user to enter a password.
-- `--query, -q` – The query to process when using non-interactive mode. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` – file path with queries to execute. Cannot be used simultaneously with `--query`.
-- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
-- `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
-- `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
-- `--format, -f` – Use the specified default format to output the result.
-- `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
-- `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
-- `--stacktrace` – If specified, also print the stack trace if an exception occurs.
-- `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
-- `--history_file` — Path to a file containing command history.
-- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
-- `--hardware-utilization` — Print hardware utilization information in progress bar.
-- `--print-profile-events` – Print `ProfileEvents` packets.
-- `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
+-   `--host, -h` – The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
+-   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
+-   `--user, -u` – The username. Default value: default.
+-   `--password` – The password. Default value: empty string.
+-   `--ask-password` - Prompt the user to enter a password.
+-   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
+-   `--queries-file` – file path with queries to execute. You must specify either `query` or `queries-file` option.
+-   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
+-   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
+-   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
+-   `--format, -f` – Use the specified default format to output the result.
+-   `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+-   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
+-   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
+-   `--config-file` – The name of the configuration file.
+-   `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+-   `--history_file` — Path to a file containing command history.
+-   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+-   `--hardware-utilization` — Print hardware utilization information in progress bar.
+-   `--print-profile-events` – Print `ProfileEvents` packets.
+-   `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
 Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 
@@ -200,10 +200,10 @@ Since version 20.5, `clickhouse-client` has automatic syntax highlighting (alway
 
 `clickhouse-client` uses the first existing file of the following:
 
-- Defined in the `--config-file` parameter.
-- `./clickhouse-client.xml`
-- `~/.clickhouse-client/config.xml`
-- `/etc/clickhouse-client/config.xml`
+-   Defined in the `--config-file` parameter.
+-   `./clickhouse-client.xml`
+-   `~/.clickhouse-client/config.xml`
+-   `/etc/clickhouse-client/config.xml`
 
 Example of a config file:
 

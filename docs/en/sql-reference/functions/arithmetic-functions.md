@@ -1,14 +1,12 @@
 ---
 slug: /en/sql-reference/functions/arithmetic-functions
-sidebar_position: 5
+sidebar_position: 34
 sidebar_label: Arithmetic
 ---
 
 # Arithmetic Functions
 
-The result type of all arithmetic functions is the smallest type which can represent all possible results. Size promotion happens for integers up to 32 bit, e.g. `UInt8 + UInt16 = UInt32`. If one of the inters has 64 or more bits, the result is of the same type as the bigger of the input integers, e.g. `UInt16 + UInt128 = UInt128`. While this introduces a risk of overflows around the value range boundary, it ensures that calculations are performed quickly using the maximum native integer width of 64 bit.
-
-The result of addition or multiplication of two integers is unsigned unless one of the integers is signed.
+For all arithmetic functions, the result type is calculated as the smallest number type that the result fits in, if there is such a type. The minimum is taken simultaneously based on the number of bits, whether it is signed, and whether it floats. If there are not enough bits, the highest bit type is taken.
 
 Example:
 
@@ -22,158 +20,55 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-Arithmetic functions work for any pair of `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64` values.
+Arithmetic functions work for any pair of types from UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, or Float64.
 
-Overflows are produced the same way as in C++.
+Overflow is produced the same way as in C++.
 
-## plus
+## plus(a, b), a + b operator
 
-Calculates the sum of two values `a` and `b`.
+Calculates the sum of the numbers.
+You can also add integer numbers with a date or date and time. In the case of a date, adding an integer means adding the corresponding number of days. For a date with time, it means adding the corresponding number of seconds.
 
-**Syntax**
+## minus(a, b), a - b operator
 
-```sql
-plus(a, b)
-```
+Calculates the difference. The result is always signed.
 
-It is possible to add an integer and a date or date with time. The former operation increments the number of days in the date, the latter operation increments the number of seconds in the date with time.
+You can also calculate integer numbers from a date or date with time. The idea is the same – see above for ‘plus’.
 
-Alias: `a + b` (operator)
+## multiply(a, b), a \* b operator
 
-## minus
+Calculates the product of the numbers.
 
-Calculates the difference of two values `a` and `b`. The result is always signed.
+## divide(a, b), a / b operator
 
-Similar to `plus`, it is possible to subtract an integer from a date or date with time.
+Calculates the quotient of the numbers. The result type is always a floating-point type.
+It is not integer division. For integer division, use the ‘intDiv’ function.
+When dividing by zero you get ‘inf’, ‘-inf’, or ‘nan’.
 
-**Syntax**
+## intDiv(a, b)
 
-```sql
-minus(a, b)
-```
-
-Alias: `a - b` (operator)
-
-## multiply
-
-Calculates the product of two values `a` and `b`.
-
-**Syntax**
-
-```sql
-multiply(a, b)
-```
-
-Alias: `a \* b` (operator)
-
-## divide
-
-Calculates the quotient of two values `a` and `b`. The result is always a floating-point value. If you need integer division, you can use the `intDiv` function.
-
-Division by 0 returns `inf`, `-inf`, or `nan`.
-
-**Syntax**
-
-```sql
-divide(a, b)
-```
-
-Alias: `a / b` (operator)
-
-## intDiv
-
-Performs an integer division of two values `a` by `b`, i.e. computes the quotient rounded down to the next smallest integer.
-
-The result has the same type as the dividend (the first parameter).
-
-An exception is thrown when dividing by zero, when the quotient does not fit in the range of the dividend, or when dividing a minimal negative number by minus one.
-
-**Syntax**
-
-```sql
-intDiv(a, b)
-```
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    intDiv(toFloat64(1), 0.001) AS res,
-    toTypeName(res)
-```
-
-```response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
-```
-
-```sql
-SELECT
-    intDiv(1, 0.001) AS res,
-    toTypeName(res)
-```
-
-```response
-Received exception from server (version 23.2.1):
-Code: 153. DB::Exception: Received from localhost:9000. DB::Exception: Cannot perform integer division, because it will produce infinite or too large number: While processing intDiv(1, 0.001) AS res, toTypeName(res). (ILLEGAL_DIVISION)
-```
-
-## intDivOrZero
-
-Same as `intDiv` but returns zero when dividing by zero or when dividing a minimal negative number by minus one.
-
-**Syntax**
-
-```sql
-intDivOrZero(a, b)
-```
-
-## modulo
-
-Calculates the remainder of the division of two values `a` by `b`.
-
-The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result is a floating-point number.
-
-The remainder is computed like in C++. Truncated division is used for negative numbers.
-
+Calculates the quotient of the numbers. Divides into integers, rounding down (by the absolute value).
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
-**Syntax**
+## intDivOrZero(a, b)
 
-```sql
-modulo(a, b)
-```
+Differs from ‘intDiv’ in that it returns zero when dividing by zero or when dividing a minimal negative number by minus one.
 
-Alias: `a % b` (operator)
+## modulo(a, b), a % b operator
 
-## moduloOrZero
+Calculates the remainder when dividing `a` by `b`.
+The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result is a floating-point number.
+The remainder is computed like in C++. Truncated division is used for negative numbers.
+An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
-Like [modulo](#modulo) but returns zero when the divisor is zero.
+## moduloOrZero(a, b)
 
-**Syntax**
+Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
 
-```sql
-moduloOrZero(a, b)
-```
+## positiveModulo(a, b), positive_modulo(a, b), pmod(a, b)
+Calculates the remainder when dividing `a` by `b`. Similar to the function `modulo` except that `positive_modulo` always returns a non-negative number.
 
-## positiveModulo(a, b)
-
-Like [modulo](#modulo) but always returns a non-negative number.
-
-This function is 4-5 times slower than `modulo`.
-
-**Syntax**
-
-```sql
-positiveModulo(a, b)
-```
-
-Alias:
-- `positive_modulo(a, b)`
-- `pmod(a, b)`
+Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get a positive result and don't care about performance too much.
 
 **Example**
 
@@ -185,67 +80,51 @@ SELECT positiveModulo(-1, 10)
 
 Result:
 
-```result
+```text
+
 ┌─positiveModulo(-1, 10)─┐
 │                      9 │
 └────────────────────────┘
 ```
 
-## negate
+## negate(a), -a operator
 
-Negates a value `a`. The result is always signed.
+Calculates a number with the reverse sign. The result is always signed.
 
-**Syntax**
+## abs(a)
 
-```sql
-negate(a)
-```
+Calculates the absolute value of the number (a). That is, if a \< 0, it returns -a. For unsigned types it does not do anything. For signed integer types, it returns an unsigned number.
 
-Alias: `-a`
+## gcd(a, b)
 
-## abs
-
-Calculates the absolute value of `a`. Has no effect if `a` is of an unsigned type. If `a` is of a signed type, it returns an unsigned number.
-
-**Syntax**
-
-```sql
-abs(a)
-```
-
-## gcd
-
-Returns the greatest common divisor of two values `a` and `b`.
-
+Returns the greatest common divisor of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
-
-**Syntax**
-
-```sql
-gcd(a, b)
-```
 
 ## lcm(a, b)
 
-Returns the least common multiple of two values `a` and `b`.
-
+Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
-
-**Syntax**
-
-```sql
-lcm(a, b)
-```
 
 ## max2
 
-Returns the bigger of two values `a` and `b`. The returned value is of type [Float64](../../sql-reference/data-types/float.md).
+Compares two values and returns the maximum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
 
 **Syntax**
 
 ```sql
-max2(a, b)
+max2(value1, value2)
 ```
+
+**Arguments**
+
+-   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   The maximum of two values.
+
+Type: [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -257,7 +136,7 @@ SELECT max2(-1, 2);
 
 Result:
 
-```result
+```text
 ┌─max2(-1, 2)─┐
 │           2 │
 └─────────────┘
@@ -265,13 +144,24 @@ Result:
 
 ## min2
 
-Returns the smaller of two values `a` and `b`. The returned value is of type [Float64](../../sql-reference/data-types/float.md).
+Compares two values and returns the minimum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
 
 **Syntax**
 
 ```sql
-min2(a, b)
+min2(value1, value2)
 ```
+
+**Arguments**
+
+-   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   The minimum of two values.
+
+Type: [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -283,19 +173,21 @@ SELECT min2(-1, 2);
 
 Result:
 
-```result
+```text
 ┌─min2(-1, 2)─┐
 │          -1 │
 └─────────────┘
 ```
 
-## multiplyDecimal
+## multiplyDecimal(a, b[, result_scale])
 
-Multiplies two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Performs multiplication on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
-
-This function work significantly slower than usual `multiply`. In case no control over the result precision is needed and/or fast computation is desired, consider using `multiply`.
+:::note    
+These functions work significantly slower than usual `multiply`.
+In case you don't really need controlled precision and/or need fast computation, consider using [multiply](#multiply)
+:::
 
 **Syntax**
 
@@ -305,34 +197,31 @@ multiplyDecimal(a, b[, result_scale])
 
 **Arguments**
 
-- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+-   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-- The result of multiplication with given scale.
+-   The result of multiplication with given scale.
 
 Type: [Decimal256](../../sql-reference/data-types/decimal.md).
 
 **Example**
 
-```result
+```text
 ┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
 │                                                           25.2 │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-**Differences compared to regular multiplication:**
-
+**Difference from regular multiplication:**
 ```sql
 SELECT toDecimal64(-12.647, 3) * toDecimal32(2.1239, 4);
 SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);
 ```
 
-Result:
-
-```result
+```text
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
 └───────────────────────────────────────────────────────────┘
@@ -353,9 +242,7 @@ SELECT
     a * b;
 ```
 
-Result:
-
-```result
+```text
 ┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
 │ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
 └───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
@@ -364,14 +251,15 @@ Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
 
-## divideDecimal
+## divideDecimal(a, b[, result_scale])
 
+Performs division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-Divides two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
-
-The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
-
-This function work significantly slower than usual `divide`. In case no control over the result precision is needed and/or fast computation is desired, consider using `divide`.
+:::note    
+These function work significantly slower than usual `divide`.
+In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
+:::
 
 **Syntax**
 
@@ -381,34 +269,31 @@ divideDecimal(a, b[, result_scale])
 
 **Arguments**
 
-- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
-- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+-   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-- The result of division with given scale.
+-   The result of division with given scale.
 
 Type: [Decimal256](../../sql-reference/data-types/decimal.md).
 
 **Example**
 
-```result
+```text
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
 │                                                -5.7142857142 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Differences compared to regular division:**
-
+**Difference from regular division:**
 ```sql
 SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
 SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
 ```
 
-Result:
-
-```result
+```text
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
@@ -423,9 +308,7 @@ SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
 SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
 ```
 
-Result:
-
-```result
+```text
 DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
 
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
