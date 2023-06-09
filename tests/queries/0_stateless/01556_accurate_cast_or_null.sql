@@ -47,4 +47,5 @@ SELECT accurateCastOrNull(-1, 'Date');
 SELECT accurateCastOrNull(5000000000, 'Date');
 SELECT accurateCastOrNull('1xxx', 'Date');
 SELECT accurateCastOrNull('2023-05-30', 'Date');
+SELECT accurateCastOrNull('2180-01-01', 'Date');
 SELECT accurateCastOrNull(19, 'Date');
