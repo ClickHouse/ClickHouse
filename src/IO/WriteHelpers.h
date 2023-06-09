@@ -633,13 +633,15 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
+/// @brief Serialize `uuid` into an array of characters in big-endian byte order.
+/// @param uuid UUID to serialize.
+/// @return Array of characters in big-endian byte order.
+std::array<char, 36> formatUUID(const UUID & uuid);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
-    char s[36];
-    formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
-    buf.write(s, sizeof(s));
+    const auto serialized_uuid = formatUUID(uuid);
+    buf.write(serialized_uuid.data(), serialized_uuid.size());
 }
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);

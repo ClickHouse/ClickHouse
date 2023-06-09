@@ -36,7 +36,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
-        && (!query_id.empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+        && (!query_id.empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache || !settings.avoid_readthrough_cache_outside_query_context);
 }
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)

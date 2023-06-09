@@ -1342,6 +1342,7 @@ detectLanguageUnknown
 determinator
 deterministically
 dictGet
+dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
