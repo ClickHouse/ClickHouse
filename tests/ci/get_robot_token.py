@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import boto3  # type: ignore
-import hvac
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
 
@@ -20,6 +19,7 @@ class Token:
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
     if VAULT_URL:
+        import hvac
         if not client:
             client = hvac.Client(url=VAULT_URL, token=VAULT_TOKEN)
         parameter = client.secrets.kv.v2.read_secret_version(
@@ -42,10 +42,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
 
-    client = None
-    values = []
-
-    if VAULT_URL:
+    def get_vault_robot_tokens():
         client = hvac.Client(url=VAULT_URL, token=VAULT_TOKEN)
         parameters = client.secrets.kv.v2.read_secret_version(
             mount_point=VAULT_MOUNT_POINT, path=VAULT_PATH
@@ -56,8 +53,9 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
             if key.startswith(token_prefix_env_name)
         }
         assert parameters
-        values = list(parameters.values())
-    else:
+        return list(parameters.values())
+
+    def get_ssm_robot_tokens():
         client = boto3.client("ssm", region_name="us-east-1")
         parameters = client.describe_parameters(
             ParameterFilters=[
@@ -72,6 +70,15 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         for token_name in [p["Name"] for p in parameters]:
             value = get_parameter_from_ssm(token_name, True, client)
             values.append(value)
+        return values
+
+    client = None
+    values = []
+
+    if VAULT_URL:
+        values = get_vault_robot_tokens()
+    else:
+        values = get_ssm_robot_tokens()
 
     for value in values:
         gh = Github(value, per_page=100)

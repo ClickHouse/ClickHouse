@@ -18,7 +18,11 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black==23.1.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2 \
+    && if [ "$DOCKER_REPO" = "docker.io" ]; then \
+         pip3 install black==23.1.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2; \
+       else \
+         pip3 install black==23.1.0 boto3 hvac codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2; \
+       fi \
     && apt-get clean \
     && rm -rf /root/.cache/pip
 
