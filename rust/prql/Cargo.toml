@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 prql-compiler = "0.8.1"
-libc = "0.2.146"
 serde_json = "1.0"
 
 [lib]

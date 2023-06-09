@@ -79,7 +79,7 @@
 #include "config.h" // USE_PRQL
 
 #if USE_PRQL
-#include <prql.h>
+#    include <prql.h>
 #endif
 
 namespace ProfileEvents
@@ -376,6 +376,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_for_logging;
     size_t log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
 
+
+    const auto parse_sql_query = [&settings, max_query_size, &ast](const char * query_begin, const char * query_end)
+    {
+        ParserQuery parser(query_end, settings.allow_settings_after_format_in_insert);
+        /// TODO: parser should fail early when max_query_size limit is reached.
+        ast = parseQuery(parser, query_begin, query_end, "", max_query_size, settings.max_parser_depth);
+    };
+
     /// Parse the query from string.
     try
     {
@@ -386,45 +394,32 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
-        #if USE_PRQL
+#if USE_PRQL
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            char * prql_query = new char[max_query_size + 1];
-            if (prql_query == nullptr)
-            {
-                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
-            }
-            memset(prql_query, 0, max_query_size + 1);
-            memcpy(prql_query, begin, end - begin);
-            char * sql_query = new char[max_query_size + 1];
-            if (sql_query == nullptr)
-            {
-                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Not enough RAM");
-            }
-            memset(sql_query, 0, max_query_size + 1);
-            int res = to_sql(prql_query, sql_query);
+            uint8_t * sql_query_ptr{nullptr};
+            uint64_t sql_query_size{0};
+
+            const auto res = prql_to_sql(
+                reinterpret_cast<const uint8_t *>(begin), static_cast<uint64_t>(end - begin), &sql_query_ptr, &sql_query_size);
+
             __msan_unpoison(sql_query, max_query_size + 1);
-            if (res == -1)
+
+            SCOPE_EXIT({ prql_free_pointer(sql_query_ptr); });
+
+            const auto * sql_query_char_ptr = reinterpret_cast<char *>(sql_query_ptr);
+
+            if (res != 0)
             {
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error");
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error: '{}'", sql_query_char_ptr);
             }
-            size_t idx = 0;
-            char * sql_query_end = sql_query;
-            while (idx < max_query_size && *sql_query_end)
-            {
-                ++sql_query_end;
-                ++idx;
-            }
-            ParserQuery parser(sql_query_end, settings.allow_settings_after_format_in_insert);
-            ast = parseQuery(parser, sql_query, sql_query_end, "", max_query_size, settings.max_parser_depth);
+
+            parse_sql_query(sql_query_char_ptr, sql_query_char_ptr + sql_query_size - 1);
         }
-        #endif
+#endif
         else
         {
-            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            parse_sql_query(begin, end);
         }
 
         const char * query_end = end;
