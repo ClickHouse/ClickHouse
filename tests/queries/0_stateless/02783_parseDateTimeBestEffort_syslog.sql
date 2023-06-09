@@ -7,7 +7,7 @@ WITH
     dateDiff('second', toDateTime(ref_point), ts_now) AS impedimenta,
     formatDateTime(ts_around, '%b %e %T') AS dt_curr
 SELECT
-    formatDateTime(ts_around - impedimenta, '%b %e %H:%i:%s') AS dt_ref,
+    formatDateTime(ts_around - impedimenta, '%b %e %H:%i:%s') AS around_June_7,
     parseDateTimeBestEffort(dt_curr) - impedimenta AS res,
     parseDateTimeBestEffort(dt_curr, 'US/Samoa') - impedimenta AS res_sam,
     parseDateTimeBestEffort(dt_curr, 'Pacific/Auckland') - impedimenta AS res_auc,
