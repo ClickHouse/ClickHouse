@@ -346,7 +346,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 if (!db_and_table.first)
                 {
                     DatabaseNameHints hints(*this);
-                    std::vector<String> names = hints.getHints(table_id.getDatabaseName(), hints.getAllRegisteredNames());
+                    std::vector<String> names = hints.getHints(table_id.getDatabaseName());
                     /// I also leave possibility to print several suggestions
                     if (!names.empty())
                     {
