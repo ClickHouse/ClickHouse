@@ -74,12 +74,12 @@ const String & FileCache::getBasePath() const
 
 String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
-    return metadata.getPathInLocalCache(key, offset, segment_kind);
+    return metadata.getPathForFileSegment(key, offset, segment_kind);
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
 {
-    return metadata.getPathInLocalCache(key);
+    return metadata.getPathForKey(key);
 }
 
 void FileCache::assertInitialized() const
@@ -650,7 +650,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             }
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
 
             locked_key.removeFileSegment(segment->offset(), segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
@@ -1057,7 +1057,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, file_segment_metadata] : *locked_key->getKeyMetadata())
     {
         if (file_segment_metadata->file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(metadata.getPathInLocalCache(key, offset, file_segment_metadata->file_segment->getKind()));
+            cache_paths.push_back(metadata.getPathForFileSegment(key, offset, file_segment_metadata->file_segment->getKind()));
     }
     return cache_paths;
 }
