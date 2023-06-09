@@ -350,8 +350,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// I also leave possibility to print several suggestions
                     if (!names.empty())
                     {
-                    std::string suggested_name = names[0];
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
                     }
                     else exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
                 }
