@@ -227,6 +227,8 @@ private:
 
     int64_t session_id = 0;
 
+    std::mutex reset_xid_mutex;
+
     std::atomic<XID> next_xid;
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.

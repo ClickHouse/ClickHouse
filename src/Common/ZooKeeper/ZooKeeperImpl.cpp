@@ -1481,6 +1481,15 @@ XID ZooKeeper::getXID()
             throw Exception(Error::ZTHROTTLEDOP, "XID overflow: the operation queue is full, try later");
     }
 
+    /// Avoid resetting the 'next_xid' below multiple times from multiple threads.
+    /// The top code is not included in the mutex because of its high frequency.
+    std::lock_guard lock(reset_xid_mutex);
+
+    /// Maybe someone else has reset the 'next_xid', let's try again.
+    xid = next_xid.fetch_add(1);
+    if (xid < CLOSE_XID)
+        return xid;
+
     /// Log the reset operation.
     LOG_INFO(log, "Reset the XID to {} to avoid session expiration", args.initial_xid_value);
     next_xid.store(args.initial_xid_value);
