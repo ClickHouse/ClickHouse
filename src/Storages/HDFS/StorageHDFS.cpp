@@ -624,7 +624,7 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
     String current_uri = uris.back();
 
