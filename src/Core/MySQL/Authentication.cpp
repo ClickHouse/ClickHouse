@@ -31,7 +31,7 @@ namespace Authentication
 static const size_t SCRAMBLE_LENGTH = 20;
 
 /** Generate a random string using ASCII characters but avoid separator character,
-  * produce pseudo random numbers between with about 7 bit worth of entropy between 1-127.
+  * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
   * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
   */
 static String generateScramble()

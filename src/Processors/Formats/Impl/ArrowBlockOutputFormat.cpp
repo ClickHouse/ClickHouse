@@ -75,7 +75,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
-        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+        const Block & header = getPort(PortKind::Main).getHeader();
 
         consume(Chunk(header.getColumns(), 0));
     }
@@ -134,7 +134,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
-    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
 }
 
 }

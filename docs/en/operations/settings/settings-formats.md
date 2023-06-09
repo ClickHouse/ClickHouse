@@ -7,23 +7,6 @@ toc_max_heading_level: 2
 
 # Format settings {#format-settings}
 
-## format_display_secrets_in_show_and_select {#format_display_secrets_in_show_and_select}
-
-Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
-table functions, and dictionaries.
-
-User wishing to see secrets must also have
-[`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
-turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 0.
-
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 Enables or disables skipping insertion of extra data.
@@ -882,38 +865,6 @@ My NULL
 My NULL
 ```
 
-### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
-
-Trims spaces and tabs in non-quoted CSV strings.
-
-Default value: `true`.
-
-**Examples**
-
-Query
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
-```
-
-Result
-
-```text
-"string"
-```
-
-Query
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
-```
-
-Result
-
-```text
-"  string  "
-```
-
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
@@ -1214,7 +1165,7 @@ Possible values:
 
 - `bin` - as 16-bytes binary.
 - `str` - as a string of 36 bytes.
-- `ext` - as extension with ExtType = 2.
+- `ext` - as extention with ExtType = 2.
 
 Default value: `ext`.
 

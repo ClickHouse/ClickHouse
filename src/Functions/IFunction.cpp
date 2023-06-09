@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Core/Block.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>

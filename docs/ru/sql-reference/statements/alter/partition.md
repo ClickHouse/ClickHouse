@@ -102,11 +102,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ```
 
 Копирует партицию из таблицы `table1` в таблицу `table2`.
-
-Обратите внимание, что:
-
-- Данные не удаляются ни из `table1`, ни из `table2`.
-- `table1` может быть временной таблицей.
+Обратите внимание, что данные не удаляются ни из `table1`, ни из `table2`.
 
 Следует иметь в виду:
 
@@ -122,12 +118,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`.
-
-Обратите внимание, что:
-
-- Данные из `table1` не удаляются.
-- `table1` может быть временной таблицей.
+Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`. Данные из `table1` не удаляются.
 
 Следует иметь в виду:
 

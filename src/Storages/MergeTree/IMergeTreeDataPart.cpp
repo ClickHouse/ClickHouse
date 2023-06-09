@@ -1341,11 +1341,11 @@ void IMergeTreeDataPart::loadColumns(bool require)
         .choose_kind = false,
     };
 
-    SerializationInfoByName infos;
+    SerializationInfoByName infos(loaded_columns, settings);
     if (metadata_manager->exists(SERIALIZATION_FILE_NAME))
     {
         auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
-        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
+        infos.readJSON(*in);
     }
 
     int32_t loaded_metadata_version;
@@ -1357,6 +1357,14 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+
+        if (!is_readonly_storage)
+        {
+            writeMetadata(METADATA_VERSION_FILE_NAME, {}, [loaded_metadata_version](auto & buffer)
+            {
+                writeIntText(loaded_metadata_version, buffer);
+            });
+        }
     }
 
     setColumns(loaded_columns, infos, loaded_metadata_version);
@@ -1682,6 +1690,12 @@ void IMergeTreeDataPart::remove()
         {
             LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
+        }
+
+        if (getState() == MergeTreeDataPartState::Temporary)
+        {
+            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
+            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
         }
 
         auto [can_remove, files_not_to_remove] = canRemovePart();

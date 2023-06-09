@@ -40,14 +40,14 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, Priority priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, int64_t priority)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = Priority{base_priority.value + priority.value};
+    request.priority = base_priority + priority;
     request.ignore = bytes_to_ignore;
     bytes_to_ignore = 0;
 
@@ -61,7 +61,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 }
 
 
-void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
+void AsynchronousReadBufferFromFileDescriptor::prefetch(int64_t priority)
 {
     if (prefetch_future.valid())
         return;
@@ -151,7 +151,7 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
 
 AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
     IAsynchronousReader & reader_,
-    Priority priority_,
+    Int32 priority_,
     int fd_,
     size_t buf_size,
     char * existing_memory,

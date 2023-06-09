@@ -88,7 +88,10 @@ void ParallelReadResponse::serialize(WriteBuffer & out) const
 
 String ParallelReadResponse::describe() const
 {
-    return fmt::format("{}. Finish: {}", description.describe(), finish);
+    String result;
+    result += fmt::format("finish: {} \n", finish);
+    result += description.describe();
+    return result;
 }
 
 void ParallelReadResponse::deserialize(ReadBuffer & in)

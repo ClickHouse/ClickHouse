@@ -19,30 +19,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
 
-/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
-template <>
-struct fmt::formatter<DB::RowNumber>
-{
-    static constexpr auto parse(format_parse_context & ctx)
-    {
-        const auto * it = ctx.begin();
-        const auto * end = ctx.end();
-
-        /// Only support {}.
-        if (it != end && *it != '}')
-            throw fmt::format_error("Invalid format");
-
-        return it;
-    }
-
-    template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx)
-    {
-        return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
-    }
-};
-
-
 namespace DB
 {
 
@@ -58,7 +34,7 @@ namespace ErrorCodes
 // Interface for true window functions. It's not much of an interface, they just
 // accept the guts of WindowTransform and do 'something'. Given a small number of
 // true window functions, and the fact that the WindowTransform internals are
-// pretty much well-defined in domain terms (e.g. frame boundaries), this is
+// pretty much well defined in domain terms (e.g. frame boundaries), this is
 // somewhat acceptable.
 class IWindowFunction
 {
@@ -68,8 +44,6 @@ public:
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) = 0;
-
-    virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -248,15 +222,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
-        /// Some functions may have non-standard default frame.
-        /// Use it if it's the only function over the current window.
-        if (window_description.frame.is_default && functions.size() == 1 && workspace.window_function_impl)
-        {
-            auto custom_default_frame = workspace.window_function_impl->getDefaultFrame();
-            if (custom_default_frame)
-                window_description.frame = *custom_default_frame;
-        }
-
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
             aggregate_function->alignOfData());
@@ -347,6 +312,8 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
+//    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
+
     // If we're at the total end of data, we must end the partition. This is one
     // of the few places in calculations where we need special handling for end
     // of data, other places will work as usual based on
@@ -405,6 +372,9 @@ void WindowTransform::advancePartitionEnd()
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
+//        fmt::print(stderr, "compare reference '{}' to compared '{}'\n",
+//            prev_frame_start, partition_end);
+
         size_t i = 0;
         for (; i < partition_by_columns; ++i)
         {
@@ -413,6 +383,9 @@ void WindowTransform::advancePartitionEnd()
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
+//            fmt::print(stderr, "reference '{}', compared '{}'\n",
+//                (*reference_column)[prev_frame_start.row],
+//                (*compared_column)[partition_end.row]);
             if (compared_column->compareAt(partition_end.row,
                     prev_frame_start.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
@@ -437,26 +410,26 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const
 {
-    RowNumber moved_row_number = original_row_number;
+    RowNumber x = _x;
 
-    if (offset > 0 && moved_row_number != blocksEnd())
+    if (offset > 0 && x != blocksEnd())
     {
         for (;;)
         {
-            assertValid(moved_row_number);
+            assertValid(x);
             assert(offset >= 0);
 
-            const auto block_rows = blockRowsNumber(moved_row_number);
-            moved_row_number.row += offset;
-            if (moved_row_number.row >= block_rows)
+            const auto block_rows = blockRowsNumber(x);
+            x.row += offset;
+            if (x.row >= block_rows)
             {
-                offset = moved_row_number.row - block_rows;
-                moved_row_number.row = 0;
-                ++moved_row_number.block;
+                offset = x.row - block_rows;
+                x.row = 0;
+                x.block++;
 
-                if (moved_row_number == blocksEnd())
+                if (x == blocksEnd())
                 {
                     break;
                 }
@@ -472,55 +445,56 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
     {
         for (;;)
         {
-            assertValid(moved_row_number);
+            assertValid(x);
             assert(offset <= 0);
 
             // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
             assert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= static_cast<UInt64>(-offset))
+            if (x.row >= static_cast<uint64_t>(-offset))
             {
-                moved_row_number.row -= -offset;
+                x.row -= -offset;
                 offset = 0;
                 break;
             }
 
             // Move to the first row in current block. Note that the offset is
             // negative.
-            offset += moved_row_number.row;
-            moved_row_number.row = 0;
+            offset += x.row;
+            x.row = 0;
 
             // Move to the last row of the previous block, if we are not at the
             // first one. Offset also is incremented by one, because we pass over
             // the first row of this block.
-            if (moved_row_number.block == first_block_number)
+            if (x.block == first_block_number)
             {
                 break;
             }
 
-            --moved_row_number.block;
+            --x.block;
             offset += 1;
-            moved_row_number.row = blockRowsNumber(moved_row_number) - 1;
+            x.row = blockRowsNumber(x) - 1;
         }
     }
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset};
+    return std::tuple<RowNumber, int64_t>{x, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
 {
-    auto [moved_row_number, offset_after_move] = moveRowNumberNoCheck(original_row_number, offset);
+    auto [x, o] = moveRowNumberNoCheck(_x, offset);
 
 #ifndef NDEBUG
-    /// Check that it was reversible. If we move back, we get the original row number with zero offset.
-    const auto [original_row_number_to_validate, offset_after_move_back]
-        = moveRowNumberNoCheck(moved_row_number, -(offset - offset_after_move));
+    // Check that it was reversible.
+    auto [xx, oo] = moveRowNumberNoCheck(x, -(offset - o));
 
-    assert(original_row_number_to_validate == original_row_number);
-    assert(0 == offset_after_move_back);
+//    fmt::print(stderr, "{} -> {}, result {}, {}, new offset {}, twice {}, {}\n",
+//        _x, offset, x, o, -(offset - o), xx, oo);
+    assert(xx == _x);
+    assert(oo == 0);
 #endif
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset_after_move};
+    return std::tuple<RowNumber, int64_t>{x, o};
 }
 
 
@@ -534,6 +508,9 @@ void WindowTransform::advanceFrameStartRowsOffset()
     frame_start = moved_row;
 
     assertValid(frame_start);
+
+//    fmt::print(stderr, "frame start {} left {} partition start {}\n",
+//        frame_start, offset_left, partition_start);
 
     if (frame_start <= partition_start)
     {
@@ -697,6 +674,8 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 
 void WindowTransform::advanceFrameEndCurrentRow()
 {
+//    fmt::print(stderr, "starting from frame_end {}\n", frame_end);
+
     // We only process one block here, and frame_end must be already in it: if
     // we didn't find the end in the previous block, frame_end is now the first
     // row of the current block. We need this knowledge to write a simpler loop
@@ -718,7 +697,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // We advance until the partition end. It's either in the current block or
     // in the next one, which is also the past-the-end block. Figure out how
     // many rows we have to process.
-    UInt64 rows_end;
+    uint64_t rows_end;
     if (partition_end.row == 0)
     {
         assert(partition_end == blocksEnd());
@@ -732,11 +711,14 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Equality would mean "no data to process", for which we checked above.
     assert(frame_end.row < rows_end);
 
+//    fmt::print(stderr, "first row {} last {}\n", frame_end.row, rows_end);
+
     // Advance frame_end while it is still peers with the current row.
     for (; frame_end.row < rows_end; ++frame_end.row)
     {
         if (!arePeers(current_row, frame_end))
         {
+//            fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
             frame_ended = true;
             return;
         }
@@ -859,6 +841,8 @@ void WindowTransform::advanceFrameEnd()
             break;
     }
 
+//    fmt::print(stderr, "frame_end {} -> {}\n", frame_end_before, frame_end);
+
     // We might not have advanced the frame end if we found out we reached the
     // end of input or the partition, or if we still don't know the frame start.
     if (frame_end_before == frame_end)
@@ -870,6 +854,9 @@ void WindowTransform::advanceFrameEnd()
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
+//    fmt::print(stderr, "update agg states [{}, {}) -> [{}, {})\n",
+//        prev_frame_start, prev_frame_end, frame_start, frame_end);
+
     // Assert that the frame boundaries are known, have proper order wrt each
     // other, and have not gone back wrt the previous frame.
     assert(frame_started);
@@ -917,6 +904,7 @@ void WindowTransform::updateAggregationState()
 
         if (reset_aggregation)
         {
+//            fmt::print(stderr, "(2) reset aggregation\n");
             a->destroy(buf);
             a->create(buf);
         }
@@ -992,6 +980,9 @@ void WindowTransform::writeOutCurrentRow()
             a->insertMergeResultInto(buf, *result_column, arena.get());
         }
     }
+
+//    fmt::print(stderr, "wrote out aggregation state for current row '{}'\n",
+//        current_row);
 }
 
 static void assertSameColumns(const Columns & left_all,
@@ -1028,6 +1019,10 @@ static void assertSameColumns(const Columns & left_all,
 
 void WindowTransform::appendChunk(Chunk & chunk)
 {
+//    fmt::print(stderr, "new chunk, {} rows, finished={}\n", chunk.getNumRows(),
+//        input_is_finished);
+//    fmt::print(stderr, "chunk structure '{}'\n", chunk.dumpStructure());
+
     // First, prepare the new input block and add it to the queue. We might not
     // have it if it's end of data, though.
     if (!input_is_finished)
@@ -1087,6 +1082,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
     for (;;)
     {
         advancePartitionEnd();
+//        fmt::print(stderr, "partition [{}, {}), {}\n",
+//            partition_start, partition_end, partition_ended);
+
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
         assert(partition_ended || partition_end == blocksEnd());
@@ -1100,6 +1098,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // which is precisely the definition of `partition_end`.
         while (current_row < partition_end)
         {
+//            fmt::print(stderr, "(1) row {} frame [{}, {}) {}, {}\n",
+//                current_row, frame_start, frame_end,
+//                frame_started, frame_ended);
+
             // We now know that the current row is valid, so we can update the
             // peer group start.
             if (!arePeers(peer_group_start, current_row))
@@ -1138,6 +1140,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 assert(!partition_ended);
                 return;
             }
+
+//            fmt::print(stderr, "(2) row {} frame [{}, {}) {}, {}\n",
+//                current_row, frame_start, frame_end,
+//                frame_started, frame_ended);
 
             // The frame can be empty sometimes, e.g. the boundaries coincide
             // or the start is after the partition end. But hopefully start is
@@ -1219,6 +1225,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_start_row_number = 1;
         peer_group_number = 1;
 
+//        fmt::print(stderr, "reinitialize agg data at start of {}\n",
+//            partition_start);
         // Reinitialize the aggregate function states because the new partition
         // has started.
         for (auto & ws : workspaces)
@@ -1259,6 +1267,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
 IProcessor::Status WindowTransform::prepare()
 {
+//    fmt::print(stderr, "prepare, next output {}, not ready row {}, first block {}, hold {} blocks\n",
+//        next_output_block_number, first_not_ready_row, first_block_number,
+//        blocks.size());
+
     if (output.isFinished() || isCancelled())
     {
         // The consumer asked us not to continue (or we decided it ourselves),
@@ -1301,6 +1313,10 @@ IProcessor::Status WindowTransform::prepare()
                 columns.push_back(ColumnPtr(std::move(res)));
             }
             output_data.chunk.setColumns(columns, block.rows);
+
+//            fmt::print(stderr, "output block {} as chunk '{}'\n",
+//                next_output_block_number,
+//                output_data.chunk.dumpStructure());
 
             ++next_output_block_number;
 
@@ -1401,6 +1417,9 @@ void WindowTransform::work()
         std::min(prev_frame_start.block, current_row.block));
     if (first_block_number < first_used_block)
     {
+//        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
+//            first_used_block);
+
         blocks.erase(blocks.begin(),
             blocks.begin() + (first_used_block - first_block_number));
         first_block_number = first_used_block;
@@ -1958,22 +1977,17 @@ struct WindowFunctionNtile final : public WindowFunction
         : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one argument", name_);
-
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one parameter", name_);
+        }
         auto type_id = argument_types[0]->getTypeId();
         if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' argument type must be an unsigned integer (not larger than 64-bit), got {}", name_, argument_types[0]->getName());
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument type must be an unsigned integer (not larger then 64-bit), but got {}", argument_types[0]->getName());
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1985,7 +1999,7 @@ struct WindowFunctionNtile final : public WindowFunction
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
             if (!isColumnConst(arg_col))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
                 buckets = arg_col[transform->current_row.row].get<UInt8>();
@@ -1998,7 +2012,7 @@ struct WindowFunctionNtile final : public WindowFunction
 
             if (!buckets)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' funtcion must be greater than zero");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
             }
         }
         // new partition
@@ -2076,16 +2090,22 @@ private:
     static void checkWindowFrameType(const WindowTransform * transform)
     {
         if (transform->order_by_indices.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for 'ntile' function must have ORDER BY clause");
-
-        // We must wait all for the partition end and get the total rows number in this
-        // partition. So before the end of this partition, there is no any block could be
-        // dropped out.
-        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
-            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
-        if (!is_frame_supported)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
+        if (transform->window_description.frame.type != WindowFrame::FrameType::ROWS)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function 'ntile' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be ROWS");
+        }
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be UNBOUNDED PRECEDING");
+        }
+
+        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            // We must wait all for the partition end and get the total rows number in this
+            // partition. So before the end of this partition, there is no any block could be
+            // dropped out.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be UNBOUNDED FOLLOWING");
         }
     }
 };
@@ -2166,7 +2186,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        Int64 offset = 1;
+        int64_t offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[
@@ -2256,7 +2276,7 @@ struct WindowFunctionNthValue final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        Int64 offset = (*current_block.input_columns[
+        int64_t offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
             transform->current_row.row].get<Int64>();
 

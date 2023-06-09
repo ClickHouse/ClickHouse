@@ -22,7 +22,6 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -82,7 +81,6 @@
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
-#include <Interpreters/InterpreterShowIndexesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -114,7 +112,6 @@
 namespace ProfileEvents
 {
     extern const Event Query;
-    extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
 }
@@ -131,15 +128,6 @@ namespace ErrorCodes
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-
-    /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
-    if (!(query->as<ASTSelectQuery>() ||
-        query->as<ASTSelectWithUnionQuery>() ||
-        query->as<ASTSelectIntersectExceptQuery>() ||
-        query->as<ASTInsertQuery>()))
-    {
-        ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
-    }
 
     if (query->as<ASTSelectQuery>())
     {
@@ -192,10 +180,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowColumnsQuery>())
     {
         return std::make_unique<InterpreterShowColumnsQuery>(query, context);
-    }
-    else if (query->as<ASTShowIndexesQuery>())
-    {
-        return std::make_unique<InterpreterShowIndexesQuery>(query, context);
     }
     else if (query->as<ASTShowEnginesQuery>())
     {

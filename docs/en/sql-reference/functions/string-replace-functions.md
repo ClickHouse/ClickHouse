@@ -6,7 +6,7 @@ sidebar_label: Replacing in Strings
 
 # Functions for Replacing in Strings
 
-[General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
+[General strings functions](string-functions.md) and [functions for searchin in strings](string-search-functions.md) are described separately.
 
 ## replaceOne
 

@@ -433,8 +433,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address;
-
                 break;
             }
             catch (...)
@@ -450,8 +448,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
-
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -1089,7 +1085,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-KeeperApiVersion ZooKeeper::getApiVersion() const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return keeper_api_version;
 }

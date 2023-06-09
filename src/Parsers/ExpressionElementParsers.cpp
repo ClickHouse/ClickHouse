@@ -829,11 +829,7 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
 
     if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
-        /// -0 should be still parsed as UInt instead of Int,
-        /// because otherwise it is not preserved during formatting-parsing roundtrip
-        /// (the signedness is lost during formatting)
-
-        if (negative && uint_value != 0)
+        if (negative)
             res = static_cast<Int64>(-uint_value);
         else
             res = uint_value;
@@ -1433,12 +1429,10 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
-    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
-
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word && !is_quoted)
+    if (!has_as_word)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,

@@ -71,67 +71,6 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
-    /// Do something like SquashingTransform to produce big enough row groups.
-    /// Because the real SquashingTransform is only used for INSERT, not for SELECT ... INTO OUTFILE.
-    /// The latter doesn't even have a pipeline where a transform could be inserted, so it's more
-    /// convenient to do the squashing here.
-
-    appendToAccumulatedChunk(std::move(chunk));
-
-    if (!accumulated_chunk)
-        return;
-
-    const size_t target_rows = std::max(static_cast<UInt64>(1), format_settings.parquet.row_group_rows);
-
-    if (accumulated_chunk.getNumRows() < target_rows &&
-        accumulated_chunk.bytes() < format_settings.parquet.row_group_bytes)
-        return;
-
-    /// Increase row group size slightly (by < 2x) to avoid adding a small row groups for the
-    /// remainder of the new chunk.
-    /// E.g. suppose input chunks are 70K rows each, and max_rows = 1M. Then we'll have
-    /// getNumRows() = 1.05M. We want to write all 1.05M as one row group instead of 1M and 0.05M.
-    size_t num_row_groups = std::max(static_cast<UInt64>(1), accumulated_chunk.getNumRows() / target_rows);
-    size_t row_group_size = (accumulated_chunk.getNumRows() - 1) / num_row_groups + 1; // round up
-
-    write(std::move(accumulated_chunk), row_group_size);
-    accumulated_chunk.clear();
-}
-
-void ParquetBlockOutputFormat::finalizeImpl()
-{
-    if (accumulated_chunk)
-        write(std::move(accumulated_chunk), format_settings.parquet.row_group_rows);
-
-    if (!file_writer)
-    {
-        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-        write(Chunk(header.getColumns(), 0), 1);
-    }
-
-    auto status = file_writer->Close();
-    if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
-}
-
-void ParquetBlockOutputFormat::resetFormatterImpl()
-{
-    file_writer.reset();
-}
-
-void ParquetBlockOutputFormat::appendToAccumulatedChunk(Chunk chunk)
-{
-    if (!accumulated_chunk)
-    {
-        accumulated_chunk = std::move(chunk);
-        return;
-    }
-    chassert(accumulated_chunk.getNumColumns() == chunk.getNumColumns());
-    accumulated_chunk.append(chunk);
-}
-
-void ParquetBlockOutputFormat::write(Chunk chunk, size_t row_group_size)
-{
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
@@ -155,28 +94,41 @@ void ParquetBlockOutputFormat::write(Chunk chunk, size_t row_group_size)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
-
-        parquet::ArrowWriterProperties::Builder writer_props_builder;
-        if (format_settings.parquet.output_compliant_nested_types)
-            writer_props_builder.enable_compliant_nested_types();
-        else
-            writer_props_builder.disable_compliant_nested_types();
-
+        auto props = builder.build();
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
             arrow::default_memory_pool(),
             sink,
-            builder.build(),
-            writer_props_builder.build());
+            props);
         if (!result.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", result.status().ToString());
         file_writer = std::move(result.ValueOrDie());
     }
 
-    auto status = file_writer->WriteTable(*arrow_table, row_group_size);
+    // TODO: calculate row_group_size depending on a number of rows and table size
+    auto status = file_writer->WriteTable(*arrow_table, format_settings.parquet.row_group_size);
 
     if (!status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table: {}", status.ToString());
+}
+
+void ParquetBlockOutputFormat::finalizeImpl()
+{
+    if (!file_writer)
+    {
+        const Block & header = getPort(PortKind::Main).getHeader();
+
+        consume(Chunk(header.getColumns(), 0));
+    }
+
+    auto status = file_writer->Close();
+    if (!status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
+}
+
+void ParquetBlockOutputFormat::resetFormatterImpl()
+{
+    file_writer.reset();
 }
 
 void registerOutputFormatParquet(FormatFactory & factory)

@@ -1549,7 +1549,7 @@ void StorageWindowView::writeIntoWindowView(
     auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
+    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
     output->addTableLock(lock);
 
     if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))

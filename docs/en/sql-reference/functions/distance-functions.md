@@ -487,7 +487,7 @@ cosineDistance(vector1, vector2)
 
 **Returned value**
 
-- Cosine of the angle between two vectors subtracted from one.
+- Cosine of the angle between two vectors substracted from one.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 

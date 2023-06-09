@@ -156,7 +156,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | rpc\_client\_connect\_timeout                         | 600 * 1000              |
 | rpc\_client\_read\_timeout                            | 3600 * 1000             |
 | rpc\_client\_write\_timeout                           | 3600 * 1000             |
-| rpc\_client\_socket\_linger\_timeout                  | -1                      |
+| rpc\_client\_socekt\_linger\_timeout                  | -1                      |
 | rpc\_client\_connect\_retry                           | 10                      |
 | rpc\_client\_timeout                                  | 3600 * 1000             |
 | dfs\_default\_replica                                 | 3                       |
@@ -176,7 +176,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | output\_write\_timeout                                | 3600 * 1000             |
 | output\_close\_timeout                                | 3600 * 1000             |
 | output\_packetpool\_size                              | 1024                    |
-| output\_heartbeat\_interval                          | 10 * 1000               |
+| output\_heeartbeat\_interval                          | 10 * 1000               |
 | dfs\_client\_failover\_max\_attempts                  | 15                      |
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |

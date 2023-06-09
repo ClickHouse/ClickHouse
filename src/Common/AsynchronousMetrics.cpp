@@ -67,25 +67,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
-    /// CGroups v2
-    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_limit_in_bytes);
-    if (cgroupmem_limit_in_bytes)
-    {
-        openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
-    }
-    openFileIfExists("/sys/fs/cgroup/cpu.max", cgroupcpu_max);
-
-    /// CGroups v1
-    if (!cgroupmem_limit_in_bytes)
-    {
-        openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-        openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
-    }
-    if (!cgroupcpu_max)
-    {
-        openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
-        openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", cgroupcpu_cfs_quota);
-    }
+    openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
@@ -917,73 +900,26 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
     {
-        try
-        {
+        try {
             cgroupmem_limit_in_bytes->rewind();
             cgroupmem_usage_in_bytes->rewind();
 
-            uint64_t limit = 0;
-            uint64_t usage = 0;
+            uint64_t cgroup_mem_limit_in_bytes = 0;
+            uint64_t cgroup_mem_usage_in_bytes = 0;
 
-            tryReadText(limit, *cgroupmem_limit_in_bytes);
-            tryReadText(usage, *cgroupmem_usage_in_bytes);
+            readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
+            readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
 
-            new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    if (cgroupcpu_max)
-    {
-        try {
-            cgroupcpu_max->rewind();
-
-            uint64_t quota = 0;
-            uint64_t period = 0;
-
-            std::string line;
-            readText(line, *cgroupcpu_max);
-
-            auto space = line.find(' ');
-
-            if (line.rfind("max", space) == std::string::npos)
+            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
             {
-                auto field1 = line.substr(0, space);
-                quota = std::stoull(field1);
+                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
+                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
             }
-
-            if (space != std::string::npos)
+            else
             {
-                auto field2 = line.substr(space + 1);
-                period = std::stoull(field2);
+                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
+                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
             }
-
-            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-    else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
-    {
-        try {
-            cgroupcpu_cfs_quota->rewind();
-            cgroupcpu_cfs_period->rewind();
-
-            uint64_t quota = 0;
-            uint64_t period = 0;
-
-            tryReadText(quota, *cgroupcpu_cfs_quota);
-            tryReadText(period, *cgroupcpu_cfs_period);
-
-            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
         }
         catch (...)
         {
@@ -1106,16 +1042,18 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 // It doesn't read the EOL itself.
                 ++cpuinfo->position();
 
-                static constexpr std::string_view PROCESSOR = "processor";
-                if (s.starts_with(PROCESSOR))
+                if (s.rfind("processor", 0) == 0)
                 {
                     /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
                     /// non s390x example: processor : 0
-                    auto core_id_start = std::ssize(PROCESSOR);
-                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
-                        ++core_id_start;
-
-                    core_id = std::stoi(s.substr(core_id_start));
+                    if (auto colon = s.find_first_of(':'))
+                    {
+#ifdef __s390x__
+                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
+#else
+                        core_id = std::stoi(s.substr(colon + 2));
+#endif
+                    }
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)
                 {

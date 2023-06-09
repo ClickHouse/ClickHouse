@@ -19,7 +19,6 @@ def cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/storage_conf.xml"],
-            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "1"},
             with_minio=True,
             with_zookeeper=True,
@@ -27,14 +26,12 @@ def cluster():
         cluster.add_instance(
             "node2",
             main_configs=["configs/config.d/storage_conf.xml"],
-            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "2"},
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/config.d/storage_conf.xml"],
-            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "3"},
             with_zookeeper=True,
         )
@@ -77,7 +74,7 @@ def generate_values(date_str, count, sign=1):
 
 def create_table(cluster, additional_settings=None):
     create_table_statement = """
-        CREATE TABLE s3_test ON CLUSTER cluster (
+        CREATE TABLE s3_test ON CLUSTER cluster(
             dt Date,
             id Int64,
             data String,
@@ -98,8 +95,7 @@ def create_table(cluster, additional_settings=None):
 def drop_table(cluster):
     yield
     for node in list(cluster.instances.values()):
-        node.query("DROP TABLE IF EXISTS s3_test SYNC")
-        node.query("DROP TABLE IF EXISTS test_drop_table SYNC")
+        node.query("DROP TABLE IF EXISTS s3_test")
 
     minio = cluster.minio_client
     # Remove extra objects to prevent tests cascade failing
