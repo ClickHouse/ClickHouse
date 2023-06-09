@@ -283,16 +283,19 @@ public:
         return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
     }
 
+    /// Null stands for blank range.
     bool isBlank()
     {
-        return left == Null::Value::Null && right == Null::Value::Null;
+        return (left == Null::Value::Null && right == Null::Value::Null)
+            || (equals(left, right) && !left_included && !right_included);
     }
 
+    /// Invert me.
     std::vector<Range> invertToRanges()
     {
         std::vector<Range> ranges;
-        /// case: [1, 3] -> (-inf, 1), (3, +inf)
-        if (fullBounded())
+        /// For full bounded range will generate tow range.
+        if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
         {
             ranges.push_back({NEGATIVE_INFINITY, !right_included, left, !left_included});
             ranges.push_back({right, !right_included, POSITIVE_INFINITY, !left_included});
@@ -461,7 +464,7 @@ public:
     ///     original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
     ///     plain ranges: (1, 10), [12, 12]
     /// Note that only support one column key condition.
-    bool extractPlainRanges(std::vector<Range> ranges) const;
+    bool extractPlainRanges(Ranges ranges) const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.

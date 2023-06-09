@@ -56,24 +56,26 @@ private:
 };
 
 
-struct NumbersMultiThreadedState
-{
-    std::atomic<UInt64> counter;
-    explicit NumbersMultiThreadedState(UInt64 offset) : counter(offset) {}
-};
-
-using NumbersMultiThreadedStatePtr = std::shared_ptr<NumbersMultiThreadedState>;
-
-class NumbersMultiThreadedSource : public ISource
+class NumbersRangedSource : public ISource
 {
 public:
-    NumbersMultiThreadedSource(NumbersMultiThreadedStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
-        : ISource(createHeader())
-        , state(std::move(state_))
-        , block_size(block_size_)
-        , max_counter(max_counter_) {}
+    /// Represent a position in Ranges
+    struct RangesPos
+    {
+        /// offset in Ranges
+        size_t x;
+        /// offset in Range
+        size_t y;
+    };
 
-    String getName() const override { return "NumbersMt"; }
+    NumbersRangedSource(const Ranges & ranges_, UInt64 block_size_, RangesPos start_, RangesPos end_)
+        : ISource(createHeader())
+        , ranges(ranges_)
+        , block_size(block_size_)
+        , cursor(start_)
+        , end(end_) {}
+
+    String getName() const override { return "NumbersRange"; }
 
 protected:
     Chunk generate() override
@@ -81,21 +83,58 @@ protected:
         if (block_size == 0)
             return {};
 
-        UInt64 curr = state->counter.fetch_add(block_size, std::memory_order_relaxed);
-
-        if (curr >= max_counter)
+        if (ranges.empty())
             return {};
 
-        if (curr + block_size > max_counter)
-            block_size = max_counter - curr;
+        auto first_value = [](const Range & r)
+        {
+            return r.left.get<UInt64>() - (r.left_included ? 0 : 1);
+        };
+
+        auto last_value = [](const Range & r)
+        {
+            return r.right.get<UInt64>() - (r.right_included ? 0 : 1);
+        };
 
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
 
-        UInt64 * pos = vec.data();
-        UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
+        for (; cursor.x <= end.x;)
+        {
+            size_t need = block_size - vec.size();
+
+            auto& range = ranges[cursor.x];
+            UInt64 * pos = vec.data(); /// This also accelerates the code.
+
+            size_t can_provide = cursor.x == end.x ? end.y - cursor.y : last_value(range) - first_value(range) + 1 - cursor.y;
+
+            uint64_t start_value = first_value(range) + cursor.y;
+            if (can_provide > need)
+            {
+                for (size_t i=0; i < need; i++)
+                    *pos++ = (start_value + i);
+
+                cursor.y += need;
+                break;
+            }
+            else if (can_provide == need)
+            {
+                for (size_t i=0; i < need; i++)
+                    *pos++ = (start_value + i);
+
+                cursor.x++;
+                cursor.y = 0;
+                break;
+            }
+            else
+            {
+                for (size_t i=0; i < can_provide; i++)
+                    *pos++ = (start_value + i);
+
+                cursor.x++;
+                cursor.y = 0;
+            }
+        }
 
         progress(column->size(), column->byteSize());
 
@@ -103,10 +142,11 @@ protected:
     }
 
 private:
-    NumbersMultiThreadedStatePtr state;
-
+    Ranges ranges;
     UInt64 block_size;
-    UInt64 max_counter;
+
+    RangesPos cursor;
+    RangesPos end; /// not included
 
     static Block createHeader()
     {
@@ -149,38 +189,112 @@ Pipe StorageSystemNumbers::read(
 
     assert(column_names.size() == 1);
 
-    const auto & columns = storage_snapshot->getMetadataForQuery()->columns;
-    auto col_desc = KeyDescription::parse(column_names[0], columns, context);
+    /// build query filter rpn
+    auto col_desc = KeyDescription::parse(column_names[0], storage_snapshot->getMetadataForQuery()->columns, context);
     KeyCondition condition(query_info, context, column_names, col_desc.expression, {});
 
-    FieldRef left(1);
-    FieldRef right(20);
-
-    std::cout << "Condition result: " << condition.mayBeTrueInRange(1, &left, &right, columns.getAll().getTypes());
-
-    if (num_streams > 1 && !even_distribution && limit)
+    Ranges ranges;
+    if (condition.extractPlainRanges(ranges))
     {
-        auto state = std::make_shared<NumbersMultiThreadedState>(offset);
-        UInt64 max_counter = offset + *limit;
-
-        for (size_t i = 0; i < num_streams; ++i)
+        std::cout << "Ranges:\n";
+        for (auto & r : ranges)
         {
-            auto source = std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter);
-
-            if (i == 0)
-            {
-                auto rows_appr = *limit;
-                if (query_info.limit > 0 && query_info.limit < rows_appr)
-                    rows_appr = query_info.limit;
-                source->addTotalRowsApprox(rows_appr);
-            }
-
-            pipe.addSource(std::move(source));
+            std::cout << r.toString() << std::endl;
         }
 
-        return pipe;
+        /// Intersect ranges with table range
+        Range table_range(
+            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : NEGATIVE_INFINITY, limit.has_value());
+        Ranges intersected_ranges;
+
+        for (auto & r : ranges)
+        {
+            auto intersected_range = table_range.intersectWith(r);
+            if (intersected_range)
+            intersected_ranges.push_back(*intersected_range);
+        }
+
+        /// 1. If intersected ranges is limited, use NumbersRangedSource
+        if (intersected_ranges.empty() && !intersected_ranges.rbegin()->right.isPositiveInfinity())
+        {
+            auto size_of_range = [] (const Range & r) -> size_t
+            {
+                size_t size;
+                size = r.right.get<UInt64>() - r.left.get<UInt64>() + 1;
+                if (!r.left_included)
+                    size--;
+                assert (size > 0);
+
+                if (!r.right_included)
+                    size--;
+                assert (size > 0);
+                return size;
+            };
+
+            auto size_of_ranges = [&size_of_range](const Ranges & rs) -> size_t
+            {
+                size_t total_size{};
+                for (const Range & r : rs)
+                {
+                    total_size += size_of_range(r);
+                }
+                return total_size;
+            };
+
+            size_t total_size = size_of_ranges(intersected_ranges);
+            num_streams = std::min(num_streams, total_size / max_block_size);
+
+            if (num_streams == 0)
+                num_streams = 1;
+
+            /// Split ranges evenly
+            NumbersRangedSource::RangesPos start({0, 0});
+            for (size_t i = 0; i < num_streams; ++i)
+            {
+                auto need = total_size * (i + 1) / num_streams - total_size * i / num_streams;
+
+                /// find end
+                NumbersRangedSource::RangesPos end(start);
+                while (need != 0)
+                {
+                    size_t can_provide = size_of_range(ranges[end.x]) - end.y;
+                    if (can_provide > need)
+                    {
+                        end.y += need;
+                        break;
+                    }
+                    else if (can_provide == need)
+                    {
+                        end.x++;
+                        end.y = 0;
+                        break;
+                    }
+                    else
+                    {
+                        end.x++;
+                        end.y = 0;
+                        need -= can_provide;
+                    }
+                }
+
+                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, max_block_size, start, end);
+                start = end;
+
+                if (i == 0)
+                {
+                    auto rows_appr = total_size;
+                    if (query_info.limit > 0 && query_info.limit < rows_appr)
+                        rows_appr = query_info.limit;
+                    source->addTotalRowsApprox(rows_appr);
+                }
+
+                pipe.addSource(std::move(source));
+            }
+            return pipe;
+        }
     }
 
+    /// 2. Or fall back to NumbersSource
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<NumbersSource>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
