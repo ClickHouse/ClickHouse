@@ -109,8 +109,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            result_data[i] = static_cast<UInt32>(
-                ((source_data[i] >> time_shift) + snowflake_epoch) / 1000);
+            result_data[i] = ((source_data[i] >> time_shift) + snowflake_epoch) / 1000;
         }
         return res_column;
     }

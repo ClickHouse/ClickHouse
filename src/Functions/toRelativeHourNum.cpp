@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl<ResultPrecision::Standard>>;
+using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl>;
 
 REGISTER_FUNCTION(ToRelativeHourNum)
 {

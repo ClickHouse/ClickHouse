@@ -40,8 +40,7 @@ try
     }
 
 
-    zkutil::ZooKeeperArgs args;
-    ZooKeeper zk(nodes, args, nullptr);
+    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000}, nullptr);
 
     Poco::Event event(true);
 

@@ -90,11 +90,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def check_exists(zk, path):
-    zk.sync(path)
-    return zk.exists(path)
-
-
 def test_drop_replica(start_cluster):
     node_1_1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
@@ -163,11 +158,10 @@ def test_drop_replica(start_cluster):
     )
 
     node_1_3.query("SYSTEM DROP REPLICA 'node_1_1'")
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 != None
 
@@ -177,29 +171,26 @@ def test_drop_replica(start_cluster):
             shard=1
         )
     )
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test2/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 == None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 == None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test1/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 == None
 
@@ -208,19 +199,17 @@ def test_drop_replica(start_cluster):
             shard=1
         )
     )
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 == None
 
     node_1_2.query("SYSTEM DROP REPLICA 'node_1_1'")
-    exists_replica_1_1 = check_exists(
-        zk,
+    exists_replica_1_1 = zk.exists(
         "/clickhouse/tables/test4/{shard}/replicated/test_table/replicas/{replica}".format(
             shard=1, replica="node_1_1"
-        ),
+        )
     )
     assert exists_replica_1_1 == None

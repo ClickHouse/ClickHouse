@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/mysql
 sidebar_position: 42
 sidebar_label: mysql
 ---
@@ -16,21 +15,21 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 **Arguments**
 
-- `host:port` — MySQL server address.
+-   `host:port` — MySQL server address.
 
-- `database` — Remote database name.
+-   `database` — Remote database name.
 
-- `table` — Remote table name.
+-   `table` — Remote table name.
 
-- `user` — MySQL user.
+-   `user` — MySQL user.
 
-- `password` — User password.
+-   `password` — User password.
 
-- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
+-   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
     - `0` - The query is executed as `INSERT INTO`.
     - `1` - The query is executed as `REPLACE INTO`.
 
-- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
 
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`
 
@@ -56,7 +55,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 A table object with the same columns as the original MySQL table.
 
-:::note
+:::note    
 In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
@@ -109,5 +108,6 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 
 **See Also**
 
-- [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
-- [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+-   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
+-   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+

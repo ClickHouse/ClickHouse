@@ -3,9 +3,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DistributedAsyncInsertSource.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -15,8 +14,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <IO/MMapReadBufferFromFile.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -34,13 +31,11 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -50,17 +45,7 @@
 #include <unistd.h>
 #include <re2/re2.h>
 #include <filesystem>
-#include <shared_mutex>
-#include <cmath>
-#include <algorithm>
 
-
-namespace ProfileEvents
-{
-    extern const Event CreatedReadBufferOrdinary;
-    extern const Event CreatedReadBufferMMap;
-    extern const Event CreatedReadBufferMMapFailed;
-}
 
 namespace fs = std::filesystem;
 
@@ -84,7 +69,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -97,8 +81,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    std::vector<std::string> & result,
-    bool recursive = false)
+    std::vector<std::string> & result)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -106,20 +89,10 @@ void listFilesWithRegexpMatchingImpl(
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
-    const std::string current_glob = suffix_with_globs.substr(0, next_slash);
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
-
+    auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
     re2::RE2 matcher(regexp);
-    if (!matcher.ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
-
-    bool skip_regex = current_glob == "/*" ? true : false;
-    if (!recursive)
-        recursive = current_glob == "/**" ;
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-
     if (!fs::exists(prefix_without_globs))
         return;
 
@@ -134,21 +107,15 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
-        else if (it->is_directory())
+        else if (it->is_directory() && looking_for_directory)
         {
-            if (recursive)
-            {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash) : current_glob ,
-                                                total_bytes_to_read, result, recursive);
-            }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
@@ -190,71 +157,8 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
+            throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
     }
-}
-
-std::unique_ptr<ReadBuffer> selectReadBuffer(
-    const String & current_path,
-    bool use_table_fd,
-    int table_fd,
-    const struct stat & file_stat,
-    ContextPtr context)
-{
-    auto read_method = context->getSettingsRef().storage_file_read_method;
-
-    /** But using mmap on server-side is unsafe for the following reasons:
-      * - concurrent modifications of a file will result in SIGBUS;
-      * - IO error from the device will result in SIGBUS;
-      * - recovery from this signal is not feasible even with the usage of siglongjmp,
-      *   as it might require stack unwinding from arbitrary place;
-      * - arbitrary slowdown due to page fault in arbitrary place in the code is difficult to debug.
-      *
-      * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
-      */
-
-    if (S_ISREG(file_stat.st_mode)
-        && context->getApplicationType() != Context::ApplicationType::SERVER
-        && read_method == LocalFSReadMethod::mmap)
-    {
-        try
-        {
-            std::unique_ptr<ReadBufferFromFileBase> res;
-            if (use_table_fd)
-                res = std::make_unique<MMapReadBufferFromFileDescriptor>(table_fd, 0);
-            else
-                res = std::make_unique<MMapReadBufferFromFile>(current_path, 0);
-
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
-            return res;
-        }
-        catch (const ErrnoException &)
-        {
-            /// Fallback if mmap is not supported.
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
-        }
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> res;
-    if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
-    {
-        if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
-        else
-            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
-
-        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    }
-    else
-    {
-        if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
-        else
-            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
-
-        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    }
-    return res;
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -265,6 +169,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
+    std::unique_ptr<ReadBuffer> nested_buffer;
     CompressionMethod method;
 
     struct stat file_stat{};
@@ -275,6 +180,11 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
 
+        if (S_ISREG(file_stat.st_mode))
+            nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
+
         method = chooseCompressionMethod("", compression_method);
     }
     else
@@ -283,20 +193,23 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
 
+        if (S_ISREG(file_stat.st_mode))
+            nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
+        else
+            nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+
         method = chooseCompressionMethod(current_path, compression_method);
     }
-
-    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
     /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
         || context->getApplicationType() == Context::ApplicationType::CLIENT)
     {
-        auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
+        auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
     }
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
@@ -381,16 +294,19 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (format == "Distributed")
     {
         if (paths.empty())
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
+            throw Exception(
+                "Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
 
-        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
+        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
+        return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files with provided path. "
-            "You must specify table structure manually", format);
+            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+            "table structure manually",
+            format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
@@ -421,16 +337,6 @@ bool StorageFile::supportsSubsetOfColumns() const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
-bool StorageFile::prefersLargeBlocks() const
-{
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
-}
-
-bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
-{
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -441,9 +347,9 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     total_bytes_to_read = buf.st_size;
 
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
     if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     is_db_table = false;
     use_table_fd = true;
@@ -469,9 +375,9 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     : StorageFile(args)
 {
     if (relative_table_dir_path.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
     if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
@@ -509,7 +415,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         {
             columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
             if (!args.columns.empty() && args.columns != columns)
-                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
+                throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
         }
         storage_metadata.setColumns(columns);
     }
@@ -594,7 +500,7 @@ public:
         {
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
         }
     }
 
@@ -621,7 +527,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -630,11 +536,8 @@ public:
                 if (!read_buf)
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
-                const Settings & settings = context->getSettingsRef();
-                chassert(!storage->paths.empty());
-                const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -675,8 +578,22 @@ public:
 
                 if (num_rows)
                 {
-                    updateRowsProgressApprox(
-                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    total_rows_approx_accumulated += total_rows_approx;
+                    ++total_rows_count_times;
+                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
+
+                    /// We need to add diff, because total_rows_approx is incremental value.
+                    /// It would be more correct to send total_rows_approx as is (not a diff),
+                    /// but incrementation of total_rows_to_read does not allow that.
+                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
+                    if (total_rows_approx > total_rows_approx_prev)
+                    {
+                        size_t diff = total_rows_approx - total_rows_approx_prev;
+                        addTotalRowsApprox(diff);
+                        total_rows_approx_prev = total_rows_approx;
+                    }
                 }
                 return chunk;
             }
@@ -717,7 +634,7 @@ private:
 
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_max = 0;
+    UInt64 total_rows_approx_prev = 0;
 };
 
 
@@ -728,7 +645,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    const size_t max_num_streams)
+    unsigned num_streams)
 {
     if (use_table_fd)
     {
@@ -741,7 +658,7 @@ Pipe StorageFile::read(
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", paths[0]);
+                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
     }
 
@@ -759,8 +676,7 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    size_t num_streams = max_num_streams;
-    if (max_num_streams > paths.size())
+    if (num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -789,7 +705,7 @@ Pipe StorageFile::read(
                 });
 
             if (fetch_columns.empty())
-                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
             columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         }
         else
@@ -881,7 +797,7 @@ public:
         , lock(std::move(lock_))
     {
         if (!lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
         initialize();
     }
 
@@ -904,7 +820,8 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-            *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);
+            *write_buf, metadata_snapshot->getSampleBlock(), context,
+            {}, format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -955,7 +872,6 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
-            write_buf->finalize();
             throw;
         }
     }
@@ -1049,11 +965,10 @@ private:
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    bool /*async_insert*/)
+    ContextPtr context)
 {
     if (format_name == "Distributed")
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
+        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
     int flags = 0;
 
@@ -1090,9 +1005,7 @@ SinkToStoragePtr StorageFile::write(
         if (!paths.empty())
         {
             if (is_path_with_globs)
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                                "Table '{}' is in readonly mode because of globs in filepath",
-                                getStorageID().getNameForLogs());
+                throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
 
             path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
@@ -1150,18 +1063,17 @@ bool StorageFile::storesDataOnDisk() const
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
+        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Can't rename table {} bounded to user-defined file (or FD)", getStorageID().getNameForLogs());
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} in readonly mode", getStorageID().getNameForLogs());
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     if (path_new == paths[0])
@@ -1181,7 +1093,7 @@ void StorageFile::truncate(
     TableExclusiveLockHolder &)
 {
     if (is_path_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't truncate table '{}' in readonly mode", getStorageID().getNameForLogs());
+        throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (use_table_fd)
     {
@@ -1229,9 +1141,9 @@ void registerStorageFile(StorageFactory & factory)
             ASTs & engine_args_ast = factory_args.engine_args;
 
             if (!(engine_args_ast.size() >= 1 && engine_args_ast.size() <= 3)) // NOLINT
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Storage File requires from 1 to 3 arguments: "
-                                "name of used format, source and compression_method.");
+                throw Exception(
+                    "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
@@ -1283,8 +1195,8 @@ void registerStorageFile(StorageFactory & factory)
                 else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier '{}' in second arg of File storage constructor",
-                        *opt_name);
+                    throw Exception(
+                        "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
             }
             else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
             {
@@ -1296,7 +1208,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::String)
                     source_path = literal->value.get<String>();
                 else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
+                    throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
             }
 
             if (engine_args_ast.size() == 3)

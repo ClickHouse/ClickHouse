@@ -1,27 +1,17 @@
 ---
-slug: /en/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
 
 # SHOW Statements
 
-N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
-[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
-is turned on,
-[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
-is turned on and user has
-[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
-
-## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
+## SHOW CREATE TABLE
 
 ``` sql
-SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single column of type String containing the CREATE query used for creating the specified object.
-
-`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
+Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
@@ -30,16 +20,16 @@ Note that if you use this statement to get `CREATE` query of system tables, you 
 Prints a list of all databases.
 
 ```sql
-SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.databases [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-**Examples**
+### Examples
 
 Getting database names, containing the symbols sequence 'de' in their names:
 
@@ -101,16 +91,32 @@ Result:
 └────────────────────────────────┘
 ```
 
-**See also**
+### See Also
 
-- [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+
+## SHOW PROCESSLIST
+
+``` sql
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+```
+
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+
+The `SELECT * FROM system.processes` query returns data about all the current queries.
+
+Tip (execute in the console):
+
+``` bash
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+```
 
 ## SHOW TABLES
 
 Displays a list of tables.
 
 ```sql
-SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
@@ -118,10 +124,10 @@ If the `FROM` clause is not specified, the query returns the list of tables from
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.tables [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Examples**
+### Examples
 
 Getting table names, containing the symbols sequence 'user' in their names:
 
@@ -184,62 +190,14 @@ Result:
 └────────────────────────────────┘
 ```
 
-**See also**
+### See Also
 
-- [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
-- [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
-
-## SHOW COLUMNS
-
-Displays a list of columns
-
-```sql
-SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {LIKE | ILIKE} '<pattern>' | WHERE <expr>}] [LIMIT <N>] [INTO
-OUTFILE <filename>] [FORMAT <format>]
-```
-
-The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
-equivalent. If no database is specified, the query returns the list of columns from the current database.
-
-The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
-
-The optional keyword `FULL` causes the output to include the collation, comment and privilege columns.
-
-`SHOW COLUMNS` produces a result table with the following structure:
-- field - The name of the column (String)
-- type - The column data type (String)
-- null - If the column data type is Nullable (UInt8)
-- key - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
-- default - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
-- extra - Additional information, currently unused (String)
-- collation - (only if `FULL` keyword was specified) Collation of the column, always `NULL` because ClickHouse has no per-column collations (Nullable(String))
-- comment - (only if `FULL` keyword was specified) Comment on the column (String)
-- privilege - (only if `FULL` keyword was specified) The privilege you have on this column, currently not available (String)
-
-**Examples**
-
-Getting information about all columns in table 'order' starting with 'delivery_':
-
-```sql
-SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
-```
-
-Result:
-
-``` text
-┌─field───────────┬─type─────┬─null─┬─key─────┬─default─┬─extra─┐
-│ delivery_date   │ DateTime │    0 │ PRI SOR │ ᴺᵁᴸᴸ    │       │
-│ delivery_status │ Bool     │    0 │         │ ᴺᵁᴸᴸ    │       │
-└─────────────────┴──────────┴──────┴─────────┴─────────┴───────┘
-```
-
-**See also**
-
-- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+-   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES
 
-Displays a list of [Dictionaries](../../sql-reference/dictionaries/index.md).
+Displays a list of [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -253,7 +211,7 @@ You can get the same results as the `SHOW DICTIONARIES` query in the following w
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Examples**
+**Example**
 
 The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
 
@@ -268,82 +226,11 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
-## SHOW INDEX
-
-Displays a list of primary and data skipping indexes of a table.
-
-```sql
-SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
-```
-
-The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
-equivalent. If no database is specified, the query assumes the current database as database.
-
-The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
-
-`SHOW INDEX` produces a result table with the following structure:
-- table - The name of the table (String)
-- non_unique - 0 if the index can contain duplicates, 1 otherwise (UInt8)
-- key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
-- seq_in_index - Currently unused
-- column_name - Currently unused
-- collation - The sorting of the column in the index, `A` if ascending, `D` if descending, `NULL` if unsorted (Nullable(String))
-- cardinality - Currently unused
-- sub_part - Currently unused
-- packed - Currently unused
-- null - Currently unused
-- index_type - The index type, e.g. `primary`, `minmax`, `bloom_filter` etc. (String)
-- comment - Currently unused
-- index_comment - Currently unused
-- visible - If the index is visible to the optimizer, always `YES` (String)
-- expression - The index expression (String)
-
-**Examples**
-
-Getting information about all indexes in table 'tbl'
-
-```sql
-SHOW INDEX FROM 'tbl'
-```
-
-Result:
-
-``` text
-┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ bloom_filter │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ d, b       │
-│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ a, c, d    │
-│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, d, e    │
-│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ primary      │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, a       │
-│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ set          │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ e          │
-└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
-```
-
-**See also**
-
-- [system.tables](../../operations/system-tables/tables.md)
-- [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md)
-
-## SHOW PROCESSLIST
-
-``` sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
-
-The `SELECT * FROM system.processes` query returns data about all the current queries.
-
-Tip (execute in the console):
-
-``` bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
-
 ## SHOW GRANTS
 
 Shows privileges for a user.
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW GRANTS [FOR user1 [, user2 ...]]
@@ -355,7 +242,9 @@ If user is not specified, the query returns privileges for the current user.
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
-**Syntax**
+`SHOW CREATE USER` does not output user passwords.
+
+### Syntax
 
 ``` sql
 SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
@@ -365,7 +254,7 @@ SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 
 Shows parameters that were used at a [role creation](../../sql-reference/statements/create/role.md).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW CREATE ROLE name1 [, name2 ...]
@@ -375,7 +264,7 @@ SHOW CREATE ROLE name1 [, name2 ...]
 
 Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
@@ -385,7 +274,7 @@ SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 
 Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
@@ -395,7 +284,7 @@ SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 
 Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
@@ -403,9 +292,9 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 
 ## SHOW USERS
 
-Returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names. To view user accounts parameters, see the system table [system.users](../../operations/system-tables/users.md#system_tables-users).
+Returns a list of [user account](../../operations/access-rights.md#user-account-management) names. To view user accounts parameters, see the system table [system.users](../../operations/system-tables/users.md#system_tables-users).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW USERS
@@ -413,18 +302,18 @@ SHOW USERS
 
 ## SHOW ROLES
 
-Returns a list of [roles](../../guides/sre/user-management/index.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
 ## SHOW PROFILES
 
-Returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
+Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW [SETTINGS] PROFILES
@@ -432,9 +321,9 @@ SHOW [SETTINGS] PROFILES
 
 ## SHOW POLICIES
 
-Returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table. To view user accounts parameters, see the system table [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
+Returns a list of [row policies](../../operations/access-rights.md#row-policy-management) for the specified table. To view user accounts parameters, see the system table [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW [ROW] POLICIES [ON [db.]table]
@@ -442,9 +331,9 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ## SHOW QUOTAS
 
-Returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management). To view quotas parameters, see the system table [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
+Returns a list of [quotas](../../operations/access-rights.md#quotas-management). To view quotas parameters, see the system table [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW QUOTAS
@@ -454,16 +343,16 @@ SHOW QUOTAS
 
 Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
 ## SHOW ACCESS
 
-Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW ACCESS
@@ -472,18 +361,17 @@ SHOW ACCESS
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
-:::note
+:::note    
 `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 :::
 
-**Syntax**
+### Syntax
 
 ``` sql
 SHOW CLUSTER '<name>'
-SHOW CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>]
+SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-
-**Examples**
+### Examples
 
 Query:
 
@@ -604,32 +492,8 @@ Result:
 └──────────────────┴────────┴─────────────┘
 ```
 
-## SHOW FILESYSTEM CACHES
-
-```sql
-SHOW FILESYSTEM CACHES
-```
-
-Result:
-
-``` text
-┌─Caches────┐
-│ s3_cache  │
-└───────────┘
-```
-
 **See Also**
 
-- [system.settings](../../operations/system-tables/settings.md) table
+-   [system.settings](../../operations/system-tables/settings.md) table
 
-## SHOW ENGINES
-
-``` sql
-SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.table_engines](../../operations/system-tables/table_engines.md) table, that contains description of table engines supported by server and their feature support information.
-
-**See Also**
-
-- [system.table_engines](../../operations/system-tables/table_engines.md) table
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->

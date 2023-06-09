@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/anylast
 sidebar_position: 104
 ---
 
@@ -7,3 +6,4 @@ sidebar_position: 104
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции [any](../../../sql-reference/aggregate-functions/reference/any.md).
+

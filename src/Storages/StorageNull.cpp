@@ -25,8 +25,9 @@ void registerStorageNull(StorageFactory & factory)
     factory.registerStorage("Null", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, args.engine_args.size());
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },
@@ -37,7 +38,7 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN
@@ -50,15 +51,13 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv)
-                    );
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
         }
     }

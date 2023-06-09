@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 
@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 namespace
 {
@@ -76,9 +75,6 @@ namespace
 
         const size_t next_slash = suffix_with_globs.find('/', 1);
         re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
-        if (!matcher.ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
@@ -124,15 +120,8 @@ namespace
 
     std::pair<String, String> getPathFromUriAndUriWithoutPath(const String & uri)
     {
-        auto pos = uri.find("//");
-        if (pos != std::string::npos && pos + 2 < uri.length())
-        {
-            pos = uri.find('/', pos + 2);
-            if (pos != std::string::npos)
-                return {uri.substr(pos), uri.substr(0, pos)};
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage HDFS requires valid URL to be set");
+        const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+        return {uri.substr(begin_of_path), uri.substr(0, begin_of_path)};
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
@@ -204,21 +193,22 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
-            " You must specify table structure manually", format);
+            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+            "specify table structure manually",
+            format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
         columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
 
-    ReadBufferIterator read_buffer_iterator = [&, my_uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
     };
 
     ColumnsDescription columns;
@@ -265,7 +255,7 @@ private:
 class HDFSSource::URISIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
@@ -303,7 +293,7 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, ContextPtr context)
+HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_, ContextPtr context)
     : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
 {
 }
@@ -341,6 +331,13 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
+void HDFSSource::onCancel()
+{
+    std::lock_guard lock(reader_mutex);
+    if (reader)
+        reader->cancel();
+}
+
 bool HDFSSource::initialize()
 {
     current_path = (*file_iterator)();
@@ -352,8 +349,8 @@ bool HDFSSource::initialize()
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
     auto impl = std::make_unique<ReadBufferFromHDFS>(
         uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -380,12 +377,8 @@ Chunk HDFSSource::generate()
 {
     while (true)
     {
-        if (isCancelled() || !reader)
-        {
-            if (reader)
-                reader->cancel();
+        if (!reader || isCancelled())
             break;
-        }
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -413,12 +406,15 @@ Chunk HDFSSource::generate()
             return Chunk(std::move(columns), num_rows);
         }
 
-        reader.reset();
-        pipeline.reset();
-        read_buf.reset();
+        {
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
 
-        if (!initialize())
-            break;
+            if (!initialize())
+                break;
+        }
     }
     return {};
 }
@@ -490,7 +486,6 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
-            write_buf->finalize();
             throw;
         }
     }
@@ -548,7 +543,7 @@ Pipe StorageHDFS::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     std::shared_ptr<HDFSSource::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)
@@ -597,7 +592,7 @@ Pipe StorageHDFS::read(
             { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
         if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
         columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
@@ -624,7 +619,7 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_)
 {
     String current_uri = uris.back();
 
@@ -711,9 +706,8 @@ void registerStorageHDFS(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.empty() || engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage HDFS requires 1, 2 or 3 arguments: "
-                            "url, name of used format (taken from file extension by default) and optional compression method.");
+            throw Exception(
+                "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 

@@ -18,7 +18,7 @@ NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configura
     , log(log_)
     , event_handler(loop.getLoop(), log)
 {
-    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
+    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE");
     std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
     if (tls_secure == "0")
         skip_verification = true;
@@ -111,7 +111,7 @@ void NATSConnectionManager::connectImpl()
         {
             servers[i] = configuration.servers[i].c_str();
         }
-        natsOptions_SetServers(options, servers, static_cast<int>(configuration.servers.size()));
+        natsOptions_SetServers(options, servers, configuration.servers.size());
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);

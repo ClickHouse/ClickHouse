@@ -20,8 +20,6 @@ with client(name="client1>", log=log) as client1, client(
     client2.expect(prompt)
     client3.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
-    client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
@@ -35,9 +33,9 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01078_window_view_alter_query_watch")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.mt SYNC")
+    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.mt NO DELAY")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.wv SYNC")
+    client1.send("DROP TABLE IF EXISTS 01078_window_view_alter_query_watch.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
@@ -89,7 +87,7 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client3.send(client3.command)
         client3.expect(prompt)
-    client3.send("DROP TABLE 01078_window_view_alter_query_watch.wv SYNC;")
+    client3.send("DROP TABLE 01078_window_view_alter_query_watch.wv NO DELAY;")
     client3.expect(prompt)
     client3.send("DROP TABLE 01078_window_view_alter_query_watch.mt;")
     client3.expect(prompt)

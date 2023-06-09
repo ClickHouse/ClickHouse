@@ -16,7 +16,6 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
     LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
-    join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
     LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
@@ -39,27 +38,17 @@ JoiningTransform::JoiningTransform(
     , max_block_size(max_block_size_)
 {
     if (!join->isFilled())
-        inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
-}
-
-JoiningTransform::~JoiningTransform() = default;
-
-OutputPort & JoiningTransform::getFinishedSignal()
-{
-    assert(outputs.size() == 2);
-    return outputs.back();
+        inputs.emplace_back(Block(), this);
 }
 
 IProcessor::Status JoiningTransform::prepare()
 {
     auto & output = outputs.front();
-    auto & on_finish_output = outputs.back();
 
     /// Check can output.
     if (output.isFinished() || stop_reading)
     {
         output.finish();
-        on_finish_output.finish();
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
@@ -104,7 +93,6 @@ IProcessor::Status JoiningTransform::prepare()
             return Status::Ready;
 
         output.finish();
-        on_finish_output.finish();
         return Status::Finished;
     }
 
@@ -146,7 +134,7 @@ void JoiningTransform::work()
             }
         }
 
-        Block block = non_joined_blocks->next();
+        Block block = non_joined_blocks->read();
         if (!block)
         {
             process_non_joined = false;
@@ -189,6 +177,7 @@ void JoiningTransform::transform(Chunk & chunk)
     }
     else
         block = readExecute(chunk);
+
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
@@ -307,217 +296,6 @@ void FillingRightJoinSideTransform::work()
         stop_reading = !join->addJoinedBlock(block);
 
     set_totals = for_totals;
-}
-
-
-DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block left_header_,
-    Block output_header_,
-    size_t max_block_size_,
-    JoinPtr join_)
-    : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
-    , left_header(left_header_)
-    , output_header(output_header_)
-    , max_block_size(max_block_size_)
-    , join(join_)
-{
-}
-
-IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
-{
-    auto & output = outputs.front();
-    auto & input = inputs.front();
-
-    if (output.isFinished())
-    {
-        input.close();
-        return Status::Finished;
-    }
-
-    if (!output.canPush())
-    {
-        input.setNotNeeded();
-        return Status::PortFull;
-    }
-
-    if (inputs.size() != 1 && outputs.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have exactly one input port");
-
-    if (output_chunk)
-    {
-        input.setNotNeeded();
-
-        if (!output.canPush())
-            return Status::PortFull;
-
-        output.push(std::move(output_chunk));
-        output_chunk.clear();
-        return Status::PortFull;
-    }
-
-    if (!task)
-    {
-        if (!input.hasData())
-        {
-            input.setNeeded();
-            return Status::NeedData;
-        }
-
-        auto data = input.pullData(true);
-        if (data.exception)
-        {
-            output.pushException(data.exception);
-            return Status::Finished;
-        }
-
-        if (!data.chunk.hasChunkInfo())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
-        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
-
-    }
-    else
-    {
-        input.setNotNeeded();
-    }
-
-    if (task->finished)
-    {
-        input.close();
-        output.finish();
-        return Status::Finished;
-    }
-
-    return Status::Ready;
-}
-
-void DelayedJoinedBlocksWorkerTransform::work()
-{
-    if (!task)
-        return;
-    Block block;
-    if (!left_delayed_stream_finished)
-    {
-        block = task->delayed_blocks->next();
-
-        if (!block)
-        {
-            left_delayed_stream_finished = true;
-            block = nextNonJoinedBlock();
-        }
-    }
-    else
-    {
-        block = nextNonJoinedBlock();
-    }
-    if (!block)
-    {
-        resetTask();
-        return;
-    }
-
-    // Add block to the output
-    auto rows = block.rows();
-    output_chunk.setColumns(block.getColumns(), rows);
-}
-
-void DelayedJoinedBlocksWorkerTransform::resetTask()
-{
-    task.reset();
-    left_delayed_stream_finished = false;
-    setup_non_joined_stream = false;
-    non_joined_delayed_stream = nullptr;
-}
-
-Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
-{
-    if (!setup_non_joined_stream)
-    {
-        setup_non_joined_stream = true;
-        // Before read from non-joined stream, all blocks in left file reader must have been joined.
-        // For example, in HashJoin, it may return invalid mismatch rows from non-joined stream before
-        // the all blocks in left file reader have been finished, since the used flags are incomplete.
-        // To make only one processor could read from non-joined stream seems be a easy way.
-        if (task && task->left_delayed_stream_finish_counter->isLast())
-        {
-            if (!non_joined_delayed_stream)
-            {
-                non_joined_delayed_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
-            }
-        }
-    }
-    if (non_joined_delayed_stream)
-    {
-        return non_joined_delayed_stream->next();
-    }
-    return {};
-}
-
-DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_)
-    : IProcessor(InputPorts{}, OutputPorts(num_streams, Block()))
-    , join(std::move(join_))
-{
-}
-
-void DelayedJoinedBlocksTransform::work()
-{
-    if (finished)
-        return;
-
-    delayed_blocks = join->getDelayedBlocks();
-    finished = finished || delayed_blocks == nullptr;
-}
-
-IProcessor::Status DelayedJoinedBlocksTransform::prepare()
-{
-    for (auto & output : outputs)
-    {
-        if (output.isFinished())
-        {
-            /// If at least one output is finished, then we have read all data from buckets.
-            /// Some workers can still be busy with joining the last chunk of data in memory,
-            /// but after that they also will finish when they will try to get next chunk.
-            finished = true;
-            continue;
-        }
-        if (!output.canPush())
-            return Status::PortFull;
-    }
-
-    if (finished)
-    {
-        // Since have memory limit, cannot handle all buckets parallelly by different
-        // DelayedJoinedBlocksWorkerTransform. So send the same task to all outputs.
-        // Wait for all DelayedJoinedBlocksWorkerTransform be idle before getting next bucket.
-        for (auto & output : outputs)
-        {
-            if (output.isFinished())
-                continue;
-            Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
-            output.push(std::move(chunk));
-            output.finish();
-        }
-
-        return Status::Finished;
-    }
-
-    if (delayed_blocks)
-    {
-        // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
-        // could read right non-joined blocks from the join.
-        auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
-        for (auto & output : outputs)
-        {
-            Chunk chunk;
-            auto task = std::make_shared<DelayedBlocksTask>(delayed_blocks, left_delayed_stream_finished_counter);
-            chunk.setChunkInfo(task);
-            output.push(std::move(chunk));
-        }
-        delayed_blocks = nullptr;
-        return Status::PortFull;
-    }
-
-    return Status::Ready;
 }
 
 }

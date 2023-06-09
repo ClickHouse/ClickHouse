@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/integrations/postgresql
 sidebar_position: 11
 sidebar_label: PostgreSQL
 ---
@@ -13,8 +12,8 @@ The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data th
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
 ) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
@@ -23,19 +22,19 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the original PostgreSQL table structure:
 
-- Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+-   Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
+-   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — Non-default table schema. Optional.
-- `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+-   `host:port` — PostgreSQL server address.
+-   `database` — Remote database name.
+-   `table` — Remote table name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
+-   `schema` — Non-default table schema. Optional.
+-   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 or via config (since version 21.11):
 
@@ -57,7 +56,7 @@ or via config (since version 21.11):
 </named_collections>
 ```
 
-Some parameters can be overridden by key value arguments:
+Some parameters can be overriden by key value arguments:
 ``` sql
 SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
 ```
@@ -74,7 +73,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-:::note
+:::warning
 Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 :::
 
@@ -111,7 +110,7 @@ In the example below replica `example01-1` has the highest priority:
 
 ## Usage Example {#usage-example}
 
-### Table in PostgreSQL
+Table in PostgreSQL:
 
 ``` text
 postgres=# CREATE TABLE "public"."test" (
@@ -134,9 +133,7 @@ postgresql> SELECT * FROM test;
  (1 row)
 ```
 
-### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above
-
-This example uses the [PostgreSQL table engine](/docs/en/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table:
+Table in ClickHouse, retrieving data from the PostgreSQL table created above:
 
 ``` sql
 CREATE TABLE default.postgresql_table
@@ -148,35 +145,6 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
 
-### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query
-
-The [postgresql table function](/docs/en/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse:
-
-``` sql
-INSERT INTO default.postgresql_table
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
-```
-
-### Inserting incremental data from PostgreSQL table into ClickHouse table
-
-If then performing ongoing synchronization between the PostgreSQL table and ClickHouse table after the initial insert, you can use a WHERE clause in ClickHouse to insert only data added to PostgreSQL based on a timestamp or unique sequence ID.
-
-This would require keeping track of the max ID or timestamp previously added, such as the following:
-
-``` sql
-SELECT max(`int_id`) AS maxIntID FROM default.postgresql_table;
-```
-
-Then inserting values from PostgreSQL table greater than the max
-
-``` sql
-INSERT INTO default.postgresql_table
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
-WHERE int_id > maxIntID;
-```
-
-### Selecting data from the resulting ClickHouse table
-
 ``` sql
 SELECT * FROM postgresql_table WHERE str IN ('test');
 ```
@@ -187,7 +155,7 @@ SELECT * FROM postgresql_table WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Using Non-default Schema
+Using Non-default Schema:
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -204,10 +172,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
-- [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+-   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
+-   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content
-
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

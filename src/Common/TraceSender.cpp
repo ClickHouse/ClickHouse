@@ -14,7 +14,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 100;
+    constexpr size_t QUERY_ID_MAX_LEN = 128;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
@@ -23,7 +23,7 @@ namespace DB
 
 LazyPipeFDs TraceSender::pipe;
 
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int64 size)
 {
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
@@ -32,14 +32,12 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
-        + sizeof(Int64)                      /// size
-        + sizeof(ProfileEvents::Event)       /// event
-        + sizeof(ProfileEvents::Count);      /// increment
+        + sizeof(Int64);                     /// size
 
     /// Write should be atomic to avoid overlaps
     /// (since recursive collect() is possible)
     static_assert(PIPE_BUF >= 512);
-    static_assert(buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
+    static_assert(buf_size <= 512, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
 
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
@@ -73,9 +71,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
-    writePODBinary(extras.size, out);
-    writePODBinary(extras.event, out);
-    writePODBinary(extras.increment, out);
+    writePODBinary(size, out);
 
     out.next();
 }

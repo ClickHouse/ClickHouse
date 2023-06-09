@@ -12,17 +12,19 @@ CREATE TABLE system.asynchronous_inserts
     `table` String,
     `format` String,
     `first_update` DateTime64(6),
+    `last_update` DateTime64(6),
     `total_bytes` UInt64,
     `entries.query_id` Array(String),
-    `entries.bytes` Array(UInt64)
+    `entries.bytes` Array(UInt64),
+    `entries.finished` Array(UInt8),
+    `entries.exception` Array(String)
 )
 ENGINE = SystemAsynchronousInserts
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
-    `value` Float64,
-    `description` String
+    `value` Float64
 )
 ENGINE = SystemAsynchronousMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -47,10 +49,7 @@ CREATE TABLE system.clusters
     `default_database` String,
     `errors_count` UInt32,
     `slowdowns_count` UInt32,
-    `estimated_recovery_time` UInt32,
-    `database_shard_name` String,
-    `database_replica_name` String,
-    `is_active` Nullable(UInt8)
+    `estimated_recovery_time` UInt32
 )
 ENGINE = SystemClusters
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -107,7 +106,6 @@ CREATE TABLE system.data_skipping_indices
     `table` String,
     `name` String,
     `type` String,
-    `type_full` String,
     `expr` String,
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
@@ -131,7 +129,6 @@ CREATE TABLE system.databases
     `data_path` String,
     `metadata_path` String,
     `uuid` UUID,
-    `engine_full` String,
     `comment` String,
     `database` String
 )
@@ -143,9 +140,7 @@ CREATE TABLE system.detached_parts
     `table` String,
     `partition_id` Nullable(String),
     `name` String,
-    `bytes_on_disk` UInt64,
     `disk` String,
-    `path` String,
     `reason` Nullable(String),
     `min_block_number` Nullable(Int64),
     `max_block_number` Nullable(Int64),
@@ -189,14 +184,8 @@ CREATE TABLE system.disks
     `path` String,
     `free_space` UInt64,
     `total_space` UInt64,
-    `unreserved_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
-    `is_encrypted` UInt8,
-    `is_read_only` UInt8,
-    `is_write_once` UInt8,
-    `is_remote` UInt8,
-    `is_broken` UInt8,
     `cache_path` String
 )
 ENGINE = SystemDisks
@@ -232,8 +221,7 @@ CREATE TABLE system.distribution_queue
     `data_compressed_bytes` UInt64,
     `broken_data_files` UInt64,
     `broken_data_compressed_bytes` UInt64,
-    `last_exception` String,
-    `last_exception_time` DateTime
+    `last_exception` String
 )
 ENGINE = SystemDistributionQueue
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -270,9 +258,7 @@ CREATE TABLE system.formats
 (
     `name` String,
     `is_input` UInt8,
-    `is_output` UInt8,
-    `supports_parallel_parsing` UInt8,
-    `supports_parallel_formatting` UInt8
+    `is_output` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -283,13 +269,7 @@ CREATE TABLE system.functions
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
-    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
-    `description` String,
-    `syntax` String,
-    `arguments` String,
-    `returned_value` String,
-    `examples` String,
-    `categories` String
+    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2)
 )
 ENGINE = SystemFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -297,7 +277,7 @@ CREATE TABLE system.grants
 (
     `user_name` Nullable(String),
     `role_name` Nullable(String),
-    `access_type` Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW FILESYSTEM CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER NAMED COLLECTION' = 41, 'ALTER TABLE' = 42, 'ALTER DATABASE' = 43, 'ALTER VIEW REFRESH' = 44, 'ALTER VIEW MODIFY QUERY' = 45, 'ALTER VIEW' = 46, 'ALTER' = 47, 'CREATE DATABASE' = 48, 'CREATE TABLE' = 49, 'CREATE VIEW' = 50, 'CREATE DICTIONARY' = 51, 'CREATE TEMPORARY TABLE' = 52, 'CREATE ARBITRARY TEMPORARY TABLE' = 53, 'CREATE FUNCTION' = 54, 'CREATE NAMED COLLECTION' = 55, 'CREATE' = 56, 'DROP DATABASE' = 57, 'DROP TABLE' = 58, 'DROP VIEW' = 59, 'DROP DICTIONARY' = 60, 'DROP FUNCTION' = 61, 'DROP NAMED COLLECTION' = 62, 'DROP' = 63, 'UNDROP TABLE' = 64, 'TRUNCATE' = 65, 'OPTIMIZE' = 66, 'BACKUP' = 67, 'KILL QUERY' = 68, 'KILL TRANSACTION' = 69, 'MOVE PARTITION BETWEEN SHARDS' = 70, 'CREATE USER' = 71, 'ALTER USER' = 72, 'DROP USER' = 73, 'CREATE ROLE' = 74, 'ALTER ROLE' = 75, 'DROP ROLE' = 76, 'ROLE ADMIN' = 77, 'CREATE ROW POLICY' = 78, 'ALTER ROW POLICY' = 79, 'DROP ROW POLICY' = 80, 'CREATE QUOTA' = 81, 'ALTER QUOTA' = 82, 'DROP QUOTA' = 83, 'CREATE SETTINGS PROFILE' = 84, 'ALTER SETTINGS PROFILE' = 85, 'DROP SETTINGS PROFILE' = 86, 'SHOW USERS' = 87, 'SHOW ROLES' = 88, 'SHOW ROW POLICIES' = 89, 'SHOW QUOTAS' = 90, 'SHOW SETTINGS PROFILES' = 91, 'SHOW ACCESS' = 92, 'ACCESS MANAGEMENT' = 93, 'SHOW NAMED COLLECTIONS' = 94, 'SHOW NAMED COLLECTIONS SECRETS' = 95, 'NAMED COLLECTION CONTROL' = 96, 'SYSTEM SHUTDOWN' = 97, 'SYSTEM DROP DNS CACHE' = 98, 'SYSTEM DROP MARK CACHE' = 99, 'SYSTEM DROP UNCOMPRESSED CACHE' = 100, 'SYSTEM DROP MMAP CACHE' = 101, 'SYSTEM DROP QUERY CACHE' = 102, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 103, 'SYSTEM DROP FILESYSTEM CACHE' = 104, 'SYSTEM DROP SCHEMA CACHE' = 105, 'SYSTEM DROP S3 CLIENT CACHE' = 106, 'SYSTEM DROP CACHE' = 107, 'SYSTEM RELOAD CONFIG' = 108, 'SYSTEM RELOAD USERS' = 109, 'SYSTEM RELOAD SYMBOLS' = 110, 'SYSTEM RELOAD DICTIONARY' = 111, 'SYSTEM RELOAD MODEL' = 112, 'SYSTEM RELOAD FUNCTION' = 113, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 114, 'SYSTEM RELOAD' = 115, 'SYSTEM RESTART DISK' = 116, 'SYSTEM MERGES' = 117, 'SYSTEM TTL MERGES' = 118, 'SYSTEM FETCHES' = 119, 'SYSTEM MOVES' = 120, 'SYSTEM DISTRIBUTED SENDS' = 121, 'SYSTEM REPLICATED SENDS' = 122, 'SYSTEM SENDS' = 123, 'SYSTEM REPLICATION QUEUES' = 124, 'SYSTEM DROP REPLICA' = 125, 'SYSTEM SYNC REPLICA' = 126, 'SYSTEM RESTART REPLICA' = 127, 'SYSTEM RESTORE REPLICA' = 128, 'SYSTEM WAIT LOADING PARTS' = 129, 'SYSTEM SYNC DATABASE REPLICA' = 130, 'SYSTEM SYNC TRANSACTION LOG' = 131, 'SYSTEM SYNC FILE CACHE' = 132, 'SYSTEM FLUSH DISTRIBUTED' = 133, 'SYSTEM FLUSH LOGS' = 134, 'SYSTEM FLUSH' = 135, 'SYSTEM THREAD FUZZER' = 136, 'SYSTEM UNFREEZE' = 137, 'SYSTEM FAILPOINT' = 138, 'SYSTEM' = 139, 'dictGet' = 140, 'displaySecretsInShowAndSelect' = 141, 'addressToLine' = 142, 'addressToLineWithInlines' = 143, 'addressToSymbol' = 144, 'demangle' = 145, 'INTROSPECTION' = 146, 'FILE' = 147, 'URL' = 148, 'REMOTE' = 149, 'MONGO' = 150, 'MEILISEARCH' = 151, 'MYSQL' = 152, 'POSTGRES' = 153, 'SQLITE' = 154, 'ODBC' = 155, 'JDBC' = 156, 'HDFS' = 157, 'S3' = 158, 'HIVE' = 159, 'AZURE' = 160, 'SOURCES' = 161, 'CLUSTER' = 162, 'ALL' = 163, 'NONE' = 164),
+    `access_type` Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER TABLE' = 41, 'ALTER DATABASE' = 42, 'ALTER VIEW REFRESH' = 43, 'ALTER VIEW MODIFY QUERY' = 44, 'ALTER VIEW' = 45, 'ALTER' = 46, 'CREATE DATABASE' = 47, 'CREATE TABLE' = 48, 'CREATE VIEW' = 49, 'CREATE DICTIONARY' = 50, 'CREATE TEMPORARY TABLE' = 51, 'CREATE FUNCTION' = 52, 'CREATE' = 53, 'DROP DATABASE' = 54, 'DROP TABLE' = 55, 'DROP VIEW' = 56, 'DROP DICTIONARY' = 57, 'DROP FUNCTION' = 58, 'DROP' = 59, 'TRUNCATE' = 60, 'OPTIMIZE' = 61, 'BACKUP' = 62, 'KILL QUERY' = 63, 'KILL TRANSACTION' = 64, 'MOVE PARTITION BETWEEN SHARDS' = 65, 'CREATE USER' = 66, 'ALTER USER' = 67, 'DROP USER' = 68, 'CREATE ROLE' = 69, 'ALTER ROLE' = 70, 'DROP ROLE' = 71, 'ROLE ADMIN' = 72, 'CREATE ROW POLICY' = 73, 'ALTER ROW POLICY' = 74, 'DROP ROW POLICY' = 75, 'CREATE QUOTA' = 76, 'ALTER QUOTA' = 77, 'DROP QUOTA' = 78, 'CREATE SETTINGS PROFILE' = 79, 'ALTER SETTINGS PROFILE' = 80, 'DROP SETTINGS PROFILE' = 81, 'SHOW USERS' = 82, 'SHOW ROLES' = 83, 'SHOW ROW POLICIES' = 84, 'SHOW QUOTAS' = 85, 'SHOW SETTINGS PROFILES' = 86, 'SHOW ACCESS' = 87, 'ACCESS MANAGEMENT' = 88, 'SYSTEM SHUTDOWN' = 89, 'SYSTEM DROP DNS CACHE' = 90, 'SYSTEM DROP MARK CACHE' = 91, 'SYSTEM DROP UNCOMPRESSED CACHE' = 92, 'SYSTEM DROP MMAP CACHE' = 93, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 94, 'SYSTEM DROP FILESYSTEM CACHE' = 95, 'SYSTEM DROP SCHEMA CACHE' = 96, 'SYSTEM DROP CACHE' = 97, 'SYSTEM RELOAD CONFIG' = 98, 'SYSTEM RELOAD SYMBOLS' = 99, 'SYSTEM RELOAD DICTIONARY' = 100, 'SYSTEM RELOAD MODEL' = 101, 'SYSTEM RELOAD FUNCTION' = 102, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 103, 'SYSTEM RELOAD' = 104, 'SYSTEM RESTART DISK' = 105, 'SYSTEM MERGES' = 106, 'SYSTEM TTL MERGES' = 107, 'SYSTEM FETCHES' = 108, 'SYSTEM MOVES' = 109, 'SYSTEM DISTRIBUTED SENDS' = 110, 'SYSTEM REPLICATED SENDS' = 111, 'SYSTEM SENDS' = 112, 'SYSTEM REPLICATION QUEUES' = 113, 'SYSTEM DROP REPLICA' = 114, 'SYSTEM SYNC REPLICA' = 115, 'SYSTEM RESTART REPLICA' = 116, 'SYSTEM RESTORE REPLICA' = 117, 'SYSTEM SYNC DATABASE REPLICA' = 118, 'SYSTEM SYNC TRANSACTION LOG' = 119, 'SYSTEM FLUSH DISTRIBUTED' = 120, 'SYSTEM FLUSH LOGS' = 121, 'SYSTEM FLUSH' = 122, 'SYSTEM THREAD FUZZER' = 123, 'SYSTEM UNFREEZE' = 124, 'SYSTEM' = 125, 'dictGet' = 126, 'addressToLine' = 127, 'addressToLineWithInlines' = 128, 'addressToSymbol' = 129, 'demangle' = 130, 'INTROSPECTION' = 131, 'FILE' = 132, 'URL' = 133, 'REMOTE' = 134, 'MONGO' = 135, 'MEILISEARCH' = 136, 'MYSQL' = 137, 'POSTGRES' = 138, 'SQLITE' = 139, 'ODBC' = 140, 'JDBC' = 141, 'HDFS' = 142, 'S3' = 143, 'HIVE' = 144, 'SOURCES' = 145, 'CLUSTER' = 146, 'ALL' = 147, 'NONE' = 148),
     `database` Nullable(String),
     `table` Nullable(String),
     `column` Nullable(String),
@@ -343,9 +323,6 @@ CREATE TABLE system.merge_tree_settings
     `value` String,
     `changed` UInt8,
     `description` String,
-    `min` Nullable(String),
-    `max` Nullable(String),
-    `readonly` UInt8,
     `type` String
 )
 ENGINE = SystemMergeTreeSettings
@@ -364,7 +341,6 @@ CREATE TABLE system.merges
     `partition_id` String,
     `is_mutation` UInt8,
     `total_size_bytes_compressed` UInt64,
-    `total_size_bytes_uncompressed` UInt64,
     `total_size_marks` UInt64,
     `bytes_read_uncompressed` UInt64,
     `rows_read` UInt64,
@@ -386,18 +362,17 @@ CREATE TABLE system.metrics
 )
 ENGINE = SystemMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
-CREATE TABLE system.moves
+CREATE TABLE system.models
 (
-    `database` String,
-    `table` String,
-    `elapsed` Float64,
-    `target_disk_name` String,
-    `target_disk_path` String,
-    `part_name` String,
-    `part_size` UInt64,
-    `thread_id` UInt64
+    `name` String,
+    `status` Enum8('NOT_LOADED' = 0, 'LOADED' = 1, 'FAILED' = 2, 'LOADING' = 3, 'FAILED_AND_RELOADING' = 4, 'LOADED_AND_RELOADING' = 5, 'NOT_EXIST' = 6),
+    `origin` String,
+    `type` String,
+    `loading_start_time` DateTime,
+    `loading_duration` Float32,
+    `last_exception` String
 )
-ENGINE = SystemMoves
+ENGINE = SystemModels
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.mutations
 (
@@ -515,12 +490,8 @@ CREATE TABLE system.parts
     `removal_tid` Tuple(UInt64, UInt64, UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
-    `has_lightweight_delete` UInt8,
-    `last_removal_attemp_time` DateTime,
-    `removal_state` String,
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -574,17 +545,16 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.privileges
 (
-    `privilege` Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW FILESYSTEM CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER NAMED COLLECTION' = 41, 'ALTER TABLE' = 42, 'ALTER DATABASE' = 43, 'ALTER VIEW REFRESH' = 44, 'ALTER VIEW MODIFY QUERY' = 45, 'ALTER VIEW' = 46, 'ALTER' = 47, 'CREATE DATABASE' = 48, 'CREATE TABLE' = 49, 'CREATE VIEW' = 50, 'CREATE DICTIONARY' = 51, 'CREATE TEMPORARY TABLE' = 52, 'CREATE ARBITRARY TEMPORARY TABLE' = 53, 'CREATE FUNCTION' = 54, 'CREATE NAMED COLLECTION' = 55, 'CREATE' = 56, 'DROP DATABASE' = 57, 'DROP TABLE' = 58, 'DROP VIEW' = 59, 'DROP DICTIONARY' = 60, 'DROP FUNCTION' = 61, 'DROP NAMED COLLECTION' = 62, 'DROP' = 63, 'UNDROP TABLE' = 64, 'TRUNCATE' = 65, 'OPTIMIZE' = 66, 'BACKUP' = 67, 'KILL QUERY' = 68, 'KILL TRANSACTION' = 69, 'MOVE PARTITION BETWEEN SHARDS' = 70, 'CREATE USER' = 71, 'ALTER USER' = 72, 'DROP USER' = 73, 'CREATE ROLE' = 74, 'ALTER ROLE' = 75, 'DROP ROLE' = 76, 'ROLE ADMIN' = 77, 'CREATE ROW POLICY' = 78, 'ALTER ROW POLICY' = 79, 'DROP ROW POLICY' = 80, 'CREATE QUOTA' = 81, 'ALTER QUOTA' = 82, 'DROP QUOTA' = 83, 'CREATE SETTINGS PROFILE' = 84, 'ALTER SETTINGS PROFILE' = 85, 'DROP SETTINGS PROFILE' = 86, 'SHOW USERS' = 87, 'SHOW ROLES' = 88, 'SHOW ROW POLICIES' = 89, 'SHOW QUOTAS' = 90, 'SHOW SETTINGS PROFILES' = 91, 'SHOW ACCESS' = 92, 'ACCESS MANAGEMENT' = 93, 'SHOW NAMED COLLECTIONS' = 94, 'SHOW NAMED COLLECTIONS SECRETS' = 95, 'NAMED COLLECTION CONTROL' = 96, 'SYSTEM SHUTDOWN' = 97, 'SYSTEM DROP DNS CACHE' = 98, 'SYSTEM DROP MARK CACHE' = 99, 'SYSTEM DROP UNCOMPRESSED CACHE' = 100, 'SYSTEM DROP MMAP CACHE' = 101, 'SYSTEM DROP QUERY CACHE' = 102, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 103, 'SYSTEM DROP FILESYSTEM CACHE' = 104, 'SYSTEM DROP SCHEMA CACHE' = 105, 'SYSTEM DROP S3 CLIENT CACHE' = 106, 'SYSTEM DROP CACHE' = 107, 'SYSTEM RELOAD CONFIG' = 108, 'SYSTEM RELOAD USERS' = 109, 'SYSTEM RELOAD SYMBOLS' = 110, 'SYSTEM RELOAD DICTIONARY' = 111, 'SYSTEM RELOAD MODEL' = 112, 'SYSTEM RELOAD FUNCTION' = 113, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 114, 'SYSTEM RELOAD' = 115, 'SYSTEM RESTART DISK' = 116, 'SYSTEM MERGES' = 117, 'SYSTEM TTL MERGES' = 118, 'SYSTEM FETCHES' = 119, 'SYSTEM MOVES' = 120, 'SYSTEM DISTRIBUTED SENDS' = 121, 'SYSTEM REPLICATED SENDS' = 122, 'SYSTEM SENDS' = 123, 'SYSTEM REPLICATION QUEUES' = 124, 'SYSTEM DROP REPLICA' = 125, 'SYSTEM SYNC REPLICA' = 126, 'SYSTEM RESTART REPLICA' = 127, 'SYSTEM RESTORE REPLICA' = 128, 'SYSTEM WAIT LOADING PARTS' = 129, 'SYSTEM SYNC DATABASE REPLICA' = 130, 'SYSTEM SYNC TRANSACTION LOG' = 131, 'SYSTEM SYNC FILE CACHE' = 132, 'SYSTEM FLUSH DISTRIBUTED' = 133, 'SYSTEM FLUSH LOGS' = 134, 'SYSTEM FLUSH' = 135, 'SYSTEM THREAD FUZZER' = 136, 'SYSTEM UNFREEZE' = 137, 'SYSTEM FAILPOINT' = 138, 'SYSTEM' = 139, 'dictGet' = 140, 'displaySecretsInShowAndSelect' = 141, 'addressToLine' = 142, 'addressToLineWithInlines' = 143, 'addressToSymbol' = 144, 'demangle' = 145, 'INTROSPECTION' = 146, 'FILE' = 147, 'URL' = 148, 'REMOTE' = 149, 'MONGO' = 150, 'MEILISEARCH' = 151, 'MYSQL' = 152, 'POSTGRES' = 153, 'SQLITE' = 154, 'ODBC' = 155, 'JDBC' = 156, 'HDFS' = 157, 'S3' = 158, 'HIVE' = 159, 'AZURE' = 160, 'SOURCES' = 161, 'CLUSTER' = 162, 'ALL' = 163, 'NONE' = 164),
+    `privilege` Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER TABLE' = 41, 'ALTER DATABASE' = 42, 'ALTER VIEW REFRESH' = 43, 'ALTER VIEW MODIFY QUERY' = 44, 'ALTER VIEW' = 45, 'ALTER' = 46, 'CREATE DATABASE' = 47, 'CREATE TABLE' = 48, 'CREATE VIEW' = 49, 'CREATE DICTIONARY' = 50, 'CREATE TEMPORARY TABLE' = 51, 'CREATE FUNCTION' = 52, 'CREATE' = 53, 'DROP DATABASE' = 54, 'DROP TABLE' = 55, 'DROP VIEW' = 56, 'DROP DICTIONARY' = 57, 'DROP FUNCTION' = 58, 'DROP' = 59, 'TRUNCATE' = 60, 'OPTIMIZE' = 61, 'BACKUP' = 62, 'KILL QUERY' = 63, 'KILL TRANSACTION' = 64, 'MOVE PARTITION BETWEEN SHARDS' = 65, 'CREATE USER' = 66, 'ALTER USER' = 67, 'DROP USER' = 68, 'CREATE ROLE' = 69, 'ALTER ROLE' = 70, 'DROP ROLE' = 71, 'ROLE ADMIN' = 72, 'CREATE ROW POLICY' = 73, 'ALTER ROW POLICY' = 74, 'DROP ROW POLICY' = 75, 'CREATE QUOTA' = 76, 'ALTER QUOTA' = 77, 'DROP QUOTA' = 78, 'CREATE SETTINGS PROFILE' = 79, 'ALTER SETTINGS PROFILE' = 80, 'DROP SETTINGS PROFILE' = 81, 'SHOW USERS' = 82, 'SHOW ROLES' = 83, 'SHOW ROW POLICIES' = 84, 'SHOW QUOTAS' = 85, 'SHOW SETTINGS PROFILES' = 86, 'SHOW ACCESS' = 87, 'ACCESS MANAGEMENT' = 88, 'SYSTEM SHUTDOWN' = 89, 'SYSTEM DROP DNS CACHE' = 90, 'SYSTEM DROP MARK CACHE' = 91, 'SYSTEM DROP UNCOMPRESSED CACHE' = 92, 'SYSTEM DROP MMAP CACHE' = 93, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 94, 'SYSTEM DROP FILESYSTEM CACHE' = 95, 'SYSTEM DROP SCHEMA CACHE' = 96, 'SYSTEM DROP CACHE' = 97, 'SYSTEM RELOAD CONFIG' = 98, 'SYSTEM RELOAD SYMBOLS' = 99, 'SYSTEM RELOAD DICTIONARY' = 100, 'SYSTEM RELOAD MODEL' = 101, 'SYSTEM RELOAD FUNCTION' = 102, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 103, 'SYSTEM RELOAD' = 104, 'SYSTEM RESTART DISK' = 105, 'SYSTEM MERGES' = 106, 'SYSTEM TTL MERGES' = 107, 'SYSTEM FETCHES' = 108, 'SYSTEM MOVES' = 109, 'SYSTEM DISTRIBUTED SENDS' = 110, 'SYSTEM REPLICATED SENDS' = 111, 'SYSTEM SENDS' = 112, 'SYSTEM REPLICATION QUEUES' = 113, 'SYSTEM DROP REPLICA' = 114, 'SYSTEM SYNC REPLICA' = 115, 'SYSTEM RESTART REPLICA' = 116, 'SYSTEM RESTORE REPLICA' = 117, 'SYSTEM SYNC DATABASE REPLICA' = 118, 'SYSTEM SYNC TRANSACTION LOG' = 119, 'SYSTEM FLUSH DISTRIBUTED' = 120, 'SYSTEM FLUSH LOGS' = 121, 'SYSTEM FLUSH' = 122, 'SYSTEM THREAD FUZZER' = 123, 'SYSTEM UNFREEZE' = 124, 'SYSTEM' = 125, 'dictGet' = 126, 'addressToLine' = 127, 'addressToLineWithInlines' = 128, 'addressToSymbol' = 129, 'demangle' = 130, 'INTROSPECTION' = 131, 'FILE' = 132, 'URL' = 133, 'REMOTE' = 134, 'MONGO' = 135, 'MEILISEARCH' = 136, 'MYSQL' = 137, 'POSTGRES' = 138, 'SQLITE' = 139, 'ODBC' = 140, 'JDBC' = 141, 'HDFS' = 142, 'S3' = 143, 'HIVE' = 144, 'SOURCES' = 145, 'CLUSTER' = 146, 'ALL' = 147, 'NONE' = 148),
     `aliases` Array(String),
-    `level` Nullable(Enum8('GLOBAL' = 0, 'DATABASE' = 1, 'TABLE' = 2, 'DICTIONARY' = 3, 'VIEW' = 4, 'COLUMN' = 5, 'NAMED_COLLECTION' = 6)),
-    `parent_group` Nullable(Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW FILESYSTEM CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER NAMED COLLECTION' = 41, 'ALTER TABLE' = 42, 'ALTER DATABASE' = 43, 'ALTER VIEW REFRESH' = 44, 'ALTER VIEW MODIFY QUERY' = 45, 'ALTER VIEW' = 46, 'ALTER' = 47, 'CREATE DATABASE' = 48, 'CREATE TABLE' = 49, 'CREATE VIEW' = 50, 'CREATE DICTIONARY' = 51, 'CREATE TEMPORARY TABLE' = 52, 'CREATE ARBITRARY TEMPORARY TABLE' = 53, 'CREATE FUNCTION' = 54, 'CREATE NAMED COLLECTION' = 55, 'CREATE' = 56, 'DROP DATABASE' = 57, 'DROP TABLE' = 58, 'DROP VIEW' = 59, 'DROP DICTIONARY' = 60, 'DROP FUNCTION' = 61, 'DROP NAMED COLLECTION' = 62, 'DROP' = 63, 'UNDROP TABLE' = 64, 'TRUNCATE' = 65, 'OPTIMIZE' = 66, 'BACKUP' = 67, 'KILL QUERY' = 68, 'KILL TRANSACTION' = 69, 'MOVE PARTITION BETWEEN SHARDS' = 70, 'CREATE USER' = 71, 'ALTER USER' = 72, 'DROP USER' = 73, 'CREATE ROLE' = 74, 'ALTER ROLE' = 75, 'DROP ROLE' = 76, 'ROLE ADMIN' = 77, 'CREATE ROW POLICY' = 78, 'ALTER ROW POLICY' = 79, 'DROP ROW POLICY' = 80, 'CREATE QUOTA' = 81, 'ALTER QUOTA' = 82, 'DROP QUOTA' = 83, 'CREATE SETTINGS PROFILE' = 84, 'ALTER SETTINGS PROFILE' = 85, 'DROP SETTINGS PROFILE' = 86, 'SHOW USERS' = 87, 'SHOW ROLES' = 88, 'SHOW ROW POLICIES' = 89, 'SHOW QUOTAS' = 90, 'SHOW SETTINGS PROFILES' = 91, 'SHOW ACCESS' = 92, 'ACCESS MANAGEMENT' = 93, 'SHOW NAMED COLLECTIONS' = 94, 'SHOW NAMED COLLECTIONS SECRETS' = 95, 'NAMED COLLECTION CONTROL' = 96, 'SYSTEM SHUTDOWN' = 97, 'SYSTEM DROP DNS CACHE' = 98, 'SYSTEM DROP MARK CACHE' = 99, 'SYSTEM DROP UNCOMPRESSED CACHE' = 100, 'SYSTEM DROP MMAP CACHE' = 101, 'SYSTEM DROP QUERY CACHE' = 102, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 103, 'SYSTEM DROP FILESYSTEM CACHE' = 104, 'SYSTEM DROP SCHEMA CACHE' = 105, 'SYSTEM DROP S3 CLIENT CACHE' = 106, 'SYSTEM DROP CACHE' = 107, 'SYSTEM RELOAD CONFIG' = 108, 'SYSTEM RELOAD USERS' = 109, 'SYSTEM RELOAD SYMBOLS' = 110, 'SYSTEM RELOAD DICTIONARY' = 111, 'SYSTEM RELOAD MODEL' = 112, 'SYSTEM RELOAD FUNCTION' = 113, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 114, 'SYSTEM RELOAD' = 115, 'SYSTEM RESTART DISK' = 116, 'SYSTEM MERGES' = 117, 'SYSTEM TTL MERGES' = 118, 'SYSTEM FETCHES' = 119, 'SYSTEM MOVES' = 120, 'SYSTEM DISTRIBUTED SENDS' = 121, 'SYSTEM REPLICATED SENDS' = 122, 'SYSTEM SENDS' = 123, 'SYSTEM REPLICATION QUEUES' = 124, 'SYSTEM DROP REPLICA' = 125, 'SYSTEM SYNC REPLICA' = 126, 'SYSTEM RESTART REPLICA' = 127, 'SYSTEM RESTORE REPLICA' = 128, 'SYSTEM WAIT LOADING PARTS' = 129, 'SYSTEM SYNC DATABASE REPLICA' = 130, 'SYSTEM SYNC TRANSACTION LOG' = 131, 'SYSTEM SYNC FILE CACHE' = 132, 'SYSTEM FLUSH DISTRIBUTED' = 133, 'SYSTEM FLUSH LOGS' = 134, 'SYSTEM FLUSH' = 135, 'SYSTEM THREAD FUZZER' = 136, 'SYSTEM UNFREEZE' = 137, 'SYSTEM FAILPOINT' = 138, 'SYSTEM' = 139, 'dictGet' = 140, 'displaySecretsInShowAndSelect' = 141, 'addressToLine' = 142, 'addressToLineWithInlines' = 143, 'addressToSymbol' = 144, 'demangle' = 145, 'INTROSPECTION' = 146, 'FILE' = 147, 'URL' = 148, 'REMOTE' = 149, 'MONGO' = 150, 'MEILISEARCH' = 151, 'MYSQL' = 152, 'POSTGRES' = 153, 'SQLITE' = 154, 'ODBC' = 155, 'JDBC' = 156, 'HDFS' = 157, 'S3' = 158, 'HIVE' = 159, 'AZURE' = 160, 'SOURCES' = 161, 'CLUSTER' = 162, 'ALL' = 163, 'NONE' = 164))
+    `level` Nullable(Enum8('GLOBAL' = 0, 'DATABASE' = 1, 'TABLE' = 2, 'DICTIONARY' = 3, 'VIEW' = 4, 'COLUMN' = 5)),
+    `parent_group` Nullable(Enum16('SHOW DATABASES' = 0, 'SHOW TABLES' = 1, 'SHOW COLUMNS' = 2, 'SHOW DICTIONARIES' = 3, 'SHOW' = 4, 'SHOW CACHES' = 5, 'SELECT' = 6, 'INSERT' = 7, 'ALTER UPDATE' = 8, 'ALTER DELETE' = 9, 'ALTER ADD COLUMN' = 10, 'ALTER MODIFY COLUMN' = 11, 'ALTER DROP COLUMN' = 12, 'ALTER COMMENT COLUMN' = 13, 'ALTER CLEAR COLUMN' = 14, 'ALTER RENAME COLUMN' = 15, 'ALTER MATERIALIZE COLUMN' = 16, 'ALTER COLUMN' = 17, 'ALTER MODIFY COMMENT' = 18, 'ALTER ORDER BY' = 19, 'ALTER SAMPLE BY' = 20, 'ALTER ADD INDEX' = 21, 'ALTER DROP INDEX' = 22, 'ALTER MATERIALIZE INDEX' = 23, 'ALTER CLEAR INDEX' = 24, 'ALTER INDEX' = 25, 'ALTER ADD PROJECTION' = 26, 'ALTER DROP PROJECTION' = 27, 'ALTER MATERIALIZE PROJECTION' = 28, 'ALTER CLEAR PROJECTION' = 29, 'ALTER PROJECTION' = 30, 'ALTER ADD CONSTRAINT' = 31, 'ALTER DROP CONSTRAINT' = 32, 'ALTER CONSTRAINT' = 33, 'ALTER TTL' = 34, 'ALTER MATERIALIZE TTL' = 35, 'ALTER SETTINGS' = 36, 'ALTER MOVE PARTITION' = 37, 'ALTER FETCH PARTITION' = 38, 'ALTER FREEZE PARTITION' = 39, 'ALTER DATABASE SETTINGS' = 40, 'ALTER TABLE' = 41, 'ALTER DATABASE' = 42, 'ALTER VIEW REFRESH' = 43, 'ALTER VIEW MODIFY QUERY' = 44, 'ALTER VIEW' = 45, 'ALTER' = 46, 'CREATE DATABASE' = 47, 'CREATE TABLE' = 48, 'CREATE VIEW' = 49, 'CREATE DICTIONARY' = 50, 'CREATE TEMPORARY TABLE' = 51, 'CREATE FUNCTION' = 52, 'CREATE' = 53, 'DROP DATABASE' = 54, 'DROP TABLE' = 55, 'DROP VIEW' = 56, 'DROP DICTIONARY' = 57, 'DROP FUNCTION' = 58, 'DROP' = 59, 'TRUNCATE' = 60, 'OPTIMIZE' = 61, 'BACKUP' = 62, 'KILL QUERY' = 63, 'KILL TRANSACTION' = 64, 'MOVE PARTITION BETWEEN SHARDS' = 65, 'CREATE USER' = 66, 'ALTER USER' = 67, 'DROP USER' = 68, 'CREATE ROLE' = 69, 'ALTER ROLE' = 70, 'DROP ROLE' = 71, 'ROLE ADMIN' = 72, 'CREATE ROW POLICY' = 73, 'ALTER ROW POLICY' = 74, 'DROP ROW POLICY' = 75, 'CREATE QUOTA' = 76, 'ALTER QUOTA' = 77, 'DROP QUOTA' = 78, 'CREATE SETTINGS PROFILE' = 79, 'ALTER SETTINGS PROFILE' = 80, 'DROP SETTINGS PROFILE' = 81, 'SHOW USERS' = 82, 'SHOW ROLES' = 83, 'SHOW ROW POLICIES' = 84, 'SHOW QUOTAS' = 85, 'SHOW SETTINGS PROFILES' = 86, 'SHOW ACCESS' = 87, 'ACCESS MANAGEMENT' = 88, 'SYSTEM SHUTDOWN' = 89, 'SYSTEM DROP DNS CACHE' = 90, 'SYSTEM DROP MARK CACHE' = 91, 'SYSTEM DROP UNCOMPRESSED CACHE' = 92, 'SYSTEM DROP MMAP CACHE' = 93, 'SYSTEM DROP COMPILED EXPRESSION CACHE' = 94, 'SYSTEM DROP FILESYSTEM CACHE' = 95, 'SYSTEM DROP SCHEMA CACHE' = 96, 'SYSTEM DROP CACHE' = 97, 'SYSTEM RELOAD CONFIG' = 98, 'SYSTEM RELOAD SYMBOLS' = 99, 'SYSTEM RELOAD DICTIONARY' = 100, 'SYSTEM RELOAD MODEL' = 101, 'SYSTEM RELOAD FUNCTION' = 102, 'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 103, 'SYSTEM RELOAD' = 104, 'SYSTEM RESTART DISK' = 105, 'SYSTEM MERGES' = 106, 'SYSTEM TTL MERGES' = 107, 'SYSTEM FETCHES' = 108, 'SYSTEM MOVES' = 109, 'SYSTEM DISTRIBUTED SENDS' = 110, 'SYSTEM REPLICATED SENDS' = 111, 'SYSTEM SENDS' = 112, 'SYSTEM REPLICATION QUEUES' = 113, 'SYSTEM DROP REPLICA' = 114, 'SYSTEM SYNC REPLICA' = 115, 'SYSTEM RESTART REPLICA' = 116, 'SYSTEM RESTORE REPLICA' = 117, 'SYSTEM SYNC DATABASE REPLICA' = 118, 'SYSTEM SYNC TRANSACTION LOG' = 119, 'SYSTEM FLUSH DISTRIBUTED' = 120, 'SYSTEM FLUSH LOGS' = 121, 'SYSTEM FLUSH' = 122, 'SYSTEM THREAD FUZZER' = 123, 'SYSTEM UNFREEZE' = 124, 'SYSTEM' = 125, 'dictGet' = 126, 'addressToLine' = 127, 'addressToLineWithInlines' = 128, 'addressToSymbol' = 129, 'demangle' = 130, 'INTROSPECTION' = 131, 'FILE' = 132, 'URL' = 133, 'REMOTE' = 134, 'MONGO' = 135, 'MEILISEARCH' = 136, 'MYSQL' = 137, 'POSTGRES' = 138, 'SQLITE' = 139, 'ODBC' = 140, 'JDBC' = 141, 'HDFS' = 142, 'S3' = 143, 'HIVE' = 144, 'SOURCES' = 145, 'CLUSTER' = 146, 'ALL' = 147, 'NONE' = 148))
 )
 ENGINE = SystemPrivileges
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -624,7 +594,6 @@ CREATE TABLE system.processes
     `memory_usage` Int64,
     `peak_memory_usage` Int64,
     `query` String,
-    `query_kind` String,
     `thread_ids` Array(UInt64),
     `ProfileEvents` Map(String, UInt64),
     `Settings` Map(String, String),
@@ -696,8 +665,7 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemProjectionParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -751,8 +719,7 @@ CREATE TABLE system.projection_parts_columns
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemProjectionPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -859,7 +826,6 @@ CREATE TABLE system.replicas
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
-    `zookeeper_name` String,
     `zookeeper_path` String,
     `replica_name` String,
     `replica_path` String,
@@ -881,7 +847,6 @@ CREATE TABLE system.replicas
     `absolute_delay` UInt64,
     `total_replicas` UInt8,
     `active_replicas` UInt8,
-    `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8)
@@ -915,9 +880,6 @@ CREATE TABLE system.replicated_merge_tree_settings
     `value` String,
     `changed` UInt8,
     `description` String,
-    `min` Nullable(String),
-    `max` Nullable(String),
-    `readonly` UInt8,
     `type` String
 )
 ENGINE = SystemReplicatedMergeTreeSettings
@@ -939,7 +901,6 @@ CREATE TABLE system.replication_queue
     `is_currently_executing` UInt8,
     `num_tries` UInt32,
     `last_exception` String,
-    `last_exception_time` DateTime,
     `last_attempt_time` DateTime,
     `num_postponed` UInt32,
     `postpone_reason` String,
@@ -991,9 +952,7 @@ CREATE TABLE system.settings
     `min` Nullable(String),
     `max` Nullable(String),
     `readonly` UInt8,
-    `type` String,
-    `default` String,
-    `alias_for` String
+    `type` String
 )
 ENGINE = SystemSettings
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1007,7 +966,7 @@ CREATE TABLE system.settings_profile_elements
     `value` Nullable(String),
     `min` Nullable(String),
     `max` Nullable(String),
-    `writability` Nullable(Enum8('WRITABLE' = 0, 'CONST' = 1, 'CHANGEABLE_IN_READONLY' = 2)),
+    `readonly` Nullable(UInt8),
     `inherit_profile` Nullable(String)
 )
 ENGINE = SystemSettingsProfileElements
@@ -1039,12 +998,10 @@ CREATE TABLE system.storage_policies
     `volume_name` String,
     `volume_priority` UInt64,
     `disks` Array(String),
-    `volume_type` Enum8('JBOD' = 0, 'SINGLE_DISK' = 1, 'UNKNOWN' = 2),
+    `volume_type` String,
     `max_data_part_size` UInt64,
     `move_factor` Float32,
-    `prefer_not_to_merge` UInt8,
-    `perform_ttl_move_on_insert` UInt8,
-    `load_balancing` Enum8('ROUND_ROBIN' = 0, 'LEAST_USED' = 1)
+    `prefer_not_to_merge` UInt8
 )
 ENGINE = SystemStoragePolicies
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1064,9 +1021,7 @@ ENGINE = SystemTableEngines
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.table_functions
 (
-    `name` String,
-    `description` String,
-    `allow_readonly` UInt8
+    `name` String
 )
 ENGINE = SystemTableFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1092,9 +1047,6 @@ CREATE TABLE system.tables
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
-    `parts` Nullable(UInt64),
-    `active_parts` Nullable(UInt64),
-    `total_marks` Nullable(UInt64),
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,
@@ -1127,7 +1079,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6),
     `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/avg
 sidebar_position: 5
 ---
 

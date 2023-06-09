@@ -12,7 +12,7 @@ NUM_REPLICAS=6
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
-        DROP TABLE IF EXISTS r$i SYNC;
+        DROP TABLE IF EXISTS r$i;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_quorum_many', 'r$i') ORDER BY x;
     "
 done
@@ -20,7 +20,7 @@ done
 function thread {
     i=0 retries=300
     while [[ $i -lt $retries ]]; do # server can be dead
-        $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 1 --insert_keeper_max_retries=100 --insert_keeper_retry_max_backoff_ms=10 --query "INSERT INTO r$1 SELECT $2" && break
+        $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2" && break
         ((++i))
         sleep 0.1
     done

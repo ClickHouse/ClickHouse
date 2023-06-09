@@ -35,9 +35,5 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_parquet2>
-        <s3_json_no_sign>
-            <url>http://minio1:9001/root/test_cache4.jsonl</url>
-            <no_sign_request>true</no_sign_request>
-        </s3_json_no_sign>
     </named_collections>
 </clickhouse>

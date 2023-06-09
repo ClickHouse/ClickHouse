@@ -1,5 +1,4 @@
 #include <IO/CascadeWriteBuffer.h>
-#include <IO/MemoryReadWriteBuffer.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -36,9 +35,9 @@ void CascadeWriteBuffer::nextImpl()
         curr_buffer->position() = position();
         curr_buffer->next();
     }
-    catch (const MemoryWriteBuffer::CurrentBufferExhausted &)
+    catch (const Exception & e)
     {
-        if (curr_buffer_num < num_sources)
+        if (curr_buffer_num < num_sources && e.code() == ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED)
         {
             /// TODO: protocol should require set(position(), 0) before Exception
 
@@ -47,7 +46,7 @@ void CascadeWriteBuffer::nextImpl()
             curr_buffer = setNextBuffer();
         }
         else
-            throw Exception(ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED, "MemoryWriteBuffer limit is exhausted");
+            throw;
     }
 
     set(curr_buffer->position(), curr_buffer->buffer().end() - curr_buffer->position());
@@ -79,11 +78,11 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
         }
     }
     else if (curr_buffer_num >= num_sources)
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "There are no WriteBuffers to write result");
+        throw Exception("There are no WriteBuffers to write result", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
     WriteBuffer * res = prepared_sources[curr_buffer_num].get();
     if (!res)
-        throw Exception(ErrorCodes::CANNOT_CREATE_IO_BUFFER, "Required WriteBuffer is not created");
+        throw Exception("Required WriteBuffer is not created", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
     /// Check that returned buffer isn't empty
     if (!res->hasPendingData())

@@ -151,17 +151,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*offsets);
+        callback(offsets);
         offsets->forEachSubcolumnRecursively(callback);
-        callback(*data);
+        callback(data);
         data->forEachSubcolumnRecursively(callback);
     }
 
@@ -173,12 +173,8 @@ public:
     }
 
     double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
-
-    void finalize() override { data->finalize(); }
-    bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

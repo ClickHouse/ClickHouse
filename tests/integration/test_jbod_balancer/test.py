@@ -45,6 +45,7 @@ def start_cluster():
 
 
 def check_balance(node, table):
+
     partitions = node.query(
         """
         WITH

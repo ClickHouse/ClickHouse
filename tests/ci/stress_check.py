@@ -5,27 +5,25 @@ import logging
 import subprocess
 import os
 import sys
-from pathlib import Path
-from typing import List, Tuple
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
+from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from report import TestResults, read_test_results
-from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 
 def get_run_command(
@@ -35,8 +33,8 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        # For dmesg and sysctl
-        "--privileged "
+        # For dmesg
+        "--cap-add syslog "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
@@ -46,10 +44,8 @@ def get_run_command(
     return cmd
 
 
-def process_results(
-    result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, TestResults, List[str]]:
-    test_results = []  # type: TestResults
+def process_results(result_folder, server_log_path, run_log_path):
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
@@ -91,23 +87,16 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    try:
-        results_path = Path(result_folder) / "test_results.tsv"
-        test_results = read_test_results(results_path, True)
-        if len(test_results) == 0:
-            raise Exception("Empty results")
-    except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+    results_path = os.path.join(result_folder, "test_results.tsv")
+    with open(results_path, "r", encoding="utf-8") as results_file:
+        test_results = list(csv.reader(results_file, delimiter="\t"))
+    if len(test_results) == 0:
+        raise Exception("Empty results")
 
     return state, description, test_results, additional_files
 
 
-def run_stress_test(docker_image_name):
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -124,14 +113,13 @@ def run_stress_test(docker_image_name):
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(commit, check_name)
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, docker_image_name)
+    docker_image = get_image_with_version(reports_path, "clickhouse/stress-test")
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
@@ -147,7 +135,7 @@ def run_stress_test(docker_image_name):
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = os.path.join(temp_path, "runlog.log")
 
     run_command = get_run_command(
         packages_path, result_path, repo_tests_path, server_log_path, docker_image
@@ -180,7 +168,7 @@ def run_stress_test(docker_image_name):
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(commit, state, report_url, description, check_name, pr_info)
+    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -193,9 +181,5 @@ def run_stress_test(docker_image_name):
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "failure":
+    if state == "error":
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    run_stress_test("clickhouse/stress-test")

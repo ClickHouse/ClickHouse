@@ -1,6 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <compress_marks>0</compress_marks>
-        <compress_primary_key>0</compress_primary_key>
-    </merge_tree>
-</clickhouse>

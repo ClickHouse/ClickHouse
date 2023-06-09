@@ -31,9 +31,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
-#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
-#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -177,7 +175,7 @@ public:
               *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
     {
         if (!lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
         /// Ensure that indices are loaded because we're going to update them.
         storage.loadIndices(lock);
@@ -285,7 +283,7 @@ StorageStripeLog::StorageStripeLog(
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     /// Ensure the file checker is initialized.
     if (file_checker.empty())
@@ -351,7 +349,7 @@ Pipe StorageStripeLog::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    size_t num_streams)
+    unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -360,7 +358,7 @@ Pipe StorageStripeLog::read(
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
@@ -394,11 +392,11 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
@@ -408,7 +406,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr 
 {
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return file_checker.check();
 }
@@ -424,8 +422,6 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
     indices_loaded = true;
     num_indices_saved = 0;
-    total_rows = 0;
-    total_bytes = 0;
     getContext()->dropMMappedFileCache();
 }
 
@@ -439,7 +435,7 @@ void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
     /// a data race between two threads trying to load indices simultaneously.
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     loadIndices(lock);
 }
@@ -532,12 +528,11 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
-
     loadIndices(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (!file_checker.getFileSize(data_file_path))
         return;
@@ -547,18 +542,16 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
-
     /// data.bin
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file_path);
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path));
-        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(
+            data_path_in_backup_fs / data_file_name,
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
@@ -567,16 +560,16 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String index_file_name = fileName(index_file_path);
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path));
-        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(
+            data_path_in_backup_fs / index_file_name,
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, copy_encrypted));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(
@@ -610,7 +603,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 {
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
     loadIndices(lock);
@@ -629,7 +622,10 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append);
+            auto backup_entry = backup->readFile(file_path_in_backup);
+            auto in = backup_entry->getReadBuffer();
+            auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+            copyData(*in, *out);
         }
 
         /// Append the index.
@@ -639,7 +635,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(index_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
 
-            auto index_in = backup->readFile(index_path_in_backup);
+            auto backup_entry = backup->readFile(index_path_in_backup);
+            auto index_in = backup_entry->getReadBuffer();
             CompressedReadBuffer index_compressed_in{*index_in};
             extra_indices.read(index_compressed_in);
 
@@ -677,10 +674,11 @@ void registerStorageStripeLog(StorageFactory & factory)
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, args.engine_args.size());
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String disk_name = getDiskName(*args.storage_def, args.getContext());
+        String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageStripeLog>(

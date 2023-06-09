@@ -1,6 +1,5 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -134,17 +133,17 @@ namespace
     {
         static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
         static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
         static UInt32 execute(UInt32 t, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
+            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
         }
 
         static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
@@ -156,9 +155,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Hour>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
         {
@@ -174,9 +173,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Minute>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 minutes, const DateLUTImpl & time_zone, Int64)
         {
@@ -192,9 +191,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Second>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 seconds, const DateLUTImpl & time_zone, Int64)
         {
@@ -210,11 +209,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Millisecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {
@@ -222,7 +221,7 @@ namespace
             {
                 Int64 t_milliseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
@@ -247,11 +246,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Microsecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {
@@ -259,7 +258,7 @@ namespace
             {
                 Int64 t_microseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
@@ -284,11 +283,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Nanosecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {
@@ -296,7 +295,7 @@ namespace
             {
                 Int64 t_nanoseconds = 0;
                 if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else
@@ -329,8 +328,10 @@ public:
         auto check_first_argument = [&]
         {
             if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be a date or a date with time", arguments[0].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             first_argument_is_date = isDate(arguments[0].type);
         };
 
@@ -341,8 +342,10 @@ public:
         {
             interval_type = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
             if (!interval_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be an interval of time", arguments[1].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[1].type->getName() + " of argument of function " + getName()
+                        + ". Should be an interval of time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
                 || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
                 || (interval_type->getKind() == IntervalKind::Week);
@@ -353,9 +356,10 @@ public:
         auto check_timezone_argument = [&]
         {
             if (!WhichDataType(arguments[2].type).isString())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "This argument is optional and must be a constant string with timezone name",
-                    arguments[2].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + getName()
+                        + ". This argument is optional and must be a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
@@ -376,9 +380,10 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), arguments.size());
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be 2 or 3",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         if (result_type_is_date)
@@ -432,7 +437,7 @@ private:
 
         if (which_type.isDateTime64())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<DataTypeDateTime64::ColumnType>(time_column.column.get());
             auto scale = assert_cast<const DataTypeDateTime64 &>(from_datatype).getScale();
 
             if (time_column_vec)
@@ -440,24 +445,25 @@ private:
         }
         if (which_type.isDateTime())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnUInt16>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate32())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnInt32>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
-            "Must contain dates or dates with time", getName());
+        throw Exception(
+            "Illegal column for first argument of function " + getName() + ". Must contain dates or dates with time",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     template <typename ColumnType, typename FromDataType>
@@ -467,15 +473,16 @@ private:
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be an interval of time.", getName());
+            throw Exception(
+                "Illegal column for second argument of function " + getName() + ", must be an interval of time.",
+                ErrorCodes::ILLEGAL_COLUMN);
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column for second argument of function {}, must be a const interval of time.",
-                            getName());
+            throw Exception(
+                "Illegal column for second argument of function " + getName() + ", must be a const interval of time.", ErrorCodes::ILLEGAL_COLUMN);
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
+            throw Exception("Value for second argument of function " + getName() + " must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         switch (interval_type->getKind())
         {
@@ -503,14 +510,13 @@ private:
                 return execute<FromDataType, DataTypeDate, IntervalKind::Year>(from, time_column, num_units, result_type, time_zone, scale);
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     template <typename FromDataType, typename ToDataType, IntervalKind::Kind unit, typename ColumnType>
     ColumnPtr execute(const FromDataType &, const ColumnType & time_column_type, Int64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
     {
         using ToColumnType = typename ToDataType::ColumnType;
-        using ToFieldType = typename ToDataType::FieldType;
 
         const auto & time_data = time_column_type.getData();
         size_t size = time_data.size();
@@ -523,8 +529,7 @@ private:
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         for (size_t i = 0; i != size; ++i)
-            result_data[i] = static_cast<ToFieldType>(
-                Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+            result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier);
 
         return result_col;
     }

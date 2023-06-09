@@ -27,14 +27,15 @@ HedgedConnections::HedgedConnections(
     const ConnectionTimeouts & timeouts_,
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
-    std::shared_ptr<QualifiedTableName> table_to_check_,
-    AsyncCallback async_callback)
+    std::shared_ptr<QualifiedTableName> table_to_check_)
     : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
+    , drain_timeout(settings.drain_timeout)
+    , allow_changing_replica_until_first_data_packet(settings.allow_changing_replica_until_first_data_packet)
     , throttler(throttler_)
 {
-    std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode, std::move(async_callback));
+    std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode);
 
     if (connections.empty())
         return;
@@ -77,7 +78,7 @@ void HedgedConnections::sendScalarsData(Scalars & data)
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+        throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     auto send_scalars_data = [&data](ReplicaState & replica) { replica.connection->sendScalarsData(data); };
 
@@ -94,10 +95,10 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
+        throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     if (data.size() != size())
-        throw Exception(ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES, "Mismatch between replicas and data sources");
+        throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
     auto send_external_tables_data = [&](ReplicaState & replica)
     {
@@ -118,7 +119,7 @@ void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     std::lock_guard lock(cancel_mutex);
 
     if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
 
     auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
 
@@ -141,7 +142,7 @@ void HedgedConnections::sendQuery(
     std::lock_guard lock(cancel_mutex);
 
     if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
+        throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
     for (auto & offset_state : offset_states)
     {
@@ -174,7 +175,7 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
         if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
         {
@@ -184,7 +185,7 @@ void HedgedConnections::sendQuery(
 
         replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
-        replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
+        replica.packet_receiver->setReceiveTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
 
     for (auto & offset_status : offset_states)
@@ -240,7 +241,7 @@ void HedgedConnections::sendCancel()
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query || cancelled)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
+        throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
     cancelled = true;
 
@@ -255,14 +256,14 @@ Packet HedgedConnections::drain()
     std::lock_guard lock(cancel_mutex);
 
     if (!cancelled)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot drain connections: cancel first.");
+        throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
     Packet res;
     res.type = Protocol::Server::EndOfStream;
 
     while (!epoll.empty())
     {
-        ReplicaLocation location = getReadyReplicaLocation();
+        ReplicaLocation location = getReadyReplicaLocation(DrainCallback{drain_timeout});
         Packet packet = receivePacketFromReplica(location);
         switch (packet.type)
         {
@@ -289,18 +290,18 @@ Packet HedgedConnections::drain()
 Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    return receivePacketUnlocked({});
+    return receivePacketUnlocked({}, false /* is_draining */);
 }
 
-Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
+Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback, bool /* is_draining */)
 {
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
+        throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
     if (!hasActiveConnections())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+        throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
     if (epoll.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");
+        throw Exception("No pending events in epoll.", ErrorCodes::LOGICAL_ERROR);
 
     ReplicaLocation location = getReadyReplicaLocation(std::move(async_callback));
     return receivePacketFromReplica(location);
@@ -337,26 +338,26 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
             offset_states[location.offset].next_replica_in_process = true;
-            offsets_queue.push(static_cast<int>(location.offset));
+            offsets_queue.push(location.offset);
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event from epoll");
+            throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
 bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLocation & location)
 {
     ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
-    replica_state.packet_receiver->resume();
+    auto res = replica_state.packet_receiver->resume();
 
-    if (replica_state.packet_receiver->isPacketReady())
+    if (std::holds_alternative<Packet>(res))
     {
-        last_received_packet = replica_state.packet_receiver->getPacket();
+        last_received_packet = std::move(std::get<Packet>(res));
         return true;
     }
-    else if (replica_state.packet_receiver->isTimeoutExpired())
+    else if (std::holds_alternative<Poco::Timespan>(res))
     {
         const String & description = replica_state.connection->getDescription();
         finishProcessReplica(replica_state, true);
@@ -367,12 +368,12 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
                 ErrorCodes::SOCKET_TIMEOUT,
                 "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
                 description,
-                replica_state.packet_receiver->getTimeout().totalMilliseconds());
+                std::get<Poco::Timespan>(res).totalMilliseconds());
     }
-    else if (replica_state.packet_receiver->hasException())
+    else if (std::holds_alternative<std::exception_ptr>(res))
     {
         finishProcessReplica(replica_state, true);
-        std::rethrow_exception(replica_state.packet_receiver->getException());
+        std::rethrow_exception(std::get<std::exception_ptr>(res));
     }
 
     return false;
@@ -388,7 +389,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     {
         events_count = epoll.getManyReady(1, &event, blocking);
         if (!events_count && async_callback)
-            async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+            async_callback(epoll.getFileDescriptor(), 0, epoll.getDescription());
     }
     return event.data.fd;
 }
@@ -412,7 +413,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             {
                 /// If we are allowed to change replica until the first data packet,
                 /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
-                if (settings.allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
+                if (allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
                     replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
                 else
                     disableChangingReplica(replica_location);
@@ -539,7 +540,7 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
             {
                 /// Check if there is no active replica with needed offsets.
                 if (offset_states[offsets_queue.front()].active_connection_count == 0)
-                    throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot find enough connections to replicas");
+                    throw Exception("Cannot find enough connections to replicas", ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
                 offset_states[offsets_queue.front()].next_replica_in_process = false;
                 offsets_queue.pop();
             }
@@ -570,18 +571,6 @@ void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool discon
     if (disconnect)
         replica.connection->disconnect();
     replica.connection = nullptr;
-}
-
-void HedgedConnections::setAsyncCallback(AsyncCallback async_callback)
-{
-    for (auto & offset_status : offset_states)
-    {
-        for (auto & replica : offset_status.replicas)
-        {
-            if (replica.connection)
-                replica.connection->setAsyncCallback(async_callback);
-        }
-    }
 }
 
 }

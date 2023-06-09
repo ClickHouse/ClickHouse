@@ -1,4 +1,5 @@
-set optimize_use_projections = 1, force_optimize_projection = 1;
+-- Tags: no-s3-storage
+set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
 drop table if exists tp;
 

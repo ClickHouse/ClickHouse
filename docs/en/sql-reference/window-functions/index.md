@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/window-functions/
 sidebar_position: 62
 sidebar_label: Window Functions
-title: Window Functions
 ---
+
+# Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
@@ -14,14 +14,13 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `WINDOW` clause (`select ... from table window w as (partition by id)`)            | supported                                                                                                                                                                                   |
 | `ROWS` frame                                                                       | supported                                                                                                                                                                                   |
 | `RANGE` frame                                                                      | supported, the default                                                                                                                                                                      |
-| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead (`RANGE` works with any numeric type).                                                                                                                                 |
+| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead                                                                                                                                        |
 | `GROUPS` frame                                                                     | not supported                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | all aggregate functions are supported                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | supported                                                                                                                                                                                   |
 | `lag/lead(value, offset)`                                                          | Not supported. Workarounds:                                                                                                                                                                 |
 |                                                                                    | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`                                                                  |
 |                                                                                    | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
-| ntile(buckets) | Supported. Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
 ## ClickHouse-specific Window Functions
 
@@ -39,7 +38,7 @@ The computed value is the following for each row:
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
-All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
+All GitHub issues related to window funtions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
 ### Tests
 
@@ -80,7 +79,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
-- `WINDOW` - allows to reuse a window definition with multiple expressions.
+- `WINDOW` - allows to reuse a window definition with multiple exressions.
 
 ### Functions
 
@@ -140,8 +139,8 @@ ORDER BY
 │        1 │     1 │     1 │ [1,2,3]      │   <┐   
 │        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
 │        1 │     3 │     3 │ [1,2,3]      │   <┘ 
-│        2 │     0 │     0 │ [0]          │   <- 2-nd group
-│        3 │     0 │     0 │ [0]          │   <- 3-d group
+│        2 │     0 │     0 │ [0]          │   <-  2-nd group
+│        3 │     0 │     0 │ [0]          │   <-  3-d group
 └──────────┴───────┴───────┴──────────────┘
 ```
 
@@ -431,9 +430,9 @@ FROM
 ### Cumulative sum.
 
 ```sql
-CREATE TABLE warehouse
+CREATE TABLE events
 (
-    `item` String,
+    `metric` String,
     `ts` DateTime,
     `value` Float
 )
@@ -535,62 +534,3 @@ ORDER BY
 │ cpu_temp │ 2020-01-01 00:07:10 │    87 │                         87 │
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
-
-### Moving / Sliding Average (per 10 days)
-
-Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)` we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
-
-```sql
-CREATE TABLE sensors
-(
-    `metric` String,
-    `ts` DateTime,
-    `value` Float
-)
-ENGINE = Memory;
-
-insert into sensors values('ambient_temp', '2020-01-01 00:00:00', 16),
-                          ('ambient_temp', '2020-01-01 12:00:00', 16),
-                          ('ambient_temp', '2020-01-02 11:00:00', 9),
-                          ('ambient_temp', '2020-01-02 12:00:00', 9),                          
-                          ('ambient_temp', '2020-02-01 10:00:00', 10),
-                          ('ambient_temp', '2020-02-01 12:00:00', 10),
-                          ('ambient_temp', '2020-02-10 12:00:00', 12),                          
-                          ('ambient_temp', '2020-02-10 13:00:00', 12),
-                          ('ambient_temp', '2020-02-20 12:00:01', 16),
-                          ('ambient_temp', '2020-03-01 12:00:00', 16),
-                          ('ambient_temp', '2020-03-01 12:00:00', 16),
-                          ('ambient_temp', '2020-03-01 12:00:00', 16);
-
-SELECT
-    metric,
-    ts,
-    value,
-    round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
-       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
-FROM sensors
-ORDER BY
-    metric ASC,
-    ts ASC;
-
-┌─metric───────┬──────────────────ts─┬─value─┬─moving_avg_10_days_temp─┐
-│ ambient_temp │ 2020-01-01 00:00:00 │    16 │                      16 │
-│ ambient_temp │ 2020-01-01 12:00:00 │    16 │                      16 │
-│ ambient_temp │ 2020-01-02 11:00:00 │     9 │                    12.5 │
-│ ambient_temp │ 2020-01-02 12:00:00 │     9 │                    12.5 │
-│ ambient_temp │ 2020-02-01 10:00:00 │    10 │                      10 │
-│ ambient_temp │ 2020-02-01 12:00:00 │    10 │                      10 │
-│ ambient_temp │ 2020-02-10 12:00:00 │    12 │                      11 │
-│ ambient_temp │ 2020-02-10 13:00:00 │    12 │                      11 │
-│ ambient_temp │ 2020-02-20 12:00:01 │    16 │                   13.33 │
-│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
-│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
-│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
-└──────────────┴─────────────────────┴───────┴─────────────────────────┘
-```
-
-## Related Content
-
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
-- Blog: [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

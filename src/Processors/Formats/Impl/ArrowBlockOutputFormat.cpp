@@ -17,28 +17,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-namespace
-{
-
-arrow::Compression::type getArrowCompression(FormatSettings::ArrowCompression method)
-{
-    switch (method)
-    {
-        case FormatSettings::ArrowCompression::NONE:
-            return arrow::Compression::type::UNCOMPRESSED;
-        case FormatSettings::ArrowCompression::ZSTD:
-            return arrow::Compression::type::ZSTD;
-        case FormatSettings::ArrowCompression::LZ4_FRAME:
-            return arrow::Compression::type::LZ4_FRAME;
-    }
-}
-
-}
-
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , stream{stream_}
     , format_settings{format_settings_}
+    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
@@ -50,12 +33,8 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
-            header,
-            "Arrow",
-            format_settings.arrow.low_cardinality_as_dictionary,
-            format_settings.arrow.output_string_as_string,
-            format_settings.arrow.output_fixed_string_as_fixed_byte_array);
+        ch_column_to_arrow_column
+            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary, format_settings.arrow.output_string_as_string);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -75,7 +54,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
-        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+        const Block & header = getPort(PortKind::Main).getHeader();
 
         consume(Chunk(header.getColumns(), 0));
     }
@@ -86,25 +65,15 @@ void ArrowBlockOutputFormat::finalizeImpl()
             "Error while closing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::resetFormatterImpl()
-{
-    writer.reset();
-    arrow_ostream.reset();
-}
-
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
-    arrow_ostream = std::make_shared<ArrowBufferedOutputStream>(out);
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
-    arrow::ipc::IpcWriteOptions options = arrow::ipc::IpcWriteOptions::Defaults();
-    options.codec = *arrow::util::Codec::Create(getArrowCompression(format_settings.arrow.output_compression_method));
-    options.emit_dictionary_deltas = true;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
-        writer_status = arrow::ipc::MakeStreamWriter(arrow_ostream.get(), schema, options);
+        writer_status = arrow::ipc::MakeStreamWriter(arrow_ostream.get(), schema);
     else
-        writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema,options);
+        writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema);
 
     if (!writer_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -119,6 +88,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
@@ -129,12 +99,12 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
-    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
 }
 
 }

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/varpop
 sidebar_position: 32
 ---
 

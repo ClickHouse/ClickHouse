@@ -125,12 +125,10 @@ ClusterDiscovery::ClusterDiscovery(
             ClusterInfo(
                 /* name_= */ key,
                 /* zk_root_= */ config.getString(prefix + ".path"),
-                /* host_name= */ config.getString(prefix + ".my_hostname", getFQDNOrHostName()),
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
-                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
+                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
             )
         );
     }
@@ -151,7 +149,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
-    auto watch_callback = [cluster_name, my_clusters_to_update = clusters_to_update](auto) { my_clusters_to_update->set(cluster_name); };
+    auto watch_callback = [cluster_name, clusters_to_update=clusters_to_update](auto) { clusters_to_update->set(cluster_name); };
 
     Coordination::Stat stat;
     Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
@@ -219,9 +217,9 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
-    std::vector<Strings> shards;
+    std::vector<std::vector<String>> shards;
     {
-        std::map<size_t, Strings> replica_addresses;
+        std::map<size_t, Strings> replica_adresses;
 
         for (const auto & [_, node] : cluster_info.nodes_info)
         {
@@ -230,29 +228,24 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
                 LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
                 continue;
             }
-            replica_addresses[node.shard_id].emplace_back(node.address);
+            replica_adresses[node.shard_id].emplace_back(node.address);
         }
 
-        shards.reserve(replica_addresses.size());
-        for (auto & [_, replicas] : replica_addresses)
+        shards.reserve(replica_adresses.size());
+        for (auto & [_, replicas] : replica_adresses)
             shards.emplace_back(std::move(replicas));
     }
 
     bool secure = cluster_info.current_node.secure;
-    ClusterConnectionParameters params{
+    auto cluster = std::make_shared<Cluster>(
+        context->getSettingsRef(),
+        shards,
         /* username= */ context->getUserName(),
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
-        /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
-        /* secure= */ secure,
-        /* priority= */ 1,
-        /* cluster_name= */ "",
-        /* password= */ ""};
-    auto cluster = std::make_shared<Cluster>(
-        context->getSettingsRef(),
-        shards,
-        params);
+        /* treat_local_port_as_remote= */ context->getApplicationType() == Context::ApplicationType::LOCAL,
+        /* secure= */ secure);
     return cluster;
 }
 
@@ -296,12 +289,6 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         return false;
     }
 
-    if (cluster_info.current_cluster_is_invisible)
-    {
-        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
-        return true;
-    }
-
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
@@ -321,9 +308,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
     auto cluster = makeCluster(cluster_info);
-
-    std::lock_guard lock(mutex);
-    cluster_impls[cluster_info.name] = cluster;
+    context->setCluster(cluster_info.name, cluster);
     return true;
 }
 
@@ -460,21 +445,6 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     return finished;
 }
 
-ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
-{
-    std::lock_guard lock(mutex);
-    auto it = cluster_impls.find(cluster_name);
-    if (it == cluster_impls.end())
-        return nullptr;
-    return it->second;
-}
-
-std::unordered_map<String, ClusterPtr> ClusterDiscovery::getClusters() const
-{
-    std::lock_guard lock(mutex);
-    return cluster_impls;
-}
-
 void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
@@ -486,14 +456,7 @@ void ClusterDiscovery::shutdown()
 
 ClusterDiscovery::~ClusterDiscovery()
 {
-    try
-    {
-        ClusterDiscovery::shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Error on ClusterDiscovery shutdown");
-    }
+    ClusterDiscovery::shutdown();
 }
 
 bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)

@@ -1,12 +1,10 @@
 #pragma once
 
-#include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -18,12 +16,12 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
+#include <shared_mutex>
 
 namespace zkutil
 {
@@ -46,19 +44,8 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
-
-enum class DataPartRemovalState
-{
-    NOT_ATTEMPTED,
-    VISIBLE_TO_TRANSACTIONS,
-    NON_UNIQUE_OWNERSHIP,
-    NOT_REACHED_REMOVAL_TIME,
-    HAS_SKIPPED_MUTATION_PARENT,
-    REMOVED,
-};
-
 /// Description of the data part.
-class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
+class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
@@ -79,11 +66,19 @@ public:
 
     using uint128 = IPartMetadataManager::uint128;
 
+
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MutableDataPartStoragePtr & data_part_storage_,
+        const DataPartStoragePtr & data_part_storage_,
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
+
+    IMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        const String & name_,
+        const DataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -93,18 +88,18 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
-        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual MergeTreeWriterPtr getWriter(
+        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
+        const MergeTreeIndexGranularity & computed_index_granularity) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -135,15 +130,10 @@ public:
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
     Type getType() const { return part_type; }
-    MergeTreeDataPartFormat getFormat() const { return {part_type, getDataPartStorage().getType()}; }
 
     String getTypeName() const { return getType().toString(); }
 
-    /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
-
-    /// Version of metadata for part (columns, pk and so on)
-    int32_t getMetadataVersion() const { return metadata_version; }
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
@@ -160,14 +150,14 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove();
+    void remove() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
-    /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
+    /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
+    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -208,6 +198,10 @@ public:
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
 
+    /// This is an object which encapsulates all the operations with disk.
+    /// Contains a path to stored data.
+    DataPartStoragePtr data_part_storage;
+
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
@@ -220,31 +214,11 @@ public:
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
-    /// This type and the field remove_tmp_policy is used as a hint
-    /// to help avoid communication with keeper when temporary part is deleting.
-    /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
-    /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
-    /// However in some special cases Clickhouse can make a decision without asking keeper.
-    enum class BlobsRemovalPolicyForTemporaryParts
-    {
-        /// decision about removing blobs is determined by keeper, the common case
-        ASK_KEEPER,
-        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
-        REMOVE_BLOBS,
-        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
-        PRESERVE_BLOBS,
-    };
-    BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
-
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
-
-    /// Indicated that the part was marked Outdated because it's broken, not because it's actually outdated
-    /// See outdateBrokenPartAndCloneToDetached(...)
-    mutable bool outdated_because_broken = false;
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
@@ -313,8 +287,8 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -334,9 +308,6 @@ public:
 
     mutable VersionMetadata version;
 
-    /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -348,17 +319,17 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix);
+    void renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const;
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const;
 
     /// Makes clone of a part in detached/ directory via hard links
-    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
+    virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    DataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -374,7 +345,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -382,11 +353,15 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
+    {
+        projection_parts.emplace(projection_name, std::move(projection_part));
+    }
 
-    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
-
-    bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
+    bool hasProjection(const String & projection_name) const
+    {
+        return projection_parts.find(projection_name) != projection_parts.end();
+    }
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
@@ -408,11 +383,7 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
-    /// Version used for transactions.
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
-
-
-    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -472,20 +443,6 @@ public:
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
-    void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
-
-    void writeDeleteOnDestroyMarker();
-    void removeDeleteOnDestroyMarker();
-    /// It may look like a stupid joke. but these two methods are absolutely unrelated.
-    /// This one is about removing file with metadata about part version (for transactions)
-    void removeVersionMetadata();
-    /// This one is about removing file with version of part's metadata (columns, pk and so on)
-    void removeMetadataVersion();
-
-    mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
-
-    mutable std::atomic<time_t> last_removal_attemp_time = 0;
-
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -526,7 +483,7 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
+    String getRelativePathForDetachedPart(const String & prefix) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of
@@ -542,7 +499,6 @@ protected:
 
     void initializePartMetadataManager();
 
-    void initializeIndexGranularityInfo();
 
 private:
     /// In compact parts order of columns is necessary
@@ -611,15 +567,7 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
 
-    void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
-    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
-
-    template <typename Writer>
-    void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
-
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
-
-    static void appendFilesOfMetadataVersion(Strings & files);
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
@@ -637,13 +585,5 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
-
-inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
-bool isCompressedFromIndexExtension(const String & index_extension);
-
-using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
-
-Strings getPartsNames(const MergeTreeDataPartsVector & parts);
 
 }

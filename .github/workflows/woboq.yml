@@ -6,8 +6,9 @@ env:
 concurrency:
   group: woboq
 on: # yamllint disable-line rule:truthy
+  schedule:
+    - cron: '0 */18 * * *'
   workflow_dispatch:
-  workflow_call:
 jobs:
   # don't use dockerhub push because this image updates so rarely
   WoboqCodebrowser:
@@ -25,10 +26,6 @@ jobs:
         with:
           clear-repository: true
           submodules: 'true'
-      - name: Download json reports
-        uses: actions/download-artifact@v3
-        with:
-          path: ${{ env.IMAGES_PATH }}
       - name: Codebrowser
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -38,6 +35,8 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"

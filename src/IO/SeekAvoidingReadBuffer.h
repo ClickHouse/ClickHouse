@@ -17,7 +17,7 @@ public:
 
     off_t seek(off_t off, int whence) override;
 
-    void prefetch(Priority priority) override { impl->prefetch(priority); }
+    void prefetch() override { impl->prefetch(); }
 
 private:
     UInt64 min_bytes_for_seek; /// Minimum positive seek offset which shall be executed using seek operation.

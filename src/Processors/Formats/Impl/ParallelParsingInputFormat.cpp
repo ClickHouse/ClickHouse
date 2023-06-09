@@ -3,22 +3,16 @@
 #include <IO/WithFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
     if (thread_group)
-        CurrentThread::attachToGroup(thread_group);
+        CurrentThread::attachTo(thread_group);
 
     setThreadName("Segmentator");
-
     try
     {
         while (!parsing_finished)
@@ -39,7 +33,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
@@ -51,9 +45,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
 
             if (!have_more_data)
                 break;
-
-            // Segmentator thread can be long-living, so we have to manually update performance counters for CPU progress to be correct
-            CurrentThread::updatePerformanceCountersIfNeeded();
         }
     }
     catch (...)
@@ -62,14 +53,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
     if (thread_group)
-        CurrentThread::attachToGroupIfDetached(thread_group);
+        CurrentThread::attachToIfDetached(thread_group);
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
@@ -88,7 +75,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setCurrentUnitNumber(current_ticket_number);
-        input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -141,9 +127,8 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
-            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
             if (e->getLineNumber() != -1)
-                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
+                e->setLineNumber(e->getLineNumber() + offset);
 
             auto file_name = getFileNameFromReadBuffer(getReadBuffer());
             if (!file_name.empty())
@@ -165,12 +150,6 @@ Chunk ParallelParsingInputFormat::generate()
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
     {
-        /// Lock 'finish_and_wait_mutex' to avoid recreation of
-        /// 'segmentator_thread' after it was joined.
-        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
-        if (finish_and_wait_called)
-            return {};
-
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }

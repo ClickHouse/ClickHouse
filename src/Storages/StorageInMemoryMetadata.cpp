@@ -41,7 +41,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , comment(other.comment)
-    , metadata_version(other.metadata_version)
 {
 }
 
@@ -70,7 +69,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     comment = other.comment;
-    metadata_version = other.metadata_version;
     return *this;
 }
 
@@ -82,7 +80,7 @@ void StorageInMemoryMetadata::setComment(const String & comment_)
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getAllPhysical().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     columns = std::move(columns_);
 }
 
@@ -122,18 +120,6 @@ void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
 {
     select = select_;
-}
-
-void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
-{
-    metadata_version = metadata_version_;
-}
-
-StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
-{
-    StorageInMemoryMetadata copy(*this);
-    copy.setMetadataVersion(metadata_version_);
-    return copy;
 }
 
 const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
@@ -540,7 +526,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumns()
+        if (!isObject(*available_type)
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
@@ -566,8 +552,9 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
     const auto & provided_columns_map = getColumnsMap(provided_columns);
 
     if (column_names.empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried. There are columns: {}",
-            listOfColumns(available_columns));
+        throw Exception(
+            "Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
+            ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
     UniqueStrings unique_names;
 
@@ -588,7 +575,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumns()
+        if (!isObject(*provided_column_type)
             && !provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
@@ -619,7 +606,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     for (const auto & column : block)
     {
         if (names_in_block.contains(column.name))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column {} in block", column.name);
+            throw Exception("Duplicate column " + column.name + " in block", ErrorCodes::DUPLICATE_COLUMN);
 
         names_in_block.insert(column.name);
 
@@ -632,7 +619,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumns()
+        if (!isObject(*available_type)
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
@@ -648,7 +635,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
         for (const auto & available_column : available_columns)
         {
             if (!names_in_block.contains(available_column.name))
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Expected column {}", available_column.name);
+                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 }

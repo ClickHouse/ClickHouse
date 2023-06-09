@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
 sidebar_position: 220
 ---
 
@@ -13,8 +12,8 @@ simpleLinearRegression(x, y)
 
 Parameters:
 
-- `x` — Column with dependent variable values.
-- `y` — Column with explanatory variable values.
+-   `x` — Column with dependent variable values.
+-   `y` — Column with explanatory variable values.
 
 Returned values:
 

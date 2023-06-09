@@ -26,8 +26,6 @@ public:
      * @param off Offset.
      * @param whence Seek mode (@see SEEK_SET, @see SEEK_CUR).
      * @return New position from the beginning of underlying buffer / file.
-     *
-     * What happens if you seek above the end of the file? Implementation-defined.
      */
     virtual off_t seek(off_t off, int whence) = 0;
 
@@ -42,58 +40,33 @@ public:
      */
     virtual off_t getPosition() = 0;
 
+    struct Range
+    {
+        size_t left;
+        std::optional<size_t> right;
+
+        String toString() const { return fmt::format("[{}:{}]", left, right ? std::to_string(*right) : "None"); }
+    };
+
+    /**
+     * Returns a struct, where `left` is current read position in file and `right` is the
+     * last included offset for reading according to setReadUntilPosition() or setReadUntilEnd().
+     * E.g. next nextImpl() call will read within range [left, right].
+     */
+    virtual Range getRemainingReadRange() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRemainingReadRange() not implemented");
+    }
+
     virtual String getInfoForLog() { return ""; }
 
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
-    /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
 
-    /// Returns true if seek() actually works, false if seek() will always throw (or make subsequent
-    /// nextImpl() calls throw).
-    ///
-    /// This is needed because:
-    ///  * Sometimes there's no cheap way to know in advance whether the buffer is really seekable.
-    ///    Specifically, HTTP read buffer needs to send a request to check whether the server
-    ///    supports byte ranges.
-    ///  * Sometimes when we create such buffer we don't know in advance whether we'll need it to be
-    ///    seekable or not. So we don't want to pay the price for this check in advance.
-    virtual bool checkIfActuallySeekable() { return true; }
-
-    /// Unbuffered positional read.
-    /// Doesn't affect the buffer state (position, working_buffer, etc).
-    ///
-    /// `progress_callback` may be called periodically during the read, reporting that to[0..m-1]
-    /// has been filled. If it returns true, reading is stopped, and readBigAt() returns bytes read
-    /// so far. Called only from inside readBigAt(), from the same thread, with increasing m.
-    ///
-    /// Stops either after n bytes, or at end of file, or on exception. Returns number of bytes read.
-    /// If offset is past the end of file, may return 0 or throw exception.
-    ///
-    /// Caller needs to be careful:
-    ///  * supportsReadAt() must be checked (called and return true) before calling readBigAt().
-    ///    Otherwise readBigAt() may crash.
-    ///  * Thread safety: multiple readBigAt() calls may be performed in parallel.
-    ///    But readBigAt() may not be called in parallel with any other methods
-    ///    (e.g. next() or supportsReadAt()).
-    ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
-    ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
-    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/ = nullptr)
-        { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
-
-    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
-    virtual bool supportsReadAt() { return false; }
+    virtual bool isIntegratedWithFilesystemCache() const { return false; }
 };
 
-
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
-
-/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
-/// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
-std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
-std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
-
-/// Helper for implementing readBigAt().
-size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled = nullptr);
 
 }

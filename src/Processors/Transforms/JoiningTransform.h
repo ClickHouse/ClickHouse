@@ -9,8 +9,6 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class NotJoinedBlocks;
-class IBlocksStream;
-using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -49,13 +47,9 @@ public:
         bool default_totals_ = false,
         FinishCounterPtr finish_counter_ = nullptr);
 
-    ~JoiningTransform() override;
-
     String getName() const override { return "JoiningTransform"; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
-
-    OutputPort & getFinishedSignal();
 
     Status prepare() override;
     void work() override;
@@ -82,7 +76,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    IBlocksStreamPtr non_joined_blocks;
+    std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
@@ -108,76 +102,6 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
-};
-
-
-class DelayedBlocksTask : public ChunkInfo
-{
-public:
-
-    explicit DelayedBlocksTask() : finished(true) {}
-    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
-        : delayed_blocks(std::move(delayed_blocks_))
-        , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
-    {
-    }
-
-    IBlocksStreamPtr delayed_blocks = nullptr;
-    JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter = nullptr;
-
-    bool finished = false;
-};
-
-using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
-
-
-/// Reads delayed joined blocks from Join
-class DelayedJoinedBlocksTransform : public IProcessor
-{
-public:
-    explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
-
-    String getName() const override { return "DelayedJoinedBlocksTransform"; }
-
-    Status prepare() override;
-    void work() override;
-
-private:
-    JoinPtr join;
-
-    IBlocksStreamPtr delayed_blocks = nullptr;
-    bool finished = false;
-};
-
-class DelayedJoinedBlocksWorkerTransform : public IProcessor
-{
-public:
-    explicit DelayedJoinedBlocksWorkerTransform(
-        Block left_header_,
-        Block output_header_,
-        size_t max_block_size_,
-        JoinPtr join_);
-
-    String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
-
-    Status prepare() override;
-    void work() override;
-
-private:
-    Block left_header;
-    Block output_header;
-    size_t max_block_size;
-    JoinPtr join;
-    DelayedBlocksTaskPtr task;
-    Chunk output_chunk;
-
-    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
-    bool left_delayed_stream_finished = false;
-    bool setup_non_joined_stream = false;
-    IBlocksStreamPtr non_joined_delayed_stream = nullptr;
-
-    void resetTask();
-    Block nextNonJoinedBlock();
 };
 
 }

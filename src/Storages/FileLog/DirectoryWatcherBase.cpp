@@ -2,7 +2,6 @@
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/StorageFileLog.h>
-#include <base/defines.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -71,10 +70,10 @@ void DirectoryWatcherBase::watchFunc()
     while (!stopped)
     {
         const auto & settings = owner.storage.getFileLogSettings();
-        if (poll(&pfd, 1, static_cast<int>(milliseconds_to_wait)) > 0 && pfd.revents & POLLIN)
+        if (poll(&pfd, 1, milliseconds_to_wait) > 0 && pfd.revents & POLLIN)
         {
             milliseconds_to_wait = settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-            ssize_t n = read(fd, buffer.data(), buffer.size());
+            int n = read(fd, buffer.data(), buffer.size());
             int i = 0;
             if (n > 0)
             {
@@ -130,8 +129,7 @@ void DirectoryWatcherBase::watchFunc()
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
+    close(fd);
 }
 
 void DirectoryWatcherBase::start()

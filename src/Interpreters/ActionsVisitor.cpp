@@ -1,9 +1,8 @@
 #include <memory>
-
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 
@@ -23,13 +22,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 
 #include <Storages/StorageSet.h>
 
@@ -39,7 +34,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTQueryParameter.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -54,8 +48,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Parsers/QueryParameterVisitor.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 
 namespace DB
@@ -75,7 +68,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -95,42 +87,6 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
-template <typename T>
-static bool decimalEqualsFloat(Field field, Float64 float_value)
-{
-    auto decimal_field = field.get<DecimalField<T>>();
-    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
-    return decimal_to_float == float_value;
-}
-
-/// Applies stricter rules than convertFieldToType:
-/// Doesn't allow :
-/// - loss of precision converting to Decimal
-static bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
-{
-    result_value = convertFieldToType(from_value, to_type);
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-        return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
-    {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
-    }
-    return true;
-}
-
-/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
-/// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
-/// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
-/// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
 static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, bool transform_null_in)
 {
@@ -147,24 +103,23 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     {
         if (columns_num == 1)
         {
-            Field field;
-            bool is_conversion_ok = convertFieldToTypeStrict(value, *types[0], field);
+            auto field = convertFieldToType(value, *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
-            if (is_conversion_ok && (!field.isNull() || need_insert_null))
-                columns[0]->insert(field);
+            if (!field.isNull() || need_insert_null)
+                columns[0]->insert(std::move(field));
         }
         else
         {
             if (value.getType() != Field::Types::Tuple)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
-                    String(value.getTypeName()));
+                throw Exception("Invalid type in set. Expected tuple, got "
+                    + String(value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-            const auto & tuple = value.template get<const Tuple &>();
+            const auto & tuple = DB::get<const Tuple &>(value);
             size_t tuple_size = tuple.size();
 
             if (tuple_size != columns_num)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    tuple_size, columns_num);
+                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size)
+                    + " instead of " + toString(columns_num), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
@@ -172,10 +127,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                bool is_conversion_ok = convertFieldToTypeStrict(tuple[i], *types[i], tuple_values[i]);
-                if (!is_conversion_ok)
-                    break;
-
+                tuple_values[i] = convertFieldToType(tuple[i], *types[i]);
                 bool need_insert_null = transform_null_in && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
                     break;
@@ -205,7 +157,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, C
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
     }
     else
-        throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
+        throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
@@ -276,10 +228,10 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
             assert(tuple || func);
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    tuple_size, num_columns);
+                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
+                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
@@ -306,7 +258,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                     columns[i]->insert(tuple_values[i]);
         }
         else
-            throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set");
+            throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
     }
 
     return header.cloneWithColumns(std::move(columns));
@@ -336,8 +288,8 @@ Block createBlockForSet(
 
     auto throw_unsupported_type = [](const auto & type)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported value type at the right-side of IN: {}.",
-            type->getName());
+        throw Exception("Unsupported value type at the right-side of IN: "
+            + type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     };
 
     Block block;
@@ -354,9 +306,9 @@ Block createBlockForSet(
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, tranform_null_in);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(right_arg_value.get<const Array &>(), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, tranform_null_in);
         else
             throw_unsupported_type(right_arg_type);
     }
@@ -407,14 +359,16 @@ Block createBlockForSet(
     {
         const auto * set_func = right_arg->as<ASTFunction>();
         if (!set_func || (set_func->name != "tuple" && set_func->name != "array"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Incorrect type of 2nd argument for function 'in'. "
-                            "Must be subquery or set of elements with type {}.", left_arg_type->getName());
+            throw Exception("Incorrect type of 2nd argument for function 'in'"
+                            ". Must be subquery or set of elements with type " + left_arg_type->getName() + ".",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         elements_ast = set_func->arguments;
     }
     else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid types for IN function: {} and {}.",
-                        left_arg_type->getName(), right_arg_type->getName());
+        throw Exception("Invalid types for IN function: "
+                        + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return createBlockFromAST(elements_ast, set_element_types, context);
 }
@@ -429,7 +383,7 @@ SetPtr makeExplicitSet(
     const IAST & args = *node->arguments;
 
     if (args.children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments passed to function in");
+        throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
@@ -468,6 +422,10 @@ SetPtr makeExplicitSet(
     return set;
 }
 
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
+
 class ScopeStack::Index
 {
     /// Map column name -> Node.
@@ -486,7 +444,7 @@ public:
     {
         bool inserted = map.emplace(node->result_name, node).second;
         if (!inserted)
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' already exists", node->result_name);
+            throw Exception("Column '" + node->result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
         index.push_back(node);
     }
@@ -504,7 +462,7 @@ public:
     {
         const auto * node = tryGetNode(name);
         if (!node)
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", name);
+            throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 
         return *node;
     }
@@ -521,10 +479,6 @@ public:
     }
 };
 
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
-
 ActionsMatcher::Data::Data(
     ContextPtr context_,
     SizeLimits set_size_limit_,
@@ -535,9 +489,9 @@ ActionsMatcher::Data::Data(
     bool no_subqueries_,
     bool no_makeset_,
     bool only_consts_,
+    bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_,
-    bool is_create_parameterized_view_)
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -546,11 +500,11 @@ ActionsMatcher::Data::Data(
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
+    , create_source_for_in(create_source_for_in_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
-    , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -615,7 +569,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
             return i;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}", name);
+    throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
@@ -650,8 +604,8 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
 
     const auto * source_node = stack.front().index->tryGetNode(source_name);
     if (!source_node)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin cannot depend on lambda argument: {}",
-                        source_name);
+        throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
+                        ErrorCodes::BAD_ARGUMENTS);
 
     const auto & node = stack.front().actions_dag->addArrayJoin(*source_node, std::move(result_name));
     stack.front().index->addNode(&node);
@@ -764,8 +718,8 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}; there are columns: {}",
-            child_column_name, data.actions_stack.dumpNames());
+        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
+                        ErrorCodes::UNKNOWN_IDENTIFIER);
 
     return {};
 }
@@ -884,13 +838,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
 
     if (node.name == "lambda")
-        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
+        throw Exception("Unexpected lambda expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
     {
         if (node.arguments->children.size() != 1)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "arrayJoin requires exactly 1 argument");
+            throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
@@ -909,8 +863,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (arguments_size == 0)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
         if (arguments_size > 64)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                            "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
         auto keys_info = data.aggregation_keys_info;
         auto aggregation_keys_number = keys_info.aggregation_keys.size();
 
@@ -927,20 +880,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes))), {}, column_name);
                 break;
             }
             default:
@@ -950,16 +903,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    FutureSet prepared_set;
+    SetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
-            prepared_set = makeSet(node, data, data.no_subqueries);
-
-        if (prepared_set.isValid())
+        if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries)))
         {
             /// Transform tuple or subquery into a set.
         }
@@ -998,6 +948,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
+            /*create_source_for_in*/ false,
             data.aggregation_keys_info);
 
         NamesWithAliases args;
@@ -1109,12 +1060,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    /// Normal functions are not parametric for now.
-    if (node.parameters)
-    {
-        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
-    }
-
     Names argument_names;
     DataTypes argument_types;
     bool arguments_present = true;
@@ -1131,17 +1076,16 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
             const auto * function = child->as<ASTFunction>();
             const auto * identifier = child->as<ASTTableIdentifier>();
-            const auto * query_parameter = child->as<ASTQueryParameter>();
             if (function && function->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
                 if (function->arguments->children.size() != 2)
-                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
+                    throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
                 const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
 
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
+                    throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
                 has_lambda_arguments = true;
                 argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
@@ -1171,15 +1115,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
             }
-            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.isValid())
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                const bool is_constant_set = prepared_set.isCreated();
-                if (is_constant_set)
+                if (!prepared_set->empty())
                     column.name = data.getUniqueName("__set");
                 else
                     column.name = child->getColumnName();
@@ -1189,7 +1132,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     auto column_set = ColumnSet::create(1, prepared_set);
                     /// If prepared_set is not empty, we have a set made with literals.
                     /// Create a const ColumnSet to make constant folding work
-                    if (is_constant_set)
+                    if (!prepared_set->empty())
                         column.column = ColumnConst::create(std::move(column_set), 1);
                     else
                         column.column = std::move(column_set);
@@ -1211,26 +1154,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     data.getUniqueName("__" + node.name));
                 data.addColumn(column);
                 argument_types.push_back(column.type);
-                argument_names.push_back(column.name);
-            }
-            else if (data.is_create_parameterized_view && query_parameter)
-            {
-                const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                /// Use getUniqueName() to allow multiple use of query parameter in the query:
-                ///
-                ///     CREATE VIEW view AS
-                ///     SELECT *
-                ///     FROM system.one
-                ///     WHERE dummy = {k1:Int}+1 OR dummy = {k1:Int}+2
-                ///                    ^^                    ^^
-                ///
-                /// NOTE: query in the VIEW will not be modified this is needed
-                /// only during analysis for CREATE VIEW to avoid duplicated
-                /// column names.
-                ColumnWithTypeAndName column(data_type, data.getUniqueName("__" + query_parameter->getColumnName()));
-                data.addColumn(column);
-
-                argument_types.push_back(data_type);
                 argument_names.push_back(column.name);
             }
             else
@@ -1272,7 +1195,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     {
                         auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
                         if (!opt_arg_name)
-                            throw Exception(ErrorCodes::TYPE_MISMATCH, "lambda argument declarations must be identifiers");
+                            throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
                         lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
                     }
@@ -1381,10 +1304,10 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     if (!data.prepared_sets)
-        return {};
+        return nullptr;
 
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -1401,12 +1324,8 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-
-        {
-            auto set = data.prepared_sets->getFuture(set_key);
-            if (set.isValid())
-                return set;
-        }
+        if (SetPtr set = data.prepared_sets->get(set_key))
+            return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1422,7 +1341,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
                 {
                     SetPtr set = storage_set->getSet();
                     data.prepared_sets->set(set_key, set);
-                    return FutureSet(set);
+                    return set;
                 }
             }
         }
@@ -1440,7 +1359,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.hasSource())
+        if (data.create_source_for_in && !subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
             subquery_for_set.createSource(*interpreter);
@@ -1454,8 +1373,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return FutureSet(
-                makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets));
+            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets);
         else
             return {};
     }

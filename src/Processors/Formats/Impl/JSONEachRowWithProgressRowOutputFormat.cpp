@@ -11,12 +11,12 @@ void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
     if (has_progress)
         writeProgress();
-    writeCString("{\"row\":{", *ostr);
+    writeCString("{\"row\":{", out);
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}}\n", *ostr);
+    writeCString("}}\n", out);
     field_number = 0;
 }
 
@@ -24,11 +24,11 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
     progress.incrementPiecewiseAtomically(value);
     String progress_line;
-    WriteBufferFromString buf(progress_line);
-    writeCString("{\"progress\":", buf);
-    progress.writeJSON(buf);
-    writeCString("}\n", buf);
-    buf.finalize();
+    WriteBufferFromString ostr(progress_line);
+    writeCString("{\"progress\":", ostr);
+    progress.writeJSON(ostr);
+    writeCString("}\n", ostr);
+    ostr.finalize();
     std::lock_guard lock(progress_lines_mutex);
     progress_lines.emplace_back(std::move(progress_line));
     has_progress = true;
@@ -38,7 +38,7 @@ void JSONEachRowWithProgressRowOutputFormat::flush()
 {
     if (has_progress)
         writeProgress();
-    JSONEachRowRowOutputFormat::flush();
+    IOutputFormat::flush();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeSuffix()
@@ -52,7 +52,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress()
 {
     std::lock_guard lock(progress_lines_mutex);
     for (const auto & progress_line : progress_lines)
-        writeString(progress_line,  *ostr);
+        writeString(progress_line, out);
     progress_lines.clear();
     has_progress = false;
 }
@@ -62,21 +62,25 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams & params,
             const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf,
+            sample, params, settings);
     });
 
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams & params,
             const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf,
+            sample, params, settings);
     });
 }
 

@@ -6,7 +6,9 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerUUID.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -15,8 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 bool IDisk::isDirectoryEmpty(const String & path) const
@@ -35,6 +35,7 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     out->finalize();
 }
 
+
 DiskTransactionPtr IDisk::createTransaction()
 {
     return std::make_shared<FakeDiskTransaction>(*this);
@@ -50,31 +51,6 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
         else
             removeSharedFile(file.path, keep_file);
     }
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-std::unique_ptr<WriteBufferFromFileBase> IDisk::writeEncryptedFile(const String &, size_t, WriteMode, const WriteSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(size_t) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-UInt128 IDisk::getEncryptedFileIV(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
 
@@ -142,7 +118,7 @@ void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<
 
 void IDisk::truncateFile(const String &, size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
@@ -150,87 +126,18 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::startup(ContextPtr context, bool skip_access_check)
+MetadataStoragePtr IDisk::getMetadataStorage()
 {
-    if (!skip_access_check)
+    if (isRemote())
     {
-        if (isReadOnly())
-        {
-            LOG_DEBUG(&Poco::Logger::get("IDisk"),
-                "Skip access check for disk {} (read-only disk).",
-                getName());
-        }
-        else
-            checkAccess();
+        return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), "");
     }
-    startupImpl(context);
-}
-
-void IDisk::checkAccess()
-{
-    DB::UUID server_uuid = DB::ServerUUID::get();
-    if (server_uuid == DB::UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
-
-    checkAccessImpl(path);
-}
-
-/// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
-void IDisk::checkAccessImpl(const String & path)
-try
-{
-    const std::string_view payload("test", 4);
-
-    /// write
+    else
     {
-        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        try
-        {
-            file->write(payload.data(), payload.size());
-            file->finalize();
-        }
-        catch (...)
-        {
-            /// Log current exception, because finalize() can throw a different exception.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        auto object_storage = std::make_shared<LocalObjectStorage>();
+        return std::make_shared<FakeMetadataStorageFromDisk>(
+            std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
     }
-
-    /// read
-    {
-        auto file = readFile(path);
-        String buf(payload.size(), '0');
-        file->readStrict(buf.data(), buf.size());
-        if (buf != payload)
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Content of {}::{} does not matches after read ({} vs {})", name, path, buf, payload);
-        }
-    }
-
-    /// read with offset
-    {
-        auto file = readFile(path);
-        auto offset = 2;
-        String buf(payload.size() - offset, '0');
-        file->seek(offset, 0);
-        file->readStrict(buf.data(), buf.size());
-        if (buf != payload.substr(offset))
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Content of {}::{} does not matches after read with offset ({} vs {})", name, path, buf, payload.substr(offset));
-        }
-    }
-
-    /// remove
-    removeFile(path);
-}
-catch (Exception & e)
-{
-    e.addMessage(fmt::format("While checking access for disk {}", name));
-    throw;
 }
 
 }

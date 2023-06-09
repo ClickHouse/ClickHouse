@@ -96,7 +96,7 @@ public:
             }
 
             if (!subquery_or_table_name)
-                throw Exception(ErrorCodes::WRONG_GLOBAL_SUBQUERY, "Global subquery requires subquery or table name");
+                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
 
             if (is_table)
             {
@@ -174,7 +174,7 @@ public:
             else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
                 io.pipeline.complete(std::move(table_out));
                 CompletedPipelineExecutor executor(io.pipeline);
@@ -209,19 +209,10 @@ public:
     }
 
 private:
-    static bool shouldBeExecutedGlobally(const Data & data)
-    {
-        const Settings & settings = data.getContext()->getSettingsRef();
-        /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
-        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
-        return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
-    }
-
-
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((shouldBeExecutedGlobally(data)
+        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
@@ -251,7 +242,8 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
+                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             Names required_columns;
 
