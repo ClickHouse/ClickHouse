@@ -803,7 +803,7 @@ Pipe StorageURLWithFailover::read(
 }
 
 
-SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;

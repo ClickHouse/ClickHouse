@@ -669,7 +669,7 @@ Pipe StorageAzureBlob::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(configuration.blobs_paths.back(), configuration.compression_method);
