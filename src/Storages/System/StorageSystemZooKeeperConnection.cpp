@@ -56,7 +56,8 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     };
 
     /// For read-only snapshot type functionality, it's acceptable even though 'getZooKeeper' may cause data inconsistency.
-    auto fill_data = [](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns) {
+    auto fill_data = [](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
+    {
         int32_t index = zookeeper->getConnectedHostIdx();
         String host_port = zookeeper->getConnectedHostPort();
         if (index != -1 && !host_port.empty())
@@ -83,7 +84,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     fill_data("default", context->getZooKeeper(), res_columns);
 
     /// auxiliary zookeepers.
-    for (const auto& elem : context->getAuxiliaryZooKeepers())
+    for (const auto & elem : context->getAuxiliaryZooKeepers())
     {
         fill_data(elem.first, elem.second, res_columns);
     }
