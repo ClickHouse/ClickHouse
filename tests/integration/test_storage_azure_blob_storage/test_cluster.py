@@ -44,6 +44,7 @@ def cluster():
     finally:
         cluster.shutdown()
 
+
 def azure_query(node, query, try_num=3, settings={}):
     for i in range(try_num):
         try:
@@ -74,7 +75,6 @@ def get_azure_file_content(filename):
     return download_stream.readall().decode("utf-8")
 
 
-
 def test_simple_write_account_string_table_function(cluster):
     node = cluster.instances["node_0"]
     azure_query(
@@ -85,7 +85,7 @@ def test_simple_write_account_string_table_function(cluster):
         "'auto', 'key UInt64') VALUES (1), (2)",
     )
     print(get_azure_file_content("test_simple_write_tf.csv"))
-    #assert get_azure_file_content("test_simple_write_tf.csv") == '1,"a"\n'
+    # assert get_azure_file_content("test_simple_write_tf.csv") == '1,"a"\n'
 
     pure_azure = node.query(
         """
