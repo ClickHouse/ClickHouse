@@ -110,7 +110,7 @@ namespace
         /// Write row as struct field.
         virtual void writeRow(
             const ColumnPtr & column,
-            std::unique_ptr<FieldBuilder> & builder,
+            std::unique_ptr<FieldBuilder> & builder, /// Maybe unused for simple types, needed to initialize structs and lists.
             capnp::DynamicStruct::Builder & parent_struct_builder,
             UInt32 slot_offset,
             size_t row_num) = 0;
@@ -118,7 +118,7 @@ namespace
         /// Write row as list element.
         virtual void writeRow(
             const ColumnPtr & column,
-            std::unique_ptr<FieldBuilder> & builder,
+            std::unique_ptr<FieldBuilder> & builder, /// Maybe unused for simple types, needed to initialize structs and lists.
             capnp::DynamicList::Builder & parent_list_builder,
             UInt32 array_index,
             size_t row_num) = 0;
@@ -262,53 +262,92 @@ namespace
             if (!capnp_type.isEnum())
                 throwCannotConvert(data_type, column_name, capnp_type);
 
-            bool to_lower = enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE;
             const auto * enum_type = assert_cast<const DataTypeEnum<EnumType> *>(data_type.get());
             const auto & enum_values = dynamic_cast<const EnumValues<EnumType> &>(*enum_type);
 
             enum_schema = capnp_type.asEnum();
             auto enumerants = enum_schema.getEnumerants();
-            constexpr auto max_value = std::is_same_v<EnumType, Int8> ? INT8_MAX : INT16_MAX;
             if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
             {
-                /// In CapnProto Enum fields are numbered sequentially starting from zero.
-                if (enumerants.size() > max_value)
-                    throw Exception(
-                        ErrorCodes::CAPN_PROTO_BAD_CAST,
-                        "Enum from CapnProto schema contains values that are out of range for Clickhouse enum type {}",
-                        data_type->getName());
-
-                auto values = enum_values.getSetOfAllValues();
-                std::unordered_set<EnumType> capn_enum_values;
+                auto ch_enum_values = enum_values.getSetOfAllValues();
+                std::unordered_set<UInt16> capn_enum_values;
                 for (auto enumerant : enumerants)
-                    capn_enum_values.insert(EnumType(enumerant.getOrdinal()));
-                if (values != capn_enum_values)
-                    throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "The set of values in Enum from CapnProto schema is different from the set of values in ClickHouse Enum");
+                    capn_enum_values.insert(enumerant.getOrdinal());
+
+                /// Check if ClickHouse values is a superset of CapnProto values.
+                ch_enum_is_superset = true;
+                /// In CapnProto Enum fields are numbered sequentially starting from zero.
+                /// Check if max CapnProto value exceeds max ClickHouse value.
+                constexpr auto max_value = std::is_same_v<EnumType, Int8> ? INT8_MAX : INT16_MAX;
+                if (enumerants.size() > max_value)
+                {
+                    ch_enum_is_superset = false;
+                }
+                else
+                {
+                    for (auto capnp_value : capn_enum_values)
+                    {
+                        if (!ch_enum_values.contains(static_cast<EnumType>(capnp_value)))
+                        {
+                            ch_enum_is_superset = false;
+                            break;
+                        }
+                    }
+                }
+
+                /// Check if CapnProto values is a superset of ClickHouse values.
+                capnp_enum_is_superset = true;
+                for (auto ch_value : ch_enum_values)
+                {
+                    /// Capnp doesn't support negative enum values.
+                    if (ch_value < 0 || !capn_enum_values.contains(static_cast<UInt16>(ch_value)))
+                    {
+                        capnp_enum_is_superset = false;
+                        break;
+                    }
+                }
             }
             else
             {
-                auto all_values = enum_values.getValues();
-                if (all_values.size() != enumerants.size())
-                    throw Exception(
-                        ErrorCodes::CAPN_PROTO_BAD_CAST,
-                        "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum");
+                bool to_lower = enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE;
 
+                auto all_values = enum_values.getValues();
                 std::unordered_map<String, EnumType> ch_name_to_value;
                 for (auto & [name, value] : all_values)
                     ch_name_to_value[to_lower ? boost::algorithm::to_lower_copy(name) : name] = value;
 
+                std::unordered_map<String, UInt16> capnp_name_to_value;
                 for (auto enumerant : enumerants)
                 {
                     String capnp_name = enumerant.getProto().getName();
-                    UInt16 capnp_value = enumerant.getOrdinal();
-                    auto it = ch_name_to_value.find(to_lower ? boost::algorithm::to_lower_copy(capnp_name) : capnp_name);
-                    if (it == ch_name_to_value.end())
-                        throw Exception(
-                            ErrorCodes::CAPN_PROTO_BAD_CAST,
-                            "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum");
+                    capnp_name_to_value[to_lower ? boost::algorithm::to_lower_copy(capnp_name) : capnp_name] = enumerant.getOrdinal();
+                }
 
-                    ch_to_capnp_values[it->second] = capnp_value;
+                /// Check if ClickHouse names is a superset of CapnProto names.
+                ch_enum_is_superset = true;
+                for (auto & [capnp_name, capnp_value] : capnp_name_to_value)
+                {
+                    auto it = ch_name_to_value.find(capnp_name);
+                    if (it == ch_name_to_value.end())
+                    {
+                        ch_enum_is_superset = false;
+                        break;
+                    }
                     capnp_to_ch_values[capnp_value] = it->second;
+                }
+
+                /// Check if CapnProto names is a superset of ClickHouse names.
+                capnp_enum_is_superset = true;
+
+                for (auto & [ch_name, ch_value] : ch_name_to_value)
+                {
+                    auto it = capnp_name_to_value.find(ch_name);
+                    if (it == capnp_name_to_value.end())
+                    {
+                        capnp_enum_is_superset = false;
+                        break;
+                    }
+                    ch_to_capnp_values[ch_value] = it->second;
                 }
             }
         }
@@ -336,23 +375,43 @@ namespace
     private:
         UInt16 getValue(const ColumnPtr & column, size_t row_num)
         {
+            if (!capnp_enum_is_superset)
+                throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Cannot convert ClickHouse enum to CapnProto enum: CapnProto enum values/names is not a superset of ClickHouse enum values/names");
+
             EnumType enum_value = assert_cast<const ColumnVector<EnumType> &>(*column).getElement(row_num);
             if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
                 return static_cast<UInt16>(enum_value);
-            return ch_to_capnp_values[enum_value];
+            auto it = ch_to_capnp_values.find(enum_value);
+            if (it == ch_to_capnp_values.end())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected value {} in ClickHouse enum", enum_value);
+
+            return it->second;
         }
 
         void insertValue(IColumn & column, UInt16 capnp_enum_value)
         {
+            if (!ch_enum_is_superset)
+                throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Cannot convert CapnProto enum to ClickHouse enum: ClickHouse enum values/names is not a superset of CapnProto enum values/names");
+
             if (enum_comparing_mode == FormatSettings::CapnProtoEnumComparingMode::BY_VALUES)
+            {
                 assert_cast<ColumnVector<EnumType> &>(column).insertValue(static_cast<EnumType>(capnp_enum_value));
+            }
             else
+            {
+                auto it = capnp_to_ch_values.find(capnp_enum_value);
+                if (it == capnp_to_ch_values.end())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected value {} in CapnProto enum", capnp_enum_value);
+
                 assert_cast<ColumnVector<EnumType> &>(column).insertValue(capnp_to_ch_values[capnp_enum_value]);
+            }
         }
 
         DataTypePtr data_type;
         capnp::EnumSchema enum_schema;
         const FormatSettings::CapnProtoEnumComparingMode enum_comparing_mode;
+        bool ch_enum_is_superset;
+        bool capnp_enum_is_superset;
         std::unordered_map<EnumType, UInt16> ch_to_capnp_values;
         std::unordered_map<UInt16, EnumType> capnp_to_ch_values;
     };
