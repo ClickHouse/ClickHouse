@@ -4,6 +4,7 @@
 #include <QueryCoordination/Coordinator.h>
 #include <Storages/IStorage.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/FragmentMgr.h>
 
 namespace DB
 {
@@ -91,40 +92,63 @@ void Coordinator::schedule()
         fragment_hosts->swap(local_fragment_hosts);
     }
 
-    // send
-    for (auto [host, fragments_for_dump] : host_fragment_ids)
-    {
-        for (auto fragment : fragments_for_dump)
-        {
-            if (host == local_shard_connection->getDescription())
-            {
-                local_fragments.emplace_back(fragment);
-            }
-            else
-            {
-                LOG_INFO(&Poco::Logger::get("Coordinator"), "host {}, fragment_id {}", host, std::to_string(fragment->getFragmentId()));
-                FragmentsRequest request; // query_id fragment dests
-                host_connection[host]->sendFragment(request);
-            }
-        }
-    }
+    sendFragmentToPrepare();
 
     // TODO send begin process
     for (auto [host, fragments_for_dump] : host_fragment_ids)
     {
-        for (auto fragment : fragments_for_dump)
+        if (host == local_shard_connection->getDescription())
         {
-            if (host == local_shard_connection->getDescription())
-            {
-                // TODO local begin process
-            }
-            else
-            {
-                // TODO         host_connection[host]->sendBeginFragment();
-            }
+            FragmentMgr::getInstance().beginFragments(context->getCurrentQueryId());
+        }
+        else
+        {
+            // TODO         host_connection[host]->sendBeginFragment();
         }
     }
 
 }
+
+
+void Coordinator::sendFragmentToPrepare()
+{
+    // send
+    for (auto [host, fragments_for_send] : host_fragment_ids)
+    {
+        if (host == local_shard_connection->getDescription())
+        {
+            FragmentsRequest fragments_request;
+            for (auto fragment : fragments_for_send)
+            {
+                LOG_INFO(&Poco::Logger::get("Coordinator"), "host {}, fragment_id {}", host, std::to_string(fragment->getFragmentId()));
+
+                Destinations dest_hosts;
+                if (fragment->getDestFragment())
+                {
+                    dest_hosts = std::move(fragment_id_hosts[fragment->getDestFragment()->getFragmentId()]);
+                }
+                fragments_request.fragments_request.emplace_back(FragmentRequest{.fragment_id = fragment->getFragmentId(), .destinations = std::move(dest_hosts)});
+
+                FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
+            }
+            FragmentMgr::getInstance().fragmentsToDistributed(context->getCurrentQueryId(), fragments_request.fragments_request);
+        }
+        else
+        {
+            FragmentsRequest request; // query_id fragment dests for host
+            request.query = query;
+            for (auto fragment : fragments_for_send)
+            {
+                LOG_INFO(&Poco::Logger::get("Coordinator"), "host {}, fragment_id {}", host, std::to_string(fragment->getFragmentId()));
+
+                auto & dest_hosts = fragment_id_hosts[fragment->getDestFragment()->getFragmentId()];
+
+                request.fragments_request.emplace_back(FragmentRequest{.fragment_id = fragment->getFragmentId(), .destinations = std::move(dest_hosts)});
+            }
+            host_connection[host]->sendFragments(request);
+        }
+    }
+}
+
 
 }

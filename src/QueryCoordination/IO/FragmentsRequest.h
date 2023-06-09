@@ -23,7 +23,6 @@ public:
 
     const std::vector<FragmentRequest> & fragmentsRequest() const { return fragments_request; }
 
-private:
     String query;
     std::vector<FragmentRequest> fragments_request;
 };

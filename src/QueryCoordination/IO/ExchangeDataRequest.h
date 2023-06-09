@@ -5,10 +5,8 @@
 namespace DB
 {
 
-class ExchangeDataRequest
+struct ExchangeDataRequest
 {
-
-private:
     String query_id;
     UInt32 fragment_id;
     UInt32 exchange_id;

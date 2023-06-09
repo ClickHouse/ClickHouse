@@ -1,42 +1,42 @@
 #include <QueryCoordination/PlanFragment.h>
-#include <Processors/Sinks/DataSink.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/Context.h>
 #include <memory>
 
 
 namespace DB
 {
 
-void PlanFragment::finalize()
+QueryPipeline PlanFragment::buildQueryPipeline(const std::vector<DataSink::Channel> & channels)
 {
-    if (sink)
-        return;
+    auto builder = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
-    if (dest_node)
+    QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+
+    if (auto dest_fragment = getDestFragment())
     {
-        // we're streaming to an exchange node
-        std::shared_ptr<DataSink> data_sink = std::make_shared<DataSink>(dest_node->plan_id);
-        data_sink->setPartition(output_partition);
-//        data_sink->setFragment(this);
-        query_plan.addStep(data_sink);
-        sink = query_plan.getRootNode();
+        String query_id;
+        if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+            query_id = context->getCurrentQueryId();
+        }
+        else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        {
+            query_id = context->getInitialQueryId();
+        }
+        auto sink = std::make_shared<DataSink>(
+            pipeline.getHeader(), channels, output_partition, query_id, dest_fragment->getFragmentId(), dest_node->plan_id);
+
+        pipeline.complete(sink);
     }
-    else
-    {
-        // root fragment
-        // TODO
-    }
-}
 
+    std::shared_ptr<const EnabledQuota> quota = context->getQuota();
 
-void PlanFragment::buildQueryPipeline()
-{
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    pipeline.setQuota(quota);
 
-//    pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-//
-//    setQuota(res.pipeline);
+    return pipeline;
 }
 
 }

@@ -424,7 +424,7 @@ void TCPHandler::runImpl()
             if (state.fragments_request && query_context->getSettingsRef().allow_experimental_fragment
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
-                FragmentMgr::getInstance().keepToProcessFragments(
+                FragmentMgr::getInstance().fragmentsToDistributed(
                     query_context->getInitialQueryId(), state.fragments_request->fragmentsRequest());
                 continue;
             }
@@ -1371,8 +1371,8 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::ExchangeData:
+            // TODO read exchange_data_request
             state.exchange_data_request.emplace();
-//            FragmentMgr::getInstance().receiveData(state.exchange_data_request);
             return false;
 
         case Protocol::Client::Data:

@@ -16,7 +16,6 @@ public:
         Coordination::write(host, out);
     }
 
-private:
     UInt32 fragment_id;
     String host;
 };

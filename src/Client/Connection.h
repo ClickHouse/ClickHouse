@@ -111,7 +111,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendFragment(FragmentsRequest & fragment);
+    void sendFragments(const FragmentsRequest & fragment);
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 

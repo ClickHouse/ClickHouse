@@ -19,6 +19,9 @@ public:
     Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_) : fragments(fragments_), context(context_) {}
 
 private:
+    void sendFragmentToPrepare();
+
+private:
     const PlanFragmentPtrs & fragments;
 
     std::unordered_map<UInt32, std::vector<String>> fragment_id_hosts;
@@ -28,10 +31,9 @@ private:
 
     std::unordered_map<String, std::vector<PlanFragmentPtr>> host_fragment_ids;
 
-    PlanFragmentPtrs local_fragments;
-
     ContextMutablePtr context;
 
+    String query;
 //    Poco::Logger * log;
 };
 

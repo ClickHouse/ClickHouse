@@ -1,29 +1,18 @@
 #pragma once
 
+#include <memory>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Processors/QueryPlan/ExchangeDataStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExchangeStep.h>
+#include <Processors/Sinks/DataSink.h>
+#include <QueryCoordination/DataPartition.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <memory>
 
 namespace DB
 {
-
-enum PartitionType : uint8_t
-{
-    UNPARTITIONED,
-    RANDOM,
-    HASH_PARTITIONED,
-    RANGE_PARTITIONED,
-    BUCKET_SHFFULE_HASH_PARTITIONED,
-};
-
-struct DataPartition
-{
-    PartitionType type;
-    ManyExpressionActions expressions;
-};
 
 /**
  * 1. PlanFragment 划分
@@ -40,14 +29,40 @@ public:
         : context(context_), data_partition(partition)
     {
         query_plan.addStep(step);
-        //        setFragmentInPlanTree(query_plan.getRootNode());
+        query_plan.getRootNode()->plan_id = ++plan_id_counter;
+    }
+
+    /**
+     * Assigns 'this' as fragment of all PlanNodes in the plan tree rooted at node.
+     * Does not traverse the children of ExchangeNodes because those must belong to a
+     * different fragment.
+     */
+    void setFragmentInPlanTree(Node * node)
+    {
+        if (!node || !node->step)
+        {
+            return;
+        }
+        node->fragment = shared_from_this();
+
+        if (dynamic_cast<ExchangeDataStep *>(node->step.get()))
+        {
+            return;
+        }
+
+        for (Node * child : node->children)
+        {
+            setFragmentInPlanTree(child);
+        }
     }
 
     // add plan root
     void addStep(QueryPlanStepPtr step)
     {
         query_plan.addStep(step);
-        query_plan.getRootNode()->fragment = shared_from_this();
+        auto * root_node = query_plan.getRootNode();
+        root_node->fragment = shared_from_this();
+        root_node->plan_id = ++plan_id_counter;
     }
 
     const DataStream & getCurrentDataStream() const
@@ -77,30 +92,6 @@ public:
     }
 
     Node * getRootNode() const { return query_plan.getRootNode(); }
-
-    /**
-     * Assigns 'this' as fragment of all PlanNodes in the plan tree rooted at node.
-     * Does not traverse the children of ExchangeNodes because those must belong to a
-     * different fragment.
-     */
-    void setFragmentInPlanTree(Node * node)
-    {
-        if (!node || !node->step)
-        {
-            return;
-        }
-        node->fragment = shared_from_this();
-
-        if (dynamic_cast<ExchangeStep *>(node->step.get()))
-        {
-            return;
-        }
-
-        for (Node * child : node->children)
-        {
-            setFragmentInPlanTree(child);
-        }
-    }
 
     const DataPartition & getDataPartition() const { return data_partition; }
 
@@ -133,7 +124,7 @@ public:
 
     void finalize();
 
-    void buildQueryPipeline();
+    QueryPipeline buildQueryPipeline(const std::vector<DataSink::Channel> & channels);
 
 private:
 
@@ -166,12 +157,11 @@ private:
     // if null, outputs the entire row produced by planRoot
     // ArrayList<Expr> outputExprs;
 
-    // created in finalize() or set in setSink()
-    Node * sink;
-
     // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment,
     // otherwise it is scheduled to the cluster node according to the DataPartition, the principle of minimum data movement.
     std::shared_ptr<Cluster> cluster;
+
+    UInt32 plan_id_counter = 0;
 };
 
 using PlanFragmentPtr = std::shared_ptr<PlanFragment>;

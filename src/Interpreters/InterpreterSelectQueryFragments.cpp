@@ -46,7 +46,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ExchangeStep.h>
+#include <Processors/QueryPlan/ExchangeDataStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -71,9 +71,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryCoordination/Coordinator.h>
+#include <QueryCoordination/FragmentMgr.h>
 #include <QueryCoordination/PlanFragment.h>
 #include <QueryCoordination/PlanNode.h>
-#include <QueryCoordination/FragmentMgr.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -896,17 +896,12 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPl
     {
         Coordinator coord(fragments, context);
         coord.schedule();
-
-        for (auto fragment : coord.localFragments())
-        {
-            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment);
-        }
     }
     else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         for (auto fragment : fragments)
         {
-            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment);
+            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
         }
     }
 

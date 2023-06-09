@@ -7,44 +7,29 @@
 #include <QueryCoordination/IO/FragmentRequest.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <Core/Block.h>
+#include <QueryCoordination/PipelineExecutors.h>
+#include <QueryCoordination/ExchangeDataReceiver.h>
 
 namespace DB
 {
 
-using QueryFragment = std::unordered_map<String, std::vector<PlanFragmentPtr>>;
+using ExchangeDataReceivers = std::vector<std::shared_ptr<ExchangeDataReceiver>>;
 
-struct ExchangeNodeKey
+struct FragmentDistributed
 {
-    String query_id;
-    UInt32 fragment_id;
-    UInt32 exchange_id;
-
-    bool operator== (const ExchangeNodeKey & key) const
-    {    return query_id == key.query_id &&
-            fragment_id == key.fragment_id &&
-            exchange_id == key.exchange_id;
-    }
-
-    struct Hash
-    {
-        size_t operator()(const ExchangeNodeKey & key) const
-        {
-            return std::hash<std::string_view>{}(key.query_id) + std::hash<UInt32>{}(key.fragment_id) + std::hash<UInt32>{}(key.exchange_id);
-        }
-    };
+    PlanFragmentPtr fragment;
+    Destinations dests;
+    ExchangeDataReceivers receivers;
 };
-
-
-using ExchangeMap = std::unordered_map<ExchangeNodeKey, ExchangeStep, ExchangeNodeKey::Hash>;
 
 class FragmentMgr
 {
 public:
-    // for SECONDARY_QUERY from tcphandler, for INITIAL_QUERY from InterpreterSelectQueryFragments
-    void addFragment(String query_id, PlanFragmentPtr fragment);
+    // from InterpreterSelectQueryFragments
+    void addFragment(String query_id, PlanFragmentPtr fragment, ContextMutablePtr context_);
 
     // Keep fragments that need to be executed by themselves
-    void keepToProcessFragments(String query_id, const std::vector<FragmentRequest> & self_fragment);
+    void fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & self_fragment);
 
     void beginFragments(String query_id);
 
@@ -57,9 +42,25 @@ public:
     }
 
 private:
+    void buildQueryPipelines(String query_id);
+
+    void cleanerThread();
+
+    struct Data
+    {
+        std::vector<FragmentDistributed> fragments_distributed;
+        std::vector<QueryPipeline> query_pipelines;
+
+        ContextMutablePtr query_context;
+    };
+
+    using QueryFragment = std::unordered_map<String, std::unique_ptr<Data>>;
+
+    std::unique_ptr<ThreadFromGlobalPool> cleaner;
+
     QueryFragment query_fragment;
 
-    ExchangeMap exchange_map;
+    PipelineExecutors executors;
 };
 
 }
