@@ -60,9 +60,12 @@ public:
                         CurrentThread::attachToGroupIfDetached(thread_group);
                     setThreadName("UniqExactMerger");
 
+                    /// The ref_count in share_ptr will have increase or decrease in each while loop, which will cause heavy lock contention.
+                    /// Get the raw_ptr from the share_ptr will reduce the ref_count atomic_update.
+                    auto next_bucket_to_merge_raw = next_bucket_to_merge.get();
                     while (true)
                     {
-                        const auto bucket = next_bucket_to_merge->fetch_add(1);
+                        const auto bucket = next_bucket_to_merge_raw->fetch_add(1);
                         if (bucket >= rhs.NUM_BUCKETS)
                             return;
                         lhs.impls[bucket].merge(rhs.impls[bucket]);
