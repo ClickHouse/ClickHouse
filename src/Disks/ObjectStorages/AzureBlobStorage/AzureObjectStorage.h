@@ -58,6 +58,10 @@ public:
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "AzureObjectStorage"; }
@@ -83,8 +87,6 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;

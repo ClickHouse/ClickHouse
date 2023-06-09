@@ -468,6 +468,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Set skip_unavailable_shards to true only if it wasn't disabled explicitly
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.skip_unavailable_shards && !settings.isChanged("skip_unavailable_shards"))
+    {
+        context->setSetting("skip_unavailable_shards", true);
+    }
+
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
@@ -825,6 +831,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else
             query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
+    }
+
+    if (can_analyze_again
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_parallel_reading_from_replicas > 0
+        && settings.parallel_replicas_custom_key.value.empty()
+        && getTrivialCount(0).has_value())
+    {
+        /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("max_parallel_replicas", UInt64{0});
+        need_analyze_again = true;
+        LOG_TRACE(log, "Disabling parallel replicas to be able to use a trivial count optimization");
     }
 
     if (need_analyze_again)
@@ -2248,79 +2267,84 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     }
 }
 
-void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
+/// Based on the query analysis, check if optimizing the count trivial count to use totalRows is possible
+std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_parallel_replicas)
 {
-    auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
-
-    /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
-        && (settings.max_parallel_replicas <= 1)
+        && (max_parallel_replicas <= 1)
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !storage->hasLightweightDeletedMask()
         && query_info.filter_asts.empty()
-        && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
         && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
-    if (optimize_trivial_count)
+    if (!optimize_trivial_count)
+        return {};
+
+    auto & query = getSelectQuery();
+    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
+    {
+        return storage->totalRows(settings);
+    }
+    else
+    {
+        // It's possible to optimize count() given only partition predicates
+        SelectQueryInfo temp_query_info;
+        temp_query_info.query = query_ptr;
+        temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+        temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
+
+        return storage->totalRowsByPartitionPredicate(temp_query_info, context);
+    }
+}
+
+void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
+{
+    auto & query = getSelectQuery();
+    const Settings & settings = context->getSettingsRef();
+    std::optional<UInt64> num_rows;
+
+    /// Optimization for trivial query like SELECT count() FROM table.
+    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings.max_parallel_replicas)))
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows{};
+        const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
 
-        if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
-        {
-            num_rows = storage->totalRows(settings);
-        }
-        else // It's possible to optimize count() given only partition predicates
-        {
-            SelectQueryInfo temp_query_info;
-            temp_query_info.query = query_ptr;
-            temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
-            temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
+        /// We will process it up to "WithMergeableState".
+        std::vector<char> state(agg_count.sizeOfData());
+        AggregateDataPtr place = state.data();
 
-            num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, context);
-        }
+        agg_count.create(place);
+        SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
 
-        if (num_rows)
-        {
-            const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
+        agg_count.set(place, *num_rows);
 
-            /// We will process it up to "WithMergeableState".
-            std::vector<char> state(agg_count.sizeOfData());
-            AggregateDataPtr place = state.data();
+        auto column = ColumnAggregateFunction::create(func);
+        column->insertFrom(place);
 
-            agg_count.create(place);
-            SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+        Block header = analysis_result.before_aggregation->getResultColumns();
+        size_t arguments_size = desc.argument_names.size();
+        DataTypes argument_types(arguments_size);
+        for (size_t j = 0; j < arguments_size; ++j)
+            argument_types[j] = header.getByName(desc.argument_names[j]).type;
 
-            agg_count.set(place, *num_rows);
+        Block block_with_count{
+            {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
-            auto column = ColumnAggregateFunction::create(func);
-            column->insertFrom(place);
-
-            Block header = analysis_result.before_aggregation->getResultColumns();
-            size_t arguments_size = desc.argument_names.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = header.getByName(desc.argument_names[j]).type;
-
-            Block block_with_count{
-                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
-
-            auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
-            prepared_count->setStepDescription("Optimized trivial count");
-            query_plan.addStep(std::move(prepared_count));
-            from_stage = QueryProcessingStage::WithMergeableState;
-            analysis_result.first_stage = false;
-            return;
-        }
+        auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+        auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        prepared_count->setStepDescription("Optimized trivial count");
+        query_plan.addStep(std::move(prepared_count));
+        from_stage = QueryProcessingStage::WithMergeableState;
+        analysis_result.first_stage = false;
+        return;
     }
 
     /// Limitation on the number of columns to read.

@@ -381,6 +381,9 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
+    M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
+    M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
     M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
@@ -429,10 +432,10 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     \
-    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCachePut, "Number of rocksdb puts (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks (used for merge tree metadata cache)") \
     M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
     M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \

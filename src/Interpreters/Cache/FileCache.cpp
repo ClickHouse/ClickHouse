@@ -1,16 +1,41 @@
 #include "FileCache.h"
 
-#include <Common/randomSeed.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadSettings.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <pcg-random/pcg_random.hpp>
 #include <base/hex.h>
+#include <pcg-random/pcg_random.hpp>
+#include <Common/randomSeed.h>
+
+#include <filesystem>
+
+
+namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+}
+
+namespace
+{
+
+size_t roundDownToMultiple(size_t num, size_t multiple)
+{
+    return (num / multiple) * multiple;
+}
+
+size_t roundUpToMultiple(size_t num, size_t multiple)
+{
+    return roundDownToMultiple(num + multiple - 1, multiple);
+}
+}
 
 namespace DB
 {
@@ -26,6 +51,7 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
+    , boundary_alignment(settings.boundary_alignment)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -48,12 +74,12 @@ const String & FileCache::getBasePath() const
 
 String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
-    return metadata.getPathInLocalCache(key, offset, segment_kind);
+    return metadata.getPathForFileSegment(key, offset, segment_kind);
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
 {
-    return metadata.getPathInLocalCache(key);
+    return metadata.getPathForKey(key);
 }
 
 void FileCache::assertInitialized() const
@@ -123,7 +149,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     auto add_to_result = [&](const FileSegmentMetadata & file_segment_metadata)
     {
         FileSegmentPtr file_segment;
-        if (file_segment_metadata.valid())
+        if (!file_segment_metadata.evicting())
         {
             file_segment = file_segment_metadata.file_segment;
             if (file_segment->isDownloaded())
@@ -385,15 +411,16 @@ FileSegmentsHolderPtr FileCache::set(
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
-FileSegmentsHolderPtr FileCache::getOrSet(
-    const Key & key,
-    size_t offset,
-    size_t size,
-    const CreateFileSegmentSettings & settings)
+FileSegmentsHolderPtr
+FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
 
-    FileSegment::Range range(offset, offset + size - 1);
+    const auto aligned_offset = roundDownToMultiple(offset, boundary_alignment);
+    const auto aligned_end = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size);
+    const auto aligned_size = aligned_end - aligned_offset;
+
+    FileSegment::Range range(aligned_offset, aligned_offset + aligned_size - 1);
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY);
 
@@ -401,14 +428,19 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     auto file_segments = getImpl(*locked_key, range);
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoFileSegments(
-            *locked_key, offset, size, FileSegment::State::EMPTY, settings);
+        file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, settings);
     }
     else
     {
         fillHolesWithEmptyFileSegments(
             *locked_key, file_segments, range, /* fill_with_detached */false, settings);
     }
+
+    while (!file_segments.empty() && file_segments.front()->range().right < offset)
+        file_segments.pop_front();
+
+    while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
+        file_segments.pop_back();
 
     chassert(!file_segments.empty());
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -592,7 +624,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     std::unordered_map<Key, EvictionCandidates> to_delete;
     size_t freeable_space = 0, freeable_count = 0;
 
-    size_t removed_size = 0;
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
@@ -618,7 +649,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 return PriorityIterationResult::CONTINUE;
             }
 
-            /// TODO: we can resize if partially downloaded instead.
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
+
             locked_key.removeFileSegment(segment->offset(), segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
@@ -659,8 +692,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 && freeable_count == 0 && main_priority->getElementsCount(cache_lock) == main_priority->getElementsLimit());
 
         LOG_TEST(
-            log, "Overflow: {}, size: {}, ready to remove: {}, current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
-            is_overflow, size, removed_size,
+            log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            is_overflow, size, freeable_space, freeable_count,
             main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
             main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
             file_segment.key(), file_segment.offset());
@@ -696,6 +729,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             chassert(candidate->releasable());
 
             const auto * segment = candidate->file_segment.get();
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+
             locked_key->removeFileSegment(segment->offset(), segment->lock());
             segment->getQueueIterator()->remove(cache_lock);
 
@@ -1019,7 +1056,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, file_segment_metadata] : *locked_key->getKeyMetadata())
     {
         if (file_segment_metadata->file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(metadata.getPathInLocalCache(key, offset, file_segment_metadata->file_segment->getKind()));
+            cache_paths.push_back(metadata.getPathForFileSegment(key, offset, file_segment_metadata->file_segment->getKind()));
     }
     return cache_paths;
 }

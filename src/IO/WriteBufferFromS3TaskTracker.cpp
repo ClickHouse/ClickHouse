@@ -114,17 +114,17 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
     /// preallocation for the second issue
     FinishedList pre_allocated_finished {future_placeholder};
 
-    Callback func_with_notification = [&, func=std::move(func), pre_allocated_finished=std::move(pre_allocated_finished)] () mutable
+    Callback func_with_notification = [&, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
     {
         SCOPE_EXIT({
             DENY_ALLOCATIONS_IN_SCOPE;
 
             std::lock_guard lock(mutex);
-            finished_futures.splice(finished_futures.end(), pre_allocated_finished);
+            finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
             has_finished.notify_one();
         });
 
-        func();
+        my_func();
     };
 
     /// this move is nothrow
@@ -153,15 +153,8 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
 
         for (auto & it : finished_futures)
         {
-            SCOPE_EXIT({
-                /// According to basic exception safety TaskTracker has to be destroyed after exception
-                /// If it would be true than this SCOPE_EXIT is superfluous
-                /// However WriteBufferWithFinalizeCallback, WriteBufferFromFileDecorator do call finalize in d-tor
-                /// TaskTracker has to cope this until the issue with finalizing in d-tor is addressed in #50274
-                futures.erase(it);
-            });
-
             it->get();
+            futures.erase(it);
         }
 
         finished_futures.clear();

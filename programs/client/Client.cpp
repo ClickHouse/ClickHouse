@@ -1180,6 +1180,9 @@ void Client::processOptions(const OptionsDescription & options_description,
 
 void Client::processConfig()
 {
+    if (config().has("query") && config().has("queries-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
     /// Batch mode is enabled if one of the following is true:
     /// - -q (--query) command line option is present.
     ///   The value of the option is used as the text of query (or of multiple queries).
