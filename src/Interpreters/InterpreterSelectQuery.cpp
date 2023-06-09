@@ -2880,7 +2880,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             query_plan.addStep(std::move(sorting_step));
         }
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions);
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions, settings.query_plan_preserve_num_streams_after_window_functions);
         window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));

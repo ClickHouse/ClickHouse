@@ -818,7 +818,7 @@ void addWindowSteps(QueryPlan & query_plan,
         }
 
         auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions);
+            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions, settings.query_plan_preserve_num_streams_after_window_functions);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
         query_plan.addStep(std::move(window_step));
     }
