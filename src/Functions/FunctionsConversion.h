@@ -2866,36 +2866,37 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                if constexpr (IsDataTypeNumber<LeftDataType>)
                 {
-                    if (wrapper_cast_type == CastType::accurate)
+                    if constexpr (IsDataTypeNumber<RightDataType>)
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
-                            arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
-                    }
-                    else
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
-                            arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                                arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                                arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                        }
+                        return true;
                     }
 
-                    return true;
-                }
-
-                if constexpr (IsDataTypeNumber<LeftDataType>
-                    && (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>))
-                {
-                    if (wrapper_cast_type == CastType::accurate)
+                    if constexpr (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>)
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateConvertStrategyAdditions>(
-                            arguments, result_type, input_rows_count);
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateConvertStrategyAdditions>(
+                                arguments, result_type, input_rows_count);
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateOrNullConvertStrategyAdditions>(
+                                arguments, result_type, input_rows_count);
+                        }
+                        return true;
                     }
-                    else
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateOrNullConvertStrategyAdditions>(
-                            arguments, result_type, input_rows_count);
-                    }
-                    return true;
                 }
 
                 return false;
