@@ -1022,6 +1022,7 @@ parseDateTimeBestEffort(time_string[, time_zone])
 -   Строка с датой, но без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` и т.д.
 -   Строка с временем, и с днём: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` принимается равным `2000-01`.
 -   Строка, содержащая дату и время вместе с информацией о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm`, и т.д. Например, `2020-12-12 17:36:00 -5:00`.
+-   Строка, содержащая дату и время в формате [syslog](https://datatracker.ietf.org/doc/html/rfc3164). Например, `Jun  9 14:20:32`.
 
 Для всех форматов с разделителями функция распознаёт названия месяцев, выраженных в виде полного англоязычного имени месяца или в виде первых трёх символов имени месяца. Примеры: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 
@@ -1108,9 +1109,10 @@ SELECT parseDateTimeBestEffort('10 20:19');
 **Смотрите также**
 
 -   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
--   [RFC 1123](https://tools.ietf.org/html/rfc1123)
+-   [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
+-   [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164)
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
