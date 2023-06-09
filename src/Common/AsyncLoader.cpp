@@ -91,10 +91,8 @@ bool DetectWaitDependentDeadlockImpl(const LoadJob & waited)
 
 void LoadJob::waitImpl(std::unique_lock<std::mutex> & lock) const
 {
-    waiters++;
-
     // Deadlock detection and resolution
-    if (current_load_job)
+    if (current_load_job && load_status == LoadStatus::PENDING)
     {
         chassert(current_async_loader); // We are inside a worker
         auto current_pool = current_load_job->executionPool();
@@ -107,25 +105,21 @@ void LoadJob::waitImpl(std::unique_lock<std::mutex> & lock) const
         if (DetectWaitDependentDeadlockImpl(*this))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for dependent load job '{}'", current_load_job->name, name);
 
+        // Waiting for a lower-priority job is not allowed.
+        // It is not a deadlock if job has already started, but not finished. Nevertheless, it is a race condition, so must be reported.
         if (current_priority < priority)
-        {
-            // We are waiting for a lower-priority job, this is allowed only if it is already finished.
-            // It is not a deadlock if job has already started, but not finished. Nevertheless, it is a race condition, so must be reported.
-            if (load_status == LoadStatus::PENDING)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' (priority={}) waits for lower-priority load job '{}' (priority={})",
-                    current_load_job->name, current_priority.value, name, priority.value);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' (priority={}) waits for lower-priority load job '{}' (priority={})",
+                current_load_job->name, current_priority.value, name, priority.value);
 
         if (current_pool == pool_id)
         {
-            if (load_status == LoadStatus::PENDING)
-            {
-                suspended_waiters++;
-                current_async_loader->workerIsSuspended(current_pool);
-            }
+            lock.unlock(); // Avoid reverse locking order
+            current_async_loader->workerIsSuspendedByWait(current_pool, this);
+            lock.lock();
         }
     }
 
+    waiters++;
     finished.wait(lock, [this] { return load_status != LoadStatus::PENDING; });
     waiters--;
 }
@@ -684,17 +678,26 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
         spawn(pool, lock);
 }
 
-void AsyncLoader::workerIsSuspended(size_t pool_id)
+void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJob * job)
 {
     std::unique_lock lock{mutex};
-    Pool & pool = pools[pool_id];
-    pool.suspended_workers++;
+    std::unique_lock lock2{job->mutex};
+
+    if (job->load_status != LoadStatus::PENDING)
+        return; // Job is already done, worker can continue execution
 
     // To resolve "blocked pool" deadlocks we spawn a new worker for every suspended worker, if required
     // This can lead to a visible excess of `max_threads` specified for a pool,
-    // but actual number of NOT suspended workers may exceed `max_threads` only in intermittent state.
+    // but actual number of NOT suspended workers may exceed `max_threads` ONLY in intermittent state.
+    Pool & pool = pools[pool_id];
+    pool.suspended_workers++;
+    job->suspended_waiters++;
     if (canSpawnWorker(pool, lock))
         spawn(pool, lock);
+
+    // TODO(serxa): it is a good idea to propagate `job` and all its dependencies in `pool.ready_queue` by introducing
+    // key {suspended_waiters, ready_seqno} instead of plain `ready_seqno`, to force newly spawn workers to work on jobs
+    // that are being waited. But it doesn't affect correctness. So let's not complicate it for time being.
 }
 
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)

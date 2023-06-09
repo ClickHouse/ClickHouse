@@ -357,7 +357,7 @@ public:
     std::vector<JobState> getJobStates() const;
 
     // For deadlock resolution. Should not be used directly.
-    void workerIsSuspended(size_t pool_id);
+    void workerIsSuspendedByWait(size_t pool_id, const LoadJob * job);
 
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
