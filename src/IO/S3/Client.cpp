@@ -13,6 +13,9 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
 
+#include <aws/sts/STSClient.h>
+#include <aws/identity-management/auth/STSAssumeRoleCredentialsProvider.h>
+
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
@@ -744,10 +747,29 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
-    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
             credentials_configuration);
+
+    if (!credentials_configuration.role_arn.empty())
+    {
+        DB::S3::PocoHTTPClientConfiguration new_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+            client_configuration.region,
+            client_configuration.remote_host_filter,
+            client_configuration.s3_max_redirects,
+            client_configuration.enable_s3_requests_logging,
+            client_configuration.for_disk_s3,
+            client_configuration.get_request_throttler,
+            client_configuration.put_request_throttler);
+        const auto x = std::make_shared<Aws::STS::STSClient>(credentials_provider, new_client_configuration);
+        credentials_provider = std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+            credentials_configuration.role_arn,
+            credentials_configuration.session_name,
+            credentials_configuration.external_id,
+            Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
+            x);
+    }
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
