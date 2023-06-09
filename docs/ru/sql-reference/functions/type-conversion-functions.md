@@ -1107,6 +1107,28 @@ SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
 └──────┴─────────────────────────────────────┘
 ```
 
+Запрос:
+
+``` sql
+WITH
+    now() AS ts_now,
+    formatDateTime(ts_around, '%b %e %T') AS syslog_arg
+SELECT
+    ts_now,
+    syslog_arg,
+    parseDateTimeBestEffort(syslog_arg)
+FROM (SELECT arrayJoin([ts_now - 30, ts_now + 30]) AS ts_around);
+```
+
+Результат:
+
+``` text
+┌──────────────ts_now─┬─syslog_arg──────┬─parseDateTimeBestEffort(syslog_arg)─┐
+│ 2023-06-09 16:04:30 │ Jun  9 16:04:00 │                 2023-06-09 16:04:00 │
+│ 2023-06-09 16:04:30 │ Jun  9 16:05:00 │                 2022-06-09 16:05:00 │
+└─────────────────────┴─────────────────┴─────────────────────────────────────┘
+```
+
 **Смотрите также**
 
 -   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
