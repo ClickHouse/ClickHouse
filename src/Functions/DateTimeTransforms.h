@@ -1461,8 +1461,8 @@ struct Transformer
                         }
                         else
                         {
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                                TypeName<FromType>, TypeName<ToType>);
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                                vec_from[i], TypeName<ValueType>);
                         }
                     }
                 }
