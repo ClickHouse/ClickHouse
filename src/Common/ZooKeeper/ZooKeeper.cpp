@@ -1317,13 +1317,17 @@ int32_t ZooKeeper::getConnectedHostIdx() const
     return impl->getConnectedNodeIdx();
 }
 
-String ZooKeeper::getConnectedHost() const
+String ZooKeeper::getConnectedHostPort() const
 {
     int32_t idx = impl->getConnectedNodeIdx();
-    if (0 <= idx && idx < static_cast<int32_t>(args.hosts.size()))
-        return args.hosts[idx];
+    if (idx < 0 || static_cast<int32_t>(args.hosts.size()) <= idx)
+        return "";
 
-    return "";
+    String host = args.hosts[idx];
+    bool secure = startsWith(host, "secure://");
+    if (secure)
+        host.erase(0, strlen("secure://"));
+    return host;
 }
 
 int32_t ZooKeeper::getConnectionXid() const

@@ -448,7 +448,9 @@ void ZooKeeper::connect(
 
                 for (size_t idx = 0; idx < args.hosts.size(); ++idx)
                 {
-                    if (args.hosts[idx] != node.address.toString())
+                    /// The domain names of two nodes in a cluster cannot point to the same IP address. 
+                    Poco::Net::SocketAddress addr(args.hosts[idx]);
+                    if (addr.toString() != node.address.toString())
                         continue;
                     connected_hosts_idx = static_cast<int32_t>(idx);
                     break;
