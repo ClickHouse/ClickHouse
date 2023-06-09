@@ -275,7 +275,7 @@ void CacheMetadata::doCleanup()
         try
         {
             if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
+                fs::remove(key_prefix_directory);
         }
         catch (const fs::filesystem_error & e)
         {
