@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -652,6 +653,11 @@ public:
         {
             if (!zookeeper.expired())
                 zookeeper.tryRemove(path);
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+                LOG_INFO(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+            }
         }
         catch (...)
         {
