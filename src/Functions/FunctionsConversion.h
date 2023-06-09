@@ -2885,7 +2885,7 @@ private:
                 if constexpr (IsDataTypeNumber<LeftDataType>
                     && (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>))
                 {
-                     if (wrapper_cast_type == CastType::accurate)
+                    if (wrapper_cast_type == CastType::accurate)
                     {
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateConvertStrategyAdditions>(
                             arguments, result_type, input_rows_count);
