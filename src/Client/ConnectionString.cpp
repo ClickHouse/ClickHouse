@@ -7,6 +7,7 @@
 #include <array>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 namespace DB
 {
@@ -25,6 +26,15 @@ using namespace std::string_literals;
 using namespace std::literals::string_view_literals;
 
 constexpr auto CONNECTION_URI_SCHEME = "clickhouse:"sv;
+
+const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_OPTIONS = 
+{
+   /// Client option, client option long name
+   {"-h", "--host"},
+   {"--host", "--host"},
+   {"--port", "--port"},
+   {"--connection", "--connection"},
+};
 
 std::string uriDecode(const std::string & uri_encoded_string, bool plus_as_space)
 {
@@ -218,6 +228,15 @@ bool tryParseConnectionString(
     }
 
     return true;
+}
+
+void validateConnectionStringClientOption(std::string_view command_line_option)
+{
+    const auto prohibited_option_iter = PROHIBITED_CLIENT_OPTIONS.find(command_line_option);
+    if (prohibited_option_iter != PROHIBITED_CLIENT_OPTIONS.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                        "Mixing a connection string and {} option is prohibited", 
+                        prohibited_option_iter->second);
 }
 
 }

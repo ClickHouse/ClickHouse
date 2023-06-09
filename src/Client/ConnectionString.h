@@ -19,4 +19,9 @@ bool tryParseConnectionString(
     std::string_view connection_string,
     std::vector<std::string> & common_arguments,
     std::vector<std::vector<std::string>> & hosts_and_ports_arguments);
+
+// throws DB::Exception with BAD_ARGUMENTS if the given command line argument is allowed
+// to be used with the connection string
+void validateConnectionStringClientOption(std::string_view command_line_option);
+
 }
