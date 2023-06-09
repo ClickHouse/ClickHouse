@@ -66,6 +66,9 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             String host = host_port.substr(0, offset);
             uint16_t port = static_cast<UInt16>(atoi(host_port.substr(offset + 1).c_str()));
 
+            uint32_t uptime = zookeeper->getSessionUptime();
+            time_t time = timeInSeconds(std::chrono::system_clock::now()) - uptime;
+
             columns[0]->insert(name);
             columns[1]->insert(host);
             columns[2]->insert(port);
