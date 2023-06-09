@@ -7,6 +7,8 @@ namespace DB
 
 struct KeeperContext
 {
+    KeeperContext();
+
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
     enum class Phase : uint8_t

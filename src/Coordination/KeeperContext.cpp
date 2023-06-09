@@ -20,11 +20,14 @@ IMPLEMENT_SETTING_ENUM(KeeperApiVersion, ErrorCodes::BAD_ARGUMENTS,
      {"WITH_MULTI_READ", KeeperApiVersion::WITH_MULTI_READ},
      {"WITH_CHECK_NOT_EXISTS", KeeperApiVersion::WITH_CHECK_NOT_EXISTS}});
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
+KeeperContext::KeeperContext()
 {
     for (const auto & [path, data] : child_system_paths_with_data)
         system_nodes_with_data[std::string{path}] = data;
-    
+}
+
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
+{
     if (config.has("keeper_server.api_version"))
     {
         auto version_string = config.getString("keeper_server.api_version");
