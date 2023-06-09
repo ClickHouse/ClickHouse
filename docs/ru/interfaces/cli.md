@@ -144,7 +144,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 
 ## Строка подключения {#connection_string}
 
-clickhouse-client также поддерживает подключение к серверу clickhouse с помощью строки подключения, аналогичной [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING), [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Она имеет следующий синтаксис:
+clickhouse-client также поддерживает подключение к серверу clickhouse с помощью строки подключения, аналогичной [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING), [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Она имеет следующий синтаксис:
 
 ```text
 clickhouse:[//[user_info@][hosts_and_ports]][/database][?query_parameters]
