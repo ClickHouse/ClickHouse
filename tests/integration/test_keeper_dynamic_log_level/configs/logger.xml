@@ -1,0 +1,10 @@
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>/var/log/clickhouse-keeper.log</log>
+        <errorlog_level>error</errorlog_level>
+        <errorlog>/var/log/clickhouse-keeper.err.log</errorlog>
+        <size>200M</size>
+        <count>10</count>
+    </logger>
+</clickhouse>
