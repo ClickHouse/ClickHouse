@@ -424,7 +424,7 @@ Result:
 
 ## toDateTimeOrZero
 
-The same as [toDateTime](#todate) but returns lower boundery of [Date](/docs/en/sql-reference/data-types/date.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+The same as [toDateTime](#todatetime) but returns lower boundery of [DateTime](/docs/en/sql-reference/data-types/datetime.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
 
 **Example**
 
