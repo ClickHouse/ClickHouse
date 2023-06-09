@@ -89,7 +89,8 @@ public:
             //planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
-            in_second_argument_node_type == QueryTreeNodeType::UNION)
+            in_second_argument_node_type == QueryTreeNodeType::UNION ||
+            in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
             auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
             if (sets.getFuture(set_key))

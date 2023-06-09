@@ -100,10 +100,9 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
-    void getDirectoryContents(const std::string & path,
-        RelativePathsWithSize & files,
-        std::vector<std::string> & directories) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -120,6 +119,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

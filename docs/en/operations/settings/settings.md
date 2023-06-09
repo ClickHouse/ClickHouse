@@ -227,6 +227,89 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 
+## ignore_data_skipping_indices {#settings-ignore_data_skipping_indices}
+
+Ignores the skipping indexes specified if used by the query.
+
+Consider the following example:
+
+```sql
+CREATE TABLE data
+(
+    key Int,
+    x Int,
+    y Int,
+    INDEX x_idx x TYPE minmax GRANULARITY 1,
+    INDEX y_idx y TYPE minmax GRANULARITY 1,
+    INDEX xy_idx (x,y) TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key;
+
+INSERT INTO data VALUES (1, 2, 3);
+
+SELECT * FROM data;
+SELECT * FROM data SETTINGS ignore_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='x_idx'; -- Ok.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='na_idx'; -- Ok.
+
+SELECT * FROM data WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- query will produce INDEX_NOT_USED error, since xy_idx is explictly ignored.
+SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+```
+
+The query without ignoring any indexes:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2;
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+      Skip
+        Name: xy_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+```
+
+Ignoring the `xy_idx` index:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+```
+
 Works with tables in the MergeTree family.
 
 ## convert_query_to_cnf {#convert_query_to_cnf}
@@ -452,8 +535,6 @@ Possible values:
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
- Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
-
 - hash
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
@@ -645,6 +726,48 @@ Blocks the size of `max_block_size` are not always loaded from the table. If it 
 Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
 However, the block size cannot be more than `max_block_size` rows.
 By default: 1,000,000. It only works when reading from MergeTree engines.
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
+```
+
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
+Modifying the setting for one query or user does not affect other queries.
+
+Possible values:
+
+- Positive integer.
+- 0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**See Also**
+
+- [max_concurrent_queries](/docs/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
@@ -1050,6 +1173,12 @@ Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
 
+## handshake_timeout_ms {#handshake-timeout-ms}
+
+Timeout in milliseconds for receiving Hello packet from replicas during handshake.
+
+Default value: 10000.
+
 ## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
@@ -1107,7 +1236,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
@@ -1128,7 +1257,7 @@ Default value: `0`.
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 :::note
-60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+60000000 bytes/s approximately corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 :::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
@@ -2030,7 +2159,7 @@ FORMAT PrettyCompactMonoBlock
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly.
+Enables or disables [LIMIT](#limit) applying on each shard separately.
 
 This will allow to avoid:
 - Sending extra rows over network;
@@ -2431,7 +2560,7 @@ Default value: 0.
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Enables or disables [introspection functions](../../sql-reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
@@ -3107,7 +3236,7 @@ Possible values:
 - Positive integer.
 - 0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
-Default value: `16`.
+Default value: `max_threads`.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
@@ -3492,7 +3621,7 @@ Default value: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
-Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
 
 Possible values:
 
@@ -3818,8 +3947,8 @@ Result:
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
-- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md/#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md/#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md/#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md/#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md/#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md/#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md/#tolastdayofmonth).
-- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md/#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md/#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md/#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md/#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md/#timeslot).
+- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) and [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
+- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Possible values:
 
@@ -4180,6 +4309,12 @@ Default value: `2000`
 
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
 (but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
+
+## parallel_view_processing
+
+Enables pushing to attached views concurrently instead of sequentially.
+
+Default value: `false`.
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.

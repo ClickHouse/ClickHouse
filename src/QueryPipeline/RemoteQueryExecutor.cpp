@@ -47,8 +47,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_), scalars(scalars_)
     , external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {}
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -90,8 +89,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -108,8 +106,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {
     create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -247,6 +244,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         finished = true;
         sent_query = true;
 
+        /// We need to tell the coordinator not to wait for this replica.
+        if (extension && extension->parallel_reading_coordinator)
+        {
+            chassert(extension->replica_info);
+            extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+        }
+
         return;
     }
 
@@ -360,7 +364,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         if (needToSkipUnavailableShard())
+        {
+            /// We need to tell the coordinator not to wait for this replica.
+            /// But at this point it may lead to an incomplete result set, because
+            /// this replica committed to read some part of there data and then died.
+            if (extension && extension->parallel_reading_coordinator)
+            {
+                chassert(extension->parallel_reading_coordinator);
+                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+            }
+
             return ReadResult(Block());
+        }
 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
@@ -524,30 +539,30 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
 void RemoteQueryExecutor::processReadTaskRequest()
 {
-    if (!task_iterator)
+    if (!extension || !extension->task_iterator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
-    auto response = (*task_iterator)();
+    auto response = (*extension->task_iterator)();
     connections->sendReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
-    if (!parallel_reading_coordinator)
+    if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsReceived);
-    auto response = parallel_reading_coordinator->handleRequest(std::move(request));
+    auto response = extension->parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement)
 {
-    if (!parallel_reading_coordinator)
+    if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
 }
 
 void RemoteQueryExecutor::finish()
