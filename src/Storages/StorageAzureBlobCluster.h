@@ -36,11 +36,8 @@ public:
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
-protected:
-    void updateConfigurationIfChanged(ContextPtr local_context);
-
 private:
-    void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
+    void updateBeforeRead(const ContextPtr & /*context*/) override {}
 
     void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 

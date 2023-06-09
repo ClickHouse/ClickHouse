@@ -47,12 +47,11 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.getConnectionURL());
     StorageInMemoryMetadata storage_metadata;
-    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
         /// `format_settings` is set to std::nullopt, because StorageAzureBlobCluster is used only as table function
-        auto columns = StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context_, false);
         storage_metadata.setColumns(columns);
     }
     else
@@ -80,17 +79,12 @@ void StorageAzureBlobCluster::addColumnsStructureToQuery(ASTPtr & query, const S
     TableFunctionAzureBlobStorageCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-void StorageAzureBlobCluster::updateConfigurationIfChanged(ContextPtr /*local_context*/)
-{
-//    configuration.update(local_context);
-}
-
 RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
-        object_storage.get(), configuration.container, std::nullopt,
-        configuration.blob_path, query, virtual_block, context, nullptr);
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().relative_path; });
+        object_storage.get(), configuration.container, configuration.blobs_paths,
+        std::nullopt,  query, virtual_block, context, nullptr);
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String {return iterator->next().relative_path;});
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 

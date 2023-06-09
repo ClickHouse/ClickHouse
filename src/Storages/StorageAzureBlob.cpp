@@ -299,6 +299,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             args.constraints,
             args.comment,
             format_settings,
+            /* distributed_processing */ false,
             partition_by);
     },
     {
@@ -392,12 +393,13 @@ StorageAzureBlob::StorageAzureBlob(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
     , object_storage(std::move(object_storage_))
-    , distributed_processing(false)
+    , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
@@ -407,7 +409,7 @@ StorageAzureBlob::StorageAzureBlob(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
+        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context, distributed_processing);
         storage_metadata.setColumns(columns);
     }
     else
@@ -611,8 +613,13 @@ Pipe StorageAzureBlob::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
-    std::shared_ptr<StorageAzureBlobSource::Iterator> iterator_wrapper;
-    if (configuration.withGlobs())
+    std::shared_ptr<StorageAzureBlobSource::IIterator> iterator_wrapper;
+    if (distributed_processing)
+    {
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::ReadIterator>(local_context,
+            local_context->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::Iterator>(
@@ -795,7 +802,7 @@ StorageAzureBlobSource::Iterator::Iterator(
     const Block & virtual_header_,
     ContextPtr context_,
     RelativePathsWithMetadata * outer_blobs_)
-    : WithContext(context_)
+    : IIterator(context_)
     , object_storage(object_storage_)
     , container(container_)
     , keys(keys_)
@@ -1073,7 +1080,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
-    std::shared_ptr<Iterator> file_iterator_)
+    std::shared_ptr<IIterator> file_iterator_)
     :ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , requested_virtual_columns(requested_virtual_columns_)
@@ -1165,11 +1172,17 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     AzureObjectStorage * object_storage,
     const Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    bool distributed_processing)
 {
     RelativePathsWithMetadata read_keys;
-    std::shared_ptr<StorageAzureBlobSource::Iterator> file_iterator;
-    if (configuration.withGlobs())
+    std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
+    if (distributed_processing)
+    {
+        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx ,
+            ctx->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
             object_storage, configuration.container, std::nullopt,
@@ -1202,7 +1215,7 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
             return nullptr;
         }
 
-        /// S3 file iterator could get new keys after new iteration, check them in schema cache.
+        /// Azure file iterator could get new keys after new iteration, check them in schema cache.
         if (ctx->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
         {
             columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);
