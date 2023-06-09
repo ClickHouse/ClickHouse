@@ -28,7 +28,7 @@ SELECT * FROM alter_compression_codec ORDER BY id;
 OPTIMIZE TABLE alter_compression_codec FINAL;
 SELECT * FROM alter_compression_codec ORDER BY id;
 
-SET enable_qpl_deflate_codec = 1;
+SET enable_deflate_qpl_codec = 1;
 ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(DEFLATE_QPL);
 SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 'alter_compression_codec' AND name = 'alter_column';
 

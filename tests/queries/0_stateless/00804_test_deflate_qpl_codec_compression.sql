@@ -1,5 +1,5 @@
 SET send_logs_level = 'fatal';
-SET enable_qpl_deflate_codec = 1;
+SET enable_deflate_qpl_codec = 1;
 
 DROP TABLE IF EXISTS compression_codec;
 
