@@ -17,6 +17,12 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+}
+
 namespace
 {
 
@@ -68,12 +74,12 @@ const String & FileCache::getBasePath() const
 
 String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
-    return metadata.getPathInLocalCache(key, offset, segment_kind);
+    return metadata.getPathForFileSegment(key, offset, segment_kind);
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
 {
-    return metadata.getPathInLocalCache(key);
+    return metadata.getPathForKey(key);
 }
 
 void FileCache::assertInitialized() const
@@ -143,7 +149,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     auto add_to_result = [&](const FileSegmentMetadata & file_segment_metadata)
     {
         FileSegmentPtr file_segment;
-        if (file_segment_metadata.valid())
+        if (!file_segment_metadata.evicting())
         {
             file_segment = file_segment_metadata.file_segment;
             if (file_segment->isDownloaded())
@@ -643,7 +649,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 return PriorityIterationResult::CONTINUE;
             }
 
-            /// TODO: we can resize if partially downloaded instead.
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
+
             locked_key.removeFileSegment(segment->offset(), segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
@@ -721,6 +729,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             chassert(candidate->releasable());
 
             const auto * segment = candidate->file_segment.get();
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+
             locked_key->removeFileSegment(segment->offset(), segment->lock());
             segment->getQueueIterator()->remove(cache_lock);
 
@@ -976,17 +988,18 @@ void FileCache::cleanup()
 
 void FileCache::cleanupThreadFunc()
 {
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
-
     try
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
+        assertCacheCorrectness();
+#endif
+
         cleanup();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
     }
 
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
@@ -1044,7 +1057,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, file_segment_metadata] : *locked_key->getKeyMetadata())
     {
         if (file_segment_metadata->file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(metadata.getPathInLocalCache(key, offset, file_segment_metadata->file_segment->getKind()));
+            cache_paths.push_back(metadata.getPathForFileSegment(key, offset, file_segment_metadata->file_segment->getKind()));
     }
     return cache_paths;
 }

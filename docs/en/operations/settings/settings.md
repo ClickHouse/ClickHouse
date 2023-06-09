@@ -227,6 +227,89 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 
+## ignore_data_skipping_indices {#settings-ignore_data_skipping_indices}
+
+Ignores the skipping indexes specified if used by the query.
+
+Consider the following example:
+
+```sql
+CREATE TABLE data
+(
+    key Int,
+    x Int,
+    y Int,
+    INDEX x_idx x TYPE minmax GRANULARITY 1,
+    INDEX y_idx y TYPE minmax GRANULARITY 1,
+    INDEX xy_idx (x,y) TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key;
+
+INSERT INTO data VALUES (1, 2, 3);
+
+SELECT * FROM data;
+SELECT * FROM data SETTINGS ignore_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='x_idx'; -- Ok.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='na_idx'; -- Ok.
+
+SELECT * FROM data WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- query will produce INDEX_NOT_USED error, since xy_idx is explictly ignored.
+SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+```
+
+The query without ignoring any indexes:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2;
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+      Skip
+        Name: xy_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+```
+
+Ignoring the `xy_idx` index:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+```
+
 Works with tables in the MergeTree family.
 
 ## convert_query_to_cnf {#convert_query_to_cnf}
@@ -3155,7 +3238,7 @@ Possible values:
 - Positive integer.
 - 0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
-Default value: `16`.
+Default value: `max_threads`.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
@@ -4228,6 +4311,12 @@ Default value: `2000`
 
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
 (but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
+
+## parallel_view_processing
+
+Enables pushing to attached views concurrently instead of sequentially.
+
+Default value: `false`.
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
