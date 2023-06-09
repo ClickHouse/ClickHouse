@@ -184,8 +184,14 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 field_type_size,
                 tmp.size());
         else if (tmp.size() != field_type_size)
-            /// Add padding with 0-bytes.
-            tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
+        {
+            /// Extent value to required size by adding padding.
+            /// Check if value is negative or positive.
+            if (tmp[0] & 128)
+                tmp = std::string(field_type_size - tmp.size(), 0xff) + tmp;
+            else
+                tmp = std::string(field_type_size - tmp.size(), 0) + tmp;
+        }
 
         typename DecimalType::FieldType field;
         ReadBufferFromString buf(tmp);
