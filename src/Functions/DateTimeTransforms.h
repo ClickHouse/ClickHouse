@@ -1436,7 +1436,7 @@ struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
     static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
-        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]])
+        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
     {
         using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
@@ -1444,29 +1444,26 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
             {
-                bool check_range_result = true;
-
-                if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
+                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-                    check_range_result = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-                }
+                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
 
-                if (!check_range_result)
-                {
-                    if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                    if (!is_valid_input)
                     {
-                        vec_to[i] = 0;
-                        if (vec_null_map_to)
+                        if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                        {
+                            vec_to[i] = 0;
                             (*vec_null_map_to)[i] = true;
-                        continue;
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                            TypeName<FromType>, TypeName<ToType>);
+                            continue;
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                                TypeName<FromType>, TypeName<ToType>);
+                        }
                     }
                 }
             }
