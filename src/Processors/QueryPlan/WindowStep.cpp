@@ -10,14 +10,14 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::Traits getTraits(bool preserves_sorting)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = true
@@ -46,10 +46,12 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const DataStream & input_stream_,
     const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_)
-    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits())
+    const std::vector<WindowFunctionDescription> & window_functions_,
+    bool preserve_num_streams_)
+    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!preserve_num_streams_))
     , window_description(window_description_)
     , window_functions(window_functions_)
+    , preserve_num_streams(preserve_num_streams_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -60,6 +62,8 @@ WindowStep::WindowStep(
 
 void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto num_streams = pipeline.getNumThreads();
+    
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
@@ -72,6 +76,9 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 input_streams.front().header, output_stream->header, window_description, window_functions);
         });
 
+    if (preserve_num_streams)
+        pipeline.resize(num_streams);
+    
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");
 }
