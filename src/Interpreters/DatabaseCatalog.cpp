@@ -499,7 +499,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     DatabaseNameHints hints(*this);
     std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
     std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(database_name, names);
+    assertDatabaseExistsUnlocked(database_name, names[0]);
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
@@ -508,19 +508,18 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
     assertDatabaseDoesntExistUnlocked(database_name);
 }
 
-void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, std::vector<String> names) const
+void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, String prompting_name) const
 {
     assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
     {
-        if (names.empty())
+        if (prompting_name.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
         }
         else
         {
-            std::string suggested_name = names[0];
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(suggested_name));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(prompting_name));
         }
     }
 }
@@ -555,7 +554,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
         std::lock_guard lock{databases_mutex};
-        assertDatabaseExistsUnlocked(database_name, names);
+        assertDatabaseExistsUnlocked(database_name, names[0]);
         db = databases.find(database_name)->second;
         UUID db_uuid = db->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -627,7 +626,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     DatabaseNameHints hints(*this);
     std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
     std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(database_name, names);
+    assertDatabaseExistsUnlocked(database_name, names[0]);
     return databases.find(database_name)->second;
 }
 
