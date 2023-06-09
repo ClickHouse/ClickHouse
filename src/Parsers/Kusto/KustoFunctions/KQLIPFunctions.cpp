@@ -246,7 +246,7 @@ bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
     out = std::format(
         "ifNull(if(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32_{3}) and toTypeName({0}) = 'String' or ({1}) < 0 "
         "or isNull(ifNull(param_as_uint32_{3}, {2}) as ip_as_number_{3}), null, "
-        "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(32 - ({1})) - 1))))), '')",
+        "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(32 - toInt32({1})) - 1))))), '')",
         ParserKQLBase::getExprFromToken(ip_address, pos.max_depth),
         mask ? *mask : "32",
         kqlCallToExpression("parse_ipv4", {"tostring(" + ip_address + ")"}, pos.max_depth),
