@@ -403,8 +403,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             const auto res = prql_to_sql(
                 reinterpret_cast<const uint8_t *>(begin), static_cast<uint64_t>(end - begin), &sql_query_ptr, &sql_query_size);
 
-            __msan_unpoison(sql_query, max_query_size + 1);
-
             SCOPE_EXIT({ prql_free_pointer(sql_query_ptr); });
 
             const auto * sql_query_char_ptr = reinterpret_cast<char *>(sql_query_ptr);
