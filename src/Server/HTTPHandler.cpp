@@ -212,7 +212,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
              exception_code == ErrorCodes::SYNTAX_ERROR ||
              exception_code == ErrorCodes::INCORRECT_DATA ||
-             exception_code == ErrorCodes::TYPE_MISMATCH || 
+             exception_code == ErrorCodes::TYPE_MISMATCH ||
              exception_code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
     {
         return HTTPResponse::HTTP_BAD_REQUEST;
