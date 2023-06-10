@@ -197,7 +197,8 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
 
-    size_t size = limit == 0 ? permutation.size() : limit;
+    size_t permutation_size = permutation.size();
+    size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
     if (size == 0)
         return true;
 
@@ -214,7 +215,7 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
         __m128i permutation_add_vector = { 8, 8 };
         __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
 
-        const UInt64 * permutation_data = static_cast<const UInt64 *>(permutation.data());
+        const size_t * permutation_data = permutation.data();
 
         static constexpr size_t unroll_count = 8;
         size_t size_unrolled = (size / unroll_count) * unroll_count;
@@ -281,14 +282,18 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (permutation.empty())
         return;
 
-    if (isIdentityPermutation(permutation, limit))
+    bool is_identity_permutation = isIdentityPermutation(permutation, limit);
+    if (is_identity_permutation && limit == 0)
         return;
 
     size_t columns = block.columns();
     for (size_t i = 0; i < columns; ++i)
     {
         auto & column_to_sort = block.getByPosition(i).column;
-        column_to_sort = column_to_sort->permute(permutation, limit);
+        if (is_identity_permutation)
+            column_to_sort = column_to_sort->cut(0, std::min(limit, permutation.size()));
+        else
+            column_to_sort = column_to_sort->permute(permutation, limit);
     }
 }
 
