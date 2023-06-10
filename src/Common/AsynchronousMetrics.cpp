@@ -962,8 +962,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 period = std::stoull(field2);
             }
 
-            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+            new_values["CGroupCPUCFSPeriod"] = { period, "The CFS period of CPU cgroup."};
+            new_values["CGroupCPUCFSQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
         }
         catch (...)
         {
@@ -982,8 +982,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
             tryReadText(quota, *cgroupcpu_cfs_quota);
             tryReadText(period, *cgroupcpu_cfs_period);
 
-            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+            new_values["CGroupCPUCFSPeriod"] = { period, "The CFS period of CPU cgroup."};
+            new_values["CGroupCPUCFSQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
         }
         catch (...)
         {
