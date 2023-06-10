@@ -69,13 +69,23 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
+    if (cgroupmem_limit_in_bytes)
+    {
+        openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
+    }
+    openFileIfExists("/sys/fs/cgroup/cpu.max", cgroupcpu_max);
 
     /// CGroups v1
     if (!cgroupmem_limit_in_bytes)
+    {
         openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-    if (!cgroupmem_usage_in_bytes)
         openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
+    }
+    if (!cgroupcpu_max)
+    {
+        openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
+        openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", cgroupcpu_cfs_quota);
+    }
 
     openSensors();
     openBlockDevices();
@@ -926,6 +936,61 @@ void AsynchronousMetrics::update(TimePoint update_time)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    if (cgroupcpu_max)
+    {
+        try {
+            cgroupcpu_max->rewind();
+
+            uint64_t quota = 0;
+            uint64_t period = 0;
+
+            std::string line;
+            readText(line, *cgroupcpu_max);
+
+            auto space = line.find(' ');
+
+            if (line.rfind("max", space) == std::string::npos)
+            {
+                auto field1 = line.substr(0, space);
+                quota = std::stoull(field1);
+            }
+
+            if (space != std::string::npos)
+            {
+                auto field2 = line.substr(space + 1);
+                period = std::stoull(field2);
+            }
+
+            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
+            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+    else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
+    {
+        try {
+            cgroupcpu_cfs_quota->rewind();
+            cgroupcpu_cfs_period->rewind();
+
+            uint64_t quota = 0;
+            uint64_t period = 0;
+
+            tryReadText(quota, *cgroupcpu_cfs_quota);
+            tryReadText(period, *cgroupcpu_cfs_period);
+
+            new_values["CGroupCpuCfsPeriod"] = { period, "The CFS period of CPU cgroup."};
+            new_values["CGroupCpuCfsQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     if (meminfo)
     {
         try
@@ -1041,18 +1106,16 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 // It doesn't read the EOL itself.
                 ++cpuinfo->position();
 
-                if (s.rfind("processor", 0) == 0)
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
                 {
                     /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
                     /// non s390x example: processor : 0
-                    if (auto colon = s.find_first_of(':'))
-                    {
-#ifdef __s390x__
-                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
-#else
-                        core_id = std::stoi(s.substr(colon + 2));
-#endif
-                    }
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)
                 {

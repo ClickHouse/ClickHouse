@@ -2524,6 +2524,83 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
+TEST_P(CoordinationTest, TestReapplyingDeltas)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    static constexpr int64_t initial_zxid = 100;
+
+    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/test/data";
+    create_request->is_sequential = true;
+
+    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
+    {
+        storage.preprocessRequest(request, 1, 0, zxid);
+        auto responses = storage.processRequest(request, 1, zxid);
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Error::ZOK);
+    };
+
+    const auto commit_initial_data = [&](auto & storage)
+    {
+        int64_t zxid = 1;
+
+        const auto root_create = std::make_shared<ZooKeeperCreateRequest>();
+        root_create->path = "/test";
+        process_create(storage, root_create, zxid);
+        ++zxid;
+
+        for (; zxid <= initial_zxid; ++zxid)
+            process_create(storage, create_request, zxid);
+    };
+
+    KeeperStorage storage1{500, "", keeper_context};
+    commit_initial_data(storage1);
+
+    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        storage1.preprocessRequest(create_request, 1, 0, zxid);
+
+    /// create identical new storage
+    KeeperStorage storage2{500, "", keeper_context};
+    commit_initial_data(storage2);
+
+    storage1.applyUncommittedState(storage2, initial_zxid);
+
+    const auto commit_unprocessed = [&](KeeperStorage & storage)
+    {
+        for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        {
+            auto responses = storage.processRequest(create_request, 1, zxid);
+            EXPECT_GE(responses.size(), 1);
+            EXPECT_EQ(responses[0].response->error, Error::ZOK);
+        }
+    };
+
+    commit_unprocessed(storage1);
+    commit_unprocessed(storage2);
+
+    const auto get_children = [&](KeeperStorage & storage)
+    {
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
+        list_request->path = "/test";
+        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
+        EXPECT_TRUE(list_response);
+        return list_response->names;
+    };
+
+    auto children1 = get_children(storage1);
+    std::unordered_set<std::string> children1_set(children1.begin(), children1.end());
+
+    auto children2 = get_children(storage2);
+    std::unordered_set<std::string> children2_set(children2.begin(), children2.end());
+
+    ASSERT_TRUE(children1_set == children2_set);
+}
+
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{

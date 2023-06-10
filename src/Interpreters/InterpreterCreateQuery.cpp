@@ -227,7 +227,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
-    if (create.storage->engine->name == "Replicated" && !internal && !create.attach)
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
     {
         /// Fill in default parameters
         if (create.storage->engine->arguments->children.size() == 1)

@@ -188,12 +188,12 @@ try
         try
         {
             file->write(payload.data(), payload.size());
+            file->finalize();
         }
         catch (...)
         {
             /// Log current exception, because finalize() can throw a different exception.
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            file->finalize();
             throw;
         }
     }

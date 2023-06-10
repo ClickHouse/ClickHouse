@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/logger_useful.h>
 
