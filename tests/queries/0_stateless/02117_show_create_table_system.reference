@@ -346,7 +346,8 @@ CREATE TABLE system.merge_tree_settings
     `min` Nullable(String),
     `max` Nullable(String),
     `readonly` UInt8,
-    `type` String
+    `type` String,
+    `is_obsolete` UInt8
 )
 ENGINE = SystemMergeTreeSettings
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -918,7 +919,8 @@ CREATE TABLE system.replicated_merge_tree_settings
     `min` Nullable(String),
     `max` Nullable(String),
     `readonly` UInt8,
-    `type` String
+    `type` String,
+    `is_obsolete` UInt8
 )
 ENGINE = SystemReplicatedMergeTreeSettings
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -993,7 +995,8 @@ CREATE TABLE system.settings
     `readonly` UInt8,
     `type` String,
     `default` String,
-    `alias_for` String
+    `alias_for` String,
+    `is_obsolete` UInt8
 )
 ENGINE = SystemSettings
 COMMENT 'SYSTEM TABLE is built on the fly.'
