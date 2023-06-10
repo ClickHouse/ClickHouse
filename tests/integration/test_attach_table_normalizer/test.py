@@ -24,7 +24,7 @@ def replace_substring_to_substr(node):
             "-c",
             "sed -i 's/substring/substr/g' /var/lib/clickhouse/metadata/default/file.sql",
         ],
-        user="root",
+        user="root"
     )
 
 
