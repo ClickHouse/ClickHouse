@@ -939,7 +939,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     if (cgroupcpu_max)
     {
-        try {
+        try
+        {
             cgroupcpu_max->rewind();
 
             uint64_t quota = 0;
@@ -962,8 +963,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 period = std::stoull(field2);
             }
 
-            new_values["CGroupCPUCFSPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCPUCFSQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+            new_values["CGroupMaxCPU"] = { static_cast<Float64>(quota) / period, "The maximum number of CPU cores according to CGroups."};
         }
         catch (...)
         {
@@ -972,7 +972,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
     {
-        try {
+        try
+        {
             cgroupcpu_cfs_quota->rewind();
             cgroupcpu_cfs_period->rewind();
 
@@ -982,8 +983,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             tryReadText(quota, *cgroupcpu_cfs_quota);
             tryReadText(period, *cgroupcpu_cfs_period);
 
-            new_values["CGroupCPUCFSPeriod"] = { period, "The CFS period of CPU cgroup."};
-            new_values["CGroupCPUCFSQuota"] = { quota, "The CFS quota of CPU cgroup. If stated zero, the quota is max."};
+            new_values["CGroupMaxCPU"] = { static_cast<Float64>(quota) / period, "The maximum number of CPU cores according to CGroups."};
         }
         catch (...)
         {
