@@ -59,12 +59,6 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
-# local_blob_storage disk type does not exist in older versions
-sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-  | sed "s|<type>local_blob_storage</type>|<type>local</type>|" \
-  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 
