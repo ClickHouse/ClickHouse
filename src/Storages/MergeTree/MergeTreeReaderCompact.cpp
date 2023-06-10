@@ -36,7 +36,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_->getDataPartStorage(),
+          data_part_info_for_read_,
           mark_cache,
           data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part_info_for_read_->getMarksCount(),
@@ -314,7 +314,7 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-void MergeTreeReaderCompact::prefetchBeginOfRange(int64_t priority)
+void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
 {
     if (!initialized)
     {

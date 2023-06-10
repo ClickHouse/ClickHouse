@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Common/ActionBlocker.h>
+#include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -31,6 +32,7 @@ class ReplicatedMergeTreeQueue
 {
 private:
     friend class CurrentlyExecuting;
+    friend class LocalMergePredicate;
     friend class ReplicatedMergeTreeMergePredicate;
     friend class MergeFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
@@ -164,7 +166,7 @@ private:
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
 
-    using SubscriberCallBack = std::function<void(size_t /* queue_size */, std::unordered_set<String> /*wait_for_ids*/, std::optional<String> /* removed_log_entry_id */)>;
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */, const String * /* removed_log_entry_id */)>;
     using Subscribers = std::list<SubscriberCallBack>;
     using SubscriberIterator = Subscribers::iterator;
 
@@ -182,7 +184,7 @@ private:
     Subscribers subscribers;
 
     /// Notify subscribers about queue change (new queue size and entry that was removed)
-    void notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id);
+    void notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
@@ -206,7 +208,11 @@ private:
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
         std::unique_lock<std::mutex> & state_lock) const;
 
-    Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
+    /// Return the version (block number) of the last mutation that we don't need to apply to the part
+    /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
+    /// was created after the mutation).
+    /// If there is no such mutation or it has already been executed and deleted, return 0.
+    Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
@@ -287,7 +293,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue();
+    ~ReplicatedMergeTreeQueue() = default;
 
     /// Clears queue state
     void clear();
@@ -381,22 +387,20 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
+    /// Count the total number of active mutations that are not finished (is_done = false).
+    size_t countUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint);
+    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
+                                                        std::optional<PartitionIdsHint> && partition_ids_hint);
 
-    /// Return the version (block number) of the last mutation that we don't need to apply to the part
-    /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
-    /// was created after the mutation).
-    /// If there is no such mutation or it has already been executed and deleted, return 0.
-    Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version) const;
+    MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+                                         Strings & mutation_ids) const;
 
-    MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
-
-    /// Return mutation commands for part with smallest mutation version bigger
-    /// than data part version. Used when we apply alter commands on fly,
+    /// Return mutation commands for part which could be not applied to
+    /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
-    MutationCommands getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
@@ -425,7 +429,9 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode);
+
+    void notifySubscribersOnPartialShutdown();
 
     struct Status
     {
@@ -485,10 +491,33 @@ public:
     void createLogEntriesToFetchBrokenParts();
 };
 
+/// Lightweight version of ReplicatedMergeTreeMergePredicate that do not make any ZooKeeper requests,
+/// but may return false-positive results. Checks only a subset of required conditions.
+class LocalMergePredicate
+{
+public:
+    LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
+
+    bool operator()(const MergeTreeData::DataPartPtr & left,
+                    const MergeTreeData::DataPartPtr & right,
+                    const MergeTreeTransaction * txn,
+                    String * out_reason = nullptr) const;
+
+    bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
+                          const MergeTreeData::DataPartPtr & right,
+                          String * out_reason = nullptr) const;
+
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
+private:
+    const ReplicatedMergeTreeQueue & queue;
+};
+
 class ReplicatedMergeTreeMergePredicate
 {
 public:
-    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint_);
+    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper,
+                                      std::optional<PartitionIdsHint> && partition_ids_hint_);
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
@@ -519,7 +548,8 @@ public:
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
     std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
-    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers) const;
+    bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
+                            std::unordered_set<String> & checked_partitions_cache) const;
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
@@ -531,9 +561,11 @@ public:
     String getCoveringVirtualPart(const String & part_name) const;
 
 private:
+    LocalMergePredicate nested_pred;
+
     const ReplicatedMergeTreeQueue & queue;
 
-    PartitionIdsHint partition_ids_hint;
+    std::optional<PartitionIdsHint> partition_ids_hint;
 
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
     ActiveDataPartSet prev_virtual_parts;

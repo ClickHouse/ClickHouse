@@ -93,7 +93,13 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         return new_node;
     }
 
-    /// TODO: Do we need to handle ALIAS nodes in cloning?
+    if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        const auto & alias_child = addClonedDAGToDAG(original_dag_node->children[0], new_dag, node_remap);
+        const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
+        node_remap[node_name] = {new_dag, &new_node};
+        return new_node;
+    }
 
     /// If the node is a function, add it as a function and add its children
     if (original_dag_node->type == ActionsDAG::ActionType::FUNCTION)
@@ -324,15 +330,20 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     {
         for (const auto & step : steps)
         {
-            prewhere.steps.push_back(
+            PrewhereExprStep new_step
             {
+                .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
-                .column_name = step.column_name,
-                .remove_column = !all_output_names.contains(step.column_name), /// Don't remove if it's in the list of original outputs
+                .filter_column_name = step.column_name,
+                .remove_filter_column = !all_output_names.contains(step.column_name), /// Don't remove if it's in the list of original outputs
                 .need_filter = false,
-            });
+                .perform_alter_conversions = true,
+            };
+
+            prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
         }
-        prewhere.steps.back().need_filter = prewhere_info->need_filter;
+
+        prewhere.steps.back()->need_filter = prewhere_info->need_filter;
     }
 
     return true;

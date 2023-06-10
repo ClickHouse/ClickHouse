@@ -5,18 +5,14 @@
 #include <base/unaligned.h>
 #include <base/defines.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Compression/CompressionFactory.h>
-#include "CompressedWriteBuffer.h"
+#include <Compression/CompressedWriteBuffer.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-}
-
-static constexpr auto CHECKSUM_SIZE{sizeof(CityHash_v1_0_2::uint128)};
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -29,21 +25,23 @@ void CompressedWriteBuffer::nextImpl()
 
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.
       *
-      * If output buffer has necessary capacity, we can compress data directly in output buffer.
+      * If output buffer has necessary capacity, we can compress data directly into the output buffer.
       * Then we can write checksum at the output buffer begin.
       *
-      * If output buffer does not have necessary capacity. Compress data in temporary buffer.
-      * Then we can write checksum and temporary buffer in output buffer.
+      * If output buffer does not have necessary capacity. Compress data into a temporary buffer.
+      * Then we can write checksum and copy the temporary buffer into the output buffer.
       */
-    if (out.available() >= compressed_reserve_size + CHECKSUM_SIZE)
+    if (out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128))
     {
-        char * out_checksum_ptr = out.position();
-        char * out_compressed_ptr = out.position() + CHECKSUM_SIZE;
+        char * out_compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
         UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
-        memcpy(out_checksum_ptr, reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
-        out.position() += CHECKSUM_SIZE + compressed_size;
+
+        writeBinaryLittleEndian(checksum.first, out);
+        writeBinaryLittleEndian(checksum.second, out);
+
+        out.position() += compressed_size;
     }
     else
     {
@@ -51,7 +49,10 @@ void CompressedWriteBuffer::nextImpl()
         UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
-        out.write(reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
+
+        writeBinaryLittleEndian(checksum.first, out);
+        writeBinaryLittleEndian(checksum.second, out);
+
         out.write(compressed_buffer.data(), compressed_size);
     }
 }

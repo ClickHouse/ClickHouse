@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -29,7 +28,7 @@ exec kill -9 [exp_pid]
 close
 
 # Run client one more time and press "up" to see the last recorded query
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
 expect ":) "
 send -- "\[A"
 expect "for the history"

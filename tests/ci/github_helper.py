@@ -5,12 +5,13 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from os import path as p
 from time import sleep
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import github
 
 # explicit reimport
 # pylint: disable=useless-import-alias
+from github.AuthenticatedUser import AuthenticatedUser
 from github.GithubException import (
     RateLimitExceededException as RateLimitExceededException,
 )
@@ -157,7 +158,7 @@ class GitHub(github.Github):
 
     def get_user_cached(
         self, login: str, obj_updated_at: Optional[datetime] = None
-    ) -> NamedUser:
+    ) -> Union[AuthenticatedUser, NamedUser]:
         cache_file = self.cache_path / f"user-{login}.pickle"
 
         if cache_file.is_file():

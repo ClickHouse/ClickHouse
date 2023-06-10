@@ -108,10 +108,13 @@ public:
     /// Returns false if last boundary found.
     bool skipToNextBoundary();
 
+    bool isActualEOF() const { return found_last_boundary; }
+
 private:
     PeekableReadBuffer in;
     const std::string boundary;
     bool boundary_hit = true;
+    bool found_last_boundary = false;
 
     std::string readLine(bool append_crlf);
 

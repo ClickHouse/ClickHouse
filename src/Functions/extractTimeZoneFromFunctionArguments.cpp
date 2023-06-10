@@ -17,14 +17,14 @@ namespace ErrorCodes
 }
 
 
-std::string extractTimeZoneNameFromColumn(const IColumn & column)
+std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name)
 {
-    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
+    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column);
 
     if (!time_zone_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of time zone argument of function, must be constant string",
-                        column.getName());
+                        "Illegal column {} of time zone argument of function, must be a constant string",
+                        column_name);
 
     return time_zone_column->getValue<String>();
 }
@@ -33,9 +33,9 @@ std::string extractTimeZoneNameFromColumn(const IColumn & column)
 std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     /// Explicit time zone may be passed in last argument.
-    if (arguments.size() == time_zone_arg_num + 1 && arguments[time_zone_arg_num].column)
+    if (arguments.size() == time_zone_arg_num + 1)
     {
-        return extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
+        return extractTimeZoneNameFromColumn(arguments[time_zone_arg_num].column.get(), arguments[time_zone_arg_num].name);
     }
     else
     {
@@ -57,7 +57,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
 {
     if (arguments.size() == time_zone_arg_num + 1)
     {
-        std::string time_zone = extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
+        std::string time_zone = extractTimeZoneNameFromColumn(arguments[time_zone_arg_num].column.get(), arguments[time_zone_arg_num].name);
         if (time_zone.empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
         return DateLUT::instance(time_zone);

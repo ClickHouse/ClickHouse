@@ -6,10 +6,11 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
@@ -191,7 +192,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     if (!disable_checksum)
     {
-        Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
+        Checksum checksum;
+        ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+        readBinaryLittleEndian(checksum.first, checksum_in);
+        readBinaryLittleEndian(checksum.second, checksum_in);
+
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
     }
 
@@ -231,7 +236,11 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
         if (!disable_checksum)
         {
-            Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
+            Checksum checksum;
+            ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.first, checksum_in);
+            readBinaryLittleEndian(checksum.second, checksum_in);
+
             validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
         }
 
@@ -318,6 +327,5 @@ CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_d
 
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
-
 
 }

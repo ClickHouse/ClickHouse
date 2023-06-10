@@ -11,7 +11,7 @@
 #include <memory>
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
@@ -66,6 +66,7 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupSettings;
 
 struct WriteSettings;
 
@@ -148,9 +149,11 @@ public:
     virtual std::string getDiskName() const = 0;
     virtual std::string getDiskType() const = 0;
     virtual bool isStoredOnRemoteDisk() const { return false; }
+    virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
+    virtual bool isReadonly() const = 0;
 
     /// TODO: remove or at least remove const.
     virtual void syncRevision(UInt64 revision) const = 0;
@@ -200,8 +203,9 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
@@ -210,13 +214,18 @@ public:
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
     /// zero-copy locks for different parts will be on the same path in zookeeper.
+    ///
+    /// If `external_transaction` is provided, the disk operations (creating directories, hardlinking,
+    /// etc) won't be applied immediately; instead, they'll be added to external_transaction, which the
+    /// caller then needs to commit.
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         bool copy_instead_of_hardlink,
-        const NameSet & files_to_copy_instead_of_hardlinks) const = 0;
+        const NameSet & files_to_copy_instead_of_hardlinks,
+        DiskTransactionPtr external_transaction = nullptr) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(

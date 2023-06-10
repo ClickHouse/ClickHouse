@@ -3,16 +3,20 @@
 #include <random>
 #include <base/getThreadId.h>
 #include <Common/Exception.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Settings.h>
-#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <Common/AsyncTaskExecutor.h>
 
 namespace DB
 {
 namespace OpenTelemetry
 {
 
-thread_local TracingContextOnThread current_thread_trace_context;
+/// This code can be executed inside fibers, we should use fiber local tracing context.
+thread_local FiberLocal<TracingContextOnThread> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -68,7 +72,8 @@ bool Span::addAttribute(const Exception & e) noexcept
     if (!this->isTraceEnabled())
         return false;
 
-    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false))
+        && addAttributeImpl("clickhouse.exception_code", toString(e.code()));
 }
 
 bool Span::addAttribute(std::exception_ptr e) noexcept
@@ -77,6 +82,15 @@ bool Span::addAttribute(std::exception_ptr e) noexcept
         return false;
 
     return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+}
+
+bool Span::addAttribute(const ExecutionStatus & e) noexcept
+{
+    if (!this->isTraceEnabled())
+        return false;
+
+    return addAttributeImpl("clickhouse.exception", e.message)
+        && addAttributeImpl("clickhouse.exception_code", toString(e.code));
 }
 
 bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
@@ -92,9 +106,9 @@ bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexc
     return true;
 }
 
-SpanHolder::SpanHolder(std::string_view _operation_name)
+SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
 {
-    if (!current_thread_trace_context.isTraceEnabled())
+    if (!current_trace_context->isTraceEnabled())
     {
         return;
     }
@@ -102,14 +116,15 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
     /// Use try-catch to make sure the ctor is exception safe.
     try
     {
-        this->trace_id = current_thread_trace_context.trace_id;
-        this->parent_span_id = current_thread_trace_context.span_id;
+        this->trace_id = current_trace_context->trace_id;
+        this->parent_span_id = current_trace_context->span_id;
         this->span_id = thread_local_rng(); // create a new id for this span
         this->operation_name = _operation_name;
+        this->kind = _kind;
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        /// Add new initialization here
+        this->addAttribute("clickhouse.thread_id", getThreadId());
     }
     catch (...)
     {
@@ -121,7 +136,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
     }
 
     /// Set current span as parent of other spans created later on this thread.
-    current_thread_trace_context.span_id = this->span_id;
+    current_trace_context->span_id = this->span_id;
 }
 
 void SpanHolder::finish() noexcept
@@ -130,12 +145,12 @@ void SpanHolder::finish() noexcept
         return;
 
     // First of all, restore old value of current span.
-    assert(current_thread_trace_context.span_id == span_id);
-    current_thread_trace_context.span_id = parent_span_id;
+    assert(current_trace_context->span_id == span_id);
+    current_trace_context->span_id = parent_span_id;
 
     try
     {
-        auto log = current_thread_trace_context.span_log.lock();
+        auto log = current_trace_context->span_log.lock();
 
         /// The log might be disabled, check it before use
         if (log)
@@ -234,31 +249,31 @@ String TracingContext::composeTraceparentHeader() const
 
 void TracingContext::deserialize(ReadBuffer & buf)
 {
-    buf >> this->trace_id
-        >> "\n"
-        >> this->span_id
-        >> "\n"
-        >> this->tracestate
-        >> "\n"
-        >> this->trace_flags
-        >> "\n";
+    readUUIDText(trace_id, buf);
+    assertChar('\n', buf);
+    readIntText(span_id, buf);
+    assertChar('\n', buf);
+    readEscapedString(tracestate, buf);
+    assertChar('\n', buf);
+    readIntText(trace_flags, buf);
+    assertChar('\n', buf);
 }
 
 void TracingContext::serialize(WriteBuffer & buf) const
 {
-    buf << this->trace_id
-        << "\n"
-        << this->span_id
-        << "\n"
-        << this->tracestate
-        << "\n"
-        << this->trace_flags
-        << "\n";
+    writeUUIDText(trace_id, buf);
+    writeChar('\n', buf);
+    writeIntText(span_id, buf);
+    writeChar('\n', buf);
+    writeEscapedString(tracestate, buf);
+    writeChar('\n', buf);
+    writeIntText(trace_flags, buf);
+    writeChar('\n', buf);
 }
 
 const TracingContextOnThread & CurrentContext()
 {
-    return current_thread_trace_context;
+    return *current_trace_context;
 }
 
 void TracingContextOnThread::reset() noexcept
@@ -280,7 +295,7 @@ TracingContextHolder::TracingContextHolder(
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
     try
     {
-        if (current_thread_trace_context.isTraceEnabled())
+        if (current_trace_context->isTraceEnabled())
         {
             ///
             /// This is not the normal case,
@@ -293,15 +308,15 @@ TracingContextHolder::TracingContextHolder(
             /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
             ///
             this->is_context_owner = false;
-            this->root_span.trace_id = current_thread_trace_context.trace_id;
-            this->root_span.parent_span_id = current_thread_trace_context.span_id;
+            this->root_span.trace_id = current_trace_context->trace_id;
+            this->root_span.parent_span_id = current_trace_context->span_id;
             this->root_span.span_id = thread_local_rng();
             this->root_span.operation_name = _operation_name;
             this->root_span.start_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             /// Set the root span as parent of other spans created on current thread
-            current_thread_trace_context.span_id = this->root_span.span_id;
+            current_trace_context->span_id = this->root_span.span_id;
             return;
         }
 
@@ -345,10 +360,10 @@ TracingContextHolder::TracingContextHolder(
     }
 
     /// Set up trace context on current thread only when the root span is successfully initialized.
-    current_thread_trace_context = _parent_trace_context;
-    current_thread_trace_context.span_id = this->root_span.span_id;
-    current_thread_trace_context.trace_flags = TRACE_FLAG_SAMPLED;
-    current_thread_trace_context.span_log = _span_log;
+    *current_trace_context = _parent_trace_context;
+    current_trace_context->span_id = this->root_span.span_id;
+    current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
+    current_trace_context->span_log = _span_log;
 }
 
 TracingContextHolder::~TracingContextHolder()
@@ -360,7 +375,7 @@ TracingContextHolder::~TracingContextHolder()
 
     try
     {
-        auto shared_span_log = current_thread_trace_context.span_log.lock();
+        auto shared_span_log = current_trace_context->span_log.lock();
         if (shared_span_log)
         {
             try
@@ -391,11 +406,11 @@ TracingContextHolder::~TracingContextHolder()
     if (this->is_context_owner)
     {
         /// Clear the context on current thread
-        current_thread_trace_context.reset();
+        current_trace_context->reset();
     }
     else
     {
-        current_thread_trace_context.span_id = this->root_span.parent_span_id;
+        current_trace_context->span_id = this->root_span.parent_span_id;
     }
 }
 

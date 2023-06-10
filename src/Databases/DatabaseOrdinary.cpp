@@ -26,8 +26,15 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric DatabaseOrdinaryThreads;
+    extern const Metric DatabaseOrdinaryThreadsActive;
+}
 
 namespace DB
 {
@@ -100,7 +107,7 @@ void DatabaseOrdinary::loadStoredObjects(
     std::atomic<size_t> dictionaries_processed{0};
     std::atomic<size_t> tables_processed{0};
 
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive);
 
     /// We must attach dictionaries before attaching tables
     /// because while we're attaching tables we may need to have some dictionaries attached

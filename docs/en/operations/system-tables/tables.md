@@ -11,67 +11,67 @@ Contains metadata of each table that the server knows about.
 
 Columns:
 
--   `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
+- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
--   `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
+- `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
 
--   `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
+- `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
 
--   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
+- `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
 
--   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
+- `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
 
--   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
+- `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
--   `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
+- `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
 
--   `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
+- `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
--   `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([MaterializedView](../../engines/table-engines/special/materializedview.md) tables based on the current table).
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([MaterializedView](../../engines/table-engines/special/materializedview.md) tables based on the current table).
 
--   `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
+- `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 
--   `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
+- `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
--   `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
+- `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
 
--   `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
+- `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
--   `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
+- `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
 
--   `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table.
+- `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table.
 
--   `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table.
+- `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table.
 
--   `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
+- `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
-    -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+    - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
--   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underying `Buffer` table).
+- `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 
--   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
+- `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
 
-    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
-    -   If the table stores data in memory, returns approximated number of used bytes in memory.
+    - If the table stores data on disk, returns used space on disk (i.e. compressed).
+    - If the table stores data in memory, returns approximated number of used bytes in memory.
 
--   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
+- `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
 
--   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
+- `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
 
--   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
+- `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
 
--   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
+- `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
 
--   `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database  loading dependencies (list of objects which should be loaded before the current object).
+- `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database  loading dependencies (list of objects which should be loaded before the current object).
 
--   `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table loading dependencies (list of objects which should be loaded before the current object).
+- `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table loading dependencies (list of objects which should be loaded before the current object).
 
--   `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading database.
+- `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading database.
 
--   `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
+- `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 

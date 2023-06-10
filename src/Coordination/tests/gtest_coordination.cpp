@@ -1579,6 +1579,113 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 }
 
 
+TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
+    state_machine->init();
+
+    String user_auth_data = "test_user:test_password";
+    String digest = KeeperStorage::generateDigest(user_auth_data);
+
+    std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = user_auth_data;
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+
+    // Create a node with 'auth' scheme for ACL
+    String node_path = "/hello";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req = std::make_shared<ZooKeeperCreateRequest>();
+    create_req->path = node_path;
+    // When 'auth' scheme is used the creator must have been authenticated by the server (for example, using 'digest' scheme) before it can
+    // create nodes with this ACL.
+    create_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
+    auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
+    state_machine->pre_commit(2, create_entry->get_buf());
+
+    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+
+    // commit log entries
+    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->commit(2, create_entry->get_buf());
+
+    auto node = uncommitted_state.getNode(node_path);
+    ASSERT_NE(node, nullptr);
+    auto acls = uncommitted_state.getACLs(node_path);
+    ASSERT_EQ(acls.size(), 1);
+    EXPECT_EQ(acls[0].scheme, "digest");
+    EXPECT_EQ(acls[0].id, digest);
+    EXPECT_EQ(acls[0].permissions, 31);
+}
+
+TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context, nullptr);
+    state_machine->init();
+
+    String user_auth_data = "test_user:test_password";
+    String digest = KeeperStorage::generateDigest(user_auth_data);
+
+    std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = user_auth_data;
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+
+    // Create a node
+    String node_path = "/hello";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req = std::make_shared<ZooKeeperCreateRequest>();
+    create_req->path = node_path;
+    auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
+    state_machine->pre_commit(2, create_entry->get_buf());
+
+    // Set ACL with 'auth' scheme for ACL
+    std::shared_ptr<ZooKeeperSetACLRequest> set_acl_req = std::make_shared<ZooKeeperSetACLRequest>();
+    set_acl_req->path = node_path;
+    // When 'auth' scheme is used the creator must have been authenticated by the server (for example, using 'digest' scheme) before it can
+    // set this ACL.
+    set_acl_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
+    auto set_acl_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_acl_req);
+    state_machine->pre_commit(3, set_acl_entry->get_buf());
+
+    // commit all entries
+    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->commit(2, create_entry->get_buf());
+    state_machine->commit(3, set_acl_entry->get_buf());
+
+    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    auto node = uncommitted_state.getNode(node_path);
+
+    ASSERT_NE(node, nullptr);
+    auto acls = uncommitted_state.getACLs(node_path);
+    ASSERT_EQ(acls.size(), 1);
+    EXPECT_EQ(acls[0].scheme, "digest");
+    EXPECT_EQ(acls[0].id, digest);
+    EXPECT_EQ(acls[0].permissions, 31);
+}
+
+
 TEST_P(CoordinationTest, TestRotateIntervalChanges)
 {
     using namespace Coordination;
@@ -2344,6 +2451,155 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
 
 }
 
+TEST_P(CoordinationTest, TestCheckNotExistsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    KeeperStorage storage{500, "", keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto create_path = [&](const auto & path)
+    {
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        int new_zxid = ++zxid;
+        create_request->path = path;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto check_request = std::make_shared<ZooKeeperCheckRequest>();
+    check_request->path = "/test_node";
+    check_request->not_exists = true;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    create_path("/test_node");
+    auto node_it = storage.container.find("/test_node");
+    ASSERT_NE(node_it, storage.container.end());
+    auto node_version = node_it->value.stat.version;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS for same version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK for different version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version + 1;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+}
+
+TEST_P(CoordinationTest, TestReapplyingDeltas)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    static constexpr int64_t initial_zxid = 100;
+
+    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/test/data";
+    create_request->is_sequential = true;
+
+    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
+    {
+        storage.preprocessRequest(request, 1, 0, zxid);
+        auto responses = storage.processRequest(request, 1, zxid);
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Error::ZOK);
+    };
+
+    const auto commit_initial_data = [&](auto & storage)
+    {
+        int64_t zxid = 1;
+
+        const auto root_create = std::make_shared<ZooKeeperCreateRequest>();
+        root_create->path = "/test";
+        process_create(storage, root_create, zxid);
+        ++zxid;
+
+        for (; zxid <= initial_zxid; ++zxid)
+            process_create(storage, create_request, zxid);
+    };
+
+    KeeperStorage storage1{500, "", keeper_context};
+    commit_initial_data(storage1);
+
+    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        storage1.preprocessRequest(create_request, 1, 0, zxid);
+
+    /// create identical new storage
+    KeeperStorage storage2{500, "", keeper_context};
+    commit_initial_data(storage2);
+
+    storage1.applyUncommittedState(storage2, initial_zxid);
+
+    const auto commit_unprocessed = [&](KeeperStorage & storage)
+    {
+        for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        {
+            auto responses = storage.processRequest(create_request, 1, zxid);
+            EXPECT_GE(responses.size(), 1);
+            EXPECT_EQ(responses[0].response->error, Error::ZOK);
+        }
+    };
+
+    commit_unprocessed(storage1);
+    commit_unprocessed(storage2);
+
+    const auto get_children = [&](KeeperStorage & storage)
+    {
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
+        list_request->path = "/test";
+        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
+        EXPECT_TRUE(list_response);
+        return list_response->names;
+    };
+
+    auto children1 = get_children(storage1);
+    std::unordered_set<std::string> children1_set(children1.begin(), children1.end());
+
+    auto children2 = get_children(storage2);
+    std::unordered_set<std::string> children2_set(children2.begin(), children2.end());
+
+    ASSERT_TRUE(children1_set == children2_set);
+}
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,

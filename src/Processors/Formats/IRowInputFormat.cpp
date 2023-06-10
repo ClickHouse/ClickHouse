@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 
@@ -48,11 +49,12 @@ bool isParseError(int code)
         || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
-        || code == ErrorCodes::CANNOT_PARSE_IPV6;
+        || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
 }
 

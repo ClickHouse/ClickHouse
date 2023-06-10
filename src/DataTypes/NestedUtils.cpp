@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace Nested
@@ -71,7 +71,7 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-Block flatten(const Block & block)
+static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 {
     Block res;
 
@@ -114,7 +114,7 @@ Block flatten(const Block & block)
             else
                 res.insert(elem);
         }
-        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()))
+        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
         {
             if (type_tuple->haveExplicitNames())
             {
@@ -141,6 +141,17 @@ Block flatten(const Block & block)
     }
 
     return res;
+}
+
+Block flatten(const Block & block)
+{
+    return flattenImpl(block, true);
+}
+
+
+Block flattenArrayOfTuples(const Block & block)
+{
+    return flattenImpl(block, false);
 }
 
 namespace
@@ -242,7 +253,7 @@ void validateArraySizes(const Block & block)
                     const ColumnArray & another_array_column = assert_cast<const ColumnArray &>(*elem.column);
 
                     if (!first_array_column.hasEqualOffsets(another_array_column))
-                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                         "Elements '{}' and '{}' "
                                         "of Nested data structure '{}' (Array columns) have different array sizes.",
                                         block.getByPosition(it->second).name, elem.name, split.first);

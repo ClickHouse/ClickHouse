@@ -37,8 +37,6 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
-    Range getRemainingReadRange() const override;
-
     bool supportsRightBoundedReads() const override { return true; }
 
 private:

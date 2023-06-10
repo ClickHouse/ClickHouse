@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Storages/ExecutableSettings.h>

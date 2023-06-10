@@ -35,18 +35,6 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
         }
     }
 
-    if (!settings.allow_experimental_geo_types)
-    {
-        const auto & type_name = type->getName();
-        if (type_name == "MultiPolygon" || type_name == "Polygon" || type_name == "Ring" || type_name == "Point")
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create column with type '{}' because experimental geo types are not allowed. Set setting "
-                "allow_experimental_geo_types = 1 in order to allow it", type_name);
-        }
-    }
-
     if (!settings.allow_experimental_object_type)
     {
         if (type->hasDynamicSubcolumns())
@@ -92,12 +80,11 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     return columns;
 }
 
-bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context)
+bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context, String & error)
 {
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    String error;
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
@@ -106,7 +93,10 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
+    {
+        error = fmt::format("Invalid columns declaration list: \"{}\"", structure);
         return false;
+    }
 
     try
     {
@@ -118,6 +108,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     }
     catch (...)
     {
+        error = getCurrentExceptionMessage(false);
         return false;
     }
 }
