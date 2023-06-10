@@ -50,6 +50,7 @@ node7 = cluster.add_instance(
     user_configs=["configs/allow_suspicious_codecs.xml"],
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -252,6 +253,7 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
         == "10000\n"
     )
 
+
 def test_preconfigured_deflateqpl_codec(start_cluster):
     node6.query(
         """
@@ -268,7 +270,7 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
     )
     assert (
         node6.query(
-           "SELECT COUNT(*) FROM compression_codec_multiple_with_key WHERE id % 2 == 0"
+            "SELECT COUNT(*) FROM compression_codec_multiple_with_key WHERE id % 2 == 0"
         )
         == "2\n"
     )
@@ -296,9 +298,7 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
         == "1001\n"
     )
     assert (
-        node6.query(
-            "SELECT SUM(somecolumn) FROM compression_codec_multiple_with_key"
-        )
+        node6.query("SELECT SUM(somecolumn) FROM compression_codec_multiple_with_key")
         == str(777.777 + 88.88 + 99.99 + 1.0 * 10000) + "\n"
     )
     assert (
