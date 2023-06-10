@@ -508,12 +508,12 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
     assertDatabaseDoesntExistUnlocked(database_name);
 }
 
-void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, String prompting_name) const
+void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, const String & prompting_name) const
 {
     assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
     {
-        if (prompting_name.empty())
+        if (prompting_name==" ")
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
         }
