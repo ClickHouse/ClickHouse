@@ -99,10 +99,14 @@ void listFilesWithRegexpMatchingImpl(
     bool recursive = false);
 
 /// When `{...}` has any `/`s, it must be processed in a different way
-void listFilesWithFoldedRegexpMatchingImpl(const std::string & start_dir, const std::string & processed_suffix,
+void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
+                                           const std::string & processed_suffix,
                                            const std::string & suffix_with_globs,
-                                           const std::string & glob, re2::RE2 & matcher, size_t & total_bytes_to_read,
-                                           const size_t max_depth, const size_t next_slash_after_glob_pos,
+                                           const std::string & current_glob,
+                                           re2::RE2 & matcher,
+                                           size_t & total_bytes_to_read,
+                                           const size_t max_depth,
+                                           const size_t next_slash_after_glob_pos,
                                            std::vector<std::string> & result)
 {
     /// We don't need to go all the way in every directory if max_depth is reached
@@ -111,7 +115,7 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & start_dir, const 
         return;
 
     const fs::directory_iterator end;
-    for (fs::directory_iterator it(start_dir + processed_suffix); it != end; ++it)
+    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
     {
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
@@ -133,9 +137,9 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & start_dir, const 
         }
         else if (it->is_directory())
         {
-            listFilesWithFoldedRegexpMatchingImpl(start_dir, processed_suffix + dir_or_file_name, suffix_with_globs,
-                                                  glob, matcher, total_bytes_to_read, max_depth - 1,
-                                                  next_slash_after_glob_pos, result);
+            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path).append(processed_suffix), processed_suffix + dir_or_file_name,
+                                                  suffix_with_globs, current_glob, matcher,
+                                                  total_bytes_to_read, max_depth - 1, next_slash_after_glob_pos, result);
         }
 
     }
@@ -203,7 +207,7 @@ void listFilesWithRegexpMatchingImpl(
 
     if (slashes_in_glob)
     {
-        listFilesWithFoldedRegexpMatchingImpl(prefix_without_globs, "", suffix_with_globs,
+        listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs,
                                               current_glob, matcher, total_bytes_to_read, slashes_in_glob,
                                               next_slash_after_glob_pos, result);
         return;
