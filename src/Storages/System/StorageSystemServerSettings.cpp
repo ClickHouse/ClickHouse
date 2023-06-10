@@ -15,6 +15,7 @@ NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
         {"changed", std::make_shared<DataTypeUInt8>()},
         {"description", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>()},
     };
 }
 
@@ -33,6 +34,7 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         res_columns[3]->insert(setting.isValueChanged());
         res_columns[4]->insert(setting.getDescription());
         res_columns[5]->insert(setting.getTypeName());
+        res_columns[6]->insert(setting.isObsolete());
     }
 }
 
