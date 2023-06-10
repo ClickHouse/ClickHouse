@@ -127,7 +127,7 @@ TEMP_FILE=$(mktemp)
 
 cat <<EOT > $TEMP_FILE
 SHOW COLUMNS FROM tab;
-SET output_format_mysql_types=1;
+SET use_mysql_types_in_show_columns=1;
 SHOW COLUMNS FROM tab;
 SHOW EXTENDED COLUMNS FROM tab;
 SHOW FULL COLUMNS FROM tab;
