@@ -781,8 +781,10 @@ Strings Context::getWarnings() const
     {
         if (setting.isValueChanged() && setting.isObsolete())
         {
-            common_warnings.emplace_back("Some obsolete setting is changed. "
-                                         "Check 'select * from system.settings where changed' and read the changelog.");
+            common_warnings.emplace_back(
+                "Obsolete setting `" + setting.getName()
+                + "` is changed. "
+                  "Check 'select * from system.settings where changed' and read the changelog.");
             break;
         }
     }

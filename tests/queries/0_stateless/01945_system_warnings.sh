@@ -14,8 +14,8 @@ else
     echo "Server was built in debug mode. It will work slowly."
 fi
 
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%obsolete setting%'"
-${CLICKHOUSE_CLIENT} --multiple_joins_rewriter_version=42 -q "SELECT message FROM system.warnings WHERE message LIKE '%obsolete setting%'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
+${CLICKHOUSE_CLIENT} --multiple_joins_rewriter_version=42 -q "SELECT message FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
 
 # Avoid duplicated warnings
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.warnings"
