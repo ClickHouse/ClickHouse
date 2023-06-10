@@ -30,8 +30,10 @@ ReadBufferFromFile::ReadBufferFromFile(
     int flags,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_), file_name(file_name_)
+    std::optional<size_t> file_size_,
+    ThrottlerPtr throttler_)
+    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_, throttler_)
+    , file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -61,8 +63,9 @@ ReadBufferFromFile::ReadBufferFromFile(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_)
-    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
+    std::optional<size_t> file_size_,
+    ThrottlerPtr throttler_)
+    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_, throttler_)
     , file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;

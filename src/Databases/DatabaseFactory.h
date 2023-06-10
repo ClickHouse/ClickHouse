@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
 
 namespace DB

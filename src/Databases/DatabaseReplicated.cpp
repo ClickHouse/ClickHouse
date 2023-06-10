@@ -30,10 +30,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -115,9 +117,14 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 }
 
+String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
+{
+    return shard + '|' + replica;
+}
+
 String DatabaseReplicated::getFullReplicaName() const
 {
-    return shard_name + '|' + replica_name;
+    return getFullReplicaName(shard_name, replica_name);
 }
 
 std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String & name)
@@ -214,7 +221,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
     String current_shard = parseFullReplicaName(hosts.front()).first;
-    std::vector<Strings> shards;
+    std::vector<std::vector<DatabaseReplicaInfo>> shards;
     shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
@@ -230,25 +237,61 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
             if (!shards.back().empty())
                 shards.emplace_back();
         }
-        shards.back().emplace_back(unescapeForFileName(host_port));
+        String hostname = unescapeForFileName(host_port);
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
     UInt16 default_port = getContext()->getTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    return std::make_shared<Cluster>(
-        getContext()->getSettingsRef(),
-        shards,
+    ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
         default_port,
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        /*priority=*/1,
+        /*priority=*/ 1,
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
-        cluster_auth_info.cluster_secret);
+        cluster_auth_info.cluster_secret};
+
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
+}
+
+std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
+{
+    Strings paths;
+    const auto & addresses_with_failover = cluster->getShardsAddresses();
+    const auto & shards_info = cluster_->getShardsInfo();
+    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+    {
+        for (const auto & replica : addresses_with_failover[shard_index])
+        {
+            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+        }
+    }
+
+    try
+    {
+        auto current_zookeeper = getZooKeeper();
+        auto res = current_zookeeper->exists(paths);
+
+        std::vector<UInt8> statuses;
+        statuses.resize(paths.size());
+
+        for (size_t i = 0; i < res.size(); ++i)
+            if (res[i].error == Coordination::Error::ZOK)
+                statuses[i] = 1;
+
+        return statuses;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        return {};
+    }
 }
 
 
@@ -661,7 +704,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
+    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -683,7 +726,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
@@ -928,7 +971,16 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & table_id : tables_to_create)
     {
         auto table_name = table_id.getTableName();
-        auto create_query_string = table_name_to_metadata[table_name];
+        auto metadata_it = table_name_to_metadata.find(table_name);
+        if (metadata_it == table_name_to_metadata.end())
+        {
+            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+            continue;
+        }
+
+        const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
             assert(create_query_string == readMetadataFile(table_name));
@@ -1032,12 +1084,14 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
+    String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
+
     if (full_replica_name.find('/') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name: {}", full_replica_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 
@@ -1378,16 +1432,38 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
 
+    /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
+    const auto is_keeper_map_table = [&](const ASTPtr & ast)
+    {
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        return table->as<StorageKeeperMap>() != nullptr;
+    };
+
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-    {
-        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
-    }
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        return drop->table.get();
+        if (drop->table.get())
+            return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
+
+        return false;
+    }
+
+    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
+    {
+        if (is_keeper_map_table(query_ptr))
+            return false;
+
+        /// If there is only 1 shard then there is no need to replicate DELETE query.
+        auto current_cluster = tryGetCluster();
+        return
+            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
+            current_cluster->getShardsInfo().size() > 1;
     }
 
     return true;

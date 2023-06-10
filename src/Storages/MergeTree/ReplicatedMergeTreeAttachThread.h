@@ -3,7 +3,6 @@
 #include <thread>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

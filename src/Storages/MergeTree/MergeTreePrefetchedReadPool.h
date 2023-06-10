@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB
@@ -52,12 +53,12 @@ private:
     using ThreadTasks = std::deque<MergeTreeReadTaskPtr>;
     using ThreadsTasks = std::map<size_t, ThreadTasks>;
 
-    /// smaller `priority` means more priority
     std::future<MergeTreeReaderPtr> createPrefetchedReader(
         const IMergeTreeDataPart & data_part,
         const NamesAndTypesList & columns,
+        const AlterConversionsPtr & alter_conversions,
         const MarkRanges & required_ranges,
-        int64_t priority) const;
+        Priority priority) const;
 
     void createPrefetchedReaderForTask(MergeTreeReadTask & task) const;
 
@@ -101,11 +102,12 @@ private:
 
     struct TaskHolder
     {
-        explicit TaskHolder(MergeTreeReadTask * task_) : task(task_) {}
+        explicit TaskHolder(MergeTreeReadTask * task_, size_t thread_id_) : task(task_), thread_id(thread_id_) {}
         MergeTreeReadTask * task;
+        size_t thread_id;
         bool operator <(const TaskHolder & other) const;
     };
-    mutable boost::heap::priority_queue<TaskHolder> prefetch_queue;
+    mutable std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
 
     /// A struct which allows to track max number of tasks which were in the

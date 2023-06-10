@@ -17,10 +17,11 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
     ...
 ) ENGINE = engine
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -31,6 +32,8 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
+
+Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table
 
@@ -107,25 +110,23 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-## Default Values
+## Default Values {#default_values}
 
-The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
+The column description can specify a default value expression in the form of `DEFAULT expr`, `MATERIALIZED expr`, or `ALIAS expr`. Example: `URLDomain String DEFAULT domain(URL)`.
 
-Example: `URLDomain String DEFAULT domain(URL)`.
+The expression `expr` is optional. If it is omitted, the column type must be specified explicitly and the default value will be `0` for numeric columns, `''` (the empty string) for string columns, `[]` (the empty array) for array columns, `1970-01-01` for date columns, or `NULL` for nullable columns.
 
-If an expression for the default value is not defined, the default values will be set to zeros for numbers, empty strings for strings, empty arrays for arrays, and `1970-01-01` for dates or zero unix timestamp for DateTime, NULL for Nullable.
+The column type of a default value column can be omitted in which case it is inferred from `expr`'s type. For example the type of column `EventDate DEFAULT toDate(EventTime)` will be date.
 
-If the default expression is defined, the column type is optional. If there isn’t an explicitly defined type, the default expression type is used. Example: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type will be used for the ‘EventDate’ column.
+If both a data type and a default value expression are specified, an implicit type casting function inserted which converts the expression to the specified type. Example: `Hits UInt32 DEFAULT 0` is internally represented as `Hits UInt32 DEFAULT toUInt32(0)`.
 
-If the data type and default expression are defined explicitly, this expression will be cast to the specified type using type casting functions. Example: `Hits UInt32 DEFAULT 0` means the same thing as `Hits UInt32 DEFAULT toUInt32(0)`.
-
-Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+A default value expression `expr` may reference arbitrary table columns and constants. ClickHouse checks that changes of the table structure do not introduce loops in the expression calculation. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 ### DEFAULT
 
 `DEFAULT expr`
 
-Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
+Normal default value. If the value of such a column is not specified in an INSERT query, it is computed from `expr`.
 
 Example:
 
@@ -151,9 +152,9 @@ SELECT * FROM test;
 
 `MATERIALIZED expr`
 
-Materialized expression. Such a column can’t be specified for INSERT, because it is always calculated.
-For an INSERT without a list of columns, these columns are not considered.
-In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
+
+Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
 
 Example:
 
@@ -189,8 +190,9 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 
 `EPHEMERAL [expr]`
 
-Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
-INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+Ephemeral column. Columns of this type are not stored in the table and it is not possible to SELECT from them. The only purpose of ephemeral columns is to build default value expressions of other columns from them.
+
+An insert without explicitly specified columns will skip columns of this type. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`.
 
 Example:
 
@@ -202,7 +204,7 @@ CREATE OR REPLACE TABLE test
     hexed FixedString(4) DEFAULT unhex(unhexed)
 )
 ENGINE = MergeTree
-ORDER BY id
+ORDER BY id;
 
 INSERT INTO test (id, unhexed) Values (1, '5a90b714');
 
@@ -224,9 +226,9 @@ hex(hexed): 5A90B714
 
 `ALIAS expr`
 
-Synonym. Such a column isn’t stored in the table at all.
-Its values can’t be inserted in a table, and it is not substituted when using an asterisk in a SELECT query.
-It can be used in SELECTs if the alias is expanded during query parsing.
+Calculated columns (synonym). Column of this type are not stored in the table and it is not possible to INSERT values into them.
+
+When SELECT queries explicitly reference columns of this type, the value is computed at query time from `expr`. By default, `SELECT *` excludes ALIAS columns. This behavior can be disabled with setting `asteriks_include_alias_columns`.
 
 When using the ALTER query to add new columns, old data for these columns is not written. Instead, when reading old data that does not have values for the new columns, expressions are computed on the fly by default. However, if running the expressions requires different columns that are not indicated in the query, these columns will additionally be read, but only for the blocks of data that need it.
 
@@ -267,7 +269,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])]
+    PRIMARY KEY(expr1[, expr2,...])
 )
 ENGINE = engine;
 ```
@@ -283,7 +285,7 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-:::warning
+:::tip
 You can't combine both ways in one query.
 :::
 
@@ -311,7 +313,9 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs
 
-By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+
+For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
 
 You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -339,16 +343,16 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-:::warning
+:::tip
 You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 :::
 
 Compression is supported for the following table engines:
 
--   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) settings.
--   [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
--   [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
--   [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) settings.
+- [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
+- [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
 
 ClickHouse supports general purpose codecs and specialized codecs.
 
@@ -376,10 +380,10 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
 
--   DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
--   DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions
--   DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device
--   DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with support for AVX2/AVX512
+- DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
+- DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Build-Clickhouse-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Run-Benchmark-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
 
 ### Specialized Codecs
 
@@ -391,15 +395,15 @@ These codecs are designed to make compression more effective by using specific f
 
 #### DoubleDelta
 
-`DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
 #### Gorilla
 
-`Gorilla` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+`Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
 #### FPC
 
-`FPC` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+`FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it’s 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
 #### T64
 
@@ -434,11 +438,11 @@ Encryption codecs:
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
 
-:::warning
+:::note
 Most engines including the "\*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
 :::
 
-:::warning
+:::note
 If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
 :::
 
@@ -470,12 +474,12 @@ ENGINE = MergeTree ORDER BY x;
 
 ClickHouse supports temporary tables which have the following characteristics:
 
--   Temporary tables disappear when the session ends, including if the connection is lost.
--   A temporary table uses the Memory engine only.
--   The DB can’t be specified for a temporary table. It is created outside of databases.
--   Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
--   If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
--   For distributed query processing, temporary tables used in a query are passed to remote servers.
+- Temporary tables disappear when the session ends, including if the connection is lost.
+- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+- The DB can’t be specified for a temporary table. It is created outside of databases.
+- Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
+- If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
+- For distributed query processing, temporary tables used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 
@@ -485,7 +489,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-)
+) [ENGINE = engine]
 ```
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
@@ -573,7 +577,7 @@ SELECT * FROM base.t1;
 You can add a comment to the table when you creating it.
 
 :::note
-The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 :::
 
 

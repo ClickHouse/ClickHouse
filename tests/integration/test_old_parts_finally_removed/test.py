@@ -63,7 +63,6 @@ def test_part_finally_removed(started_cluster):
     )
 
     for i in range(60):
-
         if (
             node1.query(
                 "SELECT count() from system.parts WHERE table = 'drop_outdated_part'"

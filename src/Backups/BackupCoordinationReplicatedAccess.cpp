@@ -7,8 +7,13 @@ namespace DB
 BackupCoordinationReplicatedAccess::BackupCoordinationReplicatedAccess() = default;
 BackupCoordinationReplicatedAccess::~BackupCoordinationReplicatedAccess() = default;
 
-void BackupCoordinationReplicatedAccess::addFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+void BackupCoordinationReplicatedAccess::addFilePath(FilePathForAccessEntitry && file_path_for_access_entity)
 {
+    const auto & access_zk_path = file_path_for_access_entity.access_zk_path;
+    const auto & access_entity_type = file_path_for_access_entity.access_entity_type;
+    const auto & host_id = file_path_for_access_entity.host_id;
+    const auto & file_path = file_path_for_access_entity.file_path;
+
     auto & ref = file_paths_by_zk_path[std::make_pair(access_zk_path, access_entity_type)];
     ref.file_paths.emplace(file_path);
 

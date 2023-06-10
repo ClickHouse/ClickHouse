@@ -15,6 +15,7 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
 }
 
 std::random_device device;
@@ -50,7 +51,7 @@ public:
             throw std::runtime_error("Unlucky...");
     }
 
-    UInt64 getPriority() override { return 0; }
+    Priority getPriority() override { return {}; }
 
 private:
     std::mt19937 generator;
@@ -64,11 +65,11 @@ using StepFunc = std::function<void(const String & name, size_t steps_left)>;
 class LambdaExecutableTask : public IExecutableTask
 {
 public:
-    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, UInt64 priority_ = 0)
+    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, Int64 priority_value = 0)
         : name(name_)
         , step_count(step_count_)
         , step_func(step_func_)
-        , priority(priority_)
+        , priority{priority_value}
     {}
 
     bool executeStep() override
@@ -85,13 +86,13 @@ public:
 
     void onCompleted() override {}
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
 private:
     String name;
     size_t step_count;
     StepFunc step_func;
-    UInt64 priority;
+    Priority priority;
 };
 
 
@@ -102,7 +103,8 @@ TEST(Executor, Simple)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker
@@ -144,7 +146,8 @@ TEST(Executor, RemoveTasks)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -184,7 +187,8 @@ TEST(Executor, RemoveTasksStress)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     std::barrier barrier(schedulers_count + removers_count);
@@ -234,7 +238,8 @@ TEST(Executor, UpdatePolicy)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker

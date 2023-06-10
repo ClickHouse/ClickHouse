@@ -302,6 +302,16 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     }
 }
 
+void MergeJoinAlgorithm::logElapsed(double seconds)
+{
+    LOG_TRACE(log,
+        "Finished pocessing in {} seconds"
+        ", left: {} blocks, {} rows; right: {} blocks, {} rows"
+        ", max blocks loaded to memory: {}",
+        seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
+        stat.max_blocks_loaded);
+}
+
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)
@@ -844,6 +854,7 @@ MergeJoinTransform::MergeJoinTransform(
         output_header,
         /* have_all_inputs_= */ true,
         limit_hint_,
+        /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))

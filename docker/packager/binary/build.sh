@@ -6,13 +6,16 @@ exec &> >(ts)
 ccache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
 [ -O /build ] || git config --global --add safe.directory /build
 
-mkdir -p /build/cmake/toolchain/darwin-x86_64
-tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
+  mkdir -p /build/cmake/toolchain/darwin-x86_64
+  tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
+  ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+fi
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.

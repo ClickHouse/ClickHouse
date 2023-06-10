@@ -20,7 +20,7 @@ A key advantage between ordinary UDF functions and the `executable` table functi
 The `executable` table function requires three parameters and accepts an optional list of input queries:
 
 ```sql
-executable(script_name, format, structure, [input_query...])
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
 ```
 
 - `script_name`: the file name of the script. saved in the `user_scripts` folder (the default folder of the `user_scripts_path` setting)
@@ -83,9 +83,18 @@ The response looks like:
 └────┴────────────┘
 ```
 
+## Settings
+
+- `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Default value is `false`.
+- `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
+- `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10.
+- `command_termination_timeout` — executable script should contain main read-write loop. After table function is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10.
+- `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000.
+- `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000.
+
 ## Passing Query Results to a Script
 
-Be sure to check out the example in the `Executable` table engine on [how to pass query results to a script](../../engines/table-engines/special/executable#passing-query-results-to-a-script). Here is how you execute the same script in that example using the `executable` table function:
+Be sure to check out the example in the `Executable` table engine on [how to pass query results to a script](../../engines/table-engines/special/executable.md#passing-query-results-to-a-script). Here is how you execute the same script in that example using the `executable` table function:
 
 ```sql
 SELECT * FROM executable(

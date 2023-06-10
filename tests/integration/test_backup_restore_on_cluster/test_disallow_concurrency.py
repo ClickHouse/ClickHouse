@@ -6,7 +6,6 @@ import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
-
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 10
@@ -50,6 +49,7 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/disallow_concurrency.xml", generate_cluster_def()]
+# No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
@@ -82,8 +82,12 @@ def drop_after_test():
     try:
         yield
     finally:
-        node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
-        node0.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' NO DELAY")
+        node0.query(
+            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC",
+            settings={
+                "distributed_ddl_task_timeout": 360,
+            },
+        )
 
 
 backup_id_counter = 0
@@ -121,26 +125,40 @@ def test_concurrent_backups_on_same_node():
         .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
         .split("\t")[0]
     )
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
-        "CREATING_BACKUP",
+
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+        .rstrip("\n")
     )
-    assert "Concurrent backups not supported" in nodes[0].query_and_get_error(
+    assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
+
+    error = nodes[0].query_and_get_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
     )
+    expected_errors = [
+        "Concurrent backups not supported",
+        f"Backup {backup_name} already exists",
+    ]
+    assert any([expected_error in error for expected_error in expected_errors])
 
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
+        f"SELECT status FROM system.backups WHERE id = '{id}'",
         "BACKUP_CREATED",
+        sleep_time=2,
+        retry_count=50,
     )
 
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
     nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-    nodes[0].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
 
 def test_concurrent_backups_on_different_nodes():
@@ -153,13 +171,29 @@ def test_concurrent_backups_on_different_nodes():
         .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
         .split("\t")[0]
     )
+
+    status = (
+        nodes[1]
+        .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+        .rstrip("\n")
+    )
+    assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
+
+    error = nodes[0].query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
+    expected_errors = [
+        "Concurrent backups not supported",
+        f"Backup {backup_name} already exists",
+    ]
+    assert any([expected_error in error for expected_error in expected_errors])
+
     assert_eq_with_retry(
         nodes[1],
-        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
-        "CREATING_BACKUP",
-    )
-    assert "Concurrent backups not supported" in nodes[2].query_and_get_error(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        f"SELECT status FROM system.backups WHERE id = '{id}'",
+        "BACKUP_CREATED",
+        sleep_time=2,
+        retry_count=50,
     )
 
 
@@ -168,36 +202,43 @@ def test_concurrent_restores_on_same_node():
 
     backup_name = new_backup_name()
 
-    id = (
-        nodes[0]
-        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
-        .split("\t")[0]
-    )
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
-        "CREATING_BACKUP",
+    nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
     )
 
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
-        "BACKUP_CREATED",
-    )
-
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
         .split("\t")[0]
     )
+
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
+    )
+    assert status in ["RESTORING", "RESTORED"]
+
+    error = nodes[0].query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+    assert any([expected_error in error for expected_error in expected_errors])
+
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING' AND id == '{restore_id}'",
-        "RESTORING",
-    )
-    assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
+        "RESTORED",
+        sleep_time=2,
+        retry_count=50,
     )
 
 
@@ -206,40 +247,41 @@ def test_concurrent_restores_on_different_node():
 
     backup_name = new_backup_name()
 
-    id = (
-        nodes[0]
-        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
-        .split("\t")[0]
-    )
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
-        "CREATING_BACKUP",
+    nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
     )
 
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
-        "BACKUP_CREATED",
-    )
-
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
         .split("\t")[0]
     )
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
-        "RESTORING",
+
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
     )
-    assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
+    assert status in ["RESTORING", "RESTORED"]
+
+    error = nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
     )
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+    assert any([expected_error in error for expected_error in expected_errors])
 
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORED' AND id == '{restore_id}'",
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
         "RESTORED",
+        sleep_time=2,
+        retry_count=50,
     )

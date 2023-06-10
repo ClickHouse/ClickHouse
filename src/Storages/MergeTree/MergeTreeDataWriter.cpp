@@ -280,23 +280,23 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
+                    false, block_size + 1, /*block_size_bytes=*/0, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
-                    partition_key_columns, block_size + 1);
+                    partition_key_columns, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
+                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column, block_size + 1);
+                    block, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
+                    block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
 
         UNREACHABLE();
@@ -464,11 +464,15 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
@@ -586,7 +590,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
     if (new_data_part->isStoredOnDisk())
     {

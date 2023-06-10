@@ -14,6 +14,8 @@
 #include <IO/Operators.h>
 
 #include <unistd.h>
+#include <bit>
+
 
 namespace DB
 {
@@ -34,7 +36,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = __builtin_bswap32(code);
+    int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -42,7 +44,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
+    return std::byteswap(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -144,6 +146,12 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
         factory.registerCommand(request_leader_command);
+
+        FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
+        factory.registerCommand(recalculate_command);
+
+        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
+        factory.registerCommand(clean_resources_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -513,6 +521,18 @@ String LogInfoCommand::run()
 String RequestLeaderCommand::run()
 {
     return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
+}
+
+String RecalculateCommand::run()
+{
+    keeper_dispatcher.recalculateStorageStats();
+    return "ok";
+}
+
+String CleanResourcesCommand::run()
+{
+    keeper_dispatcher.cleanResources();
+    return "ok";
 }
 
 }

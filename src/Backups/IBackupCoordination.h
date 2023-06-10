@@ -1,13 +1,15 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <optional>
 
 
 namespace DB
 {
 class Exception;
+struct BackupFileInfo;
+using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType;
+enum class UserDefinedSQLObjectType;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
 /// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
@@ -19,10 +21,10 @@ public:
     virtual ~IBackupCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
-    virtual void setError(const String & current_host, const Exception & exception) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual void setStage(const String & new_stage, const String & message) = 0;
+    virtual void setError(const Exception & exception) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -63,57 +65,21 @@ public:
     virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
-    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
+    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const = 0;
 
-    struct FileInfo
-    {
-        String file_name;
-
-        UInt64 size = 0;
-        UInt128 checksum{0};
-
-        /// for incremental backups
-        UInt64 base_size = 0;
-        UInt128 base_checksum{0};
-
-        /// Name of the data file.
-        String data_file_name;
-
-        /// Suffix of an archive if the backup is stored as a series of archives.
-        String archive_suffix;
-
-        /// Position in the archive.
-        UInt64 pos_in_archive = static_cast<UInt64>(-1);
-    };
+    /// Adds a path to a directory with user-defined SQL objects inside the backup.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
+    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
-    virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
+    virtual void addFileInfos(BackupFileInfos && file_infos) = 0;
+    virtual BackupFileInfos getFileInfos() const = 0;
+    virtual BackupFileInfos getFileInfosForAllHosts() const = 0;
 
-    void addFileInfo(const FileInfo & file_info)
-    {
-        bool is_data_file_required;
-        addFileInfo(file_info, is_data_file_required);
-    }
-
-    /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
-    virtual void updateFileInfo(const FileInfo & file_info) = 0;
-
-    virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
-    virtual bool hasFiles(const String & directory) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-
-    virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
-    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
-
-    /// Generates a new archive suffix, e.g. "001", "002", "003", ...
-    virtual String getNextArchiveSuffix() = 0;
-
-    /// Returns the list of all the archive suffixes which were generated.
-    virtual Strings getAllArchiveSuffixes() const = 0;
+    /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
+    virtual bool startWritingFile(size_t data_file_index) = 0;
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function

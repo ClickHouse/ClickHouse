@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).

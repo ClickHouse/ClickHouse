@@ -22,7 +22,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -127,7 +128,22 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
             try
             {
-                socket->connect(*it, connection_timeout);
+                if (async_callback)
+                {
+                    socket->connectNB(*it);
+                    while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                        async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+
+                    if (auto err = socket->impl()->socketError())
+                        socket->impl()->error(err); // Throws an exception
+
+                    socket->setBlocking(true);
+                }
+                else
+                {
+                    socket->connect(*it, connection_timeout);
+                }
+
                 current_resolved_address = *it;
                 break;
             }
@@ -162,14 +178,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
+        in->setAsyncCallback(async_callback);
 
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-
+        out->setAsyncCallback(async_callback);
         connected = true;
 
         sendHello();
-        receiveHello();
+        receiveHello(timeouts.handshake_timeout);
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -211,11 +227,28 @@ void Connection::disconnect()
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
-    out = nullptr; // can write to socket
+    std::exception_ptr finalize_exception;
+    try
+    {
+        // finalize() can write to socket and throw an exception.
+        if (out)
+            out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+    }
+    out = nullptr;
+
     if (socket)
         socket->close();
     socket = nullptr;
     connected = false;
+    nonce.reset();
+
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 
@@ -283,8 +316,10 @@ void Connection::sendAddendum()
 }
 
 
-void Connection::receiveHello()
+void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
+
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -324,11 +359,23 @@ void Connection::receiveHello()
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+        {
+            chassert(!nonce.has_value());
+
+            UInt64 read_nonce;
+            readIntBinary(read_nonce, *in);
+            nonce.emplace(read_nonce);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
     {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
@@ -506,7 +553,7 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -584,6 +631,9 @@ void Connection::sendQuery(
         {
 #if USE_SSL
             std::string data(salt);
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -593,8 +643,8 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
         else

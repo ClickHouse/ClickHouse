@@ -9,22 +9,24 @@
 #include <variant>
 #include <utility>
 
-
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
+#include <Poco/Event.h>
 
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
-#include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+#include <base/defines.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool_fwd.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NOT_IMPLEMENTED;
 }
 
 struct TaskRuntimeData;
@@ -61,7 +63,7 @@ struct TaskRuntimeData
     /// This scenario in not possible in reality.
     Poco::Event is_done{/*autoreset=*/false};
     /// This is equal to task->getPriority() not to do useless virtual calls in comparator
-    UInt64 priority{0};
+    Priority priority;
 
     /// By default priority queue will have max element at top
     static bool comparePtrByPriority(const TaskRuntimeDataPtr & lhs, const TaskRuntimeDataPtr & rhs)
@@ -96,6 +98,11 @@ public:
     void setCapacity(size_t count) { queue.set_capacity(count); }
     bool empty() { return queue.empty(); }
 
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
+
     static constexpr std::string_view name = "round_robin";
 
 private:
@@ -129,6 +136,11 @@ public:
 
     void setCapacity(size_t count) { buffer.reserve(count); }
     bool empty() { return buffer.empty(); }
+
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
 
     static constexpr std::string_view name = "shortest_task_first";
 
@@ -247,42 +259,11 @@ public:
         String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_)
-        : name(name_)
-        , threads_count(threads_count_)
-        , max_tasks_count(max_tasks_count_)
-        , metric(metric_)
-    {
-        if (max_tasks_count == 0)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
-
-        pending.setCapacity(max_tasks_count);
-        active.set_capacity(max_tasks_count);
-
-        pool.setMaxThreads(std::max(1UL, threads_count));
-        pool.setMaxFreeThreads(std::max(1UL, threads_count));
-        pool.setQueueSize(std::max(1UL, threads_count));
-
-        for (size_t number = 0; number < threads_count; ++number)
-            pool.scheduleOrThrowOnError([this] { threadFunction(); });
-    }
-
-    MergeTreeBackgroundExecutor(
-        String name_,
-        size_t threads_count_,
-        size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
-        std::string_view policy)
-        requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
-        : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_)
-    {
-        pending.updatePolicy(policy);
-    }
+        CurrentMetrics::Metric max_tasks_metric_,
+        std::string_view policy = {});
 
-    ~MergeTreeBackgroundExecutor()
-    {
-        wait();
-    }
+    ~MergeTreeBackgroundExecutor();
 
     /// Handler for hot-reloading
     /// Supports only increasing the number of threads and tasks, because
@@ -300,7 +281,6 @@ public:
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.
     void updateSchedulingPolicy(std::string_view new_policy)
-        requires requires(Queue queue) { queue.updatePolicy(new_policy); } // Because we use explicit template instantiation
     {
         std::lock_guard lock(mutex);
         pending.updatePolicy(new_policy);
@@ -311,6 +291,7 @@ private:
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
+    CurrentMetrics::Increment max_tasks_metric;
 
     void routine(TaskRuntimeDataPtr item);
 
@@ -323,7 +304,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     bool shutdown TSA_GUARDED_BY(mutex) = false;
-    ThreadPool pool;
+    std::unique_ptr<ThreadPool> pool;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 

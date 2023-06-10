@@ -17,7 +17,7 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL  --disabl
 
 expect ":) "
 send -- "insert into table function null() format TSV some trash here 123 \n 456\r"
-expect "EMPTY_LIST_OF_COLUMNS_PASSED"
+expect "CANNOT_PARSE_INPUT_ASSERTION_FAILED"
 expect ":) "
 
 send -- ""

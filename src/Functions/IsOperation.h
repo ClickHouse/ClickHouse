@@ -5,7 +5,9 @@ namespace DB
 
 /// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
+template <typename> struct BitCountImpl;
 template <typename> struct NegateImpl;
+template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;
 template <typename, typename> struct MinusImpl;
 template <typename, typename> struct MultiplyImpl;
@@ -22,9 +24,6 @@ template <typename, typename> struct LessOrEqualsOp;
 template <typename, typename> struct GreaterOrEqualsOp;
 template <typename, typename> struct BitHammingDistanceImpl;
 
-template <typename>
-struct SignImpl;
-
 template <template <typename, typename> typename Op1, template <typename, typename> typename Op2>
 struct IsSameOperation
 {
@@ -37,6 +36,7 @@ struct IsUnaryOperation
     static constexpr bool abs = std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
     static constexpr bool negate = std::is_same_v<Op<Int8>, NegateImpl<Int8>>;
     static constexpr bool sign = std::is_same_v<Op<Int8>, SignImpl<Int8>>;
+    static constexpr bool bit_count = std::is_same_v<Op<Int8>, BitCountImpl<Int8>>;
 };
 
 template <template <typename, typename> typename Op>

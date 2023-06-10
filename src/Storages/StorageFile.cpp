@@ -3,7 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ReadFromStorageProgress.h>
 
@@ -34,6 +34,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -50,6 +51,8 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <shared_mutex>
+#include <cmath>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -200,7 +203,19 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    /** But using mmap on server-side is unsafe for the following reasons:
+      * - concurrent modifications of a file will result in SIGBUS;
+      * - IO error from the device will result in SIGBUS;
+      * - recovery from this signal is not feasible even with the usage of siglongjmp,
+      *   as it might require stack unwinding from arbitrary place;
+      * - arbitrary slowdown due to page fault in arbitrary place in the code is difficult to debug.
+      *
+      * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
+      */
+
+    if (S_ISREG(file_stat.st_mode)
+        && context->getApplicationType() != Context::ApplicationType::SERVER
+        && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -368,8 +383,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (paths.empty())
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
-        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
-        return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
+        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
@@ -405,6 +419,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
 bool StorageFile::supportsSubsetOfColumns() const
 {
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+}
+
+bool StorageFile::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
+}
+
+bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -597,7 +621,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -606,8 +630,11 @@ public:
                 if (!read_buf)
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
+                const Settings & settings = context->getSettingsRef();
+                chassert(!storage->paths.empty());
+                const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -701,7 +728,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    const size_t max_num_streams)
 {
     if (use_table_fd)
     {
@@ -732,7 +759,8 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams > paths.size())
+    size_t num_streams = max_num_streams;
+    if (max_num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -927,6 +955,7 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
+            write_buf->finalize();
             throw;
         }
     }
@@ -1020,7 +1049,8 @@ private:
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context)
+    ContextPtr context,
+    bool /*async_insert*/)
 {
     if (format_name == "Distributed")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");

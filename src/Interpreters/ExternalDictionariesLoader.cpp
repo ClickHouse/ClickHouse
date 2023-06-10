@@ -85,6 +85,11 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
+void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    getDictionaryStructure(dictionary_name, query_context);
+}
+
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
     auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);

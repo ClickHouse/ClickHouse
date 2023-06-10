@@ -5,6 +5,10 @@
 namespace DB
 {
 
+template<typename T, typename ... U>
+concept is_any_of = (std::same_as<T, U> || ...);
+
+
 template <typename... T>
 concept OptionalArgument = requires(T &&...)
 {
