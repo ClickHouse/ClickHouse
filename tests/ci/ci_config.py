@@ -17,6 +17,7 @@ CI_CONFIG = {
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "coverity": {
             "compiler": "clang-16",
@@ -26,6 +27,7 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
             "official": False,
+            "comment": "A special build for coverity",
         },
         "package_aarch64": {
             "compiler": "clang-16-aarch64",
@@ -36,6 +38,7 @@ CI_CONFIG = {
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "package_asan": {
             "compiler": "clang-16",
@@ -44,6 +47,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "package_ubsan": {
             "compiler": "clang-16",
@@ -52,6 +56,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "package_tsan": {
             "compiler": "clang-16",
@@ -60,6 +65,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "package_msan": {
             "compiler": "clang-16",
@@ -68,6 +74,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "package_debug": {
             "compiler": "clang-16",
@@ -76,6 +83,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "Note: sparse checkout was used",
         },
         "binary_release": {
             "compiler": "clang-16",
@@ -84,6 +92,7 @@ CI_CONFIG = {
             "package_type": "binary",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_tidy": {
             "compiler": "clang-16",
@@ -93,6 +102,7 @@ CI_CONFIG = {
             "static_binary_name": "debug-amd64",
             "tidy": "enable",
             "with_coverage": False,
+            "comment": "clang-tidy is used for static analysis",
         },
         "binary_darwin": {
             "compiler": "clang-16-darwin",
@@ -102,6 +112,7 @@ CI_CONFIG = {
             "static_binary_name": "macos",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_aarch64": {
             "compiler": "clang-16-aarch64",
@@ -110,6 +121,7 @@ CI_CONFIG = {
             "package_type": "binary",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_aarch64_v80compat": {
             "compiler": "clang-16-aarch64-v80compat",
@@ -119,6 +131,7 @@ CI_CONFIG = {
             "static_binary_name": "aarch64v80compat",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "For ARMv8.1 and older",
         },
         "binary_freebsd": {
             "compiler": "clang-16-freebsd",
@@ -128,6 +141,7 @@ CI_CONFIG = {
             "static_binary_name": "freebsd",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_darwin_aarch64": {
             "compiler": "clang-16-darwin-aarch64",
@@ -137,6 +151,7 @@ CI_CONFIG = {
             "static_binary_name": "macos-aarch64",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_ppc64le": {
             "compiler": "clang-16-ppc64le",
@@ -146,6 +161,7 @@ CI_CONFIG = {
             "static_binary_name": "powerpc64le",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
         "binary_amd64_compat": {
             "compiler": "clang-16-amd64-compat",
@@ -155,6 +171,7 @@ CI_CONFIG = {
             "static_binary_name": "amd64compat",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "SSE2-only build",
         },
     },
     "builds_report_config": {

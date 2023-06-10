@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
+#include "Common/Priority.h"
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -56,10 +57,10 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 */
 static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
+    StorageMetadataPtr metadata_snapshot,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    const StorageMetadataPtr & table_metadata_snapshot,
     Poco::Logger * log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -114,7 +115,7 @@ static void splitAndModifyMutationCommands(
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
         /// can be deduced based on difference between part's schema and table schema.
-        for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
+        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             if (part_columns.has(rename_from))
             {
@@ -144,15 +145,16 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!table_metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
                     /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
                     /// But we don't know for sure what happened.
                     auto part_metadata_version = part->getMetadataVersion();
-                    auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
-                    if (table_metadata_version <= part_metadata_version)
+                    auto table_metadata_version = metadata_snapshot->getMetadataVersion();
+                    /// StorageMergeTree does not have metadata version
+                    if (table_metadata_version <= part_metadata_version && part->storage.supportsReplication())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
@@ -218,7 +220,7 @@ static void splitAndModifyMutationCommands(
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
         /// can be deduced based on difference between part's schema and table schema.
 
-        for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
+        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
@@ -960,7 +962,7 @@ public:
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1282,7 +1284,7 @@ public:
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1411,7 +1413,7 @@ public:
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1652,7 +1654,7 @@ MutateTask::MutateTask(
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
 
-    auto storage_snapshot = ctx->data->getStorageSnapshot(ctx->metadata_snapshot, context_);
+    auto storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
@@ -1747,6 +1749,7 @@ bool MutateTask::prepare()
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
+    context_for_reading->setSetting("apply_mutations_on_fly", false);
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
 
@@ -1799,20 +1802,25 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
-    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter,
-                                                    ctx->for_file_renames, ctx->metadata_snapshot, ctx->log);
+    MutationHelpers::splitAndModifyMutationCommands(
+        ctx->source_part, ctx->metadata_snapshot,
+        ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames, ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
     if (!ctx->for_interpreter.empty())
     {
+        /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
+        /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
+        MutationsInterpreter::Settings settings(true);
+        settings.apply_deleted_mask = false;
+
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+            *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter,
+            ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
-        /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
-        /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
-        ctx->interpreter->setApplyDeletedMask(false);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);

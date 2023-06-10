@@ -13,7 +13,7 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
     return {
         {"name", std::make_shared<DataTypeString>()},
         {"host", std::make_shared<DataTypeString>()},
-        {"port", std::make_shared<DataTypeString>()},
+        {"port", std::make_shared<DataTypeUInt16>()},
         {"index", std::make_shared<DataTypeUInt8>()},
         {"connected_time", std::make_shared<DataTypeDateTime>()},
         {"is_expired", std::make_shared<DataTypeUInt8>()},
@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
     const SelectQueryInfo &) const
 {
-    res_columns[0]->insert("default_zookeeper");
+    res_columns[0]->insert("default");
     res_columns[1]->insert(context->getZooKeeper()->getConnectedZooKeeperHost());
     res_columns[2]->insert(context->getZooKeeper()->getConnectedZooKeeperPort());
     res_columns[3]->insert(context->getZooKeeper()->getConnectedZooKeeperIndex());
@@ -37,7 +37,6 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     for (const auto & elem : context->getAuxiliaryZooKeepers())
     {
         res_columns[0]->insert(elem.first);
-        res_columns[1]->insert(elem.second->getConnectedZooKeeperHost());
         res_columns[1]->insert(elem.second->getConnectedZooKeeperHost());
         res_columns[2]->insert(elem.second->getConnectedZooKeeperPort());
         res_columns[3]->insert(elem.second->getConnectedZooKeeperIndex());

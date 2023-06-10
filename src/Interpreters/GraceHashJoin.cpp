@@ -611,6 +611,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
+    block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
     Block current_block;
