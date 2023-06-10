@@ -1,6 +1,5 @@
 ---
 slug: /en/sql-reference/table-functions/azure_blob_storage
-sidebar_position: 45
 sidebar_label: azure_blob_storage
 keywords: [azure blob storage]
 ---
@@ -67,4 +66,6 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 └─────────┘
 ```
 
- 
+**See Also**
+
+- [AzureBlogStorage Table Engine](/docs/en/engines/table-engines/integrations/azureBlobStorage.md)
