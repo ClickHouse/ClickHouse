@@ -727,6 +727,68 @@ void AsynchronousMetrics::update(TimePoint update_time)
         }
     }
 
+    Float64 max_cpu_cgroups = 0;
+    if (cgroupcpu_max)
+    {
+        try
+        {
+            cgroupcpu_max->rewind();
+
+            uint64_t quota = 0;
+            uint64_t period = 0;
+
+            std::string line;
+            readText(line, *cgroupcpu_max);
+
+            auto space = line.find(' ');
+
+            if (line.rfind("max", space) == std::string::npos)
+            {
+                auto field1 = line.substr(0, space);
+                quota = std::stoull(field1);
+            }
+
+            if (space != std::string::npos)
+            {
+                auto field2 = line.substr(space + 1);
+                period = std::stoull(field2);
+            }
+
+            if (quota > 0 && period > 0)
+                max_cpu_cgroups = static_cast<Float64>(quota) / period;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+    else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
+    {
+        try
+        {
+            cgroupcpu_cfs_quota->rewind();
+            cgroupcpu_cfs_period->rewind();
+
+            uint64_t quota = 0;
+            uint64_t period = 0;
+
+            tryReadText(quota, *cgroupcpu_cfs_quota);
+            tryReadText(period, *cgroupcpu_cfs_period);
+
+            if (quota > 0 && period > 0)
+                max_cpu_cgroups = static_cast<Float64>(quota) / period;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    if (max_cpu_cgroups > 0)
+    {
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+    }
+
     if (proc_stat)
     {
         try
@@ -930,60 +992,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
             new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    if (cgroupcpu_max)
-    {
-        try
-        {
-            cgroupcpu_max->rewind();
-
-            uint64_t quota = 0;
-            uint64_t period = 0;
-
-            std::string line;
-            readText(line, *cgroupcpu_max);
-
-            auto space = line.find(' ');
-
-            if (line.rfind("max", space) == std::string::npos)
-            {
-                auto field1 = line.substr(0, space);
-                quota = std::stoull(field1);
-            }
-
-            if (space != std::string::npos)
-            {
-                auto field2 = line.substr(space + 1);
-                period = std::stoull(field2);
-            }
-
-            new_values["CGroupMaxCPU"] = { static_cast<Float64>(quota) / period, "The maximum number of CPU cores according to CGroups."};
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-    else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
-    {
-        try
-        {
-            cgroupcpu_cfs_quota->rewind();
-            cgroupcpu_cfs_period->rewind();
-
-            uint64_t quota = 0;
-            uint64_t period = 0;
-
-            tryReadText(quota, *cgroupcpu_cfs_quota);
-            tryReadText(period, *cgroupcpu_cfs_period);
-
-            new_values["CGroupMaxCPU"] = { static_cast<Float64>(quota) / period, "The maximum number of CPU cores according to CGroups."};
         }
         catch (...)
         {
