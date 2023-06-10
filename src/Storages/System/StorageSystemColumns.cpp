@@ -75,7 +75,7 @@ public:
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , client_info_interface(context->getClientInfo().interface)
-        , use_mysql_types(context->getSettingsRef().output_format_mysql_types)
+        , use_mysql_types(context->getSettingsRef().use_mysql_types_in_show_columns)
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -133,7 +133,7 @@ protected:
 
             auto get_type_name = [this](const IDataType& type) -> std::string
             {
-                // Check if the output_format_mysql_types setting is enabled and client is connected via MySQL protocol
+                // Check if the use_mysql_types_in_show_columns setting is enabled and client is connected via MySQL protocol
                 if (use_mysql_types && client_info_interface == DB::ClientInfo::Interface::MYSQL)
                 {
                     return type.getSQLCompatibleName();
