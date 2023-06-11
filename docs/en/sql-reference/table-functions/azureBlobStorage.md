@@ -53,7 +53,7 @@ SELECT * FROM azureBlobStorage('http://azurite1:10000/devstoreaccount1',
 └───────────┴────────────┴───────────┘
 ```
 
-or with storage_account_url
+or using connection_string
 
 ```sql
 SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;EndPointSuffix=core.windows.net',
@@ -68,4 +68,4 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 **See Also**
 
-- [AzureBlogStorage Table Engine](/docs/en/engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](/docs/en/engines/table-engines/integrations/azureBlobStorage.md)
