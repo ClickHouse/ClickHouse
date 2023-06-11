@@ -28,20 +28,12 @@ SELECT * FROM alter_compression_codec ORDER BY id;
 OPTIMIZE TABLE alter_compression_codec FINAL;
 SELECT * FROM alter_compression_codec ORDER BY id;
 
-SET enable_deflate_qpl_codec = 1;
-ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(DEFLATE_QPL);
+SET allow_suspicious_codecs = 1;
+ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(ZSTD, LZ4HC, LZ4, LZ4, NONE);
 SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 'alter_compression_codec' AND name = 'alter_column';
 
 INSERT INTO alter_compression_codec VALUES('2018-01-01', 7, '7');
 INSERT INTO alter_compression_codec VALUES('2018-01-01', 8, '8');
-SELECT * FROM alter_compression_codec ORDER BY id;
-
-SET allow_suspicious_codecs = 1;
-ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(ZSTD, LZ4HC, LZ4, LZ4, DEFLATE_QPL, NONE);
-SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 'alter_compression_codec' AND name = 'alter_column';
-
-INSERT INTO alter_compression_codec VALUES('2018-01-01', 9, '9');
-INSERT INTO alter_compression_codec VALUES('2018-01-01', 10, '10');
 OPTIMIZE TABLE alter_compression_codec FINAL;
 SELECT * FROM alter_compression_codec ORDER BY id;
 
@@ -62,17 +54,15 @@ ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01
 
 ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(ZSTD(100)); -- { serverError 433 }
 
-ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(DEFLATE_QPL(100)); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
-
 DROP TABLE IF EXISTS alter_bad_codec;
 
 DROP TABLE IF EXISTS large_alter_table_00804;
 DROP TABLE IF EXISTS store_of_hash_00804;
 
 CREATE TABLE large_alter_table_00804 (
-    somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), DEFLATE_QPL),
-    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, DEFLATE_QPL),
-    data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4, DEFLATE_QPL)
+    somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
+    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
+    data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
 INSERT INTO large_alter_table_00804 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
@@ -81,7 +71,7 @@ CREATE TABLE store_of_hash_00804 (hash UInt64) ENGINE = Memory();
 
 INSERT INTO store_of_hash_00804 SELECT sum(cityHash64(*)) FROM large_alter_table_00804;
 
-ALTER TABLE large_alter_table_00804 MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD, DEFLATE_QPL);
+ALTER TABLE large_alter_table_00804 MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
 
 OPTIMIZE TABLE large_alter_table_00804;
 
