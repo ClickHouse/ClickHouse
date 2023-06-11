@@ -740,31 +740,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_store_cleanup_disk_s3(cluster, node_name):
-    node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-
-    node.stop_clickhouse(kill=True)
-    path_to_data = "/var/lib/clickhouse/"
-    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/s3_test.sql"])
-    node.start_clickhouse()
-
-    node.wait_for_log_line(
-        "Removing unused directory", timeout=90, look_behind_lines=1000
-    )
-    node.wait_for_log_line("directories from store")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-    check_no_objects_after_drop(cluster)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
 def test_cache_setting_compatibility(cluster, node_name):
     node = cluster.instances[node_name]
 

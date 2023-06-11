@@ -69,6 +69,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
+    format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -363,7 +364,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             settings.max_download_buffer_size);
 
         res = wrapInParallelReadBufferIfSupported(
-            buf, threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
+            buf, threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
             max_download_threads, settings.max_download_buffer_size, file_size);
     }
 
