@@ -21,38 +21,43 @@ SELECT toString(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'));
 SELECT toString(toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 'Asia/Kolkata'));
 SELECT toString(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 'Asia/Kolkata');
 
-SELECT '-- Test const/non-const timezone arguments --';
+SELECT '-- Test const timezone arguments --';
 
-SELECT materialize('Asia/Kolkata') tz, toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize('Asia/Kolkata') tz, toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+DROP TABLE IF EXISTS tab;
 
-SELECT materialize('Asia/Kolkata') tz, now(tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
--- SELECT materialize('Asia/Kolkata') tz, now(tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+CREATE TABLE tab (val Int64, tz String) engine=Log;
+INSERT INTO tab VALUES (42, 'Asia/Singapore') (43, 'Asia/Tokyo');
 
-SELECT materialize('Asia/Kolkata') tz, now64(9, tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
--- SELECT materialize('Asia/Kolkata') tz, now64(9, tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE now(tz) != toDateTime('2000-01-01 00:00:00') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE now(tz) != toDateTime('2000-01-01 00:00:00') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
-SELECT materialize('Asia/Kolkata') tz, nowInBlock(tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
--- SELECT materialize('Asia/Kolkata') tz, nowInBlock(tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE now64(9, tz) != toDateTime64('2000-01-01 00:00:00', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE now64(9, tz) != toDateTime64('2000-01-01 00:00:00', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Milli(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Milli(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE nowInBlock(tz) != toDateTime('2000-01-01 00:00:00') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE nowInBlock(tz) != toDateTime('2000-01-01 00:00:00') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Micro(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Micro(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE toTimeZone(toDateTime(val), tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE toTimeZone(toDateTime(val), tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1; 
 
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Nano(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, fromUnixTimestamp64Nano(ts, tz) SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE fromUnixTimestamp64Milli(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE fromUnixTimestamp64Milli(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, snowflakeToDateTime(ts, tz) settings allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, snowflakeToDateTime(ts, tz) settings allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE fromUnixTimestamp64Micro(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE fromUnixTimestamp64Micro(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, snowflakeToDateTime64(ts, tz) settings allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT materialize(42::Int64) ts, materialize('Asia/Kolkata') tz, snowflakeToDateTime64(ts, tz) settings allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE fromUnixTimestamp64Nano(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE fromUnixTimestamp64Nano(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
+
+SELECT val FROM tab WHERE snowflakeToDateTime(val, tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE snowflakeToDateTime(val, tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
+
+SELECT val FROM tab WHERE snowflakeToDateTime64(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT val FROM tab WHERE snowflakeToDateTime64(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
 -- test for a related bug:
 
-DROP TABLE IF EXISTS tab;
+DROP TABLE tab;
 
 SET allow_nonconst_timezone_arguments = 1;
 

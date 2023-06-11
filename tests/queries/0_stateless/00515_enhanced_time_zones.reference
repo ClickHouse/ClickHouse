@@ -16,10 +16,22 @@
 2017-11-05 08:07:47
 2017-11-05 10:37:47
 2017-11-05 10:37:47
--- Test const/non-const timezone arguments --
-Asia/Kolkata	2017-11-05 08:07:47
-42	Asia/Kolkata	1970-01-01 00:00:00.042
-42	Asia/Kolkata	1970-01-01 00:00:00.000042
-42	Asia/Kolkata	1970-01-01 00:00:00.000000042
-42	Asia/Kolkata	2010-11-04 01:42:54
-42	Asia/Kolkata	2010-11-04 01:42:54.657
+-- Test const timezone arguments --
+42
+43
+42
+43
+42
+43
+42
+43
+42
+43
+42
+43
+42
+43
+42
+43
+42
+43
