@@ -91,7 +91,8 @@ def test_storage_with_multidirectory_glob(started_cluster):
         hdfs_api.write_data(f"/multiglob/p{i}/path{i}/postfix/data{i}", f"File{i}\t{i}{i}\n")
         assert hdfs_api.read_data(f"/multiglob/p{i}/path{i}/postfix/data{i}") == f"File{i}\t{i}{i}\n"
 
-    assert node1.query("SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p1/path1,p2/path2}/postfix/data{1,2}', TSV)") == f"\File1\t11\nFile2\t22\n"
+    r = node1.query("SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p1/path1,p2/path2}/postfix/data{1,2}', TSV)") 
+    assert (r == f"File1\t11\nFile2\t22\n") or (r == f"File2\t22\nFile1\t11\n")
 
 
 def test_read_write_table(started_cluster):
