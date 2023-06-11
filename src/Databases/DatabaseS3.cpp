@@ -67,14 +67,8 @@ void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_stora
 
 std::string DatabaseS3::getFullUrl(const std::string & name) const
 {
-    try
-    {
-        S3::URI uri(name);
-    }
-    catch (...)
-    {
+    if (!config.url_prefix.empty())
         return (fs::path(config.url_prefix) / name).string();
-    }
 
     return name;
 }
@@ -179,6 +173,12 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
     {
         return nullptr;
     }
+}
+
+bool DatabaseS3::empty() const
+{
+    std::lock_guard lock(mutex);
+    return loaded_tables.empty();
 }
 
 ASTPtr DatabaseS3::getCreateDatabaseQuery() const

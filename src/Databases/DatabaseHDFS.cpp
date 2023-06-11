@@ -170,6 +170,12 @@ StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) c
     }
 }
 
+bool DatabaseHDFS::empty() const
+{
+    std::lock_guard lock(mutex);
+    return loaded_tables.empty();
+}
+
 ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
 {
     auto settings = getContext()->getSettingsRef();

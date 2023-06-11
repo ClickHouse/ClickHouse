@@ -43,7 +43,10 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    bool empty() const override { return true; }
+    // Contains only temporary tables
+    bool shouldBeEmptyOnDetach() const override { return false; }
+
+    bool empty() const override;
 
     bool isReadOnly() const override { return true; }
 

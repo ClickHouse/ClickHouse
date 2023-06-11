@@ -94,13 +94,31 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     return true;
 }
 
-bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
+StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) const
 {
+    StoragePtr table = nullptr;
     {
         std::lock_guard lock(mutex);
-        if (loaded_tables.find(name) != loaded_tables.end())
-            return true;
+        auto it = loaded_tables.find(name);
+        if (it != loaded_tables.end())
+            table = it->second;
     }
+
+    // invalidate cache if file no longer exists
+    if (table && !fs::exists(getTablePath(name)))
+    {
+        std::lock_guard lock(mutex);
+        loaded_tables.erase(name);
+        return nullptr;
+    }
+
+    return table;
+}
+
+bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
+{
+    if (tryGetTableFromCache(name))
+        return true;
 
     fs::path table_file_path(getTablePath(name));
 
@@ -109,13 +127,9 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_) const
 {
-    // Check if the table exists in the loaded tables map
-    {
-        std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(name);
-        if (it != loaded_tables.end())
-            return it->second;
-    }
+    // Check if table exists in loaded tables map
+    if (auto table = tryGetTableFromCache(name))
+        return table;
 
     auto table_path = getTablePath(name);
 
@@ -163,6 +177,12 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
 
         throw;
     }
+}
+
+bool DatabaseFilesystem::empty() const
+{
+    std::lock_guard lock(mutex);
+    return loaded_tables.empty();
 }
 
 ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
