@@ -8,8 +8,6 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <mutex>
 
@@ -94,6 +92,7 @@ public:
         const RangesInDataParts & parts,
         const StorageSnapshotPtr & storage_snapshot,
         std::vector<bool> & is_part_on_remote_disk,
+        bool & do_not_steal_tasks,
         bool & predict_block_size_bytes,
         const Names & column_names,
         const Names & virtual_column_names,
@@ -118,7 +117,6 @@ private:
     RangesInDataParts parts_ranges;
     bool predict_block_size_bytes;
     bool do_not_steal_tasks;
-    bool merge_tree_use_const_size_tasks_for_remote_reading = false;
 
     std::vector<PerPartParams> per_part_params;
     std::vector<bool> is_part_on_remote_disk;
@@ -166,6 +164,7 @@ private:
 class MergeTreeReadPoolParallelReplicas : public IMergeTreeReadPool
 {
 public:
+
     MergeTreeReadPoolParallelReplicas(
         StorageSnapshotPtr storage_snapshot_,
         size_t threads_,
@@ -189,7 +188,7 @@ public:
         , parts_ranges(std::move(parts_))
     {
         MergeTreeReadPool::fillPerPartInfo(
-            parts_ranges, storage_snapshot, is_part_on_remote_disk,
+            parts_ranges, storage_snapshot, is_part_on_remote_disk, do_not_steal_tasks,
             predict_block_size_bytes, column_names, virtual_column_names, prewhere_info,
             actions_settings, reader_settings, per_part_params);
 
@@ -226,6 +225,7 @@ private:
     const Names virtual_column_names;
     RangesInDataParts parts_ranges;
 
+    bool do_not_steal_tasks = false;
     bool predict_block_size_bytes = false;
     std::vector<bool> is_part_on_remote_disk;
     std::vector<MergeTreeReadPool::PerPartParams> per_part_params;

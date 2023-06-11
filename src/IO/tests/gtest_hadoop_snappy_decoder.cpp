@@ -14,7 +14,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 using namespace DB;
 TEST(HadoopSnappyDecoder, repeatNeedMoreInput)
 {

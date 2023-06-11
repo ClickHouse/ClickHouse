@@ -14,9 +14,8 @@ sidebar_label: SETTING
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-:::note
-这些查询只能应用于 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 表。
-:::
+!!! note "注意"
+    这些查询只能应用于 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 表。
 
 
 ## 修改设置 {#alter_modify_setting}

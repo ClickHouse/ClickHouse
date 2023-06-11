@@ -14,7 +14,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
 

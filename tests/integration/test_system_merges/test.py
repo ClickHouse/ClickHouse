@@ -171,6 +171,7 @@ def test_mutation_simple(started_cluster, replicated):
     starting_block = 0 if replicated else 1
 
     try:
+
         for node in nodes:
             node.query(
                 f"create table {name} (a Int64) engine={engine} order by tuple()"

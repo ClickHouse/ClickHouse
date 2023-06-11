@@ -15,12 +15,7 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    post_commit_status,
-    update_mergeable_check,
-)
+from commit_status_helper import post_commit_status, update_mergeable_check
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
@@ -28,6 +23,7 @@ from github_helper import GitHub
 from git_helper import git_runner
 from pr_info import PRInfo
 from report import TestResults, read_test_results
+from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
@@ -152,12 +148,11 @@ def main():
     if args.push:
         checkout_head(pr_info)
 
-    gh = GitHub(get_best_robot_token(), create_cache_dir=False)
-    commit = get_commit(gh, pr_info.sha)
+    gh = GitHub(get_best_robot_token(), per_page=100, create_cache_dir=False)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
-    rerun_helper = RerunHelper(commit, NAME)
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         # Finish with the same code as previous
@@ -195,7 +190,7 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

@@ -3,10 +3,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -16,33 +13,22 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <Storages/StorageDummy.h>
-
 #include <Interpreters/Context.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Planner/PlannerActionsVisitor.h>
-#include <Planner/CollectTableExpressionData.h>
-#include <Planner/CollectSets.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
@@ -107,10 +93,7 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
+    auto result_ast = query_node_typed.toAST();
 
     while (true)
     {
@@ -202,9 +185,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
-    const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context)
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & input_columns, const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
@@ -355,132 +336,25 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
-    const ContextPtr & context,
-    ResultReplacementMap * result_replacement_map)
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
 {
-    auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
-
-    for (auto & table_expression : table_expressions)
-    {
-        auto * table_node = table_expression->as<TableNode>();
-        auto * table_function_node = table_expression->as<TableFunctionNode>();
-        if (!table_node && !table_function_node)
-            continue;
-
-        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-            storage_snapshot->metadata->getColumns());
-        auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
-
-        if (result_replacement_map)
-            result_replacement_map->emplace(table_expression, dummy_table_node);
-
-        replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
-    }
-
-    return query_node->cloneAndReplace(replacement_map);
-}
-
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto projection_columns = columns;
-
-    QueryTreeNodes subquery_projection_nodes;
-    subquery_projection_nodes.reserve(projection_columns.size());
-
-    for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
-
-    if (subquery_projection_nodes.empty())
-    {
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        projection_columns.push_back({"1", std::move(constant_data_type)});
-    }
-
-    auto context_copy = Context::createCopy(context);
-    updateContextForSubqueryExecution(context_copy);
-
-    auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
-
-    query_node->resolveProjectionColumns(projection_columns);
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-    query_node->getJoinTree() = table_expression;
-    query_node->setIsSubquery(true);
-
-    return query_node;
-}
-
-SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
-{
-    SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
-    select_query_info.query_tree = query_tree;
-    select_query_info.planner_context = planner_context;
-    return select_query_info;
-}
-
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
-{
-    const auto & query_context = planner_context->getQueryContext();
-
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
-
-    QueryAnalysisPass query_analysis_pass(table_expression);
-    query_analysis_pass.run(filter_query_tree, query_context);
-
-    if (table_expression_required_names_without_filter.empty())
-    {
-        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-        const auto & table_expression_names = table_expression_data.getColumnNames();
-        table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
-    }
-
-    collectSourceColumns(filter_query_tree, planner_context);
-    collectSets(filter_query_tree, *planner_context);
-
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
-
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
-    if (expression_nodes.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Filter actions must return single output node. Actual {}",
-            expression_nodes.size());
-
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
-    filter_actions_outputs = std::move(expression_nodes);
-
-    std::string filter_node_name = filter_actions_outputs[0]->result_name;
-    bool remove_filter_column = true;
-
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
-        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
-            filter_actions_outputs.push_back(filter_input_node);
-
-    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
-}
-
-ASTPtr parseAdditionalResultFilter(const Settings & settings)
-{
-    const String & additional_result_filter = settings.additional_result_filter;
-    if (additional_result_filter.empty())
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
         return {};
 
-    ParserExpression parser;
-    auto additional_result_filter_ast = parseQuery(
-                parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
-                "additional result filter", settings.max_query_size, settings.max_parser_depth);
-    return additional_result_filter_ast;
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 }

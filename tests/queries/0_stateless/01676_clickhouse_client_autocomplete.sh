@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ubsan
+# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,9 +34,9 @@ set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
-    -i \$any_spawn_id eof { exp_continue }
+    eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    -i \$any_spawn_id timeout { exit 1 }
+    timeout { exit 1 }
 }
 
 spawn bash -c "$*"
@@ -89,6 +89,8 @@ client_compwords_positive=(
     clusterAllReplicas
     # system.data_type_families
     SimpleAggregateFunction
+    # system.merge_tree_settings
+    write_ahead_log_interval_ms_to_fsync
     # system.settings
     max_concurrent_queries_for_all_users
     # system.clusters

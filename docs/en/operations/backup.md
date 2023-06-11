@@ -1,6 +1,5 @@
 ---
 slug: /en/operations/backup
-description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
 ---
 
 # Backup and Restore
@@ -30,7 +29,7 @@ description: In order to effectively mitigate possible human errors, you should 
 ```
 
 :::note ALL
-`ALL` is only applicable to the `RESTORE` command prior to version 23.4 of Clickhouse.
+`ALL` is only applicable to the `RESTORE` command.
 :::
 
 ## Background
@@ -214,7 +213,7 @@ To write backups to an S3 bucket you need three pieces of information:
   for example `Abc+123`
 
 :::note
-Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
+Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/configuring-s3-for-clickhouse-use.md), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
 :::
 
 The destination for a backup will be specified like this:
@@ -331,7 +330,7 @@ It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the
             <s3>
                 <volumes>
                     <main>
-                        <disk>s3_plain</disk>
+                        <disk>s3</disk>
                     </main>
                 </volumes>
             </s3>
@@ -383,19 +382,3 @@ Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...
 For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
 A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-
-## Settings to disallow concurrent backup/restore
-
-To disallow concurrent backup/restore, you can use these settings respectively.
-
-```xml
-<clickhouse>
-    <backups>
-        <allow_concurrent_backups>false</allow_concurrent_backups>
-        <allow_concurrent_restores>false</allow_concurrent_restores>
-    </backups>
-</clickhouse>
-```
-
-The default value for both is true, so by default concurrent backup/restores are allowed.
-When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.

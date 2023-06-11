@@ -5,10 +5,15 @@
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
+
+#if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
+#endif
 
 namespace Poco
 {
@@ -34,13 +39,11 @@ struct AzureObjectStorageSettings
     {
     }
 
-    AzureObjectStorageSettings() = default;
-
-    size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek = 1024 * 1024;
-    size_t max_single_read_retries = 3;
-    size_t max_single_download_retries = 3;
-    int list_object_keys_size = 1000;
+    size_t max_single_part_upload_size; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
+    uint64_t min_bytes_for_seek;
+    size_t max_single_read_retries;
+    size_t max_single_download_retries;
+    int list_object_keys_size;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -56,10 +59,6 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);
-
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
-
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
@@ -84,8 +83,11 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
+
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;

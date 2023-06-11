@@ -291,7 +291,7 @@ public:
             ssize_t remain_byte = src.getElementSize() - offset_byte;
             if (length < 0)
             {
-                length_byte = std::max(remain_byte + (length / word_size), 0z);
+                length_byte = std::max(remain_byte + (length / word_size), static_cast<ssize_t>(0));
                 over_bit = word_size + (length % word_size);
                 if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                     length_byte = 0;
@@ -330,7 +330,7 @@ public:
             size_t size = src.getElementSize();
             if (length < 0)
             {
-                length_byte = std::max(static_cast<ssize_t>(offset_byte) + (length / word_size), 0z);
+                length_byte = std::max(static_cast<ssize_t>(offset_byte) + (length / word_size), static_cast<ssize_t>(0));
                 over_bit = word_size + (length % word_size);
                 if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                     length_byte = 0;
@@ -395,7 +395,7 @@ public:
                 }
                 else
                 {
-                    length_byte = std::max(remain_byte + (static_cast<ssize_t>(length) / word_size), 0z);
+                    length_byte = std::max(remain_byte + (static_cast<ssize_t>(length) / word_size), static_cast<ssize_t>(0));
                     over_bit = word_size + (length % word_size);
                     if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                         length_byte = 0;

@@ -361,25 +361,19 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
                     error_msg);
         }
-        else if (match_result == EXACT)
+        else if (match_result == EXACT && !is_node_empty(node))
         {
-            if (!is_node_empty(node))
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
             {
-                if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
-                {
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
-                    node = KeeperStorage::Node{};
-                }
-                else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "{}. Ignoring it can lead to data loss. "
-                        "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                        error_msg);
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                node = KeeperStorage::Node{};
             }
-
-            // we always ignore the written size for this node
-            node.recalculateSize();
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
         }
 
         storage.container.insertOrReplace(path, node);
@@ -396,7 +390,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             auto parent_path = parentPath(itr.key);
             storage.container.updateValue(
-                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path), /*update_size*/ version < SnapshotVersion::V4); });
+                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
 

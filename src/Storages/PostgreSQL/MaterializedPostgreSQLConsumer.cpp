@@ -2,7 +2,7 @@
 
 #include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>

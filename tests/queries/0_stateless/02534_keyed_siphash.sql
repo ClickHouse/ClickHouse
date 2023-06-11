@@ -269,15 +269,6 @@ select sipHash64Keyed(toUInt64(0), '1'); -- { serverError 48 }
 select sipHash128Keyed(toUInt64(0), '1'); -- { serverError 48 }
 
 select hex(sipHash64());
-SELECT hex(sipHash128()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128()) = '1CE422FEE7BD8DE20000000000000000';
+select hex(sipHash128());
 select hex(sipHash64Keyed());
-SELECT hex(sipHash128Keyed()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128Keyed()) = '1CE422FEE7BD8DE20000000000000000';
-
-SELECT 'Check bug with hashing of const integer values';
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (key Tuple(UInt64, UInt64), val UInt64) ENGINE=Memory;
-INSERT INTO tab VALUES ((2, 2), 4);
--- these two statements must produce the same result
-SELECT sipHash64Keyed(key, val) FROM tab;
-SELECT sipHash64Keyed(key, 4::UInt64) FROM tab;
-DROP TABLE tab;
+select hex(sipHash128Keyed());

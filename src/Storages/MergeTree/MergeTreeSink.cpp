@@ -13,20 +13,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-struct MergeTreeSink::DelayedChunk
-{
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        UInt64 elapsed_ns;
-        String block_dedup_token;
-        ProfileEvents::Counters part_counters;
-    };
-
-    std::vector<Partition> partitions;
-};
-
-
 MergeTreeSink::~MergeTreeSink() = default;
 
 MergeTreeSink::MergeTreeSink(
@@ -39,7 +25,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
 {
 }
 
@@ -54,6 +40,20 @@ void MergeTreeSink::onFinish()
 {
     finishDelayedChunk();
 }
+
+struct MergeTreeSink::DelayedChunk
+{
+    struct Partition
+    {
+        MergeTreeDataWriter::TemporaryPart temp_part;
+        UInt64 elapsed_ns;
+        String block_dedup_token;
+        ProfileEvents::Counters part_counters;
+    };
+
+    std::vector<Partition> partitions;
+};
+
 
 void MergeTreeSink::consume(Chunk chunk)
 {

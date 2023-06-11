@@ -2,12 +2,12 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
+#include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/CurrentMetrics.h>
-#include <IO/WriteBufferFromString.h>
+#include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -16,12 +16,6 @@
 
 #include <deque>
 #include <atomic>
-
-namespace CurrentMetrics
-{
-    extern const Metric ParallelFormattingOutputFormatThreads;
-    extern const Metric ParallelFormattingOutputFormatThreadsActive;
-}
 
 namespace DB
 {
@@ -80,7 +74,7 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
+        , pool(params.max_threads_for_parallel_formatting)
 
     {
         LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
@@ -269,10 +263,10 @@ private:
     }
 
     /// Collects all temporary buffers into main WriteBuffer.
-    void collectorThreadFunction(const ThreadGroupPtr & thread_group);
+    void collectorThreadFunction(const ThreadGroupStatusPtr & thread_group);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group);
+    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group);
 
     void setRowsBeforeLimit(size_t rows_before_limit) override
     {

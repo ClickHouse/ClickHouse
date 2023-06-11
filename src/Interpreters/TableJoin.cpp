@@ -14,8 +14,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -494,6 +492,10 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     {
         if (clauses.size() != 1)
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join over multiple keys is not supported");
+
+        auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
+        if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join over right table Nullable column is not implemented");
     }
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
@@ -760,13 +762,6 @@ bool TableJoin::allowParallelHashJoin() const
     if (isSpecialStorage() || !oneDisjunct())
         return false;
     return true;
-}
-
-ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
-{
-    ASTPtr expression_list = rightKeysList();
-    auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 }

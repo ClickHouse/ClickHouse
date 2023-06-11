@@ -11,10 +11,6 @@
 #include <Common/UTF8Helpers.h>
 #include <base/unaligned.h>
 
-#ifdef __SSE4_1__
-    #include <smmintrin.h>
-#endif
-
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
@@ -430,10 +426,6 @@ public:
             return haystack;
 
         const auto * haystack_end = haystack + haystack_size;
-
-#ifdef __SSE4_1__
-        return fallback_searcher.search(haystack, haystack_end);
-#endif
 
         if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);

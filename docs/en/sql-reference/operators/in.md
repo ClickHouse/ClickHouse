@@ -158,7 +158,7 @@ Now let’s examine a query with IN:
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
-- Calculation of the intersection of audiences of two sites.
+-   Calculation of the intersection of audiences of two sites.
 
 This query will be sent to all remote servers as
 
@@ -222,7 +222,7 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 ### Distributed Subqueries and max_rows_in_set
 
-You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is transferred during distributed queries. 
+You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is tranferred during distributed queries. 
 
 This is specially important if the  `global in` query returns a large amount of data. Consider the following sql - 
 ```sql
@@ -233,9 +233,8 @@ If `some_predicate` is not selective enough, it will return large amount of data
 
 ### Distributed Subqueries and max_parallel_replicas
 
-When [max_parallel_replicas](#settings-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
+When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
 
-For example, the following:
 ```sql
 SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
 SETTINGS max_parallel_replicas=3
@@ -248,12 +247,8 @@ SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM
 SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 ```
 
-where M is between 1 and 3 depending on which replica the local query is executing on.
+where M is between 1 and 3 depending on which replica the local query is executing on. These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
 
-These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
-
-Therefore adding the [max_parallel_replicas](#settings-max_parallel_replicas) setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
+Therefore adding the max_parallel_replicas setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
 
 One workaround if local_table_2 does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
-
-If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.

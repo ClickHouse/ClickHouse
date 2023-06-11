@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
-#include <Core/TypeId.h>
+#include <Core/Types.h>
 
 #include "config.h"
 
@@ -441,12 +441,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
     }
 
-    /// Returns ratio of values in column, that are equal to default value of column.
+    /// Returns ration of values in column, that equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
     [[nodiscard]] virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
-
-    /// Returns number of values in column, that are equal to default value of column.
-    [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -586,9 +583,6 @@ protected:
     /// Template is to devirtualize calls to 'isDefaultAt' method.
     template <typename Derived>
     double getRatioOfDefaultRowsImpl(double sample_ratio) const;
-
-    template <typename Derived>
-    UInt64 getNumberOfDefaultRowsImpl() const;
 
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;

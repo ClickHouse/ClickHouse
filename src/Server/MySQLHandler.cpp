@@ -22,7 +22,6 @@
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 #include "config_version.h"
 
@@ -340,10 +339,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
         {
-            if (my_prev)
-                my_prev(progress);
+            if (prev)
+                prev(progress);
 
             affected_rows += progress.written_rows;
         });
@@ -353,15 +352,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const QueryResultDetails & details)
+        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
         {
-            if (details.format)
-            {
-                if (*details.format != "MySQLWire")
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-
-                with_output = true;
-            }
+            if (format != "MySQLWire")
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+            with_output = true;
         };
 
         executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);

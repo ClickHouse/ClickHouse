@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     QueryTreeNodePtr right_table_expression_,
     QueryTreeNodePtr join_expression_,
@@ -99,37 +94,23 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
     return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
 }
 
-ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr JoinNode::toASTImpl() const
 {
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index], options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index]);
 
     size_t join_table_index = tables_in_select_query_ast->children.size();
 
     auto join_ast = toASTTableJoin();
 
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[right_table_expression_child_index], options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[right_table_expression_child_index]);
 
     auto & table_element = tables_in_select_query_ast->children.at(join_table_index)->as<ASTTablesInSelectQueryElement &>();
     table_element.children.push_back(std::move(join_ast));
     table_element.table_join = table_element.children.back();
 
     return tables_in_select_query_ast;
-}
-
-void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
-{
-    if (kind != JoinKind::Cross && kind != JoinKind::Comma)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rewrite {} to INNER JOIN, expected CROSS", toString(kind));
-
-    if (children[join_expression_child_index])
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join expression is expected to be empty for CROSS JOIN, got '{}'",
-            children[join_expression_child_index]->formatConvertedASTForErrorMessage());
-
-    kind = JoinKind::Inner;
-    strictness = JoinStrictness::All;
-    children[join_expression_child_index] = join_expression_;
 }
 
 }

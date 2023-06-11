@@ -13,12 +13,12 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 #include "config.h"
 #include "config_version.h"
 
-#if USE_SENTRY && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
+#if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
 
 #    include <sentry.h>
 #    include <cstdio>

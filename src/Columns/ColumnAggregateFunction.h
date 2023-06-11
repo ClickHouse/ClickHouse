@@ -220,12 +220,7 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        return 0.0;
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return 0;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction");
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override

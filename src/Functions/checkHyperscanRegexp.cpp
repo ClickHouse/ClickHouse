@@ -48,12 +48,12 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
     re2_st::StringPiece haystack(regexp.data(), regexp.size());
     re2_st::StringPiece matches[2];
     size_t start_pos = 0;
-    while (start_pos < haystack.size())
+    while (start_pos < regexp.size())
     {
-        if (searcher_one_repeat.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 2))
+        if (searcher_one_repeat.Match(haystack, start_pos, regexp.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 2))
         {
             const auto & match = matches[0];
-            start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length
+            start_pos += (matches[0].data() - haystack.data()) + match.length(); // fwd by prefix + match length
             const auto & submatch = matches[1];
             if (isLargerThanFifty({submatch.data(), submatch.size()}))
                 return true;
@@ -70,12 +70,12 @@ bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
     re2_st::StringPiece haystack(regexp.data(), regexp.size());
     re2_st::StringPiece matches[3];
     size_t start_pos = 0;
-    while (start_pos < haystack.size())
+    while (start_pos < regexp.size())
     {
-        if (searcher_two_repeats.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 3))
+        if (searcher_two_repeats.Match(haystack, start_pos, regexp.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 3))
         {
             const auto & match = matches[0];
-            start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length
+            start_pos += (matches[0].data() - haystack.data()) + match.length(); // fwd by prefix + match length
             const auto & submatch1 = matches[1];
             const auto & submatch2 = matches[2];
             if (isLargerThanFifty({submatch1.data(), submatch1.size()})

@@ -3,11 +3,12 @@
 #include <Poco/MongoDB/Connection.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
 /* Implements storage in the MongoDB database.
- * Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+ * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
  * Read only.
  */
 
@@ -41,8 +42,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     struct Configuration
     {

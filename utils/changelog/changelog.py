@@ -126,8 +126,8 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Generate a changelog in Markdown format between given tags. "
-        "It fetches all tags and unshallow the git repository automatically",
+        description="Generate a changelog in MD format between given tags. "
+        "It fetches all tags and unshallow the git repositore automatically",
     )
     parser.add_argument(
         "-v",
@@ -243,14 +243,6 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             else:
                 i += 1
 
-    # Remove excessive bullets from the entry.
-    if re.match(r"^[\-\*] ", entry):
-        entry = entry[2:]
-
-    # Better style.
-    if re.match(r"^[a-z]", entry):
-        entry = entry.capitalize()
-
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.
         # Fall through, so that it shows up in output and the user can fix it.
@@ -262,14 +254,6 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category,
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
-        return Description(item.number, item.user, item.html_url, item.title, category)
-
-    # Normalize bug fixes
-    if re.match(
-        r"(?i)bug\Wfix",
-        category,
-    ):
-        category = "Bug Fix (user-visible misbehavior in an official stable release)"
         return Description(item.number, item.user, item.html_url, item.title, category)
 
     # Filter out documentations changelog

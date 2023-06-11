@@ -20,7 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 namespace
@@ -118,7 +118,7 @@ public:
             const auto * rhs_array = assert_cast<const ColumnArray *>(arguments[i].column.get());
 
             if (!lhs_array->hasEqualOffsets(*rhs_array))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "The argument 1 and argument {} of function {} have different array offsets",
                     i + 1,
                     getName());
@@ -165,12 +165,12 @@ private:
 
 REGISTER_FUNCTION(Nested)
 {
-    factory.registerFunction<FunctionNested>(FunctionDocumentation{
-        .description=R"(
+    factory.registerFunction<FunctionNested>({
+        R"(
 Returns the array of tuples from multiple arrays.
 )",
-        .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
-        .categories{"OtherFunctions"}
+        Documentation::Examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])"}},
+        Documentation::Categories{"OtherFunctions"}
     });
 }
 

@@ -1,7 +1,7 @@
 #include "PartMetadataManagerWithCache.h"
 
 #if USE_ROCKSDB
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -117,46 +117,29 @@ void PartMetadataManagerWithCache::updateAll(bool include_projection)
 
     String value;
     String read_value;
-
-    /// This is used to remove the keys in case of any exception while caching other keys
-    Strings keys_added_to_cache;
-    keys_added_to_cache.reserve(file_names.size());
-
-    try
+    for (const auto & file_name : file_names)
     {
-        for (const auto & file_name : file_names)
+        String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
+        if (!part->getDataPartStorage().exists(file_name))
+            continue;
+        auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
+        readStringUntilEOF(value, *in);
+
+        String key = getKeyFromFilePath(file_path);
+        auto status = cache->put(key, value);
+        if (!status.ok())
         {
-            String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
-            if (!part->getDataPartStorage().exists(file_name))
+            status = cache->get(key, read_value);
+            if (status.IsNotFound() || read_value == value)
                 continue;
-            auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-            readStringUntilEOF(value, *in);
 
-            String key = getKeyFromFilePath(file_path);
-            auto status = cache->put(key, value);
-            if (!status.ok())
-            {
-                status = cache->get(key, read_value);
-                if (status.IsNotFound() || read_value == value)
-                    continue;
-
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "updateAll failed include_projection:{} status:{}, file_path:{}",
-                    include_projection,
-                    status.ToString(),
-                    file_path);
-            }
-            keys_added_to_cache.emplace_back(key);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "updateAll failed include_projection:{} status:{}, file_path:{}",
+                include_projection,
+                status.ToString(),
+                file_path);
         }
-    }
-    catch (...)
-    {
-        for (const auto & key : keys_added_to_cache)
-        {
-            cache->del(key);
-        }
-        throw;
     }
 }
 

@@ -95,7 +95,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test SYNC")
+    instance.query("DROP DATABASE test NO DELAY")
     instance.query("CREATE DATABASE test")
 
 
@@ -1097,10 +1097,10 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload SYNC;
-        DROP TABLE test.view_overload SYNC;
-        DROP TABLE test.rabbitmq_consume SYNC;
-        DROP TABLE test.rabbitmq_overload SYNC;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
 
@@ -2674,7 +2674,7 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
 def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.drop_mv (key UInt64, value UInt64)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -2693,7 +2693,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.drop_mv;
+            SELECT * FROM test.rabbitmq;
     """
     )
 
@@ -2710,15 +2710,15 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    while True:
+    start = time.time()
+    while time.time() - start < 30:
         res = instance.query("SELECT COUNT(*) FROM test.view")
-        print(f"Current count (1): {res}")
-        if int(res) == 20:
+        if "20" == res:
             break
         else:
             logging.debug(f"Number of rows in test.view: {res}")
 
-    instance.query("DROP VIEW test.consumer SYNC")
+    instance.query("DROP VIEW test.consumer")
     for i in range(20, 40):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2727,7 +2727,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.drop_mv;
+            SELECT * FROM test.rabbitmq;
     """
     )
     for i in range(40, 50):
@@ -2736,16 +2736,14 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         )
 
     while True:
-        result = instance.query("SELECT count() FROM test.view")
-        print(f"Current count (2): {result}")
-        if int(result) == 50:
+        result = instance.query("SELECT * FROM test.view ORDER BY key")
+        if rabbitmq_check_result(result):
             break
         time.sleep(1)
 
-    result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer SYNC")
+    instance.query("DROP VIEW test.consumer NO DELAY")
     time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(
@@ -2756,11 +2754,10 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     count = 0
     start = time.time()
     while time.time() - start < 30:
-        count = int(instance.query("SELECT count() FROM test.drop_mv"))
+        count = int(instance.query("SELECT count() FROM test.rabbitmq"))
         if count:
             break
 
-    instance.query("DROP TABLE test.drop_mv")
     assert count > 0
 
 
@@ -2867,6 +2864,7 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 
 def test_rabbitmq_msgpack(rabbitmq_cluster):
+
     instance.query(
         """
         drop table if exists rabbit_in;
@@ -2910,6 +2908,7 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
 
 
 def test_rabbitmq_address(rabbitmq_cluster):
+
     instance2.query(
         """
         drop table if exists rabbit_in;
@@ -3244,6 +3243,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
+
         print(format_name)
 
         instance.query(

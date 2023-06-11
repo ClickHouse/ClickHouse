@@ -67,18 +67,18 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
+            CurrentThread::detachQueryIfNotDetached();
     );
     setThreadName("QueryPullPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+            CurrentThread::attachTo(thread_group);
 
         data.executor->execute(num_threads);
     }
@@ -179,41 +179,10 @@ void PullingAsyncPipelineExecutor::cancel()
         return;
 
     /// Cancel execution if it wasn't finished.
-    cancelWithExceptionHandling([&]()
+    try
     {
         if (!data->is_finished && data->executor)
             data->executor->cancel();
-    });
-
-    /// The following code is needed to rethrow exception from PipelineExecutor.
-    /// It could have been thrown from pull(), but we will not likely call it again.
-
-    /// Join thread here to wait for possible exception.
-    if (data->thread.joinable())
-        data->thread.join();
-
-    /// Rethrow exception to not swallow it in destructor.
-    data->rethrowExceptionIfHas();
-}
-
-void PullingAsyncPipelineExecutor::cancelReading()
-{
-    if (!data)
-        return;
-
-    /// Stop reading from source if pipeline wasn't finished.
-    cancelWithExceptionHandling([&]()
-    {
-        if (!data->is_finished && data->executor)
-            data->executor->cancelReading();
-    });
-}
-
-void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)
-{
-    try
-    {
-        cancel_func();
     }
     catch (...)
     {
@@ -225,6 +194,16 @@ void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && can
             data->has_exception = true;
         }
     }
+
+    /// The following code is needed to rethrow exception from PipelineExecutor.
+    /// It could have been thrown from pull(), but we will not likely call it again.
+
+    /// Join thread here to wait for possible exception.
+    if (data->thread.joinable())
+        data->thread.join();
+
+    /// Rethrow exception to not swallow it in destructor.
+    data->rethrowExceptionIfHas();
 }
 
 Chunk PullingAsyncPipelineExecutor::getTotals()

@@ -29,6 +29,8 @@ namespace ErrorCodes
 }
 
 
+ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
+
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
     String hdfs_uri;
@@ -163,8 +165,6 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     , use_external_buffer(use_external_buffer_)
 {
 }
-
-ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 size_t ReadBufferFromHDFS::getFileSize()
 {

@@ -8,7 +8,9 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
 #endif
 
 /** memcpy function could work suboptimal if all the following conditions are met:

@@ -2136,7 +2136,7 @@ countDigits(x)
 :::note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
 :::
-
+ 
 **Пример**
 
 Запрос:
@@ -2297,7 +2297,7 @@ enabledRoles()
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant.md#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
 
 **Синтаксис**
 

@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -439,10 +439,10 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
@@ -586,12 +586,11 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
-        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+        params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", false);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
@@ -620,11 +619,12 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path_template(tmp_path + "http_buffers/");
 
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
+            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
-                return tmp_data->createRawStream();
+                return WriteBufferFromTemporaryFile::create(tmp_path_template);
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
@@ -779,6 +779,7 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -800,11 +801,11 @@ void HTTPHandler::processQuery(
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out->addHeaderCORS(true);
 
-    auto append_callback = [my_context = context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
-        auto prev = my_context->getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        my_context->setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -828,24 +829,15 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const QueryResultDetails & details)
+        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.add("X-ClickHouse-Query-Id", details.query_id);
-
-            if (content_type_override)
-                response.setContentType(*content_type_override);
-            else if (details.content_type)
-                response.setContentType(*details.content_type);
-
-            if (details.format)
-                response.add("X-ClickHouse-Format", *details.format);
-
-            if (details.timezone)
-                response.add("X-ClickHouse-Timezone", *details.timezone);
+            response.setContentType(content_type_override.value_or(content_type));
+            response.add("X-ClickHouse-Query-Id", current_query_id);
+            response.add("X-ClickHouse-Format", format);
+            response.add("X-ClickHouse-Timezone", timezone);
         }
     );
 
@@ -998,7 +990,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_info.client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
@@ -1055,11 +1046,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        trySendExceptionToClient(status.message, status.code, request, response, used_output);
+        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+        int exception_code = getCurrentExceptionCode();
+
+        trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
 
         if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(status);
+            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
     }
 
     used_output.finalize();
@@ -1147,7 +1140,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1180,15 +1173,6 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
-    }
-
-    if (unlikely(receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body")))
-    {
-        WriteBufferFromOwnString value;
-        const auto & settings = context->getSettingsRef();
-
-        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
-        context->setQueryParameter("_request_body", value.str());
     }
 }
 

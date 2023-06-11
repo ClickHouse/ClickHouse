@@ -28,7 +28,6 @@ SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
 SELECT '--JSONType--';
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
-SELECT JSONType('{"a": true}', 'a');
 
 SELECT '--JSONExtract<numeric>--';
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);
@@ -123,13 +122,6 @@ SELECT JSONExtract('{"a": "123456789012.345"}', 'a', 'UInt64') as a, toTypeName(
 SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'UInt64') as a, toTypeName(a);
 SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'Int8') as a, toTypeName(a);
 
-SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(String, String)');
-SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(LowCardinality(String), String)');
-SELECT JSONExtract('{"a": ["hello", 100.0], "b": ["world", 200]}', 'Map(String, Tuple(String, Float64))');
-SELECT JSONExtract('{"a": [100.0, 200], "b": [-100, 200.0, 300]}', 'Map(String, Array(Float64))');
-SELECT JSONExtract('{"a": {"c": "hello"}, "b": {"d": "world"}}', 'Map(String, Map(String, String))');
-SELECT JSONExtract('{"a": {"c": "hello"}, "b": {"d": "world"}}', 'a',  'Map(String, String)');
-
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Float64)');
@@ -173,11 +165,8 @@ SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoi
 SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
 
 SELECT '--show error: type should be const string';
-SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError ILLEGAL_COLUMN }
-WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError ILLEGAL_COLUMN }
-
-SELECT '--show error: key of map type should be String';
-SELECT JSONExtract('{"a": [100.0, 200], "b": [-100, 200.0, 300]}', 'Map(Int64, Array(Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }
 
 
 SELECT '--allow_simdjson=0--';
@@ -207,7 +196,6 @@ SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
 SELECT '--JSONType--';
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
-SELECT JSONType('{"a": true}', 'a');
 
 SELECT '--JSONExtract<numeric>--';
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);
@@ -257,13 +245,6 @@ SELECT JSONExtract('{"a":3}', 'Tuple(Int, Int)');
 SELECT JSONExtract('[3,5,7]', 'Tuple(Int, Int)');
 SELECT JSONExtract('[3]', 'Tuple(Int, Int)');
 
-SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(String, String)');
-SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(LowCardinality(String), String)');
-SELECT JSONExtract('{"a": ["hello", 100.0], "b": ["world", 200]}', 'Map(String, Tuple(String, Float64))');
-SELECT JSONExtract('{"a": [100.0, 200], "b": [-100, 200.0, 300]}', 'Map(String, Array(Float64))');
-SELECT JSONExtract('{"a": {"c": "hello"}, "b": {"d": "world"}}', 'Map(String, Map(String, String))');
-SELECT JSONExtract('{"a": {"c": "hello"}, "b": {"d": "world"}}', 'a',  'Map(String, String)');
-
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Float64)');
@@ -312,11 +293,8 @@ SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoi
 SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
 
 SELECT '--show error: type should be const string';
-SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError ILLEGAL_COLUMN }
-WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError ILLEGAL_COLUMN }
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }
 
 SELECT '--show error: index type should be integer';
-SELECT JSONExtract('[]', JSONExtract('0', 'UInt256'), 'UInt256'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '--show error: key of map type should be String';
-SELECT JSONExtract('{"a": [100.0, 200], "b": [-100, 200.0, 300]}', 'Map(Int64, Array(Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtract('[]', JSONExtract('0', 'UInt256'), 'UInt256'); -- { serverError 43 }

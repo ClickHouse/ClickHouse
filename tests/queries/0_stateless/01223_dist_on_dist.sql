@@ -33,9 +33,9 @@ select 'cluster() GROUP BY ORDER BY';
 select * from cluster(test_cluster_two_shards, currentDatabase(), dist_01223) group by key order by key;
 
 select 'LEFT JOIN';
-select a.key, b.key from (SELECT toInt32(number) key from numbers(2)) a left join (select distinct * from dist_01223) b using key order by b.key;
+select toInt32(number) key, b.key from numbers(2) a left join (select distinct * from dist_01223) b using key order by b.key;
 select 'RIGHT JOIN';
-select a.key, b.key from (SELECT toInt32(number) key from numbers(2)) a right join (select distinct * from dist_01223) b using key order by b.key;
+select toInt32(number) key, b.key from numbers(2) a right join (select distinct * from dist_01223) b using key order by b.key;
 
 -- more data for GROUP BY
 insert into data_01223 select number%3 from numbers(30);

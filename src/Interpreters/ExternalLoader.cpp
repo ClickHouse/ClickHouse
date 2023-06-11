@@ -2,7 +2,6 @@
 
 #include <mutex>
 #include <pcg_random.hpp>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -10,9 +9,8 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
 #include <base/chrono_io.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -969,18 +967,15 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
 
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
-
-        /// Do not account memory that was occupied by the dictionaries for the query/user context.
-        MemoryTrackerBlockerInThread memory_blocker;
+            CurrentThread::attachTo(thread_group);
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try

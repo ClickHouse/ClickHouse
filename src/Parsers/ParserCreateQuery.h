@@ -244,9 +244,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            // Ephemeral columns don't really have secrets but we need to format
-            // into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatWithSecretsHidden()));
             default_expression = default_function;
         }
 
@@ -266,10 +264,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
     }
-
-    /// This will rule out unusual expressions like *, t.* that cannot appear in DEFAULT
-    if (default_expression && !dynamic_cast<const ASTWithAlias *>(default_expression.get()))
-        return false;
 
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type

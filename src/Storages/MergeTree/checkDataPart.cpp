@@ -94,13 +94,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
     };
 
     auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
-    SerializationInfoByName serialization_infos;
+    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, {}, std::nullopt, std::nullopt);
-        SerializationInfo::Settings settings{ratio_of_defaults, false};
-        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        serialization_infos.readJSON(*serialization_file);
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)
@@ -158,29 +157,25 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
 
     NameSet projections_on_disk;
-    const auto & checksums_txt_files = checksums_txt.files;
+    const auto & checksum_files_txt = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.isDirectory(file_name) && file_name.ends_with(".proj"))
+        if (data_part_storage.isDirectory(file_name) && endsWith(file_name, ".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
         }
-
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
-            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
-            auto txt_checksum_it = checksums_txt_files.find(file_name);
-            if (txt_checksum_it == checksums_txt_files.end() || txt_checksum_it->second.uncompressed_size == 0)
+            auto txt_checksum_it = checksum_files_txt.find(file_name);
+            if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
             {
                 /// The file is not compressed.
                 checksum_file(file_name);

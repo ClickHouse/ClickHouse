@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-from dataclasses import dataclass
-from typing import Callable, Dict, TypeVar
+from typing import Dict, TypeVar
 
 ConfValue = TypeVar("ConfValue", str, bool)
 BuildConfig = Dict[str, ConfValue]
@@ -9,7 +8,7 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -17,20 +16,18 @@ CI_CONFIG = {
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "coverity": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
             "tidy": "disable",
             "with_coverage": False,
             "official": False,
-            "comment": "A special build for coverity",
         },
         "package_aarch64": {
-            "compiler": "clang-16-aarch64",
+            "compiler": "clang-15-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -38,140 +35,125 @@ CI_CONFIG = {
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "package_asan": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "package_ubsan": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "package_tsan": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "package_msan": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "package_debug": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "Note: sparse checkout was used",
         },
         "binary_release": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_tidy": {
-            "compiler": "clang-16",
+            "compiler": "clang-15",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "debug-amd64",
             "tidy": "enable",
             "with_coverage": False,
-            "comment": "clang-tidy is used for static analysis",
         },
         "binary_darwin": {
-            "compiler": "clang-16-darwin",
+            "compiler": "clang-15-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_aarch64": {
-            "compiler": "clang-16-aarch64",
+            "compiler": "clang-15-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_aarch64_v80compat": {
-            "compiler": "clang-16-aarch64-v80compat",
+            "compiler": "clang-15-aarch64-v80compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "aarch64v80compat",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "For ARMv8.1 and older",
         },
         "binary_freebsd": {
-            "compiler": "clang-16-freebsd",
+            "compiler": "clang-15-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "freebsd",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-16-darwin-aarch64",
+            "compiler": "clang-15-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos-aarch64",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_ppc64le": {
-            "compiler": "clang-16-ppc64le",
+            "compiler": "clang-15-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "",
         },
         "binary_amd64_compat": {
-            "compiler": "clang-16-amd64-compat",
+            "compiler": "clang-15-amd64-compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "amd64compat",
             "tidy": "disable",
             "with_coverage": False,
-            "comment": "SSE2-only build",
         },
     },
     "builds_report_config": {
@@ -277,9 +259,6 @@ CI_CONFIG = {
         "Stateless tests (release, wide parts enabled)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, analyzer)": {
-            "required_build": "package_release",
-        },
         "Stateless tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
@@ -310,18 +289,6 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
-        "Upgrade check (asan)": {
-            "required_build": "package_asan",
-        },
-        "Upgrade check (tsan)": {
-            "required_build": "package_tsan",
-        },
-        "Upgrade check (msan)": {
-            "required_build": "package_msan",
-        },
-        "Upgrade check (debug)": {
-            "required_build": "package_debug",
-        },
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
@@ -337,11 +304,8 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check (amd64)": {
+        "Compatibility check": {
             "required_build": "package_release",
-        },
-        "Compatibility check (aarch64)": {
-            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -396,188 +360,20 @@ CI_CONFIG = {
         "SQLancer (debug)": {
             "required_build": "package_debug",
         },
-        "Sqllogic test (release)": {
-            "required_build": "package_release",
-        },
     },
 }  # type: dict
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
+    "Fast test",
+    "Style Check",
     "ClickHouse build check",
     "ClickHouse special build check",
-    "Docs Check",
-    "Fast test",
     "Stateful tests (release)",
     "Stateless tests (release)",
-    "Style Check",
+    "Unit tests (release-clang)",
     "Unit tests (asan)",
     "Unit tests (msan)",
-    "Unit tests (release-clang)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
-]
-
-
-@dataclass
-class CheckDescription:
-    name: str
-    description: str  # the check descriptions, will be put into the status table
-    match_func: Callable[[str], bool]  # the function to check vs the commit status
-
-    def __hash__(self) -> int:
-        return hash(self.name + self.description)
-
-
-CHECK_DESCRIPTIONS = [
-    CheckDescription(
-        "AST fuzzer",
-        "Runs randomly generated queries to catch program errors. "
-        "The build type is optionally given in parenthesis. "
-        "If it fails, ask a maintainer for help",
-        lambda x: x.startswith("AST fuzzer"),
-    ),
-    CheckDescription(
-        "Bugfix validate check",
-        "Checks that either a new test (functional or integration) or there "
-        "some changed tests that fail with the binary built on master branch",
-        lambda x: x == "Bugfix validate check",
-    ),
-    CheckDescription(
-        "CI running",
-        "A meta-check that indicates the running CI. Normally, it's in <b>success</b> or "
-        "<b>pending</b> state. The failed status indicates some problems with the PR",
-        lambda x: x == "CI running",
-    ),
-    CheckDescription(
-        "ClickHouse build check",
-        "Builds ClickHouse in various configurations for use in further steps. "
-        "You have to fix the builds that fail. Build logs often has enough "
-        "information to fix the error, but you might have to reproduce the failure "
-        "locally. The <b>cmake</b> options can be found in the build log, grepping for "
-        '<b>cmake</b>. Use these options and follow the <a href="'
-        'https://clickhouse.com/docs/en/development/build">general build process</a>',
-        lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
-    ),
-    CheckDescription(
-        "Compatibility check",
-        "Checks that <b>clickhouse</b> binary runs on distributions with old libc "
-        "versions. If it fails, ask a maintainer for help",
-        lambda x: x.startswith("Compatibility check"),
-    ),
-    CheckDescription(
-        "Docker image for servers",
-        "The check to build and optionally push the mentioned image to docker hub",
-        lambda x: x.startswith("Docker image")
-        and (x.endswith("building check") or x.endswith("build and push")),
-    ),
-    CheckDescription(
-        "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
-    ),
-    CheckDescription(
-        "Fast test",
-        "Normally this is the first check that is ran for a PR. It builds ClickHouse "
-        'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
-        '#functional-tests">stateless functional tests</a>, '
-        "omitting some. If it fails, further checks are not started until it is fixed. "
-        "Look at the report to see which tests fail, then reproduce the failure "
-        'locally as described <a href="https://clickhouse.com/docs/en/development/'
-        'tests#functional-test-locally">here</a>',
-        lambda x: x == "Fast test",
-    ),
-    CheckDescription(
-        "Flaky tests",
-        "Checks if new added or modified tests are flaky by running them repeatedly, "
-        "in parallel, with more randomization. Functional tests are run 100 times "
-        "with address sanitizer, and additional randomization of thread scheduling. "
-        "Integrational tests are run up to 10 times. If at least once a new test has "
-        "failed, or was too long, this check will be red. We don't allow flaky tests, "
-        'read <a href="https://clickhouse.com/blog/decorating-a-christmas-tree-with-'
-        'the-help-of-flaky-tests/">the doc</a>',
-        lambda x: "tests flaky check" in x,
-    ),
-    CheckDescription(
-        "Install packages",
-        "Checks that the built packages are installable in a clear environment",
-        lambda x: x.startswith("Install packages ("),
-    ),
-    CheckDescription(
-        "Integration tests",
-        "The integration tests report. In parenthesis the package type is given, "
-        "and in square brackets are the optional part/total tests",
-        lambda x: x.startswith("Integration tests ("),
-    ),
-    CheckDescription(
-        "Mergeable Check",
-        "Checks if all other necessary checks are successful",
-        lambda x: x == "Mergeable Check",
-    ),
-    CheckDescription(
-        "Performance Comparison",
-        "Measure changes in query performance. The performance test report is "
-        'described in detail <a href="https://github.com/ClickHouse/ClickHouse/tree'
-        '/master/docker/test/performance-comparison#how-to-read-the-report">here</a>. '
-        "In square brackets are the optional part/total tests",
-        lambda x: x.startswith("Performance Comparison"),
-    ),
-    CheckDescription(
-        "Push to Dockerhub",
-        "The check for building and pushing the CI related docker images to docker hub",
-        lambda x: x.startswith("Push") and "to Dockerhub" in x,
-    ),
-    CheckDescription(
-        "Sqllogic",
-        "Run clickhouse on the "
-        '<a href="https://www.sqlite.org/sqllogictest">sqllogic</a> '
-        "test set against sqlite and checks that all statements are passed",
-        lambda x: x.startswith("Sqllogic test"),
-    ),
-    CheckDescription(
-        "SQLancer",
-        "Fuzzing tests that detect logical bugs with "
-        '<a href="https://github.com/sqlancer/sqlancer">SQLancer</a> tool',
-        lambda x: x.startswith("SQLancer"),
-    ),
-    CheckDescription(
-        "Stateful tests",
-        "Runs stateful functional tests for ClickHouse binaries built in various "
-        "configurations -- release, debug, with sanitizers, etc",
-        lambda x: x.startswith("Stateful tests ("),
-    ),
-    CheckDescription(
-        "Stateless tests",
-        "Runs stateless functional tests for ClickHouse binaries built in various "
-        "configurations -- release, debug, with sanitizers, etc",
-        lambda x: x.startswith("Stateless tests ("),
-    ),
-    CheckDescription(
-        "Stress test",
-        "Runs stateless functional tests concurrently from several clients to detect "
-        "concurrency-related errors",
-        lambda x: x.startswith("Stress test ("),
-    ),
-    CheckDescription(
-        "Style Check",
-        "Runs a set of checks to keep the code style clean. If some of tests failed, "
-        "see the related log from the report",
-        lambda x: x == "Style Check",
-    ),
-    CheckDescription(
-        "Unit tests",
-        "Runs the unit tests for different release types",
-        lambda x: x.startswith("Unit tests ("),
-    ),
-    CheckDescription(
-        "Upgrade check",
-        "Runs stress tests on server version from last release and then tries to "
-        "upgrade it to the version from the PR. It checks if the new server can "
-        "successfully startup without any errors, crashes or sanitizer asserts",
-        lambda x: x.startswith("Upgrade check ("),
-    ),
-    CheckDescription(
-        "Falback for unknown",
-        "There's no description for the check yet, please add it to "
-        "tests/ci/ci_config.py:CHECK_DESCRIPTIONS",
-        lambda x: True,
-    ),
 ]

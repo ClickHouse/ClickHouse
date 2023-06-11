@@ -7,6 +7,9 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -35,6 +38,7 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     out->finalize();
 }
 
+
 DiskTransactionPtr IDisk::createTransaction()
 {
     return std::make_shared<FakeDiskTransaction>(*this);
@@ -50,31 +54,6 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
         else
             removeSharedFile(file.path, keep_file);
     }
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-std::unique_ptr<WriteBufferFromFileBase> IDisk::writeEncryptedFile(const String &, size_t, WriteMode, const WriteSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(size_t) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-UInt128 IDisk::getEncryptedFileIV(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
 
@@ -188,12 +167,12 @@ try
         try
         {
             file->write(payload.data(), payload.size());
-            file->finalize();
         }
         catch (...)
         {
             /// Log current exception, because finalize() can throw a different exception.
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            file->finalize();
             throw;
         }
     }

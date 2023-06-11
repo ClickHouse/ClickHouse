@@ -7,9 +7,9 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Access/ContextAccess.h>
 
 
 namespace DB
@@ -30,6 +30,7 @@ StorageSystemNamedCollections::StorageSystemNamedCollections(const StorageID & t
 
 void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
+    context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS);
     const auto & access = context->getAccess();
 
     NamedCollectionUtils::loadIfNot();
@@ -37,9 +38,6 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)
     {
-        if (!access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS, name))
-            continue;
-
         res_columns[0]->insert(name);
 
         auto * column_map = typeid_cast<ColumnMap *>(res_columns[1].get());

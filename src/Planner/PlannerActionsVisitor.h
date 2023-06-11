@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/HashTable/Hash.h>
+
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -21,7 +23,7 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
   * Preconditions:
   * 1. Table expression data for table expression nodes is collected in planner context.
   * For column node, that has column table expression source, identifier for column name in table expression data
-  * is used as action dag node name, if use_column_identifier_as_action_node_name = true.
+  * is used as action dag node name.
   * 2. Sets for IN functions are already collected in planner context.
   *
   * During actions build, there is special handling for following functions:
@@ -31,7 +33,7 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 class PlannerActionsVisitor
 {
 public:
-    explicit PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_ = true);
+    explicit PlannerActionsVisitor(const PlannerContextPtr & planner_context_);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -41,27 +43,21 @@ public:
 
 private:
     const PlannerContextPtr planner_context;
-    bool use_column_identifier_as_action_node_name = true;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.
   * If node exists in map, name from map is used.
   *
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
+  * For column node column node identifier from planner context is used.
   */
 using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
-String calculateActionNodeName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
 
 /** Calculate query tree expression node action dag name.
   *
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
+  * For column node column node identifier from planner context is used.
   */
-String calculateActionNodeName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    bool use_column_identifier_as_action_node_name = true);
+String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
 
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
@@ -71,19 +67,12 @@ String calculateConstantActionNodeName(const Field & constant_literal);
 
 /** Calculate action node name for window node.
   * Window node action name can only be part of window function action name.
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, QueryTreeNodeToName & node_to_name);
 
 /** Calculate action node name for window node.
   * Window node action name can only be part of window function action name.
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    bool use_column_identifier_as_action_node_name = true);
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
 
 }

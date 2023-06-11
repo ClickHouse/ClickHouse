@@ -99,13 +99,4 @@ std::shared_ptr<const IBackupEntry> ReplicatedMergeTreeMutationEntry::backup() c
     return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
-
-String ReplicatedMergeTreeMutationEntry::getBlockNumbersForLogs() const
-{
-    WriteBufferFromOwnString out;
-    for (const auto & kv : block_numbers)
-        out << kv.first << " = " << kv.second << "; ";
-    return out.str();
-}
-
 }

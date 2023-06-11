@@ -43,8 +43,7 @@
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress",
-            "docker/test/upgrade"
+            "docker/test/stress"
         ]
     },
     "docker/test/unit": {
@@ -53,10 +52,6 @@
     },
     "docker/test/stress": {
         "name": "clickhouse/stress-test",
-        "dependent": []
-    },
-    "docker/test/upgrade": {
-        "name": "clickhouse/upgrade-check",
         "dependent": []
     },
     "docker/test/codebrowser": {
@@ -123,8 +118,7 @@
             "docker/test/stateless",
             "docker/test/integration/base",
             "docker/test/fuzzer",
-            "docker/test/keeper-jepsen",
-            "docker/test/server-jepsen"
+            "docker/test/keeper-jepsen"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -140,10 +134,6 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
-    "docker/test/server-jepsen": {
-        "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
     "docker/test/install/deb": {
         "name": "clickhouse/install-deb-test",
         "dependent": []
@@ -156,9 +146,5 @@
         "name": "clickhouse/docs-builder",
         "dependent": [
         ]
-    },
-    "docker/test/sqllogic": {
-        "name": "clickhouse/sqllogic-test",
-        "dependent": []
     }
 }

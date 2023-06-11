@@ -32,13 +32,7 @@ A table with the specified structure for reading data in the specified Iceberg t
 SELECT * FROM iceberg('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
-:::important
-ClickHouse currently supports reading v1 (v2 support is coming soon!) of the Iceberg format via the `iceberg` table function and `Iceberg` table engine.
-:::
-
-## Defining a named collection
-
-Here is an example of configuring a named collection for storing the URL and credentials:
+Using named collections:
 
 ```xml
 <clickhouse>

@@ -10,9 +10,9 @@ The File table engine keeps the data in a file in one of the supported [file for
 
 Usage scenarios:
 
-- Data export from ClickHouse to file.
-- Convert data from one format to another.
-- Updating data in ClickHouse via editing a file on a disk.
+-   Data export from ClickHouse to file.
+-   Convert data from one format to another.
+-   Updating data in ClickHouse via editing a file on a disk.
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -31,7 +31,7 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
-:::note
+:::warning
 Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 :::
 
@@ -78,14 +78,14 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Details of Implementation {#details-of-implementation}
 
-- Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
-- Supported creating new file by `INSERT` query.
-- If file exists, `INSERT` would append new values in it.
-- Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - Indices
-    - Replication
+-   Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+-   Supported creating new file by `INSERT` query.
+-   If file exists, `INSERT` would append new values in it.
+-   Not supported:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   Indices
+    -   Replication
 
 ## PARTITION BY
 

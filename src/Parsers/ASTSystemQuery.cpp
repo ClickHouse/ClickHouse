@@ -104,12 +104,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
-        if (!shard.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM SHARD "
-                          << (settings.hilite ? hilite_none : "") << quoteString(shard);
-        }
-
         if (table)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
@@ -187,10 +181,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             print_identifier(target_function);
         else if (!disk.empty())
             print_identifier(disk);
-
-        if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << magic_enum::enum_name(sync_replica_mode)
-                          << (settings.hilite ? hilite_none : "");
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
@@ -209,8 +199,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
-        if (!filesystem_cache_name.empty())
-            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+        if (!filesystem_cache_path.empty())
+            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
     }
     else if (type == Type::UNFREEZE)
     {

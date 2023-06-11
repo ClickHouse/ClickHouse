@@ -2,7 +2,6 @@
 
 #include <fmt/core.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -202,16 +201,15 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
+        cte_name == rhs_typed.cte_name &&
+        projection_columns == rhs_typed.projection_columns &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
-        is_group_by_all == rhs_typed.is_group_by_all &&
-        cte_name == rhs_typed.cte_name &&
-        projection_columns == rhs_typed.projection_columns &&
-        settings_changes == rhs_typed.settings_changes;
+        is_group_by_all == rhs_typed.is_group_by_all;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -240,18 +238,6 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-
-    state.update(settings_changes.size());
-
-    for (const auto & setting_change : settings_changes)
-    {
-        state.update(setting_change.name.size());
-        state.update(setting_change.name);
-
-        auto setting_change_value_dump = setting_change.value.dump();
-        state.update(setting_change_value_dump.size());
-        state.update(setting_change_value_dump);
-    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -269,12 +255,11 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
-    result_query_node->settings_changes = settings_changes;
 
     return result_query_node;
 }
 
-ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr QueryNode::toASTImpl() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->distinct = is_distinct;
@@ -286,9 +271,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_all = is_group_by_all;
 
     if (hasWith())
-        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
 
-    auto projection_ast = getProjection().toAST(options);
+    auto projection_ast = getProjection().toAST();
     auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();
     size_t projection_expression_list_ast_children_size = projection_expression_list_ast.children.size();
     if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
@@ -308,44 +293,44 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
-        select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, getPrewhere()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, getPrewhere()->toAST());
 
     if (getWhere())
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST());
 
     if (!is_group_by_all && hasGroupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
 
     if (hasHaving())
-        select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST());
 
     if (hasWindow())
-        select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST());
 
     if (hasOrderBy())
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
 
     if (hasInterpolate())
-        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST());
 
     if (hasLimitByLimit())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST());
 
     if (hasLimitByOffset())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST());
 
     if (hasLimitBy())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST());
 
     if (hasLimit())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST());
 
     if (hasOffset())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST());
 
     if (hasSettingsChanges())
     {

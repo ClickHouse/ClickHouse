@@ -11,7 +11,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -107,11 +106,6 @@ void MySQLWithFailoverSource::onStart()
                 LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
                 throw;
             }
-        }
-        catch (const mysqlxx::BadQuery & e)
-        {
-            LOG_ERROR(log, "Error processing query '{}': {}", query_str, e.displayText());
-            throw;
         }
     }
 

@@ -10,8 +10,8 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 
 `RabbitMQ` lets you:
 
-- Publish or subscribe to data flows.
-- Process streams as they become available.
+-   Publish or subscribe to data flows.
+-   Process streams as they become available.
 
 ## Creating a Table {#table_engine-rabbitmq-creating-a-table}
 
@@ -42,6 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_queue_consume = false,]
     [rabbitmq_address = '',]
     [rabbitmq_vhost = '/',]
+    [rabbitmq_queue_consume = false,]
     [rabbitmq_username = '',]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
@@ -50,9 +51,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
-- `rabbitmq_host_port` – host:port (for example, `localhost:5672`).
-- `rabbitmq_exchange_name` – RabbitMQ exchange name.
-- `rabbitmq_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+-   `rabbitmq_host_port` – host:port (for example, `localhost:5672`).
+-   `rabbitmq_exchange_name` – RabbitMQ exchange name.
+-   `rabbitmq_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
 
@@ -137,24 +138,24 @@ There can be no more than one exchange per table. One exchange can be shared bet
 
 Exchange type options:
 
-- `direct` - Routing is based on the exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can equal any of them.
-- `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
-- `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
-- `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
-- `consistent_hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+-   `direct` - Routing is based on the exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can equal any of them.
+-   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
+-   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
+-   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
+-   `consistent_hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
 Setting `rabbitmq_queue_base` may be used for the following cases:
 
-- to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
-- to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
-- to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
+-   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
+-   to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
+-   to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
 
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 
-- `rabbitmq-consistent-hash-exchange` plugin must be enabled.
-- `message_id` property of the published messages must be specified (unique for each message/batch).
+-   `rabbitmq-consistent-hash-exchange` plugin must be enabled.
+-   `message_id` property of the published messages must be specified (unique for each message/batch).
 
 For insert query there is message metadata, which is added for each published message: `messageID` and `republished` flag (true, if published more than once) - can be accessed via message headers.
 

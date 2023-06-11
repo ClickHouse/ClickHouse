@@ -384,7 +384,7 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     ContextMutablePtr context_,
     QueryProcessingStage::Enum processed_stage)
-    : SourceStepWithFilter(DataStream{.header = common_header_})
+    : ISourceStep(DataStream{.header = common_header_})
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
@@ -448,7 +448,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(1uz, current_streams);
+        current_streams = std::max(static_cast<size_t>(1), current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -633,7 +633,10 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     QueryPipelineBuilderPtr builder;
-    if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
+
+    bool final = isFinal(modified_query_info);
+
+    if (!final && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
@@ -646,14 +649,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryProcessingStage::Complete,
         storage_snapshot,
         modified_query_info);
-
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
-        QueryPlan & plan = child_plans.emplace_back();
+        QueryPlan plan;
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)
@@ -689,11 +691,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             return {};
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-        {
-            size_t filters_dags_size = filter_dags.size();
-            for (size_t i = 0; i < filters_dags_size; ++i)
-                read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
-        }
+            read_from_merge_tree->addFilterNodes(added_filter_nodes);
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),
@@ -705,15 +703,12 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        QueryPlan & plan = child_plans.emplace_back();
-
         if (allow_experimental_analyzer)
         {
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections());
             builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
-            plan = std::move(interpreter.getPlanner()).extractQueryPlan();
         }
         else
         {
@@ -722,7 +717,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections()};
-            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline(plan));
+            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
         }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
@@ -920,7 +915,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
 
 void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -931,9 +926,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -1007,11 +1000,19 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 {
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
+    if (order_info_->direction != 1 && isFinal(query_info))
         return false;
 
     order_info = order_info_;
     return true;
+}
+
+bool ReadFromMerge::isFinal(const SelectQueryInfo & query_info)
+{
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->hasFinal();
+    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
+    return select_query.final();
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const

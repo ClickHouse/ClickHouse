@@ -123,7 +123,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 PoolWithFailover::Entry PoolWithFailover::get()
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    std::lock_guard locker(mutex);
+    std::lock_guard<std::mutex> locker(mutex);
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;

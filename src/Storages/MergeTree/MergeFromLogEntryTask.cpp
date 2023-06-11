@@ -221,7 +221,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
                 LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
-                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
                 return PrepareResult{
@@ -260,15 +259,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
-
     /// Add merge to list
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        settings);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();

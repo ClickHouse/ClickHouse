@@ -18,6 +18,9 @@ namespace DB
     }
 }
 
+template<typename T, typename ... U>
+concept is_any_of = (std::same_as<T, U> || ...);
+
 
 /** Checks type by comparing typeid.
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
@@ -25,10 +28,17 @@ namespace DB
   */
 template <typename To, typename From>
 requires std::is_reference_v<To>
-To typeid_cast(From & from) noexcept(false)
+To typeid_cast(From & from)
 {
-    if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
-        return static_cast<To>(from);
+    try
+    {
+        if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
+            return static_cast<To>(from);
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+    }
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
                         demangle(typeid(from).name()), demangle(typeid(To).name()));
@@ -37,12 +47,19 @@ To typeid_cast(From & from) noexcept(false)
 
 template <typename To, typename From>
 requires std::is_pointer_v<To>
-To typeid_cast(From * from) noexcept
+To typeid_cast(From * from)
 {
-    if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
-        return static_cast<To>(from);
-    else
-        return nullptr;
+    try
+    {
+        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
+            return static_cast<To>(from);
+        else
+            return nullptr;
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 namespace detail
@@ -65,10 +82,17 @@ inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
 
 template <typename To, typename From>
 requires detail::is_shared_ptr_v<To>
-To typeid_cast(const std::shared_ptr<From> & from) noexcept
+To typeid_cast(const std::shared_ptr<From> & from)
 {
-    if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
-        return std::static_pointer_cast<typename To::element_type>(from);
-    else
-        return nullptr;
+    try
+    {
+        if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
+            return std::static_pointer_cast<typename To::element_type>(from);
+        else
+            return nullptr;
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+    }
 }

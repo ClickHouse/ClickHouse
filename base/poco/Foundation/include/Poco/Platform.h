@@ -212,6 +212,25 @@
 #endif
 
 
+#if defined(__clang__)
+#    define POCO_COMPILER_CLANG
+#elif defined(__GNUC__)
+#    define POCO_COMPILER_GCC
+#elif defined(__MINGW32__) || defined(__MINGW64__)
+#    define POCO_COMPILER_MINGW
+#elif defined(__INTEL_COMPILER) || defined(__ICC) || defined(__ECC) || defined(__ICL)
+#    define POCO_COMPILER_INTEL
+#elif defined(__MWERKS__) || defined(__CWCC__)
+#    define POCO_COMPILER_CODEWARRIOR
+#elif defined(__sgi) || defined(sgi)
+#    define POCO_COMPILER_SGI
+#elif defined(__BORLANDC__) || defined(__CODEGEARC__)
+#    define POCO_COMPILER_CBUILDER
+#elif defined(__DMC__)
+#    define POCO_COMPILER_DMARS
+#endif
+
+
 #ifdef __GNUC__
 #    define POCO_UNUSED __attribute__((unused))
 #else

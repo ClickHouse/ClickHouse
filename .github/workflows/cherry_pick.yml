@@ -35,6 +35,7 @@ jobs:
           fetch-depth: 0
       - name: Cherry pick
         run: |
+          sudo pip install GitPython
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 cherry_pick.py
       - name: Cleanup

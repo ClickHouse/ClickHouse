@@ -60,8 +60,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     /// We want to control the number of rows in a chunk inserted into Kafka
     bool prefersLargeBlocks() const override { return false; }
@@ -127,7 +126,7 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
+    void updateConfiguration(cppkafka::Configuration & conf);
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 

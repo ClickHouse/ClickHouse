@@ -176,7 +176,6 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
-    bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 
