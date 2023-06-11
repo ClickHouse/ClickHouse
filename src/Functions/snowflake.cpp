@@ -21,7 +21,7 @@ REGISTER_FUNCTION(DateTime64ToSnowflake)
 REGISTER_FUNCTION(SnowflakeToDateTime)
 {
     factory.registerFunction("snowflakeToDateTime",
-        [](ContextPtr context ){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
             std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime", context)); });
 }
 REGISTER_FUNCTION(SnowflakeToDateTime64)
