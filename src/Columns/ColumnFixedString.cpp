@@ -393,13 +393,13 @@ ColumnPtr ColumnFixedString::compress() const
     const size_t column_size = size();
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(column_size, compressed_size,
-        [compressed = std::move(compressed), column_size, n = n]
+        [my_compressed = std::move(compressed), column_size, my_n = n]
         {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
+            size_t chars_size = my_n * column_size;
+            auto res = ColumnFixedString::create(my_n);
             res->getChars().resize(chars_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+                my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
 }

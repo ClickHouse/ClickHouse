@@ -19,7 +19,7 @@ namespace Poco {
 namespace MongoDB {
 
 
-Message::Message(MessageHeader::OpCode opcode): 
+Message::Message(MessageHeader::OpCode opcode):
 	_header(opcode)
 {
 }

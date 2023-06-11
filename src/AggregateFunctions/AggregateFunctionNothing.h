@@ -75,7 +75,7 @@ public:
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
         if (symbol != '\0')
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function 'nothing', it should contain exactly one zero byte.");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function 'nothing', it should contain exactly one zero byte, while it is {}.", static_cast<UInt32>(symbol));
     }
 
     void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override

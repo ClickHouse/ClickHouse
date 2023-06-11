@@ -383,15 +383,6 @@ NamesAndTypesList ColumnsDescription::getEphemeral() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getWithDefaultExpression() const
-{
-    NamesAndTypesList ret;
-    for (const auto & col : columns)
-        if (col.default_desc.expression)
-            ret.emplace_back(col.name, col.type);
-    return ret;
-}
-
 NamesAndTypesList ColumnsDescription::getAll() const
 {
     NamesAndTypesList ret;

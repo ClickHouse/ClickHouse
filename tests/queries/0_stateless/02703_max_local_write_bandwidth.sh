@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data;
-    create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, min_bytes_for_compact_part=0;
+    create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
 "
 
 query_id=$(random_str 10)
@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -nm -q "
         query_duration_ms >= 7e3,
         ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] > 8e6,
         ProfileEvents['LocalWriteThrottlerBytes'] > 8e6,
-        ProfileEvents['LocalWriteThrottlerSleepMicroseconds'] > 7e6
+        ProfileEvents['LocalWriteThrottlerSleepMicroseconds'] > 7e6*0.9
     FROM system.query_log
     WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
 "

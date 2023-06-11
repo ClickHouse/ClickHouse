@@ -16,6 +16,7 @@ void registerTableFunctions()
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
+    registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
@@ -70,6 +71,12 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+
+#if USE_AZURE_BLOB_STORAGE
+    registerTableFunctionAzureBlobStorage(factory);
+#endif
+
+
 }
 
 }
