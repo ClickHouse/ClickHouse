@@ -88,7 +88,7 @@ add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
-add_contrib (protobuf-cmake protobuf)
+add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -105,6 +105,7 @@ add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
 add_contrib (h3-cmake h3)
 add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
+add_contrib (libfiu-cmake libfiu)
 
 if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
@@ -155,7 +156,7 @@ add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
 add_contrib (nats-io-cmake nats-io)
 add_contrib (isa-l-cmake isa-l)
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5, isa-l
+add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
@@ -177,7 +178,19 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
-add_contrib (qpl-cmake qpl)
+
+if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with SSE 4.2 or higher")
+endif()
+if (ENABLE_QPL)
+    add_contrib (idxd-config-cmake idxd-config)
+    add_contrib (qpl-cmake qpl) # requires: idxd-config
+else()
+    message(STATUS "Not using QPL")
+endif ()
+
 add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)

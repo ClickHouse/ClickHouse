@@ -211,12 +211,12 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
         columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
 
-    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, my_uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+        auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
         const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
         return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
     };
@@ -490,6 +490,7 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
+            write_buf->finalize();
             throw;
         }
     }
@@ -623,7 +624,7 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
     String current_uri = uris.back();
 

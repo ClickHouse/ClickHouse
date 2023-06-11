@@ -102,6 +102,17 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
+
+if (ENABLE_WOBOQ_CODEBROWSER)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
+    # woboq codebrowser uses clang tooling, and they could add default system
+    # clang includes, and later clang will warn for those added by itself
+    # includes.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -265,8 +276,8 @@ endif ()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -348,13 +359,6 @@ if (COMPILER_CLANG)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
-        # Set new experimental pass manager, it's a performance, build time and binary size win.
-        # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
-    endif ()
-
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
@@ -400,6 +404,8 @@ option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
 if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
     set(ENABLE_GWP_ASAN OFF)
 endif ()
+
+option (ENABLE_FIU "Enable Fiu" ON)
 
 option(WERROR "Enable -Werror compiler option" ON)
 
@@ -528,6 +534,26 @@ include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
     add_subdirectory (rust)
+
+    # With LTO Rust adds few symbols with global visiblity, the most common is
+    # rust_eh_personality. And this leads to linking errors because multiple
+    # Rust libraries contains the same symbol.
+    #
+    # If it was shared library, that we could use version script for linker to
+    # hide this symbols, but libraries are static.
+    #
+    # we could in theory compile everything to one library but this will be a
+    # mess
+    #
+    # But this should be OK since CI has lots of other builds that are done
+    # without LTO and it will find multiple definitions if there will be any.
+    #
+    # More information about this behaviour in Rust can be found here
+    # - https://github.com/rust-lang/rust/issues/44322
+    # - https://alanwu.space/post/symbol-hygiene/
+    if (ENABLE_THINLTO)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
+    endif()
 endif()
 
 add_subdirectory (base)
@@ -548,7 +574,7 @@ if (NATIVE_BUILD_TARGETS
 )
     message (STATUS "Building native targets...")
 
-    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
+    set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
@@ -562,7 +588,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
-        ${CMAKE_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT)
 

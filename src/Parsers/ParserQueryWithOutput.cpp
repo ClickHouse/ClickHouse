@@ -103,6 +103,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
 
+        ParserKeyword s_append("APPEND");
+        if (s_append.ignore(pos, expected))
+        {
+            query_with_output.is_outfile_append = true;
+        }
+
         ParserKeyword s_stdout("AND STDOUT");
         if (s_stdout.ignore(pos, expected))
         {

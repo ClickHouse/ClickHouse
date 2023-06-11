@@ -719,8 +719,12 @@
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
-    <!-- Comma-separated list of prefixes for user-defined settings. -->
-    <custom_settings_prefixes></custom_settings_prefixes>
+    <!-- Comma-separated list of prefixes for user-defined settings.
+         The server will allow to set these settings, and retrieve them with the getSetting function.
+         They are also logged in the query_log, similarly to other settings, but have no special effect.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+    -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
@@ -904,6 +908,11 @@
             <replica>
                 <host>127.0.0.10</host>
                 <port>9000</port>
+            </replica>
+            <!-- Unavailable replica -->
+            <replica>
+                <host>127.0.0.11</host>
+                <port>1234</port>
             </replica>
         </shard>
 	</parallel_replicas>
@@ -1133,6 +1142,16 @@
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
         -->
 
+        <!--
+            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
+            Example:
+                event_date, event_time
+                event_date, type, query_id
+                event_date, event_time, initial_query_id
+
+        <order_by>event_date, event_time, initial_query_id</order_by>
+        -->
+
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
           -->
@@ -1294,10 +1313,10 @@
     <!-- Configuration of external dictionaries. See:
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
-    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+    <dictionaries_config>*_dictionary.*ml</dictionaries_config>
 
     <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+    <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
 
     <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
      If not specified they will be stored locally. -->

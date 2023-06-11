@@ -53,14 +53,14 @@ private:
 
 REGISTER_FUNCTION(GetSubcolumn)
 {
-    factory.registerFunction<FunctionGetSubcolumn>({
-        R"(
+    factory.registerFunction<FunctionGetSubcolumn>(FunctionDocumentation{
+        .description=R"(
 Receives the expression or identifier and constant string with the name of subcolumn.
 
 Returns requested subcolumn extracted from the expression.
 )",
-        Documentation::Examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')"}},
-        Documentation::Categories{"OtherFunctions"}
+        .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
+        .categories{"OtherFunctions"}
     });
 }
 
