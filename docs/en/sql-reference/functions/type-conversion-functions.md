@@ -317,7 +317,7 @@ SELECT
 
 ## toDateOrZero
 
-The same as [toDate](#todate) but returns lower boundery of [Date](/docs/en/sql-reference/data-types/date.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+The same as [toDate](#todate) but returns lower boundary of [Date](/docs/en/sql-reference/data-types/date.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
 
 **Example**
 
@@ -359,7 +359,7 @@ Result:
 
 ## toDateOrDefault
 
-Like [toDate](#todate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundery of [Date](/docs/en/sql-reference/data-types/date.md).
+Like [toDate](#todate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](/docs/en/sql-reference/data-types/date.md).
 
 **Syntax**
 
@@ -424,7 +424,7 @@ Result:
 
 ## toDateTimeOrZero
 
-The same as [toDateTime](#todatetime) but returns lower boundery of [DateTime](/docs/en/sql-reference/data-types/datetime.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](/docs/en/sql-reference/data-types/datetime.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
 
 **Example**
 
@@ -466,7 +466,7 @@ Result:
 
 ## toDateTimeOrDefault
 
-Like [toDateTime](#todatetime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundery of [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+Like [toDateTime](#todatetime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](/docs/en/sql-reference/data-types/datetime.md).
 
 **Syntax**
 
