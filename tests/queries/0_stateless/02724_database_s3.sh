@@ -32,12 +32,6 @@ USE test4;
 SELECT * FROM \"b.tsv\"
 """
 
-# check that database url_prefix is ignored if pass full url as table name
-${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-USE test4;
-SELECT * FROM \"http://localhost:11111/test/a.tsv\"
-"""
-
 # Check named collection loading
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test5;

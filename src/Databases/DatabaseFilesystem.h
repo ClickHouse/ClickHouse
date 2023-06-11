@@ -31,7 +31,10 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    bool empty() const override { return true; }
+    // Contains only temporary tables
+    bool shouldBeEmptyOnDetach() const override { return false; }
+
+    bool empty() const override;
 
     bool isReadOnly() const override { return true; }
 
@@ -45,12 +48,13 @@ public:
 protected:
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
+    StoragePtr tryGetTableFromCache(const std::string & name) const;
+
     std::string getTablePath(const std::string & table_name) const;
 
     void addTable(const std::string & table_name, StoragePtr table_storage) const;
 
     bool checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const;
-
 
 private:
     String path;
