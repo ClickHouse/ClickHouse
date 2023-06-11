@@ -557,7 +557,7 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
