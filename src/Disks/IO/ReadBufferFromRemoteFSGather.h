@@ -27,7 +27,8 @@ public:
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
         const ReadSettings & settings_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_);
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        bool use_external_buffer_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -37,15 +38,13 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
+    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+
     IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     size_t getFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
-
-    bool initialized() const { return current_buf != nullptr; }
-
-    size_t getImplementationBufferOffset() const;
 
     off_t seek(off_t offset, int whence) override;
 
@@ -71,6 +70,7 @@ private:
     const ReadBufferCreator read_buffer_creator;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
+    const bool use_external_buffer;
     bool with_cache;
 
     size_t read_until_position = 0;
