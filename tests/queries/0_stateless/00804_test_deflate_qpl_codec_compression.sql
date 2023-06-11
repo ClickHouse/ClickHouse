@@ -1,3 +1,7 @@
+--Tags: no-fasttest, no-cpu-aarch64
+-- no-fasttest because DEFLATE_QPL isn't available in fasttest
+-- no-cpu-aarch64 because DEFLATE_QPL is x86-only
+
 SET send_logs_level = 'fatal';
 SET enable_deflate_qpl_codec = 1;
 
