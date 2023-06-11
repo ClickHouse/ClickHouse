@@ -261,7 +261,7 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     // As names we pass all the possible names that can be offered to user.
-    void assertDatabaseExistsUnlocked(const String & database_name, const String & prompting_name=" ") const TSA_REQUIRES(databases_mutex);
+    void assertDatabaseExistsUnlocked(const String & database_name, const std::vector<String> & names = {}) const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
