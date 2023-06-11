@@ -332,6 +332,19 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
+### Deploy on Easypanel {#deploy-on-easypanel}
+
+[Easypanel](https://easypanel.io) it's a modern server control panel. You can use it to deploy ClickHouse on your own server.
+
+[![Deploy to Easypanel](https://easypanel.io/img/deploy-on-easypanel-40-outline.svg)](https://easypanel.io/docs/templates/clickhouse)
+
+**Instructions**
+
+1. Create a VM that runs Ubuntu on your cloud provider.
+2. Install Easypanel using the instructions from the website.
+3. Create a new project.
+4. Install ClickHouse using the dedicated template.
+
 ## Non-Production Deployments (Advanced)
 
 ### Compile From Source {#from-sources}
