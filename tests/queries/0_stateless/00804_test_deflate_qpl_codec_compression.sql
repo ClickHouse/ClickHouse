@@ -1,6 +1,3 @@
---Tags: no-fasttest
--- no-fasttest because DEFLATE_QPL isn't available in fasttest
-
 SET send_logs_level = 'fatal';
 SET enable_deflate_qpl_codec = 1;
 
