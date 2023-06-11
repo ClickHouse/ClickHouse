@@ -6,14 +6,20 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageAzureThreads;
+    extern const Metric ObjectStorageAzureThreadsActive;
+
+}
 
 namespace DB
 {
@@ -23,6 +29,61 @@ namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int UNSUPPORTED_METHOD;
+}
+
+
+namespace
+{
+
+class AzureIteratorAsync final : public IObjectStorageIteratorAsync
+{
+public:
+    AzureIteratorAsync(
+        const std::string & path_prefix,
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
+        size_t max_list_size)
+        : IObjectStorageIteratorAsync(
+            CurrentMetrics::ObjectStorageAzureThreads,
+            CurrentMetrics::ObjectStorageAzureThreadsActive,
+            "ListObjectAzure")
+        , client(client_)
+    {
+
+        options.Prefix = path_prefix;
+        options.PageSizeHint = static_cast<int>(max_list_size);
+    }
+
+private:
+    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+    {
+        batch.clear();
+        auto outcome = client->ListBlobs(options);
+        auto blob_list_response = client->ListBlobs(options);
+        auto blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
+        {
+            batch.emplace_back(
+                blob.Name,
+                ObjectMetadata{
+                    static_cast<uint64_t>(blob.BlobSize),
+                    Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            blob.Details.LastModified.time_since_epoch()).count()),
+                    {}});
+        }
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            return false;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
+        return true;
+    }
+
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+    Azure::Storage::Blobs::ListBlobsOptions options;
+};
+
 }
 
 
@@ -65,6 +126,14 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 
     return false;
+}
+
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix) const
+{
+    auto settings_ptr = settings.get();
+    auto client_ptr = client.get();
+
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, settings_ptr->list_object_keys_size);
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
@@ -146,27 +215,37 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
+            /* restricted_seek */true,
             read_until_position);
     };
 
-    auto reader_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        disk_read_settings,
-        global_context->getFilesystemCacheLog());
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */false);
 
-    if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-    {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(reader_impl), reader, disk_read_settings,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-    }
-    else
-    {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl), disk_read_settings);
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, disk_read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
     }
 }
 

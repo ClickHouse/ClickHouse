@@ -816,12 +816,7 @@ struct ImplBLAKE3
 #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-#    if defined(MEMORY_SANITIZER)
-            auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
-            __msan_unpoison(out_char_data, length);
-#    else
-            auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
-#    endif
+        auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
         if (err_msg != nullptr)
         {
             auto err_st = std::string(err_msg);

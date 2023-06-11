@@ -882,6 +882,38 @@ My NULL
 My NULL
 ```
 
+### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+
+Trims spaces and tabs in non-quoted CSV strings.
+
+Default value: `true`.
+
+**Examples**
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+```
+
+Result
+
+```text
+"string"
+```
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
+```
+
+Result
+
+```text
+"  string  "
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}

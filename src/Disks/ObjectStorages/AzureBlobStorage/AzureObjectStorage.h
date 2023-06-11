@@ -5,13 +5,9 @@
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
-
-#if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
-#endif
 
 namespace Poco
 {
@@ -37,11 +33,13 @@ struct AzureObjectStorageSettings
     {
     }
 
-    size_t max_single_part_upload_size; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek;
-    size_t max_single_read_retries;
-    size_t max_single_download_retries;
-    int list_object_keys_size;
+    AzureObjectStorageSettings() = default;
+
+    size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
+    uint64_t min_bytes_for_seek = 1024 * 1024;
+    size_t max_single_read_retries = 3;
+    size_t max_single_download_retries = 3;
+    int list_object_keys_size = 1000;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -59,6 +57,8 @@ public:
         SettingsPtr && settings_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 

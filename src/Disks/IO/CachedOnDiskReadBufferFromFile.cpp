@@ -945,18 +945,23 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-#ifdef ABORT_ON_LOGICAL_ERROR
             const size_t new_file_offset = file_offset_of_buffer_end + size;
-            chassert(new_file_offset - 1 <= file_segment.range().right);
             const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+            if (new_file_offset > file_segment.range().right + 1)
+            {
+                auto file_segment_path = file_segment.getPathInLocalCache();
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Read unexpected size. File size: {}, file path: {}, file segment info: {}",
+                    fs::file_size(file_segment_path), file_segment_path, file_segment.getInfoForLog());
+            }
             if (new_file_offset > file_segment_write_offset)
             {
-                LOG_TRACE(
-                    log, "Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Read unexpected size. Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
                     size, file_offset_of_buffer_end, file_segment.range().toString(), file_segment_write_offset);
-                chassert(false);
             }
-#endif
         }
         else
         {
@@ -1219,7 +1224,7 @@ off_t CachedOnDiskReadBufferFromFile::getPosition()
 
 void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
-    if (!CachedObjectStorage::canUseReadThroughCache()
+    if (!CachedObjectStorage::canUseReadThroughCache(settings)
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
 }
