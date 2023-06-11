@@ -77,8 +77,10 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         });
 
     if (preserve_num_streams)
+    {
         pipeline.resize(num_streams);
-    
+    }
+
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");
 }
