@@ -238,9 +238,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager)
+void addQueryTreePasses(QueryTreePassManager & manager, const StoragePtr & storage)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<QueryAnalysisPass>(storage));
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());

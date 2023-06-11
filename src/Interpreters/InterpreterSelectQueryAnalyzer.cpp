@@ -109,6 +109,9 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         }
     }
 
+    if (auto * table_node = table_expression_to_replace->as<TableNode>(); table_node && table_node->getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullTableName())
+        return;
+
     auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
@@ -133,7 +136,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager);
+    addQueryTreePasses(query_tree_pass_manager, storage);
 
     if (select_query_options.ignore_ast_optimizations)
         query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);

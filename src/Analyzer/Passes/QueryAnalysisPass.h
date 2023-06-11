@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -71,7 +72,7 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    QueryAnalysisPass() = default;
+    explicit QueryAnalysisPass(const StoragePtr & storage_ = nullptr) : storage(storage_) {}
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
@@ -93,6 +94,7 @@ public:
 
 private:
     QueryTreeNodePtr table_expression;
+    const StoragePtr storage = nullptr;
 };
 
 }
