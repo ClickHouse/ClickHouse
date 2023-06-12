@@ -340,10 +340,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
         {
-            if (my_prev)
-                my_prev(progress);
+            if (prev)
+                prev(progress);
 
             affected_rows += progress.written_rows;
         });

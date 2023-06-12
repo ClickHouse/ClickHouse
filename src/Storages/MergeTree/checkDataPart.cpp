@@ -94,13 +94,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
     };
 
     auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
-    SerializationInfoByName serialization_infos;
+    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, {}, std::nullopt, std::nullopt);
-        SerializationInfo::Settings settings{ratio_of_defaults, false};
-        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        serialization_infos.readJSON(*serialization_file);
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)

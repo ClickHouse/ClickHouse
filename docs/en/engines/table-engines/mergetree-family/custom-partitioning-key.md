@@ -165,7 +165,7 @@ Performance of such a query heavily depends on the table layout. Because of that
 
 The key factors for a good performance:
 
-- number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will under-utilize the machine
+- number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will underutilize the machine
 - partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
 - partitions should be comparable in size, so all threads will do roughly the same amount of work
 

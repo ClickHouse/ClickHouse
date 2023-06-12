@@ -15,10 +15,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event WriteBufferFromS3Bytes;
-    extern const Event WriteBufferFromS3Microseconds;
-    extern const Event WriteBufferFromS3RequestsErrors;
-
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
     extern const Event S3PutObject;
@@ -104,8 +100,9 @@ namespace
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
-        void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
+        void createMultipartUpload()
         {
+            S3::CreateMultipartUploadRequest request;
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -119,14 +116,6 @@ namespace
             if (!storage_class_name.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            client_ptr->setKMSHeaders(request);
-        }
-
-        void createMultipartUpload()
-        {
-            S3::CreateMultipartUploadRequest request;
-            fillCreateMultipartRequest(request);
-
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
             if (for_disk_s3)
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
@@ -139,10 +128,7 @@ namespace
                 LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
             }
             else
-            {
-                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-            }
         }
 
         void completeMultipartUpload()
@@ -191,7 +177,7 @@ namespace
                     LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
                     continue; /// will retry
                 }
-                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Tags: {}",
@@ -235,12 +221,7 @@ namespace
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
-                    Stopwatch watch;
                     uploadPart(part_number, position, part_size);
-                    watch.stop();
-
-                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, part_size);
-                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                     position = next_position;
                 }
@@ -251,11 +232,11 @@ namespace
                 // Multipart upload failed because it wasn't possible to schedule all the tasks.
                 // To avoid execution of already scheduled tasks we abort MultipartUpload.
                 abortMultipartUpload();
-                waitForAllBackgroundTasks();
+                waitForAllBackGroundTasks();
                 throw;
             }
 
-            waitForAllBackgroundTasks();
+            waitForAllBackGroundTasks();
             completeMultipartUpload();
         }
 
@@ -361,7 +342,7 @@ namespace
                             task->exception = std::current_exception();
                         }
                         task_finish_notify();
-                    }, Priority{});
+                    }, 0);
                 }
                 catch (...)
                 {
@@ -393,7 +374,7 @@ namespace
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
         virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
 
-        void waitForAllBackgroundTasks()
+        void waitForAllBackGroundTasks()
         {
             if (!schedule)
                 return;
@@ -484,8 +465,6 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
-
-            client_ptr->setKMSHeaders(request);
         }
 
         void processPutRequest(const S3::PutObjectRequest & request)
@@ -497,21 +476,16 @@ namespace
                 if (for_disk_s3)
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-                Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
-                watch.stop();
 
                 if (outcome.IsSuccess())
                 {
-                    Int64 object_size = request.GetContentLength();
-                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
-                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
                     LOG_TRACE(
                         log,
                         "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}",
                         dest_bucket,
                         dest_key,
-                        object_size);
+                        request.GetContentLength());
                     break;
                 }
 
@@ -540,7 +514,7 @@ namespace
                         request.GetContentLength());
                     continue; /// will retry
                 }
-                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Object size: {}",
@@ -584,7 +558,6 @@ namespace
             if (!outcome.IsSuccess())
             {
                 abortMultipartUpload();
-                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
@@ -613,16 +586,35 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
+            , supports_multipart_copy(S3::supportsMultiPartCopy(client_ptr_->getProviderType()))
         {
         }
 
         void performCopy()
         {
-            if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
+            if (size <= upload_settings.max_single_operation_copy_size)
+            {
                 performSingleOperationCopy();
+            }
+            else if (!supports_multipart_copy)
+            {
+                LOG_INFO(&Poco::Logger::get("copyS3File"), "Multipart upload using copy is not supported, will use regular upload");
+                copyDataToS3File(
+                    getSourceObjectReadBuffer(),
+                    offset,
+                    size,
+                    client_ptr,
+                    dest_bucket,
+                    dest_key,
+                    request_settings,
+                    object_metadata,
+                    schedule,
+                    for_disk_s3);
+            }
             else
+            {
                 performMultipartUploadCopy();
+            }
 
             if (request_settings.check_objects_after_upload)
                 checkObjectAfterUpload();
@@ -668,8 +660,6 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
-
-            client_ptr->setKMSHeaders(request);
         }
 
         void processCopyRequest(const S3::CopyObjectRequest & request)
@@ -695,12 +685,19 @@ namespace
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest" || outcome.GetError().GetExceptionName() == "InvalidArgument")
                 {
+                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
+                    LOG_INFO(
+                        log,
+                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
+                        "upload copy",
+                        outcome.GetError().GetExceptionName(),
+                        dest_bucket,
+                        dest_key,
+                        size);
+
                     if (!supports_multipart_copy)
                     {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: {}",
-                                dest_bucket,
-                                dest_key,
-                                size);
+                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload");
                         copyDataToS3File(
                             getSourceObjectReadBuffer(),
                             offset,
@@ -716,16 +713,6 @@ namespace
                     }
                     else
                     {
-                        // Can't come here with MinIO, MinIO allows single part upload for large objects.
-                        LOG_INFO(
-                            log,
-                            "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
-                            "upload copy",
-                            outcome.GetError().GetExceptionName(),
-                            dest_bucket,
-                            dest_key,
-                            size);
-
                         performMultipartUploadCopy();
                         break;
                     }

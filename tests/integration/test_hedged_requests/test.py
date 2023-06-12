@@ -23,7 +23,7 @@ def started_cluster():
     NODES["node"] = cluster.add_instance(
         "node",
         stay_alive=True,
-        main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
+        main_configs=["configs/remote_servers.xml"],
         user_configs=["configs/users.xml"],
     )
 
@@ -376,9 +376,6 @@ def test_async_connect(started_cluster):
     )
     check_changing_replica_events(2)
     check_if_query_sending_was_not_suspended()
-
-    # Restart server to reset connection pool state
-    NODES["node"].restart_clickhouse()
 
     NODES["node"].query(
         "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"

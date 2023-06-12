@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <iterator>
 #include <bit>
-#include <span>
 
 #include <type_traits>
 
@@ -624,6 +623,12 @@ struct NullOutput
     void push_back(char) {} /// NOLINT
 };
 
+void parseUUID(const UInt8 * src36, UInt8 * dst16);
+void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16);
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
+void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
+
+
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
@@ -765,8 +770,6 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-UUID parseUUID(std::span<const UInt8> src);
-
 template <typename ReturnType = void>
 inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 {
@@ -794,9 +797,12 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
                     return ReturnType(false);
                 }
             }
-        }
 
-        uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
+            parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+        }
+        else
+            parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+
         return ReturnType(true);
     }
     else

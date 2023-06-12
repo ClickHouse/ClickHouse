@@ -15,6 +15,9 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/MemoryStream.h"
 #include <iomanip>
+#if !defined(POCO_NO_LOCALE)
+#include <locale>
+#endif
 #include <cstdio>
 
 

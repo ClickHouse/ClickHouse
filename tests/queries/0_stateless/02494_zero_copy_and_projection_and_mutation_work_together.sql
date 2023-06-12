@@ -72,8 +72,8 @@ SYSTEM SYNC REPLICA wikistat2;
 -- Such condition will lead to successful queries.
 SELECT 0 FROM numbers(5) WHERE sleepEachRow(1) = 1;
 
-select sum(hits), count() from wikistat1 GROUP BY project, subproject, path settings optimize_use_projections = 1, force_optimize_projection = 1;
-select sum(hits), count() from wikistat2 GROUP BY project, subproject, path settings optimize_use_projections = 1, force_optimize_projection = 1;
+select sum(hits), count() from wikistat1 GROUP BY project, subproject, path settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+select sum(hits), count() from wikistat2 GROUP BY project, subproject, path settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
 DROP TABLE wikistat1;
 DROP TABLE wikistat2;

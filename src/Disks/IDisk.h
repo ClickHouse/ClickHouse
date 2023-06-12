@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
-#include <Core/Names.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -21,7 +20,6 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
-#include <sys/stat.h>
 
 
 namespace fs = std::filesystem;
@@ -211,6 +209,15 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
+    /// Write a file using a custom function to write an object to the disk's object storage.
+    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
+    /// to write an object to the object storage while this method allows to specify a callback for that.
+    virtual void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function);
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
@@ -239,34 +246,6 @@ public:
     /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
-
-    /// Returns the path to a blob representing a specified file.
-    /// The meaning of the returned path depends on disk's type.
-    /// E.g. for DiskLocal it's the absolute path to the file and for DiskObjectStorage it's
-    /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
-    virtual Strings getBlobPath(const String & path) const = 0;
-
-    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
-
-    /// Write a file using a custom function to write a blob representing the file.
-    /// This method is alternative to writeFile(), the difference is that for example for DiskObjectStorage
-    /// writeFile() calls IObjectStorage::writeObject() to write an object to the object storage while
-    /// this method allows to specify a callback for that.
-    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
-
-    /// Reads a file from an encrypted disk without decrypting it (only for encrypted disks).
-    virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const;
-
-    /// Writes an already encrypted file to the disk (only for encrypted disks).
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
-        const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) const;
-
-    /// Returns the size of an encrypted file (only for encrypted disks).
-    virtual size_t getEncryptedFileSize(const String & path) const;
-    virtual size_t getEncryptedFileSize(size_t unencrypted_size) const;
-
-    /// Returns IV of an encrypted file (only for encrypted disks).
-    virtual UInt128 getEncryptedFileIV(const String & path) const;
 
     virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
 
@@ -388,13 +367,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getMetadataStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
-    }
+    virtual MetadataStoragePtr getMetadataStorage() = 0;
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.

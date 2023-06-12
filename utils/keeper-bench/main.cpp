@@ -3,24 +3,10 @@
 #include "Runner.h"
 #include "Stats.h"
 #include "Generator.h"
-#include "Common/Exception.h"
 #include <Common/TerminalSize.h>
 #include <Core/Types.h>
-#include <boost/program_options/variables_map.hpp>
 
-namespace
-{
-
-template <typename T>
-std::optional<T> valueToOptional(const boost::program_options::variable_value & value)
-{
-    if (value.empty())
-        return std::nullopt;
-
-    return value.as<T>();
-}
-
-}
+using namespace std;
 
 int main(int argc, char *argv[])
 {
@@ -33,14 +19,15 @@ int main(int argc, char *argv[])
 
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
-            ("help",                                                                         "produce help message")
-            ("config",         value<std::string>()->default_value(""),                      "yaml/xml file containing configuration")
-            ("concurrency,c",  value<unsigned>(),                                            "number of parallel queries")
-            ("report-delay,d", value<double>(),                                              "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("iterations,i",   value<size_t>(),                                              "amount of queries to be executed")
-            ("time-limit,t",   value<double>(),                                              "stop launch of queries after specified time limit")
-            ("hosts,h",        value<Strings>()->multitoken()->default_value(Strings{}, ""), "")
+            ("help",                                                            "produce help message")
+            ("generator",     value<std::string>()->default_value("set_small_data"),             "query to execute")
+            ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
+            ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
+            ("hosts,h",       value<Strings>()->multitoken(),                   "")
             ("continue_on_errors", "continue testing even if a query fails")
+            ("reconnect", "establish new connection for every query")
         ;
 
         boost::program_options::variables_map options;
@@ -54,22 +41,15 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        Runner runner(valueToOptional<unsigned>(options["concurrency"]),
-                      options["config"].as<std::string>(),
-                      options["hosts"].as<Strings>(),
-                      valueToOptional<double>(options["time-limit"]),
-                      valueToOptional<double>(options["report-delay"]),
-                      options.count("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
-                      valueToOptional<size_t>(options["iterations"]));
+        Runner runner(options["concurrency"].as<unsigned>(),
+            options["generator"].as<std::string>(),
+            options["hosts"].as<Strings>(),
+            options["timelimit"].as<double>(),
+            options["delay"].as<double>(),
+            options.count("continue_on_errors"),
+            options["iterations"].as<size_t>());
 
-        try
-        {
-            runner.runBenchmark();
-        }
-        catch (const DB::Exception & e)
-        {
-            std::cout << "Got exception while trying to run benchmark: " << e.message() << std::endl;
-        }
+        runner.runBenchmark();
 
         return 0;
     }

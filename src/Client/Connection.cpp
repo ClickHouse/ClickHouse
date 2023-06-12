@@ -185,7 +185,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
 
         sendHello();
-        receiveHello(timeouts.handshake_timeout);
+        receiveHello();
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -227,28 +227,12 @@ void Connection::disconnect()
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
-    std::exception_ptr finalize_exception;
-    try
-    {
-        // finalize() can write to socket and throw an exception.
-        if (out)
-            out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-    }
-    out = nullptr;
-
+    out = nullptr; // can write to socket
     if (socket)
         socket->close();
     socket = nullptr;
     connected = false;
     nonce.reset();
-
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
 }
 
 
@@ -316,10 +300,8 @@ void Connection::sendAddendum()
 }
 
 
-void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
+void Connection::receiveHello()
 {
-    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -372,10 +354,6 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         receiveException()->rethrow();
     else
     {
-        /// Reset timeout_setter before disconnect,
-        /// because after disconnect socket will be invalid.
-        timeout_setter.reset();
-
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");

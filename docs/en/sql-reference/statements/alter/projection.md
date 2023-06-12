@@ -142,11 +142,11 @@ The following operations with [projections](/docs/en/engines/table-engines/merge
 
 ## ADD PROJECTION
 
-`ALTER TABLE [db].name ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` - Adds projection description to tables metadata.
+`ALTER TABLE [db].name ADD PROJECTION name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` - Adds projection description to tables metadata.
 
 ## DROP PROJECTION
 
-`ALTER TABLE [db].name DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db].name DROP PROJECTION name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 ## MATERIALIZE PROJECTION
 
@@ -154,7 +154,7 @@ The following operations with [projections](/docs/en/engines/table-engines/merge
 
 ## CLEAR PROJECTION
 
-`ALTER TABLE [db.]table CLEAR PROJECTION [IF EXISTS] name IN PARTITION partition_name` - Deletes projection files from disk without removing description. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` - Deletes projection files from disk without removing description. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.

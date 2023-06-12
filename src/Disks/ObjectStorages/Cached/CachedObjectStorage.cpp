@@ -4,7 +4,6 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
@@ -44,7 +43,13 @@ DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->createKeyForPath(path);
+    return cache->hash(path);
+}
+
+String CachedObjectStorage::getCachePath(const std::string & path) const
+{
+    FileCache::Key cache_key = getCacheKey(path);
+    return cache->getPathInLocalCache(cache_key);
 }
 
 std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
@@ -57,10 +62,10 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (!canUseReadThroughCache(read_settings))
+    if (FileCache::isReadOnly())
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
-    return object_storage->patchSettings(modified_settings);
+    return IObjectStorage::patchSettings(modified_settings);
 }
 
 void CachedObjectStorage::startup()
@@ -81,7 +86,45 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
 {
     if (objects.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
-    return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
+
+    assert(!objects[0].getPathKeyForCache().empty());
+
+    /// Add cache relating settings to ReadSettings.
+    auto modified_read_settings = patchSettings(read_settings);
+    auto implementation_buffer = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
+
+    /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
+    if (implementation_buffer->isIntegratedWithFilesystemCache()
+        && modified_read_settings.enable_filesystem_cache_on_lower_level)
+    {
+        return implementation_buffer;
+    }
+    else
+    {
+        if (!file_size)
+            file_size = implementation_buffer->getFileSize();
+
+        auto implementation_buffer_creator = [objects, modified_read_settings, read_hint, file_size, this]()
+        {
+            return std::make_unique<BoundedReadBuffer>(
+                object_storage->readObjects(objects, modified_read_settings, read_hint, file_size));
+        };
+
+        /// TODO: A test is needed for the case of non-s3 storage and *Log family engines.
+        std::string path = objects[0].absolute_path;
+        FileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
+
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
+            path,
+            key,
+            cache,
+            implementation_buffer_creator,
+            modified_read_settings,
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            file_size.value(),
+            /* allow_seeks */true,
+            /* use_external_buffer */false);
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
@@ -90,30 +133,67 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    /// Add cache relating settings to ReadSettings.
+    auto modified_read_settings = patchSettings(read_settings);
+    auto implementation_buffer = object_storage->readObject(object, read_settings, read_hint, file_size);
+
+    /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
+    if (implementation_buffer->isIntegratedWithFilesystemCache()
+        && modified_read_settings.enable_filesystem_cache_on_lower_level)
+    {
+        return implementation_buffer;
+    }
+    else
+    {
+        if (!file_size)
+            file_size = implementation_buffer->getFileSize();
+
+        auto implementation_buffer_creator = [object, read_settings, read_hint, file_size, this]()
+        {
+            return std::make_unique<BoundedReadBuffer>(object_storage->readObject(object, read_settings, read_hint, file_size));
+        };
+
+        FileCache::Key key = getCacheKey(object.getPathKeyForCache());
+        LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.absolute_path, key.toString());
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
+            object.absolute_path,
+            key,
+            cache,
+            implementation_buffer_creator,
+            read_settings,
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            file_size.value(),
+            /* allow_seeks */true,
+            /* use_external_buffer */false);
+    }
 }
+
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode, // Cached doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
+    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
-    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
+    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
-        && fs::path(object.remote_path).extension() != ".tmp";
+        && fs::path(object.absolute_path).extension() != ".tmp";
 
+    auto path_key_for_cache = object.getPathKeyForCache();
     /// Need to remove even if cache_on_write == false.
-    removeCacheIfExists(object.remote_path);
+    removeCacheIfExists(path_key_for_cache);
 
     if (cache_on_write)
     {
-        auto key = getCacheKey(object.remote_path);
+        auto key = getCacheKey(path_key_for_cache);
+        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(path_key_for_cache), key.toString());
+
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
             std::move(implementation_buffer),
             cache,
@@ -133,32 +213,33 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache));
+    cache->removeIfExists(getCacheKey(path_key_for_cache));
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
+    removeCacheIfExists(object.getPathKeyForCache());
     object_storage->removeObject(object);
 }
 
 void CachedObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
+        removeCacheIfExists(object.getPathKeyForCache());
 
     object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.remote_path);
+    removeCacheIfExists(object.getPathKeyForCache());
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
+        removeCacheIfExists(object.getPathKeyForCache());
 
     object_storage->removeObjectsIfExist(objects);
 }
@@ -201,9 +282,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
-    object_storage->listObjects(path, children, max_keys);
+    object_storage->findAllFiles(path, children, max_keys);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
@@ -225,16 +306,6 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
-}
-
-bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
-{
-    if (!settings.avoid_readthrough_cache_outside_query_context)
-        return true;
-
-    return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
-        && !CurrentThread::getQueryId().empty();
 }
 
 }

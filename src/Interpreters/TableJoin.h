@@ -217,8 +217,6 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
-
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
@@ -234,17 +232,8 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-
-    bool forceNullableRight() const
-    {
-        return join_use_nulls && isLeftOrFull(kind());
-    }
-
-    bool forceNullableLeft() const
-    {
-        return join_use_nulls && isRightOrFull(kind());
-    }
-
+    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
+    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }

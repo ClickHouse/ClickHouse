@@ -2,7 +2,6 @@
 
 #include <mutex>
 #include <pcg_random.hpp>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -978,9 +977,6 @@ private:
 
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
-
-        /// Do not account memory that was occupied by the dictionaries for the query/user context.
-        MemoryTrackerBlockerInThread memory_blocker;
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try

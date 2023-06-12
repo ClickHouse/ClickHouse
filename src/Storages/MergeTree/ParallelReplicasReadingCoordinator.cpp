@@ -19,33 +19,8 @@
 #include "Storages/MergeTree/RequestResponse.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
-#include <fmt/core.h>
 #include <fmt/format.h>
 
-namespace DB
-{
-struct Part
-{
-    mutable RangesInDataPartDescription description;
-    // FIXME: This is needed to put this struct in set
-    // and modify through iterator
-    mutable std::set<size_t> replicas;
-
-    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
-};
-}
-
-template <>
-struct fmt::formatter<DB::Part>
-{
-    static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
-
-    template <typename FormatContext>
-    auto format(const DB::Part & part, FormatContext & ctx)
-    {
-        return format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
-    }
-};
 
 namespace DB
 {
@@ -62,22 +37,18 @@ public:
     {
         size_t number_of_requests{0};
         size_t sum_marks{0};
-        bool is_unavailable{false};
     };
     using Stats = std::vector<Stat>;
     static String toString(Stats stats)
     {
         String result = "Statistics: ";
-        std::vector<String> stats_by_replica;
         for (size_t i = 0; i < stats.size(); ++i)
-            stats_by_replica.push_back(fmt::format("replica {}{} - {{requests: {} marks: {}}}", i, stats[i].is_unavailable ? " is unavailable" : "", stats[i].number_of_requests, stats[i].sum_marks));
-        result += fmt::format("{}", fmt::join(stats_by_replica, "; "));
+            result += fmt::format("-- replica {}, requests: {} marks: {} ", i, stats[i].number_of_requests, stats[i].sum_marks);
         return result;
     }
 
     Stats stats;
-    size_t replicas_count{0};
-    size_t unavailable_replicas_count{0};
+    size_t replicas_count;
 
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
@@ -87,7 +58,17 @@ public:
     virtual ~ImplInterface() = default;
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
-    virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
+};
+
+
+struct Part
+{
+    mutable RangesInDataPartDescription description;
+    // FIXME: This is needed to put this struct in set
+    // and modify through iterator
+    mutable std::set<size_t> replicas;
+
+    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 
 using Parts = std::set<Part>;
@@ -134,7 +115,6 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
-    void markReplicaAsUnavailable(size_t replica_number) override;
 
     void updateReadingState(const InitialAllRangesAnnouncement & announcement);
     void finalizeReadingState();
@@ -151,7 +131,7 @@ public:
 
 DefaultCoordinator::~DefaultCoordinator()
 {
-    LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+    LOG_INFO(log, "Coordination done: {}", toString(stats));
 }
 
 void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement & announcement)
@@ -206,17 +186,6 @@ void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement &
     }
 }
 
-void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
-{
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
-
-    ++unavailable_replicas_count;
-    stats[replica_number].is_unavailable = true;
-
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        finalizeReadingState();
-}
-
 void DefaultCoordinator::finalizeReadingState()
 {
     /// Clear all the delayed queue
@@ -238,7 +207,14 @@ void DefaultCoordinator::finalizeReadingState()
         delayed_parts.pop_front();
     }
 
-    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
+    String description;
+    for (const auto & part : all_parts_to_read)
+    {
+        description += part.description.describe();
+        description += fmt::format("Replicas: ({}) --- ", fmt::join(part.replicas, ","));
+    }
+
+    LOG_INFO(log, "Reading state is fully initialized: {}", description);
 }
 
 
@@ -252,7 +228,7 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
     stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
-    LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+    LOG_INFO(log, "{} {}", sent_initial_requests, replicas_count);
     if (sent_initial_requests == replicas_count)
         finalizeReadingState();
 }
@@ -358,33 +334,22 @@ public:
     {}
     ~InOrderCoordinator() override
     {
-        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+        LOG_INFO(log, "Coordination done: {}", toString(stats));
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
-    void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
 
     Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
-template <CoordinationMode mode>
-void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
-{
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
-
-    stats[replica_number].is_unavailable = true;
-    ++unavailable_replicas_count;
-
-    /// There is nothing to do else.
-}
 
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement {}", announcement.describe());
+    LOG_TRACE(log, "Received an announecement {}", announcement.describe());
 
     /// To get rid of duplicates
     for (const auto & part: announcement.description)
@@ -416,6 +381,7 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         std::sort(ranges.begin(), ranges.end());
     }
 }
+
 
 template <CoordinationMode mode>
 ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
@@ -514,7 +480,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
     if (!pimpl)
     {
-        mode = announcement.mode;
+        setMode(announcement.mode);
         initialize();
     }
 
@@ -528,23 +494,16 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
     if (!pimpl)
     {
-        mode = request.mode;
+        setMode(request.mode);
         initialize();
     }
 
     return pimpl->handleRequest(std::move(request));
 }
 
-void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
+void ParallelReplicasReadingCoordinator::setMode(CoordinationMode mode_)
 {
-    std::lock_guard lock(mutex);
-
-    if (!pimpl)
-    {
-        initialize();
-    }
-
-    return pimpl->markReplicaAsUnavailable(replica_number);
+    mode = mode_;
 }
 
 void ParallelReplicasReadingCoordinator::initialize()

@@ -31,7 +31,6 @@ MergeListElement::MergeListElement(
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
-        total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
     }
@@ -58,7 +57,6 @@ MergeInfo MergeListElement::getInfo() const
     res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
-    res.total_size_bytes_uncompressed = total_size_bytes_uncompressed;
     res.total_size_marks = total_size_marks;
     res.total_rows_count = total_rows_count;
     res.bytes_read_uncompressed = bytes_read_uncompressed.load(std::memory_order_relaxed);
@@ -78,11 +76,6 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
-}
-
-MergeListElement::~MergeListElement()
-{
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }

@@ -140,7 +140,7 @@ range([start, ] end [, step])
 
 **Implementation details**
 
-- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
+- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments's.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
 
 **Examples**
@@ -1236,7 +1236,7 @@ arrayAUC(arr_scores, arr_labels)
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
 **Returned value**
 
