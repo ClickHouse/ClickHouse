@@ -511,7 +511,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, const std::vector<String> & names) const
 {
     assert(!database_name.empty());
-    if (databases.end() == databases.find(database_name))
+    if (databases.end() == databases.find(database_name) && database_name != "default")
     {
         if (names.empty())
         {
