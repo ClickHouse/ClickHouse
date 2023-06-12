@@ -491,7 +491,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -1138,7 +1138,7 @@ These parameters define the cache layer:
 
 Cache parameters:
 - `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+- `max_size` — The size (amount of disk space) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
