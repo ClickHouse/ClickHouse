@@ -83,7 +83,7 @@ RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
         object_storage.get(), configuration.container, configuration.blobs_paths,
-        std::nullopt,  query, virtual_block, context, nullptr);
+        std::nullopt, query, virtual_block, context, nullptr);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String {return iterator->next().relative_path;});
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
