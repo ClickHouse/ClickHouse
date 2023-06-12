@@ -1138,7 +1138,7 @@ These parameters define the cache layer:
 
 Cache parameters:
 - `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+- `max_size` — The size (amount of disk space) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
