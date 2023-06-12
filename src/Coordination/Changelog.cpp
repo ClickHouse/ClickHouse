@@ -13,7 +13,9 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
+#include <Common/logger_useful.h
+#include <base/errnoToString.h>
+#include <libnuraft/log_val_type.hxx>
 
 
 namespace DB
@@ -548,7 +550,7 @@ public:
                     continue;
 
                 /// Create log entry for read data
-                auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, record.header.value_type);
+                auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, static_cast<nuraft::log_val_type>(record.header.value_type));
                 if (result.first_read_index == 0)
                     result.first_read_index = record.header.index;
 
