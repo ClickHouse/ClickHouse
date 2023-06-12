@@ -5,6 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 
@@ -110,12 +111,19 @@ public:
         auto res_column = ColumnUInt32::create(input_rows_count);
         auto & result_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (const auto * src_non_const = typeid_cast<const ColumnInt64 *>(&col))
         {
-            result_data[i] = static_cast<UInt32>(
-                ((source_data[i] >> time_shift) + snowflake_epoch) / 1000);
+            const auto & source_data = src_non_const->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = static_cast<UInt32>(
+                    ((source_data[i] >> time_shift) + snowflake_epoch) / 1000);
+        }
+        else if (const auto * src_const = typeid_cast<const ColumnConst *>(&col))
+        {
+            Int64 src_val = src_const->getValue<Int64>();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = static_cast<UInt32>(
+                    ((src_val >> time_shift) + snowflake_epoch) / 1000);
         }
         return res_column;
     }

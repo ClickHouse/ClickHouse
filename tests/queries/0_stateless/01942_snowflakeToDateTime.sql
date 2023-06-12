@@ -30,3 +30,5 @@ SELECT
 	toTypeName(dt),
 	snowflakeToDateTime64(i64, tz) as dt64,
 	toTypeName(dt64);
+
+SELECT materialize('Asia/Singapore') a, snowflakeToDateTime(649::Int64, a) settings allow_nonconst_timezone_arguments = 1
