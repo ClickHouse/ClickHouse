@@ -214,6 +214,12 @@ Pipe StorageSystemNumbers::read(
             intersected_ranges.push_back(*intersected_range);
         }
 
+        std::cout << "Intersected Ranges:\n";
+        for (auto & r : intersected_ranges)
+        {
+            std::cout << r.toString() << std::endl;
+        }
+
         /// 1. If intersected ranges is limited, use NumbersRangedSource
         if (intersected_ranges.empty() && !intersected_ranges.rbegin()->right.isPositiveInfinity())
         {

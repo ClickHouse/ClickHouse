@@ -79,11 +79,6 @@ public:
         shrinkToIncludedIfPossible();
     }
 
-    static Range createBlank()
-    {
-        return Range(Null::Value::Null, false, Null::Value::Null, false);
-    }
-
     static Range createWholeUniverse()
     {
         return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
@@ -172,13 +167,13 @@ public:
         return less(x, right) || (right_included && equals(x, right));
     }
 
-    /// right than x
+    /// completely right than x
     bool rightThan(const Range & x) const
     {
         return less(x.right, left) || (equals(left, x.right) && !(left_included && x.right_included));
     }
 
-    /// left than x
+    /// completely left than x
     bool leftThan(const Range & x) const
     {
         return less(right, x.left) || (equals(right, x.left) && !(x.left_included && right_included));
@@ -197,6 +192,25 @@ public:
         return true;
     }
 
+    std::optional<Range> intersectWith(const Range & r) const
+    {
+        if (!intersectsRange(r))
+            return {};
+
+        bool left_bound_use_mine = true;
+        bool right_bound_use_mine = true;
+
+        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+            left_bound_use_mine = false;
+
+        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+            right_bound_use_mine = false;
+
+        std::optional<Range> ret = Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
+        return ret;
+    }
+
     /// If me near by r, they can be combined to a continuous range.
     /// TODO If filed is integer, case like [2, 3], [4, 5] is excluded.
     bool nearByWith(const Range & r) const
@@ -212,28 +226,10 @@ public:
         return false;
     }
 
-    std::optional<Range> intersectWith(const Range & r) const
-    {
-        if (!intersectsRange(r))
-            return {};
-
-        bool left_bound_use_mine = true;
-        bool right_bound_use_mine = true;
-
-        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
-            left_bound_use_mine = false;
-
-        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
-            right_bound_use_mine = false;
-
-        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
-                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-    }
-
     std::optional<Range> unionWith(const Range & r) const
     {
-        if (!intersectsRange(r))
-            return {};
+        if (!intersectsRange(r) && !nearByWith(r))
+            return {};/// TODO logical error
 
         bool left_bound_use_mine = false;
         bool right_bound_use_mine = false;
@@ -244,8 +240,9 @@ public:
         if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
             right_bound_use_mine = true;
 
-        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+        std::optional<Range> ret = Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
                      right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
+        return ret;
     }
 
     bool containsRange(const Range & r) const
@@ -272,26 +269,19 @@ public:
     }
 
     /// [1, 2]
-    bool fullBounded()
+    bool fullBounded() const
     {
         return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
     }
 
     /// (-inf, +inf)
-    bool isInfinite()
+    bool isInfinite() const
     {
         return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
     }
 
-    /// Null stands for blank range.
-    bool isBlank()
-    {
-        return (left == Null::Value::Null && right == Null::Value::Null)
-            || (equals(left, right) && !left_included && !right_included);
-    }
-
     /// Invert me.
-    std::vector<Range> invertToRanges()
+    std::vector<Range> invertToRanges() const
     {
         std::vector<Range> ranges;
         /// For full bounded range will generate tow range.
@@ -302,7 +292,7 @@ public:
         }
         else if(isInfinite())
         {
-            ranges.push_back(createBlank());
+            /// blank ranges
         }
         else /// case: (-inf, 1] or [1, +inf)
         {
