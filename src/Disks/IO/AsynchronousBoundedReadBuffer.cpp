@@ -33,15 +33,6 @@ namespace ProfileEvents
     extern const Event RemoteFSBuffers;
 }
 
-namespace
-{
-size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
-{
-    /// Buffers used for prefetch or pre-download better to have enough size, but not bigger than the whole file.
-    return std::min<size_t>(std::max<size_t>(settings.prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE), file_size);
-}
-}
-
 namespace DB
 {
 
