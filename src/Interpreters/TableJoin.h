@@ -186,6 +186,8 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
 
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
