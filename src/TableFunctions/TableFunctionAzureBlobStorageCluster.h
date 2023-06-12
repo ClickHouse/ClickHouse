@@ -16,7 +16,7 @@ namespace DB
 class Context;
 
 /**
- * azure_blob_storage_cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure, compression_method)
+ * azureBlobStorageCluster(cluster_name, source, [access_key_id, secret_access_key,] format, compression_method, structure)
  * A table function, which allows to process many files from Azure Blob Storage on a specific cluster
  * On initiator it creates a connection to _all_ nodes in cluster, discloses asterisks
  * in Azure Blob Storage file path and dispatch each file dynamically.
@@ -26,7 +26,7 @@ class Context;
 class TableFunctionAzureBlobStorageCluster : public ITableFunctionCluster<TableFunctionAzureBlobStorage>
 {
 public:
-    static constexpr auto name = "azure_blob_storage_cluster";
+    static constexpr auto name = "azureBlobStorageCluster";
     static constexpr auto signature = " - cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure]";
 
     String getName() const override
