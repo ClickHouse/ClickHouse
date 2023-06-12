@@ -1455,7 +1455,16 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     }
 
     if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
-        return !is_keeper_map_table(query_ptr);
+    {
+        if (is_keeper_map_table(query_ptr))
+            return false;
+
+        /// If there is only 1 shard then there is no need to replicate DELETE query.
+        auto current_cluster = tryGetCluster();
+        return
+            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
+            current_cluster->getShardsInfo().size() > 1;
+    }
 
     return true;
 }

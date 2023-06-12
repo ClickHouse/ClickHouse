@@ -43,14 +43,12 @@ namespace ErrorCodes
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(
-    ReadBuffer * buf,
-    SeekableReadBufferFactoryPtr buf_factory_,
+    ReadBuffer & buf,
     const Block & header_,
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
     size_t min_bytes_for_seek_)
-    : IInputFormat(header_, buf)
-    , buf_factory(std::move(buf_factory_))
+    : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , max_decoding_threads(max_decoding_threads_)
@@ -71,17 +69,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     // Create arrow file adapter.
     // TODO: Make the adapter do prefetching on IO threads, based on the full set of ranges that
     //       we'll need to read (which we know in advance). Use max_download_threads for that.
-    if (buf_factory)
-    {
-        if (format_settings.seekable_read && buf_factory->checkIfActuallySeekable())
-            arrow_file = std::make_shared<RandomAccessFileFromManyReadBuffers>(*buf_factory);
-        else
-            arrow_file = asArrowFileLoadIntoMemory(*buf_factory->getReader(), is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
-    }
-    else
-    {
-        arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    }
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
 
     if (is_stopped)
         return;
@@ -388,7 +376,7 @@ ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings 
 NamesAndTypesList ParquetSchemaReader::readSchema()
 {
     std::atomic<int> is_stopped{0};
-    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
 
     auto metadata = parquet::ReadMetaData(file);
 
@@ -406,8 +394,7 @@ void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
             "Parquet",
-            [](ReadBuffer * buf,
-               SeekableReadBufferFactoryPtr buf_factory,
+            [](ReadBuffer & buf,
                const Block & sample,
                const FormatSettings & settings,
                const ReadSettings& read_settings,
@@ -418,7 +405,6 @@ void registerInputFormatParquet(FormatFactory & factory)
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : 8 * 1024;
                 return std::make_shared<ParquetBlockInputFormat>(
                     buf,
-                    std::move(buf_factory),
                     sample,
                     settings,
                     max_parsing_threads,

@@ -138,7 +138,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
@@ -344,6 +344,7 @@ private:
 
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
+    void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
@@ -382,6 +383,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
+    String getEndpointName() const;
 
     /// If true, the table is offline and can not be written to it.
     /// This flag is managed by RestartingThread.
@@ -699,6 +701,7 @@ private:
     bool fetchPart(
         const String & part_name,
         const StorageMetadataPtr & metadata_snapshot,
+        const String & source_zookeeper_name,
         const String & source_replica_path,
         bool to_detached,
         size_t quorum,

@@ -296,6 +296,7 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
         }
@@ -313,6 +314,7 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
         }
@@ -322,6 +324,7 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
+        std::set<std::string> partitions{};
         std::set<std::string> projections{};
         std::set<std::string> views{};
     };
@@ -631,6 +634,7 @@ public:
         const Names & column_names,
         const String & projection_name = {},
         const String & view_name = {});
+    void addQueryAccessInfo(const Names & partition_names);
 
 
     /// Supported factories for records in query_log
@@ -736,7 +740,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
