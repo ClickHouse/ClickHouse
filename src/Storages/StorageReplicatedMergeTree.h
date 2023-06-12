@@ -545,7 +545,7 @@ private:
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
-    void syncPinnedPartUUIDs();
+    void syncPinnedPartUUIDs(bool startup);
 
     /** Check that the part's checksum is the same as the checksum of the same part on some other replica.
       * If no one has such a part, nothing checks.

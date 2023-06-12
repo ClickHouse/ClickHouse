@@ -498,7 +498,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-    syncPinnedPartUUIDs();
+    syncPinnedPartUUIDs(/* startup= */ true);
 
     if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
         createTableSharedID();
@@ -1374,7 +1374,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
+void StorageReplicatedMergeTree::syncPinnedPartUUIDs(bool startup)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1395,7 +1395,12 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
         /// pinned_part_uuids, then it will receive some UUIds from remote
         /// shard, and only then pinned_part_uuids will be set, and this will
         /// lead to duplicated data.
-        auto exclusive_lock = lockExclusively(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
+        TableExclusiveLockHolder exclusive_lock;
+        /// On startup we cannot take exclusive lock since some already held on
+        /// this storage (and it is not required, since this table is not
+        /// visible yet, though there is one exception - switching from readonly)
+        if (!startup)
+            exclusive_lock = lockExclusively(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         pinned_part_uuids = new_pinned_part_uuids;
     }
 }
@@ -1704,7 +1709,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
-            syncPinnedPartUUIDs();
+            syncPinnedPartUUIDs(/* startup= */ false);
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
