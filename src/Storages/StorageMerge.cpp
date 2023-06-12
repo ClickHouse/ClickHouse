@@ -27,9 +27,18 @@
 #include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "Analyzer/ColumnNode.h"
+#include "Analyzer/IQueryTreeNode.h"
+#include "Analyzer/Identifier.h"
+#include "Analyzer/IdentifierNode.h"
+#include "Analyzer/Passes/QueryAnalysisPass.h"
+#include "Analyzer/QueryTreeBuilder.h"
+#include "Core/NamesAndTypes.h"
 #include "DataTypes/IDataType.h"
+#include "Planner/PlannerActionsVisitor.h"
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -42,6 +51,7 @@
 #include <Databases/IDatabase.h>
 #include <base/range.h>
 #include <algorithm>
+#include <memory>
 
 
 namespace
@@ -464,8 +474,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
 
-        auto modified_query_info = getModifiedQueryInfo(query_info, context, table, nested_storage_snaphsot);
         Names column_names_as_aliases;
+        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, column_names_as_aliases);
 
         if (!context->getSettingsRef().allow_experimental_analyzer)
         {
@@ -553,10 +563,10 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(std::move(resources));
 }
 
-SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & query_info,
-    const ContextPtr & modified_context,
+SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
-    const StorageSnapshotPtr & storage_snapshot)
+    const StorageSnapshotPtr & storage_snapshot,
+    Names & column_names_as_aliases) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -586,6 +596,47 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         if (!storage_snapshot->tryGetColumn(get_column_options, "_database"))
             column_name_to_node.emplace("_database", std::make_shared<ConstantNode>(current_storage_id.database_name));
 
+        auto storage_columns = storage_snapshot->metadata->getColumns();
+
+        bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
+        if (with_aliases)
+        {
+            auto filter_actions_dag = std::make_shared<ActionsDAG>();
+            for (const auto & column : column_names)
+            {
+                const auto column_default = storage_columns.getDefault(column);
+                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+
+                QueryTreeNodePtr column_node;
+
+                if (is_alias)
+                {
+                    column_node = buildQueryTree(column_default->expression, modified_context);
+
+                    LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT before: {}\n{}", column_node->dumpTree(), modified_query_info.table_expression->dumpTree());
+
+                    column_node->setAlias(column);
+
+                    QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+                    query_analysis_pass.run(column_node, modified_context);
+
+                    LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT after: {}", column_node->dumpTree());
+
+                    column_name_to_node.emplace(column, column_node);
+                }
+                else
+                {
+                    column_node = std::make_shared<ColumnNode>(NameAndTypePair{column, storage_columns.getColumn(get_column_options, column).type }, modified_query_info.table_expression);
+                }
+
+
+                PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
+                actions_visitor.visit(filter_actions_dag, column_node);
+            }
+            column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
+            LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "Required names: {}", toString(column_names_as_aliases));
+        }
+
         if (!column_name_to_node.empty())
         {
             replaceColumns(modified_query_info.query_tree,
@@ -594,6 +645,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
+        LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "Modified query: {}", modified_query_info.query->formatForLogging());
     }
     else
     {
@@ -639,6 +691,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
     }
+
+    LOG_DEBUG(&Poco::Logger::get("createSources"), "real_column_names: {}", toString(real_column_names));
 
     bool allow_experimental_analyzer = modified_context->getSettingsRef().allow_experimental_analyzer;
 
@@ -783,7 +837,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
+        convertingSourceStream(header, modified_query_info, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
     }
 
     return builder;
@@ -957,9 +1011,10 @@ void StorageMerge::alter(
 
 void ReadFromMerge::convertingSourceStream(
     const Block & header,
+    SelectQueryInfo & modified_query_info,
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
-    ContextPtr local_context,
+    ContextMutablePtr local_context,
     QueryPipelineBuilder & builder,
     const QueryProcessingStage::Enum & processed_stage)
 {
@@ -968,21 +1023,49 @@ void ReadFromMerge::convertingSourceStream(
     auto storage_sample_block = metadata_snapshot->getSampleBlock();
     auto pipe_columns = builder.getHeader().getNamesAndTypesList();
 
-    for (const auto & alias : aliases)
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-        ASTPtr expr = alias.expression;
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
-        auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
-
-        auto dag = std::make_shared<ActionsDAG>(pipe_columns);
-        auto actions_dag = expression_analyzer.getActionsDAG(true, false);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-
-        builder.addSimpleTransform([&](const Block & stream_header)
+        for (const auto & alias : aliases)
         {
-            return std::make_shared<ExpressionTransform>(stream_header, actions);
-        });
+            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+
+            auto actions_dag = std::make_shared<ActionsDAG>();
+
+            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
+            query_tree->setAlias(alias.name);
+
+            QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+            query_analysis_pass.run(query_tree, local_context);
+
+            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
+            actions_visitor.visit(actions_dag, query_tree);
+
+            auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<ExpressionTransform>(stream_header, actions);
+            });
+        }
+    }
+    else
+    {
+        for (const auto & alias : aliases)
+        {
+            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+            ASTPtr expr = alias.expression;
+            auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+            auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
+
+            auto dag = std::make_shared<ActionsDAG>(pipe_columns);
+            auto actions_dag = expression_analyzer.getActionsDAG(true, false);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<ExpressionTransform>(stream_header, actions);
+            });
+        }
     }
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;

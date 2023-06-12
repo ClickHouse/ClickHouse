@@ -76,7 +76,7 @@ public:
 
     String getDescription() override { return "Transform equality chain to a single IN function or a constant if possible"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

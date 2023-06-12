@@ -720,7 +720,7 @@ public:
 
 }
 
-void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings.convert_query_to_cnf)

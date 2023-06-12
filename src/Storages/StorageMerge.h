@@ -177,10 +177,10 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
-        const ContextPtr & modified_context,
+    SelectQueryInfo getModifiedQueryInfo(const ContextPtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
-        const StorageSnapshotPtr & storage_snapshot);
+        const StorageSnapshotPtr & storage_snapshot,
+        Names & column_names_as_aliases) const;
 
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
@@ -197,9 +197,10 @@ private:
 
     static void convertingSourceStream(
         const Block & header,
+        SelectQueryInfo & modified_query_info,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
-        ContextPtr context,
+        ContextMutablePtr context,
         QueryPipelineBuilder & builder,
         const QueryProcessingStage::Enum & processed_stage);
 };

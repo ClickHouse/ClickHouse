@@ -180,7 +180,7 @@ private:
 
 }
 
-void SumIfToCountIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void SumIfToCountIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     SumIfToCountIfVisitor visitor(context);
     visitor.visit(query_tree_node);

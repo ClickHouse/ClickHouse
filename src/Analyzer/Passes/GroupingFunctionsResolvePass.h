@@ -24,7 +24,7 @@ public:
 
     String getDescription() override { return "Resolve GROUPING functions based on GROUP BY modifiers"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

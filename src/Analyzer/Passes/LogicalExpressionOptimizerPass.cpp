@@ -233,7 +233,7 @@ private:
     }
 };
 
-void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     LogicalExpressionOptimizerVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

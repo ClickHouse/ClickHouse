@@ -49,7 +49,7 @@ public:
 
 }
 
-void IfConstantConditionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void IfConstantConditionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr)
 {
     IfConstantConditionVisitor visitor;
     visitor.visit(query_tree_node);

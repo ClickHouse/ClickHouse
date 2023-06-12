@@ -494,8 +494,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Expected column, constant, function. Actual {}",
-        node->formatASTForErrorMessage());
+        "Expected column, constant, function. Actual {} with type: {}",
+        node->formatASTForErrorMessage(), node_type);
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
