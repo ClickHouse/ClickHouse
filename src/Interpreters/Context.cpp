@@ -777,17 +777,25 @@ Strings Context::getWarnings() const
         auto lock = getLock();
         common_warnings = shared->warnings;
     }
+    String res = "Obsolete settings [";
+    size_t obsolete_settings_count = 0;
     for (const auto & setting : settings)
     {
         if (setting.isValueChanged() && setting.isObsolete())
         {
-            common_warnings.emplace_back(
-                "Obsolete setting `" + setting.getName()
-                + "` is changed. "
-                  "Check 'select * from system.settings where changed' and read the changelog.");
-            break;
+            res += (obsolete_settings_count ? ", `" : "`") + setting.getName() + "`";
+            ++obsolete_settings_count;
         }
     }
+
+    if (obsolete_settings_count)
+    {
+        res = res + "]" + (obsolete_settings_count == 1 ? " is" : " are")
+            + " changed. "
+              "Please check 'select * from system.settings where changed and is_obsolete' and read the changelog.";
+        common_warnings.emplace_back(res);
+    }
+
     return common_warnings;
 }
 
