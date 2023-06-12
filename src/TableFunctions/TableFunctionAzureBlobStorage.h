@@ -18,7 +18,7 @@ class Context;
 class TableFunctionAzureBlobStorage : public ITableFunction
 {
 public:
-    static constexpr auto name = "azure_blob_storage";
+    static constexpr auto name = "azureBlobStorage";
     static constexpr auto signature = "- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure]\n";
 
     static size_t getMaxNumberOfArguments() { return 8; }
