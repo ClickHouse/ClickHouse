@@ -1881,6 +1881,32 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
+## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
+
+Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `storage_policy` – Name of storage policy to use for the table (optional)
+
+**Example**
+```xml
+<clickhouse>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </asynchronous_insert_log>
+</clickhouse>
+```
+
 ## query_masking_rules {#query-masking-rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
