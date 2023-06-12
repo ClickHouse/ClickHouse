@@ -422,6 +422,8 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
     indices_loaded = true;
     num_indices_saved = 0;
+    total_rows = 0;
+    total_bytes = 0;
     getContext()->dropMMappedFileCache();
 }
 
