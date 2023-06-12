@@ -2265,3 +2265,34 @@ def dropddl(clickhouse_node, mysql_node, mysql_host):
     )
     mysql_node.query(f"DROP DATABASE {db}")
     clickhouse_node.query(f"DROP DATABASE {db}")
+
+
+def named_collections(clickhouse_node, mysql_node, service_name):
+    db = "named_collections"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, name VARCHAR(64), val INT)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.t1 (id, name, val) VALUES (1, 'a', 1), (2, 'b', 2)"
+    )
+
+    clickhouse_node.query(
+        f"""CREATE NAMED COLLECTION {db} AS
+            user = 'root',
+            password = 'clickhouse',
+            host = '{service_name}',
+            port = 3306,
+            database = '{db}'
+            """
+    )
+    clickhouse_node.query(f"CREATE DATABASE {db} ENGINE = MaterializedMySQL({db})")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
