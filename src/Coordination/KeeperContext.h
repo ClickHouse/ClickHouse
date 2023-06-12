@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 namespace DB
 {
@@ -24,6 +25,8 @@ struct KeeperContext
     bool digest_enabled{true};
 
     std::unordered_map<std::string, std::string> system_nodes_with_data;
+
+    KeeperFeatureFlags feature_flags;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

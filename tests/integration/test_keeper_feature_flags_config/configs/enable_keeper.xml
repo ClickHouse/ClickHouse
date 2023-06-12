@@ -18,7 +18,7 @@
             <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
         </coordination_settings>
 
-        <!-- API VERSION -->
+        <!-- FEATURE FLAGS -->
 
         <raft_configuration>
             <server>

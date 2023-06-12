@@ -31,7 +31,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     res_columns[3]->insert(context->getZooKeeper()->getConnectedZooKeeperIndex());
     res_columns[4]->insert(context->getZooKeeperSessionUptime());
     res_columns[5]->insert(context->getZooKeeper()->expired());
-    res_columns[6]->insert(context->getZooKeeper()->getApiVersion());
+    res_columns[6]->insert(0);
     res_columns[7]->insert(context->getZooKeeper()->getClientID());
 
     for (const auto & elem : context->getAuxiliaryZooKeepers())
@@ -42,7 +42,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
         res_columns[3]->insert(elem.second->getConnectedZooKeeperIndex());
         res_columns[4]->insert(elem.second->getSessionUptime());
         res_columns[5]->insert(elem.second->expired());
-        res_columns[6]->insert(elem.second->getApiVersion());
+        res_columns[6]->insert(0);
         res_columns[7]->insert(elem.second->getClientID());
     }
 
