@@ -57,7 +57,7 @@ or via config (since version 21.11):
 </named_collections>
 ```
 
-Some parameters can be overriden by key value arguments:
+Some parameters can be overridden by key value arguments:
 ``` sql
 SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
 ```
