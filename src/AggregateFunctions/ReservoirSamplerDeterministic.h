@@ -190,12 +190,12 @@ public:
             /// Here we ensure that padding is zero without changing the protocol.
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
-
             Element elem;
             memset(&elem, 0, sizeof(elem));
             elem = samples[i];
 
-            writeBinaryLittleEndian(elem, buf);
+            DB::transformEndianness<std::endian::little>(elem);
+            DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
         }
     }
 
