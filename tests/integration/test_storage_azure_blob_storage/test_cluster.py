@@ -97,7 +97,7 @@ def test_simple_write_account_string_table_function(cluster):
     print(pure_azure)
     distributed_azure = node.query(
         """
-    SELECT count(*) from azure_blob_storage_cluster(
+    SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')"""
