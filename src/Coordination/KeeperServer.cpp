@@ -629,7 +629,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
         try
         {
-            state_machine->parseRequest(entry->get_buf(), /*final=*/false);
+            state_machine->parseRequest(entry->get_buf());
         }
         catch (...)
         {
