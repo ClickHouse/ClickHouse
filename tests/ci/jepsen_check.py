@@ -15,7 +15,7 @@ from build_download_helper import get_build_name_for_check
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from compress_files import compress_fast
-from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
+from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD, S3_REGION
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -91,7 +91,7 @@ def get_instances_addresses(ec2_client, instance_ids):
 
 
 def prepare_autoscaling_group_and_get_hostnames(count):
-    asg_client = boto3.client("autoscaling", region_name="us-east-1")
+    asg_client = boto3.client("autoscaling", region_name=S3_REGION)
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=count
     )
@@ -105,12 +105,12 @@ def prepare_autoscaling_group_and_get_hostnames(count):
         if counter > 30:
             raise Exception("Cannot wait autoscaling group")
 
-    ec2_client = boto3.client("ec2", region_name="us-east-1")
+    ec2_client = boto3.client("ec2", region_name=S3_REGION)
     return get_instances_addresses(ec2_client, instances)
 
 
 def clear_autoscaling_group():
-    asg_client = boto3.client("autoscaling", region_name="us-east-1")
+    asg_client = boto3.client("autoscaling", region_name=S3_REGION)
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=0
     )

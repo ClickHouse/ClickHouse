@@ -7,7 +7,7 @@ import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
 
-from env_helper import VAULT_URL, VAULT_TOKEN, VAULT_PATH, VAULT_MOUNT_POINT
+from env_helper import VAULT_URL, VAULT_TOKEN, VAULT_PATH, VAULT_MOUNT_POINT, S3_REGION
 
 
 @dataclass
@@ -27,7 +27,7 @@ def get_parameter_from_ssm(name, decrypt=True, client=None):
         )["data"]["data"][name]
     else:
         if not client:
-            client = boto3.client("ssm", region_name="us-east-1")
+            client = boto3.client("ssm", region_name=S3_REGION)
         parameter = client.get_parameter(Name=name, WithDecryption=decrypt)[
             "Parameter"
         ]["Value"]
@@ -57,7 +57,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         return list(parameters.values())
 
     def get_ssm_robot_tokens():
-        client = boto3.client("ssm", region_name="us-east-1")
+        client = boto3.client("ssm", region_name=S3_REGION)
         parameters = client.describe_parameters(
             ParameterFilters=[
                 {

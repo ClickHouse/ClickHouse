@@ -90,11 +90,7 @@ systemctl restart docker
 sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx create --use --name default-builder
 
-if [[ -n "${VAULT_URL}" ]]; then
-  pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory hvac
-else
-  pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
-fi
+pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
 

@@ -21,6 +21,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     && if [ "$DOCKER_REPO" = "docker.io" ]; then \
          pip3 install black==23.1.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2; \
        else \
+       # the `hvac` is an optional dependency for Hashicorp Vault as a parameters store
          pip3 install black==23.1.0 boto3 hvac codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2; \
        fi \
     && apt-get clean \
