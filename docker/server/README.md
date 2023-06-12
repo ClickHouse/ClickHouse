@@ -16,7 +16,8 @@ For more information and documentation see https://clickhouse.com/.
 - The tag `head` is built from the latest commit to the default branch.
 - Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
 
-Compatibility
+### Compatibility
+
 - The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
 - The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A). Most ARM CPUs after 2017 support ARMv8.2-A. A notable exception is Raspberry Pi 4 from 2019 whose CPU only supports ARMv8.0-A.
 
