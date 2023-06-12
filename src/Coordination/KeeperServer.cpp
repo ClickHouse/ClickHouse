@@ -659,7 +659,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 request_for_session.zxid = next_zxid;
                 if (!state_machine->preprocess(request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
-                
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 return nuraft::cb_func::ReturnCode::Ok;
