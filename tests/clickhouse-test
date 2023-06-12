@@ -349,9 +349,10 @@ def kill_gdb_if_any():
     for i in range(5):
         code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
         if code != 0:
-            time.sleep(i)
+            sleep(i)
         else:
             break
+
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
