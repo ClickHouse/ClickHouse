@@ -45,7 +45,7 @@ def restart_clickhouse(feature_flags=[], expect_fail=True):
 
     if len(feature_flags) > 0:
         feature_flags_config = "<feature_flags>"
-        
+
         for feature, is_enabled in feature_flags:
             feature_flags_config += f"<{feature}>{is_enabled}<\\/{feature}>"
 
@@ -54,7 +54,7 @@ def restart_clickhouse(feature_flags=[], expect_fail=True):
         node.replace_in_config(
             "/etc/clickhouse-server/config.d/enable_keeper.xml",
             "<!-- FEATURE FLAGS -->",
-            feature_flags_config
+            feature_flags_config,
         )
 
     node.start_clickhouse(retry_start=not expect_fail)
@@ -69,16 +69,20 @@ def test_keeper_feature_flags(started_cluster):
 
         for feature, is_enabled in feature_flags:
             node.wait_for_log_line(
-                f"ZooKeeperClient: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}", look_behind_lines=1000
+                f"ZooKeeperClient: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}",
+                look_behind_lines=1000,
             )
 
             node.wait_for_log_line(
-                f"KeeperContext: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}", look_behind_lines=1000
+                f"KeeperContext: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}",
+                look_behind_lines=1000,
             )
 
             assert f"{feature}\t{1 if is_enabled else 0}" in res
 
-    assert_feature_flags([("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)])
+    assert_feature_flags(
+        [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)]
+    )
 
     feature_flags = [("multi_read", 0), ("check_not_exists", 1)]
     restart_clickhouse(feature_flags)
