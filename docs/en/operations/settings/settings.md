@@ -4365,6 +4365,32 @@ Possible values:
 
 Default value: `false`.
 
+## rename_files_after_processing
+
+- **Type:** String
+
+- **Default value:** Empty string
+
+This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+### Placeholders
+
+- `%f` — Original filename without extension (e.g., "sample").
+- `%e` — Original file extension with dot (e.g., ".csv").
+- `%t` — Timestamp (in microseconds).
+- `%%` — Percentage sign ("%").
+
+### Example
+- Option: `--rename_files_after_processing="processed_%f_%t%e"`
+
+- Query: `SELECT * FROM file('sample.csv')`
+
+
+If reading `sample.csv` is successful, file will be renamed to `processed_sample_1683473210851438.csv`
+
+
+
+
 ## function_json_value_return_type_allow_complex
 
 Control whether allow to return complex type (such as: struct, array, map) for json_value function.
