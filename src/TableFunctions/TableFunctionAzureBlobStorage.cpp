@@ -276,7 +276,7 @@ void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionAzureBlobStorage>(
         {.documentation
          = {.description=R"(The table function can be used to read the data stored on Azure Blob Storage.)",
-            .examples{{"azure_blob_storage", "SELECT * FROM  azure_blob_storage(connection, container, blob_path, format, structure)", ""}}},
+            .examples{{"azureBlobStorage", "SELECT * FROM  azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])", ""}}},
          .allow_readonly = false});
 }
 
