@@ -84,4 +84,3 @@ def test_adjust_log_level(start_cluster):
         )
         >= 1
     )
-
