@@ -86,7 +86,7 @@ void CreatingSetsTransform::startSubquery()
         }
     }
 
-    if (subquery.set)
+    if (subquery.set && !set_from_cache)
         LOG_TRACE(log, "Creating set, key: {}", subquery.key);
     if (subquery.table)
         LOG_TRACE(log, "Filling temporary table.");
@@ -97,7 +97,7 @@ void CreatingSetsTransform::startSubquery()
         /// TODO: make via port
         table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
 
-    done_with_set = !subquery.set;
+    done_with_set = !subquery.set || set_from_cache;
     done_with_table = !subquery.table;
 
     if ((done_with_set && !set_from_cache) /*&& done_with_join*/ && done_with_table)
@@ -175,10 +175,10 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
 Chunk CreatingSetsTransform::generate()
 {
-    if (subquery.set)
+    if (subquery.set && !set_from_cache)
     {
         subquery.set->finishInsert();
-        subquery.promise_to_fill_set.set_value(subquery.set);
+        //subquery.promise_to_fill_set.set_value(subquery.set);
         if (promise_to_build)
             promise_to_build->set_value(subquery.set);
     }
