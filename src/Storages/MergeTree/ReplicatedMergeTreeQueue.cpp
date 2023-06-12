@@ -1770,35 +1770,39 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     std::unique_lock lock(state_mutex);
+
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return {};
 
+    Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
+    LOG_DEBUG(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
+
     std::map<int64_t, MutationCommands> result;
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
     /// of part's metadata.
     for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
-        int32_t alter_version = mutation_status->entry->alter_version;
+        auto alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
             if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
                 continue;
 
-            /// we take commands with bigger metadata version
+            /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-            {
                 result[mutation_version] = mutation_status->entry->commands;
-            }
-            else
-            {
-                /// entries are ordered, we processing them in reverse order so we can break
-                break;
-            }
+        }
+        else if (mutation_version > part_data_version)
+        {
+            result[mutation_version] = mutation_status->entry->commands;
         }
     }
+
+    LOG_TRACE(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
+        result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
 }

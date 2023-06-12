@@ -71,7 +71,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -196,7 +196,6 @@ private:
     void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
-
     friend struct CurrentlyMergingPartsTagger;
 
     MergeMutateSelectedEntryPtr selectPartsToMerge(
@@ -280,7 +279,6 @@ private:
 
 
 protected:
-
     std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 

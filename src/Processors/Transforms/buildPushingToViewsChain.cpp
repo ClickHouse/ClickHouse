@@ -196,6 +196,7 @@ Chain buildPushingToViewsChain(
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms,
+    bool async_insert,
     const Block & live_view_header)
 {
     checkStackSize();
@@ -347,7 +348,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms, storage_header);
+                thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
         }
         else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
         {
@@ -356,13 +357,13 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms);
+                thread_status_holder, running_group, view_counter_ms, async_insert);
         }
         else
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ false,
-                thread_status_holder, running_group, view_counter_ms);
+                thread_status_holder, running_group, view_counter_ms, async_insert);
 
         views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
@@ -444,7 +445,7 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, metadata_snapshot, context);
+        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));

@@ -1,14 +1,10 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/copyData.h>
-
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 
@@ -73,9 +69,8 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
             hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
     };
 
-    auto hdfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings, nullptr);
-    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl), read_settings);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator), objects, disk_read_settings, nullptr, /* use_external_buffer */false);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
