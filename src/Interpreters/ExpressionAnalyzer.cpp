@@ -444,7 +444,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(
-            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries);
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries, syntax->analyzed_join.get());
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
@@ -969,6 +969,15 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     return select_query;
 }
 
+bool ExpressionAnalyzer::isRemoteStorage() const
+{
+    const Settings & csettings = getContext()->getSettingsRef();
+    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
+    const bool enable_parallel_processing_of_joins
+        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
+    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
+}
+
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
@@ -1045,13 +1054,6 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
         syntax->analyzed_join, join, step.getResultColumns()));
     chain.addStep();
     return join;
-}
-
-static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
-{
-    ASTPtr expression_list = analyzed_join.rightKeysList();
-    auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
@@ -1135,7 +1137,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     SelectQueryOptions query_options)
 {
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
+    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context);
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
 

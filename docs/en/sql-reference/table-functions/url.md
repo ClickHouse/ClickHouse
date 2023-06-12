@@ -13,7 +13,7 @@ sidebar_label: url
 **Syntax**
 
 ``` sql
-url(URL [,format] [,structure])
+url(URL [,format] [,structure] [,headers])
 ```
 
 **Parameters**
@@ -21,6 +21,7 @@ url(URL [,format] [,structure])
 - `URL` — HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md).
 - `format` — [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
+- `headers` - Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.
 
 **Returned value**
 
@@ -31,7 +32,7 @@ A table with the specified format and structure and with data from the defined `
 Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
 
 ``` sql
-SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3;
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
 ```
 
 Inserting data from a `URL` into a table:

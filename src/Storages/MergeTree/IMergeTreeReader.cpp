@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
@@ -5,8 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -133,9 +132,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    if (alter_conversions.isColumnRenamed(name_in_storage))
+    if (alter_conversions->isColumnRenamed(name_in_storage))
     {
-        name_in_storage = alter_conversions.getColumnOldName(name_in_storage);
+        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
         return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
     }
 

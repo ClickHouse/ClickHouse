@@ -25,6 +25,9 @@ message(STATUS "Intel QPL version: ${QPL_VERSION}")
 # Generate 8 library targets: middle_layer_lib, isal, isal_asm, qplcore_px, qplcore_avx512, qplcore_sw_dispatcher, core_iaa, middle_layer_lib.
 # Output ch_contrib::qpl by linking with 8 library targets.
 
+# The qpl submodule comes with its own version of isal. It contains code which does not exist in upstream isal. It would be nice to link
+# only upstream isal (ch_contrib::isal) but at this point we can't.
+
 include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 
 # check nasm compiler
@@ -308,7 +311,7 @@ target_include_directories(middle_layer_lib
 target_compile_definitions(middle_layer_lib PUBLIC -DQPL_LIB)
 
 # [SUBDIR]c_api
-file(GLOB_RECURSE QPL_C_API_SRC 
+file(GLOB_RECURSE QPL_C_API_SRC
         ${QPL_SRC_DIR}/c_api/*.c
         ${QPL_SRC_DIR}/c_api/*.cpp)
 

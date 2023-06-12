@@ -248,7 +248,7 @@ bool analyzeProjectionCandidate(
 
     if (!normal_parts.empty())
     {
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), /* alter_conversions = */ {});
 
         if (normal_result_ptr->error())
             return false;

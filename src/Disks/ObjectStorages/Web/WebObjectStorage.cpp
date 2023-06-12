@@ -4,11 +4,10 @@
 #include <Common/escapeForFileName.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -180,24 +179,33 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
      };
 
     auto global_context = Context::getGlobalContextInstance();
-    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        StoredObjects{object},
-        read_settings,
-        global_context->getFilesystemCacheLog());
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    switch (read_settings.remote_fs_method)
     {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-            reader, read_settings, std::move(web_impl),
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-    }
-    else
-    {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl), read_settings);
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                StoredObjects{object},
+                read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                StoredObjects{object},
+                read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
     }
 }
 
