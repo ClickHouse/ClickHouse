@@ -31,6 +31,23 @@ namespace ProfileEvents
     extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
 
+namespace
+{
+void resetSession(Aws::S3::Model::GetObjectResult & read_result)
+{
+    if (auto * session_aware_stream = dynamic_cast<DB::S3::SessionAwareIOStream<DB::PooledHTTPSessionPtr> *>(&read_result.GetBody()))
+    {
+        auto & session
+            = static_cast<Poco::Net::HTTPClientSession &>(*static_cast<DB::PooledHTTPSessionPtr &>(session_aware_stream->getSession()));
+        session.reset();
+    }
+    else if (!dynamic_cast<DB::S3::SessionAwareIOStream<DB::HTTPSessionPtr> *>(&read_result.GetBody()))
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session of unexpected type encountered");
+    }
+}
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -74,7 +91,10 @@ bool ReadBufferFromS3::nextImpl()
     if (read_until_position)
     {
         if (read_until_position == offset)
+        {
+            read_all_range_successfully = true;
             return false;
+        }
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
@@ -154,7 +174,10 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     if (!next_result)
+    {
+        read_all_range_successfully = true;
         return false;
+    }
 
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
@@ -240,6 +263,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (offset_ == getPosition() && whence == SEEK_SET)
         return offset_;
 
+    read_all_range_successfully = false;
+
     if (impl && restricted_seek)
     {
         throw Exception(
@@ -312,6 +337,8 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
     if (position != static_cast<size_t>(read_until_position))
     {
+        read_all_range_successfully = false;
+
         if (impl)
         {
             if (!atEndOfRequestedRangeGuess())
@@ -328,6 +355,8 @@ void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)
     {
+        read_all_range_successfully = false;
+
         read_until_position = 0;
         if (impl)
         {
@@ -351,8 +380,27 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     return false;
 }
 
+ReadBufferFromS3::~ReadBufferFromS3()
+{
+    try
+    {
+        if (!read_all_range_successfully && read_result)
+            /// When we abandon a session with an ongoing GetObject request and there is another one trying to delete the same object this delete
+            /// operation will hang until GetObject's session idle timeouts. So we have to call `reset()` on GetObject's session session immediately.
+            resetSession(*read_result);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
+    if (!read_all_range_successfully && read_result)
+        resetSession(*read_result);
+    read_all_range_successfully = false;
+
     /**
      * If remote_filesystem_read_method = 'threadpool', then for MergeTree family tables
      * exact byte ranges to read are always passed here.
@@ -363,7 +411,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     read_result = sendRequest(offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
-    return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+    return std::make_unique<ReadBufferFromIStream>(read_result->GetBody(), buffer_size);
 }
 
 Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const
