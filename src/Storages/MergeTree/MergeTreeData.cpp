@@ -1253,7 +1253,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         mark_broken();
         return res;
     }
-    catch (const Poco::NetException &)
+    catch (const Poco::Net::NetException &)
     {
         throw;
     }
