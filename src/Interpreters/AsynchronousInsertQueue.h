@@ -30,15 +30,25 @@ public:
 
         Status status;
 
-        /// Future that allows to wait until the query is flushed.
-        std::future<void> future;
-
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
         std::unique_ptr<ReadBuffer> insert_data_buffer;
+
+        // Data extracted from query that should be passed
+        // to pushNoCheck
+        String bytes;
     };
 
-    PushResult push(ASTPtr query, ContextPtr query_context);
+    // Checks whether a certain async insert query can
+    // actually be performed asynchronously or not.
+    PushResult pushCheckOnly(ASTPtr query, ContextPtr query_context);
+
+    // Push a query to the async insert queue.
+    // pushCheckOnly should be used before this call and
+    // the bytes field from its return structure should be passed here.
+    // The return value can be used to wait for the query completion.
+    std::future<void> pushNoCheck(ASTPtr query, ContextPtr query_context, String && bytes);
+
     size_t getPoolSize() const { return pool_size; }
 
 private:
