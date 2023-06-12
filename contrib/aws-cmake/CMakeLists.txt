@@ -55,6 +55,7 @@ SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
 SET(AWS_SDK_IM_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-identity-management")
 SET(AWS_SDK_STS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-sts")
+SET(AWS_SDK_COGNITO_IDENTITY_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-cognito-identity")
 SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
 
 SET(AWS_AUTH_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-auth")
@@ -140,6 +141,7 @@ file(GLOB AWS_SDK_STS_SRC
 
 list(APPEND AWS_SOURCES ${AWS_SDK_STS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_STS_DIR}/include/")
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_COGNITO_IDENTITY_DIR}/include/")
 
 # aws-cpp-sdk-s3
 file(GLOB AWS_SDK_S3_SRC
