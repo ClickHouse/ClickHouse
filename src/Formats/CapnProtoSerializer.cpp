@@ -403,7 +403,7 @@ namespace
                 if (it == capnp_to_ch_values.end())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected value {} in CapnProto enum", capnp_enum_value);
 
-                assert_cast<ColumnVector<EnumType> &>(column).insertValue(capnp_to_ch_values[capnp_enum_value]);
+                assert_cast<ColumnVector<EnumType> &>(column).insertValue(it->second);
             }
         }
 
