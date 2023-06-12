@@ -490,7 +490,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(0);
+    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 String CreateSnapshotCommand::run()
