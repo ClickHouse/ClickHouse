@@ -1163,6 +1163,11 @@ private:
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
 
+    /// Initializes all disks listed in the config file.
+    /// Called during server startup, before accessing disks (getDisksMap() etc), but after
+    /// registering disks.
+    void createDisks();
+
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 

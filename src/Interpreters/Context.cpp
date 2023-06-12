@@ -3387,16 +3387,21 @@ StoragePoliciesMap Context::getPoliciesMap() const
 
 DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
 {
-    if (!shared->merge_tree_disk_selector)
-    {
-        constexpr auto config_name = "storage_configuration.disks";
-        const auto & config = getConfigRef();
-
-        auto disk_selector = std::make_shared<DiskSelector>();
-        disk_selector->initialize(config, config_name, shared_from_this());
-        shared->merge_tree_disk_selector = disk_selector;
-    }
+    chassert(shared->merge_tree_disk_selector);
     return shared->merge_tree_disk_selector;
+}
+
+void Context::createDisks()
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    chassert(!shared->merge_tree_disk_selector);
+    constexpr auto config_name = "storage_configuration.disks";
+    const auto & config = getConfigRef();
+
+    auto disk_selector = std::make_shared<DiskSelector>();
+    disk_selector->initialize(config, config_name, shared_from_this());
+    shared->merge_tree_disk_selector = disk_selector;
 }
 
 StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const

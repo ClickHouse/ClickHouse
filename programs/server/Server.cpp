@@ -1023,6 +1023,16 @@ try
         fs::create_directories(path / "metadata_dropped/");
     }
 
+    try
+    {
+        global_context->createDisks();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to initialize disks.");
+        throw;
+    }
+
 #if USE_ROCKSDB
     /// Initialize merge tree metadata cache
     if (config().has("merge_tree_metadata_cache"))
