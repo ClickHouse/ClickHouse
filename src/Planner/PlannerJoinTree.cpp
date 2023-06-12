@@ -877,10 +877,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
+    JoinStrictness join_strictness = join_node.getStrictness();
 
     std::optional<bool> join_constant;
 
-    if (join_node.getStrictness() == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
     if (join_constant)

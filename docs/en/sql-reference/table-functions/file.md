@@ -40,7 +40,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 As a result, the data is written into the file `test.tsv`:
 
 ```bash
-# cat /var/lib/clickhouse/user_files/test.tsv 
+# cat /var/lib/clickhouse/user_files/test.tsv
 1	2	3
 3	2	1
 1	3	2
@@ -163,7 +163,7 @@ Query the number of rows in all files of these two directories:
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
-:::note    
+:::note
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
@@ -209,3 +209,4 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 **See Also**
 
 - [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Rename files after processing](/docs/en/operations/settings/settings.md#rename_files_after_processing)
