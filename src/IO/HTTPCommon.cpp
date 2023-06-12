@@ -131,8 +131,12 @@ namespace
             UInt16 proxy_port_,
             bool proxy_https_,
             size_t max_pool_size_,
-            bool resolve_host_ = true)
-            : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
+            bool resolve_host_,
+            bool wait_on_pool_size_limit)
+            : Base(
+                static_cast<unsigned>(max_pool_size_),
+                &Poco::Logger::get("HTTPSessionPool"),
+                wait_on_pool_size_limit ? BehaviourOnLimit::Wait : BehaviourOnLimit::AllocateNewBypassingPool)
             , host(host_)
             , port(port_)
             , https(https_)
@@ -155,11 +159,12 @@ namespace
             String proxy_host;
             UInt16 proxy_port;
             bool is_proxy_https;
+            bool wait_on_pool_size_limit;
 
             bool operator ==(const Key & rhs) const
             {
-                return std::tie(target_host, target_port, is_target_https, proxy_host, proxy_port, is_proxy_https)
-                    == std::tie(rhs.target_host, rhs.target_port, rhs.is_target_https, rhs.proxy_host, rhs.proxy_port, rhs.is_proxy_https);
+                return std::tie(target_host, target_port, is_target_https, proxy_host, proxy_port, is_proxy_https, wait_on_pool_size_limit)
+                    == std::tie(rhs.target_host, rhs.target_port, rhs.is_target_https, rhs.proxy_host, rhs.proxy_port, rhs.is_proxy_https, rhs.wait_on_pool_size_limit);
             }
         };
 
@@ -178,6 +183,7 @@ namespace
                 s.update(k.proxy_host);
                 s.update(k.proxy_port);
                 s.update(k.is_proxy_https);
+                s.update(k.wait_on_pool_size_limit);
                 return s.get64();
             }
         };
@@ -218,13 +224,13 @@ namespace
             const Poco::URI & proxy_uri,
             const ConnectionTimeouts & timeouts,
             size_t max_connections_per_endpoint,
-            bool resolve_host = true)
+            bool resolve_host,
+            bool wait_on_pool_size_limit)
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
-
 
             String proxy_host;
             UInt16 proxy_port = 0;
@@ -236,11 +242,27 @@ namespace
                 proxy_https = isHTTPS(proxy_uri);
             }
 
-            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_port, proxy_https};
+            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_port, proxy_https, wait_on_pool_size_limit};
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
-                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, proxy_host, proxy_port, proxy_https, max_connections_per_endpoint, resolve_host));
+                    key,
+                    std::make_shared<SingleEndpointHTTPSessionPool>(
+                        host,
+                        port,
+                        https,
+                        proxy_host,
+                        proxy_port,
+                        proxy_https,
+                        max_connections_per_endpoint,
+                        resolve_host,
+                        wait_on_pool_size_limit));
+
+            /// Some routines held session objects until the end of its lifetime. Also this routines may create another sessions in this time frame.
+            /// If some other session holds `lock` because it waits on another lock inside `pool_ptr->second->get` it isn't possible to create any
+            /// new session and thus finish routine, return session to the pool and unlock the thread waiting inside `pool_ptr->second->get`.
+            /// To avoid such a deadlock we unlock `lock` before entering `pool_ptr->second->get`.
+            lock.unlock();
 
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
@@ -295,14 +317,25 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
 }
 
 
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host)
+PooledHTTPSessionPtr makePooledHTTPSession(
+    const Poco::URI & uri,
+    const ConnectionTimeouts & timeouts,
+    size_t per_endpoint_pool_size,
+    bool resolve_host,
+    bool wait_on_pool_size_limit)
 {
-    return makePooledHTTPSession(uri, {}, timeouts, per_endpoint_pool_size, resolve_host);
+    return makePooledHTTPSession(uri, {}, timeouts, per_endpoint_pool_size, resolve_host, wait_on_pool_size_limit);
 }
 
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Poco::URI & proxy_uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host)
+PooledHTTPSessionPtr makePooledHTTPSession(
+    const Poco::URI & uri,
+    const Poco::URI & proxy_uri,
+    const ConnectionTimeouts & timeouts,
+    size_t per_endpoint_pool_size,
+    bool resolve_host,
+    bool wait_on_pool_size_limit)
 {
-    return HTTPSessionPool::instance().getSession(uri, proxy_uri, timeouts, per_endpoint_pool_size, resolve_host);
+    return HTTPSessionPool::instance().getSession(uri, proxy_uri, timeouts, per_endpoint_pool_size, resolve_host, wait_on_pool_size_limit);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
