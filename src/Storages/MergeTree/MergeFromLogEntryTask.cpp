@@ -260,15 +260,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
-
     /// Add merge to list
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        settings);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -291,7 +288,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     /// Adjust priority
     for (auto & item : future_merged_part->parts)
-        priority.value += item->getBytesOnDisk();
+        priority += item->getBytesOnDisk();
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {

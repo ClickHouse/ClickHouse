@@ -51,11 +51,19 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     {
         assertChar('\'', istr);
         char * next_pos = find_first_symbols<'\\', '\''>(istr.position(), istr.buffer().end());
-        const size_t len = next_pos - istr.position();
-        if ((len == 32 || len == 36) && istr.position()[len] == '\'')
+        size_t len = next_pos - istr.position();
+        if ((len == 32) && (istr.position()[32] == '\''))
         {
-            uuid = parseUUID(std::span(reinterpret_cast<const UInt8 *>(istr.position()), len));
-            istr.ignore(len + 1);
+            parseUUIDWithoutSeparator(
+                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+            istr.ignore(33);
+            fast = true;
+        }
+        else if ((len == 36) && (istr.position()[36] == '\''))
+        {
+            parseUUID(
+                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+            istr.ignore(37);
             fast = true;
         }
         else

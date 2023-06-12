@@ -57,8 +57,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory")
+    # gcc10/gcc10/clang -fsanitize=memory is too heavy
+    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -100,17 +100,6 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
-endif()
-
-option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
-
-if (ENABLE_WOBOQ_CODEBROWSER)
-    set (ENABLE_EMBEDDED_COMPILER 0)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
-    # woboq codebrowser uses clang tooling, and they could add default system
-    # clang includes, and later clang will warn for those added by itself
-    # includes.
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
 endif()
 
 # Global libraries
@@ -179,6 +168,12 @@ if (OS_DARWIN)
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
+endif ()
+
+option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
+if (OS_DARWIN)
+    # Disable the curl, azure, senry build on MacOS
+    set (ENABLE_CURL_BUILD OFF)
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
@@ -270,8 +265,8 @@ endif ()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -291,31 +286,48 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
-
-if (COMPILER_CLANG)
+if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     # See https://reviews.llvm.org/D112921
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-
-    # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-    # benchmarks.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
-
-    if (ARCH_AMD64)
-        # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-        # which makes benchmark results more stable.
-        set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-
-    if (WITH_COVERAGE)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-        # If we want to disable coverage for specific translation units
-        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-    endif()
 endif ()
+
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
+if (ARCH_AMD64)
+    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+    # which makes benchmark results more stable.
+    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+    if (COMPILER_GCC)
+        # gcc is in assembler, need to add "-Wa," prefix
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+if (COMPILER_GCC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+endif ()
+
+# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
+
+if (WITH_COVERAGE AND COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    # If we want to disable coverage for specific translation units
+    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+endif()
+
+if (WITH_COVERAGE AND COMPILER_GCC)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
+    set(COVERAGE_OPTION "-lgcov")
+    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
+endif()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
@@ -352,6 +364,13 @@ if (COMPILER_CLANG)
     endif()
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+        # Set new experimental pass manager, it's a performance, build time and binary size win.
+        # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+    endif ()
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
@@ -391,15 +410,9 @@ else()
 endif ()
 
 option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-# We use mmap for allocations more heavily in debug builds,
-# but GWP-ASan also wants to use mmap frequently,
-# and due to a large number of memory mappings,
-# it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
+if (NOT OS_LINUX AND NOT OS_ANDROID)
     set(ENABLE_GWP_ASAN OFF)
 endif ()
-
-option (ENABLE_FIU "Enable Fiu" ON)
 
 option(WERROR "Enable -Werror compiler option" ON)
 
@@ -421,11 +434,8 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT SANITIZE)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-endif()
-
-if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
+set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X))
     # Slightly more efficient code can be generated
     # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
@@ -528,26 +538,6 @@ include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
     add_subdirectory (rust)
-
-    # With LTO Rust adds few symbols with global visiblity, the most common is
-    # rust_eh_personality. And this leads to linking errors because multiple
-    # Rust libraries contains the same symbol.
-    #
-    # If it was shared library, that we could use version script for linker to
-    # hide this symbols, but libraries are static.
-    #
-    # we could in theory compile everything to one library but this will be a
-    # mess
-    #
-    # But this should be OK since CI has lots of other builds that are done
-    # without LTO and it will find multiple definitions if there will be any.
-    #
-    # More information about this behaviour in Rust can be found here
-    # - https://github.com/rust-lang/rust/issues/44322
-    # - https://alanwu.space/post/symbol-hygiene/
-    if (ENABLE_THINLTO)
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
-    endif()
 endif()
 
 add_subdirectory (base)
@@ -568,7 +558,7 @@ if (NATIVE_BUILD_TARGETS
 )
     message (STATUS "Building native targets...")
 
-    set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
+    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
@@ -582,7 +572,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
-        ${PROJECT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT)
 

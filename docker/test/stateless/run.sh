@@ -132,9 +132,6 @@ function run_tests()
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    clickhouse-test "00001_select_1" > /dev/null ||:
-    clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')" ||:
-
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
         --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \

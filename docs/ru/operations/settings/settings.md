@@ -1589,24 +1589,6 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
 
-## format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
-
-Если установлено значение true, разрешить строки в двойных кавычках.
-
-Включено по умолчанию.
-
-## input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
-
-Если включено, заменяет пустые поля ввода в CSV значениями по умолчанию. Для сложных выражений по умолчанию `input_format_defaults_for_omitted_fields` также должен быть включен.
-
-Включено по умолчанию.
-
-## input_format_csv_arrays_as_nested_csv {#input_format_csv_arrays_as_nested_csv}
-
-При чтении массива из CSV ожидайте, что его элементы были сериализованы во вложенный CSV, а затем помещены в строку. Пример: "[""Hello"", ""world"", ""42"""" TV""]". Скобки вокруг массива могут быть опущены.
-
-По умолчанию отключены.
-
 ## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
@@ -1682,50 +1664,6 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Использовать в качестве разделителя строк для CSV формата CRLF (DOS/Windows стиль) вместо LF (Unix стиль).
-
-## input_format_csv_detect_header {#input_format_csv_detect_header}
-
-Обнаружить заголовок с именами и типами в формате CSV.
- 
-Значение по умолчанию - `true`.
-
-## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
-
-Количество строк, пропускаемых в начале данных в формате ввода CSV.
-
-Значение по умолчанию: `0`.
-
-## input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
-
-Удалить пробелы и символы табуляции из строк без кавычек.
-
-Значение по умолчанию: `true`.
-
-**Примеры**
-
-Запрос
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
-```
-
-Результат
-
-```text
-"string"
-```
-
-Запрос
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
-```
-
-Результат
-
-```text
-"  string  "
-```
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -3247,6 +3185,16 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
+## allow_experimental_geo_types {#allow-experimental-geo-types}
+
+Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
+
+Возможные значения:
+-   0 — использование типов данных для работы с географическими структурами не поддерживается.
+-   1 — использование типов данных для работы с географическими структурами поддерживается.
+
+Значение по умолчанию: `0`.
+
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
@@ -3640,7 +3588,7 @@ SETTINGS index_granularity = 8192 │
 
 Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql.md). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
-## optimize_use_projections {#optimize_use_projections}
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
 
@@ -3653,7 +3601,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [optimize_use_projections](#optimize_use_projections)).
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)).
 
 Возможные значения:
 
@@ -3852,7 +3800,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Включает или отключает возвращение результатов типа:
--   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) и [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
+-   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) и [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
 -   `DateTime64` с расширенным диапазоном (по сравнению с типом `DateTime`) для функций [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) и [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Возможные значения:

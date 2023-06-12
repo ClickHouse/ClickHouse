@@ -3,13 +3,13 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StorageMongoDBSocketFactory.h>
+
 
 namespace DB
 {
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method", "options"};
+    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method"};
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
@@ -51,7 +51,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             config.getString(config_prefix + ".method", ""),
             configuration.database,
             config.getString(config_prefix + ".collection"),
-            config.getString(config_prefix + ".options", ""),
             sample_block);
     };
 
@@ -68,6 +67,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #include <Poco/MongoDB/ObjectId.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
@@ -99,7 +99,6 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & method_,
     const std::string & db_,
     const std::string & collection_,
-    const std::string & options_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , uri{uri_}
@@ -110,15 +109,13 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , method{method_}
     , db{db_}
     , collection{collection_}
-    , options(options_)
     , sample_block{sample_block_}
     , connection{std::make_shared<Poco::MongoDB::Connection>()}
 {
-
-    StorageMongoDBSocketFactory socket_factory;
     if (!uri.empty())
     {
         // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
         connection->connect(uri, socket_factory);
 
         Poco::URI poco_uri(connection->uri());
@@ -144,10 +141,8 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     }
     else
     {
-        // Connect with host/port/user/etc through constructing the uri
-        std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + (options.empty() ? "" : "?" + options));
-        connection->connect(uri_constructed, socket_factory);
-
+        // Connect with host/port/user/etc.
+        connection->connect(host, port);
         if (!user.empty())
         {
             Poco::MongoDB::Database poco_db(db);
@@ -160,9 +155,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
     : MongoDBDictionarySource{
-        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db,
-        other.collection, other.options, other.sample_block
-    }
+        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db, other.collection, other.sample_block}
 {
 }
 
@@ -170,7 +163,7 @@ MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, Poco::MongoDB::Document{}, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
 }
 
 QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -178,7 +171,7 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
-    Poco::MongoDB::Document query;
+    auto cursor = createCursor(db, collection, sample_block);
 
     /** NOTE: While building array, Poco::MongoDB requires passing of different unused element names, along with values.
       * In general, Poco::MongoDB is quite inefficient and bulky.
@@ -188,9 +181,9 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
     for (const UInt64 id : ids)
         ids_array->add(DB::toString(id), static_cast<Int32>(id));
 
-    query.addNewDocument(dict_struct.id->name).add("$in", ids_array);
+    cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, query, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 
@@ -199,7 +192,8 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
 
-    Poco::MongoDB::Document query;
+    auto cursor = createCursor(db, collection, sample_block);
+
     Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
 
     for (const auto row_idx : requested_rows)
@@ -253,9 +247,9 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
     }
 
     /// If more than one key we should use $or
-    query.add("$or", keys_array);
+    cursor->query().selector().add("$or", keys_array);
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, query, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

@@ -303,7 +303,6 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.remove_from_labels(label)
-        pr_info.labels.remove(label)
 
 
 def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
@@ -311,7 +310,6 @@ def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.add_to_labels(label)
-        pr_info.labels.add(label)
 
 
 def format_description(description: str) -> str:

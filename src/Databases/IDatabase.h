@@ -7,7 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <ctime>

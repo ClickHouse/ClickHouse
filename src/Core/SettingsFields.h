@@ -453,8 +453,8 @@ struct SettingFieldMultiEnum
     explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
 
-    SettingFieldMultiEnum & operator= (StorageType x) { changed = true; value.setValue(x); return *this; }
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
+    SettingFieldMultiEnum & operator= (StorageType x) { changed = x != value.getValue(); value.setValue(x); return *this; }
+    SettingFieldMultiEnum & operator= (ValueType x) { changed = !(x == value); value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
     String toString() const

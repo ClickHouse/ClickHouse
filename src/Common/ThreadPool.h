@@ -17,8 +17,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Priority.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -60,17 +58,17 @@ public:
     /// If any thread was throw an exception, first exception will be rethrown from this method,
     ///  and exception will be cleared.
     /// Also throws an exception if cannot create thread.
-    /// Priority: lower is higher.
+    /// Priority: greater is higher.
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job, Priority priority = {});
+    void scheduleOrThrowOnError(Job job, ssize_t priority = 0);
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
+    bool trySchedule(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -124,15 +122,15 @@ private:
     struct JobWithPriority
     {
         Job job;
-        Priority priority;
+        ssize_t priority;
         DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
-        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_)
+        JobWithPriority(Job job_, ssize_t priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
             : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
 
-        bool operator<(const JobWithPriority & rhs) const
+        bool operator< (const JobWithPriority & rhs) const
         {
-            return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
+            return priority < rhs.priority;
         }
     };
 
@@ -142,7 +140,7 @@ private:
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -207,28 +205,28 @@ public:
         /// - If this will throw an exception, the destructor won't be called
         /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
         GlobalThreadPool::instance().scheduleOrThrow([
-            my_state = state,
-            my_func = std::forward<Function>(func),
-            my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            state = state,
+            func = std::forward<Function>(func),
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
             SCOPE_EXIT(
-                my_state->thread_id = std::thread::id();
-                my_state->event.set();
+                state->thread_id = std::thread::id();
+                state->event.set();
             );
 
-            my_state->thread_id = std::this_thread::get_id();
+            state->thread_id = std::this_thread::get_id();
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(my_func);
-            auto arguments = std::move(my_args);
+            auto function = std::move(func);
+            auto arguments = std::move(args);
 
             /// Thread status holds raw pointer on query context, thus it always must be destroyed
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
         },
-        {}, // default priority
+        0, // default priority
         0, // default wait_microseconds
         propagate_opentelemetry_context
         );
@@ -324,7 +322,7 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 /// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
 ///
 /// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
-/// which means the tracing context initialized at underlying worker level won't be deleted for a very long time.
+/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
 /// This would cause wrong context for further jobs scheduled in ThreadPool.
 ///
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.

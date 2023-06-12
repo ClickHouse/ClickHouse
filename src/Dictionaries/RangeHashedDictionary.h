@@ -726,7 +726,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    bytes_allocated += string_arena.allocatedBytes();
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -1227,7 +1227,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
     DictionarySourceCoordinator::ReadColumnsFunc read_keys_func = [dictionary_copy = dictionary](
         const Strings & attribute_names,
         const DataTypes & result_types,
-        const Columns & key_columns_,
+        const Columns & key_columns,
         const DataTypes,
         const Columns &)
     {
@@ -1238,15 +1238,15 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         Columns result;
         result.reserve(attribute_names_size);
 
-        const ColumnPtr & key_column = key_columns_.back();
+        const ColumnPtr & key_column = key_columns.back();
 
-        const auto * key_to_index_column_ = typeid_cast<const ColumnUInt64 *>(key_column.get());
-        if (!key_to_index_column_)
+        const auto * key_to_index_column = typeid_cast<const ColumnUInt64 *>(key_column.get());
+        if (!key_to_index_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Dictionary {} read expect indexes column with type UInt64",
                 range_dictionary_ptr->getFullName());
 
-        const auto & data = key_to_index_column_->getData();
+        const auto & data = key_to_index_column->getData();
 
         for (size_t i = 0; i < attribute_names_size; ++i)
         {

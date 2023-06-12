@@ -152,13 +152,6 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
-    {
-        nested_func->merge(place, rhs, thread_pool, arena);
-    }
-
     void mergeBatch(
         size_t row_begin,
         size_t row_end,

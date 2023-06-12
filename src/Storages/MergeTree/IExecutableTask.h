@@ -5,7 +5,6 @@
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/StorageID.h>
-#include <Common/Priority.h>
 
 namespace DB
 {
@@ -33,7 +32,7 @@ public:
     virtual bool executeStep() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
-    virtual Priority getPriority() = 0;
+    virtual UInt64 getPriority() = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -64,7 +63,7 @@ public:
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() override { return id; }
-    Priority getPriority() override
+    UInt64 getPriority() override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
     }

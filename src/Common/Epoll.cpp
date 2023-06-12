@@ -34,10 +34,10 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
     return *this;
 }
 
-void Epoll::add(int fd, void * ptr, uint32_t events)
+void Epoll::add(int fd, void * ptr)
 {
     epoll_event event;
-    event.events = events | EPOLLPRI;
+    event.events = EPOLLIN | EPOLLPRI;
     if (ptr)
         event.data.ptr = ptr;
     else

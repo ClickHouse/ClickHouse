@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/type-conversion-functions
-sidebar_position: 185
+sidebar_position: 38
 sidebar_label: Type Conversion
 ---
 
@@ -8,14 +8,12 @@ sidebar_label: Type Conversion
 
 ## Common Issues with Data Conversion
 
-ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
-
-`to<type>` functions and [cast](#castx-t) behave differently in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
-
-:::note
 Be aware of potential data loss if values of a datatype are converted to a smaller datatype (for example from `Int64` to `Int32`) or between
 incompatible datatypes (for example from `String` to `Int`). Make sure to check carefully if the result is as expected.
-:::
+
+ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
+
+`to<type>` functions and [cast](#castx-t) have different behaviour in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
 
 Example:
 
@@ -53,16 +51,16 @@ SETTINGS cast_keep_nullable = 1
 
 Converts an input value to a value the [Int](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
 
-- `toInt8(expr)` — Converts to a value of data type `Int8`.
-- `toInt16(expr)` — Converts to a value of data type `Int16`.
-- `toInt32(expr)` — Converts to a value of data type `Int32`.
-- `toInt64(expr)` — Converts to a value of data type `Int64`.
-- `toInt128(expr)` — Converts to a value of data type `Int128`.
-- `toInt256(expr)` — Converts to a value of data type `Int256`.
+-   `toInt8(expr)` — Converts to a value of data type `Int8`.
+-   `toInt16(expr)` — Converts to a value of data type `Int16`.
+-   `toInt32(expr)` — Converts to a value of data type `Int32`.
+-   `toInt64(expr)` — Converts to a value of data type `Int64`.
+-   `toInt128(expr)` — Converts to a value of data type `Int128`.
+-   `toInt256(expr)` — Converts to a value of data type `Int256`.
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -153,19 +151,19 @@ Result:
 
 Converts an input value to the [UInt](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
 
-- `toUInt8(expr)` — Converts to a value of data type `UInt8`.
-- `toUInt16(expr)` — Converts to a value of data type `UInt16`.
-- `toUInt32(expr)` — Converts to a value of data type `UInt32`.
-- `toUInt64(expr)` — Converts to a value of data type `UInt64`.
-- `toUInt256(expr)` — Converts to a value of data type `UInt256`.
+-   `toUInt8(expr)` — Converts to a value of data type `UInt8`.
+-   `toUInt16(expr)` — Converts to a value of data type `UInt16`.
+-   `toUInt32(expr)` — Converts to a value of data type `UInt32`.
+-   `toUInt64(expr)` — Converts to a value of data type `UInt64`.
+-   `toUInt256(expr)` — Converts to a value of data type `UInt256`.
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-- Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
+-   Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -340,11 +338,11 @@ toDate32(expr)
 
 **Arguments**
 
-- `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [UInt32](/docs/en/sql-reference/data-types/int-uint.md) or [Date](/docs/en/sql-reference/data-types/date.md).
+-   `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [UInt32](/docs/en/sql-reference/data-types/int-uint.md) or [Date](/docs/en/sql-reference/data-types/date.md).
 
 **Returned value**
 
-- A calendar date. Type [Date32](/docs/en/sql-reference/data-types/date32.md).
+-   A calendar date. Type [Date32](/docs/en/sql-reference/data-types/date32.md).
 
 **Example**
 
@@ -458,13 +456,13 @@ toDateTime64(expr, scale, [timezone])
 
 **Arguments**
 
-- `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [UInt32](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md).
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` - Time zone of the specified datetime64 object.
+-   `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [UInt32](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+-   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+-   `timezone` - Time zone of the specified datetime64 object.
 
 **Returned value**
 
-- A calendar date and time of day, with sub-second precision.
+-   A calendar date and time of day, with sub-second precision.
 
 Type: [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 
@@ -524,33 +522,33 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
 Converts `value` to the [Decimal](/docs/en/sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
-- `toDecimal32(value, S)`
-- `toDecimal64(value, S)`
-- `toDecimal128(value, S)`
-- `toDecimal256(value, S)`
+-   `toDecimal32(value, S)`
+-   `toDecimal64(value, S)`
+-   `toDecimal128(value, S)`
+-   `toDecimal256(value, S)`
 
 ## toDecimal(32\|64\|128\|256)OrNull
 
 Converts an input string to a [Nullable(Decimal(P,S))](/docs/en/sql-reference/data-types/decimal.md) data type value. This family of functions includes:
 
-- `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
-- `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
-- `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
-- `toDecimal256OrNull(expr, S)` — Results in `Nullable(Decimal256(S))` data type.
+-   `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
+-   `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
+-   `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
+-   `toDecimal256OrNull(expr, S)` — Results in `Nullable(Decimal256(S))` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
 A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- `NULL`, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   `NULL`, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
 
 **Examples**
 
@@ -587,24 +585,24 @@ Result:
 
 Converts an input string to a [Decimal(P,S)](/docs/en/sql-reference/data-types/decimal.md) data type value. This family of functions includes:
 
-- `toDecimal32OrDefault(expr, S)` — Results in `Decimal32(S)` data type.
-- `toDecimal64OrDefault(expr, S)` — Results in `Decimal64(S)` data type.
-- `toDecimal128OrDefault(expr, S)` — Results in `Decimal128(S)` data type.
-- `toDecimal256OrDefault(expr, S)` — Results in `Decimal256(S)` data type.
+-   `toDecimal32OrDefault(expr, S)` — Results in `Decimal32(S)` data type.
+-   `toDecimal64OrDefault(expr, S)` — Results in `Decimal64(S)` data type.
+-   `toDecimal128OrDefault(expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal256OrDefault(expr, S)` — Results in `Decimal256(S)` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a default value instead of an exception in the event of an input value parsing error.
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
 A value in the `Decimal(P,S)` data type. The value contains:
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- Default `Decimal(P,S)` data type value, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   Default `Decimal(P,S)` data type value, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
 
 **Examples**
 
@@ -640,24 +638,24 @@ Result:
 
 Converts an input value to the [Decimal(P,S)](/docs/en/sql-reference/data-types/decimal.md) data type. This family of functions includes:
 
-- `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
-- `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
-- `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
-- `toDecimal256OrZero( expr, S)` — Results in `Decimal256(S)` data type.
+-   `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
+-   `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
+-   `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal256OrZero( expr, S)` — Results in `Decimal256(S)` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions), returns a value in the [String](/docs/en/sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
 A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- 0 with `S` decimal places, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   0 with `S` decimal places, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
 
 **Example**
 
@@ -785,15 +783,15 @@ toDecimalString(number, scale)
 
 **Parameters**
 
-- `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
-- `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+-   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
     * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
     * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
 
 **Returned value**
 
-- Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
-    The number is rounded up or down according to common arithmetic in case requested scale is smaller than original number's scale.
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
 
 **Example**
 
@@ -847,11 +845,11 @@ reinterpretAsUUID(fixed_string)
 
 **Arguments**
 
-- `fixed_string` — Big-endian byte string. [FixedString](/docs/en/sql-reference/data-types/fixedstring.md/#fixedstring).
+-   `fixed_string` — Big-endian byte string. [FixedString](/docs/en/sql-reference/data-types/fixedstring.md/#fixedstring).
 
 **Returned value**
 
-- The UUID type value. [UUID](/docs/en/sql-reference/data-types/uuid.md/#uuid-data-type).
+-   The UUID type value. [UUID](/docs/en/sql-reference/data-types/uuid.md/#uuid-data-type).
 
 **Examples**
 
@@ -903,12 +901,12 @@ reinterpret(x, type)
 
 **Arguments**
 
-- `x` — Any type.
-- `type` — Destination type. [String](/docs/en/sql-reference/data-types/string.md).
+-   `x` — Any type.
+-   `type` — Destination type. [String](/docs/en/sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Destination type value.
+-   Destination type value.
 
 **Examples**
 
@@ -942,13 +940,13 @@ x::t
 
 **Arguments**
 
-- `x` — A value to convert. May be of any type.
-- `T` — The name of the target data type. [String](/docs/en/sql-reference/data-types/string.md).
-- `t` — The target data type.
+-   `x` — A value to convert. May be of any type.
+-   `T` — The name of the target data type. [String](/docs/en/sql-reference/data-types/string.md).
+-   `t` — The target data type.
 
 **Returned value**
 
-- Converted value.
+-    Converted value.
 
 :::note
 If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
@@ -1030,7 +1028,7 @@ Result:
 
 **See also**
 
-- [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
+-   [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
 
 ## accurateCast(x, T)
 
@@ -1078,12 +1076,12 @@ accurateCastOrNull(x, T)
 
 **Parameters**
 
-- `x` — Input value.
-- `T` — The name of the returned data type.
+-   `x` — Input value.
+-   `T` — The name of the returned data type.
 
 **Returned value**
 
-- The value, converted to the specified data type `T`.
+-   The value, converted to the specified data type `T`.
 
 **Example**
 
@@ -1131,13 +1129,13 @@ accurateCastOrDefault(x, T)
 
 **Parameters**
 
-- `x` — Input value.
-- `T` — The name of the returned data type.
-- `default_value` — Default value of returned data type.
+-   `x` — Input value.
+-   `T` — The name of the returned data type.
+-   `default_value` — Default value of returned data type.
 
 **Returned value**
 
-- The value converted to the specified data type `T`.
+-   The value converted to the specified data type `T`.
 
 **Example**
 
@@ -1194,11 +1192,11 @@ toIntervalYear(number)
 
 **Arguments**
 
-- `number` — Duration of interval. Positive integer number.
+-   `number` — Duration of interval. Positive integer number.
 
 **Returned values**
 
-- The value in `Interval` data type.
+-   The value in `Interval` data type.
 
 **Example**
 
@@ -1236,9 +1234,9 @@ parseDateTime(str, format[, timezone])
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
+-   `str` — the String to be parsed
+-   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
@@ -1247,6 +1245,7 @@ Returns DateTime values parsed from input string according to a MySQL style form
 **Supported format specifiers**
 
 All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
+- %f: fractional second
 - %Q: Quarter (1-4) 
 
 **Example**
@@ -1285,9 +1284,9 @@ parseDateTimeInJodaSyntax(str, format[, timezone])
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
+-   `str` — the String to be parsed
+-   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
@@ -1333,22 +1332,22 @@ parseDateTimeBestEffort(time_string [, time_zone])
 
 **Arguments**
 
-- `time_string` — String containing a date and time to convert. [String](/docs/en/sql-reference/data-types/string.md).
-- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](/docs/en/sql-reference/data-types/string.md).
+-   `time_string` — String containing a date and time to convert. [String](/docs/en/sql-reference/data-types/string.md).
+-   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](/docs/en/sql-reference/data-types/string.md).
 
 **Supported non-standard formats**
 
-- A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
-- A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
-- A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
-- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
-- A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+-   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+-   A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+-   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
+-   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+-   A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
 
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 
 **Returned value**
 
-- `time_string` converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
+-   `time_string` converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Examples**
 
@@ -1428,10 +1427,10 @@ Result:
 
 **See Also**
 
-- [RFC 1123](https://tools.ietf.org/html/rfc1123)
-- [toDate](#todate)
-- [toDateTime](#todatetime)
-- [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+-   [RFC 1123](https://tools.ietf.org/html/rfc1123)
+-   [toDate](#todate)
+-   [toDateTime](#todatetime)
+-   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 
 ## parseDateTimeBestEffortUS
 
@@ -1467,13 +1466,13 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 **Parameters**
 
-- `time_string` — String containing a date or date with time to convert. [String](/docs/en/sql-reference/data-types/string.md).
-- `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
+-   `time_string` — String containing a date or date with time to convert. [String](/docs/en/sql-reference/data-types/string.md).
+-   `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
 
 **Returned value**
 
-- `time_string` converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
+-   `time_string` converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Examples**
 
@@ -1535,11 +1534,11 @@ toLowCardinality(expr)
 
 **Arguments**
 
-- `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) resulting in one of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+-   `expr` — [Expression](/docs/en/sql-reference/syntax.md/#syntax-expressions) resulting in one of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
 
 **Returned values**
 
-- Result of `expr`.
+-   Result of `expr`.
 
 Type: `LowCardinality(expr_result_type)`
 
@@ -1581,11 +1580,11 @@ toUnixTimestamp64Nano(value)
 
 **Arguments**
 
-- `value` — DateTime64 value with any precision.
+-   `value` — DateTime64 value with any precision.
 
 **Returned value**
 
-- `value` converted to the `Int64` data type.
+-   `value` converted to the `Int64` data type.
 
 **Examples**
 
@@ -1637,12 +1636,12 @@ fromUnixTimestamp64Nano(value [, timezone])
 
 **Arguments**
 
-- `value` — `Int64` value with any precision.
-- `timezone` — `String` (optional) timezone name of the result.
+-   `value` — `Int64` value with any precision.
+-   `timezone` — `String` (optional) timezone name of the result.
 
 **Returned value**
 
-- `value` converted to the `DateTime64` data type.
+-   `value` converted to the `DateTime64` data type.
 
 **Example**
 
@@ -1673,12 +1672,12 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
-- `x`,`y`, ... — Expressions.
+-   `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
+-   `x`,`y`, ... — Expressions.
 
 **Returned value**
 
-- A formatted string. (for text formats it's usually terminated with the new line character).
+-   A formatted string. (for text formats it's usually terminated with the new line character).
 
 **Example**
 
@@ -1744,12 +1743,12 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
-- `x`,`y`, ... — Expressions.
+-   `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
+-   `x`,`y`, ... — Expressions.
 
 **Returned value**
 
-- A formatted string.
+-   A formatted string.
 
 **Example**
 
@@ -1782,12 +1781,12 @@ snowflakeToDateTime(value [, time_zone])
 
 **Parameters**
 
-- `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
+-   `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
+-  Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Example**
 
@@ -1818,12 +1817,12 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Parameters**
 
-- `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
+-   `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
+-  Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
 
 **Example**
 
@@ -1854,11 +1853,11 @@ dateTimeToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date and time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+-   `value` — Date and time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-   Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
@@ -1888,11 +1887,11 @@ dateTime64ToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date and time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
+-   `value` — Date and time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
-- Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-   Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 

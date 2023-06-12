@@ -15,7 +15,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <IO/S3/ProviderType.h>
 
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
@@ -188,7 +187,7 @@ namespace
     bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
-        if (request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source"))
+        if (request.HasHeader("x-amz-copy-source"))
         {
             /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
             if (query_params.empty())
@@ -260,7 +259,6 @@ void PocoHTTPClient::makeRequestInternal(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", uri);
 

@@ -42,7 +42,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                        "Position: {}, Block rows: {}.", *pos, block.rows());
+                        "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     Block granule_index_block;
     size_t max_read_rows = std::min(block.rows() - *pos, limit);

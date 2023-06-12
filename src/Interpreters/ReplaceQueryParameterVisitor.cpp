@@ -1,7 +1,6 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -84,20 +83,10 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-
-    const SerializationPtr & serialization = data_type->getDefaultSerialization();
-    try
-    {
-        if (ast_param.name == "_request_body")
-            serialization->deserializeWholeText(temp_column, read_buffer, format_settings);
-        else
-            serialization->deserializeTextEscaped(temp_column, read_buffer, format_settings);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, ast_param.name);
-        throw;
-    }
+    if (ast_param.name == "_request_body")
+        data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
+    else
+        data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
@@ -113,13 +102,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     else
         literal = temp_column[0];
 
-    /// If it's a String, substitute it in the form of a string literal without CAST
-    /// to enable substitutions in simple queries that don't support expressions
-    /// (such as CREATE USER).
-    if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = std::make_shared<ASTLiteral>(literal);
-    else
-        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);

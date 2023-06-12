@@ -1,6 +1,5 @@
 #include <Coordination/KeeperLogStore.h>
 #include <IO/CompressionMethod.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
