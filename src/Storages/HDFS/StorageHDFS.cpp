@@ -63,12 +63,20 @@ namespace ErrorCodes
 }
 namespace
 {
+    /// Forward-declared to use in LSWithFoldedRegexpMatching w/o circular dependency.
     Strings LSWithRegexpMatching(const String & path_for_ls,
                                  const HDFSFSPtr & fs,
                                  const String & for_match,
                                  std::unordered_map<String, time_t> * last_mod_times);
 
-    /// When `{...}` has any `/`s, it must be processed in a different way
+    /*
+     * When `{...}` has any `/`s, it must be processed in a different way:
+     * Basically, a path with globs is processed by LSWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
+     * LSWithFoldedRegexpMatching is in charge from now on.
+     * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+     * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+     * StorageFile.cpp has the same logic.
+    */
     Strings LSWithFoldedRegexpMatching(const String & path_for_ls,
                                        const HDFSFSPtr & fs,
                                        std::unordered_map<String, time_t> * last_mod_times,
