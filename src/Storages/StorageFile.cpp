@@ -127,7 +127,6 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
         const size_t last_slash = full_path.rfind('/');
         const String dir_or_file_name = full_path.substr(last_slash);
 
-        std::cerr << "\nprocessing file (full_path): " << full_path << "\n";
         if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
         {
             if (next_slash_after_glob_pos == std::string::npos)
