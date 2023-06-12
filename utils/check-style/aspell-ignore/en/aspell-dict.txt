@@ -1081,6 +1081,7 @@ avgweighted
 avro
 avx
 aws
+azureBlobStorage
 backend
 backoff
 backticks
