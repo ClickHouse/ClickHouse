@@ -4545,6 +4545,59 @@ def test_block_based_formats_2(kafka_cluster):
         kafka_delete_topic(admin_client, format_name)
 
 
+def test_system_kafka_consumers(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "system_kafka_cons"
+    kafka_create_topic(admin_client, topic)
+
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+    kafka_produce(
+        kafka_cluster,
+        topic,
+        ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        """
+    )
+
+    # result_system_kafka_consumers = instance.query("SELECT * FROM system.kafka_consumers format Vertical")
+
+    result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
+
+    expected = """\
+1	foo
+2	bar
+42	answer
+100	multi
+101	row
+103	message
+"""
+    assert TSV(result) == TSV(expected)
+
+    result_system_kafka_consumers = instance.query("SELECT * FROM system.kafka_consumers format Vertical")
+
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert result_system_kafka_consumers == 'empty'
+
+
+    kafka_delete_topic(admin_client, topic)
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
