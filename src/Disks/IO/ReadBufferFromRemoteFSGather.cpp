@@ -22,13 +22,15 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase(0, nullptr, 0)
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    bool use_external_buffer_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , use_external_buffer(use_external_buffer_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
@@ -36,7 +38,9 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
-        && (!query_id.empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache || !settings.avoid_readthrough_cache_outside_query_context);
+        && (!query_id.empty()
+            || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+            || !settings.avoid_readthrough_cache_outside_query_context);
 }
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
@@ -237,20 +241,47 @@ void ReadBufferFromRemoteFSGather::reset()
 
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 {
-    if (whence != SEEK_SET)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only seeking with SEEK_SET is allowed");
+    if (offset == getPosition() && whence == SEEK_SET)
+        return offset;
 
-    reset();
+    if (whence != SEEK_SET)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+
+    if (use_external_buffer)
+    {
+        /// In case use_external_buffer == true, the buffer manages seeks itself.
+        reset();
+    }
+    else
+    {
+        if (!working_buffer.empty()
+            && static_cast<size_t>(offset) >= file_offset_of_buffer_end - working_buffer.size()
+            && static_cast<size_t>(offset) < file_offset_of_buffer_end)
+        {
+            pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
+            assert(pos >= working_buffer.begin());
+            assert(pos < working_buffer.end());
+
+            return getPosition();
+        }
+
+        off_t position = getPosition();
+        if (current_buf && offset > position)
+        {
+            size_t diff = offset - position;
+            if (diff < settings.remote_read_min_bytes_for_seek)
+            {
+                ignore(diff);
+                return offset;
+            }
+        }
+
+        resetWorkingBuffer();
+        reset();
+    }
+
     file_offset_of_buffer_end = offset;
     return file_offset_of_buffer_end;
-}
-
-size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
-{
-    if (!current_buf)
-        return file_offset_of_buffer_end;
-
-    return current_buf->getFileOffsetOfBufferEnd();
 }
 
 ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
