@@ -109,8 +109,14 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
                                            const size_t next_slash_after_glob_pos,
                                            std::vector<std::string> & result)
 {
-    /// We don't need to go all the way in every directory if max_depth is reached
-    /// as it is upper limit of depth by simply counting `/`s in curly braces
+    /*
+     * When `{...}` has any `/`s, it must be processed in a different way:
+     * Basically, a path with globs is processed by LSWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
+     * LSWithFoldedRegexpMatching is in charge from now on.
+     * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+     * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+     * StorageHDFS.cpp has the same logic.
+    */
     if (!max_depth)
         return;
 
@@ -121,6 +127,7 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
         const size_t last_slash = full_path.rfind('/');
         const String dir_or_file_name = full_path.substr(last_slash);
 
+        std::cerr << "\nprocessing file (full_path): " << full_path << "\n";
         if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
         {
             if (next_slash_after_glob_pos == std::string::npos)
@@ -130,14 +137,14 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
             }
             else
             {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(processed_suffix).append(it->path().string()) / "" ,
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "" ,
                                                 suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result);
             }
         }
         else if (it->is_directory())
         {
-            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path).append(processed_suffix), processed_suffix + dir_or_file_name,
+            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
                                                   suffix_with_globs, current_glob, matcher,
                                                   total_bytes_to_read, max_depth - 1, next_slash_after_glob_pos, result);
         }
