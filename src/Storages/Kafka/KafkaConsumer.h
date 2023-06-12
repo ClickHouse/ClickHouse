@@ -71,6 +71,9 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
+    void setExceptionInfo(const String & text);
+    std::pair<String, Int64> getExceptionInfo() const;
+
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -106,6 +109,18 @@ private:
     // order is important, need to be destructed before consumer
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
+
+    String last_exception_text;
+    Int64 last_exception_timestamp_usec = 0;
+    mutable std::mutex exception_mutex;
+
+    std::atomic<UInt64> last_poll_timestamp_usec = 0;
+    std::atomic<UInt64> num_messages_read = 0;
+    std::atomic<UInt64> last_commit_timestamp_usec = 0;
+    std::atomic<UInt64> num_commits = 0;
+    std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
+    std::atomic<UInt64> num_rebalance_assignments = 0;
+    std::atomic<UInt64> num_rebalance_revocations = 0;
 
     void drain();
     void cleanUnprocessed();

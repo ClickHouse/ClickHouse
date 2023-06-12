@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -26,7 +27,7 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"consumer_id", std::make_shared<DataTypeString>()}, //(number? or string? - single clickhouse table can have many consumers)
         {"assignments.topic", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
-        {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
         {"last_exception_time", std::make_shared<DataTypeDateTime>()},
         {"last_exception", std::make_shared<DataTypeString>()},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
@@ -60,7 +61,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & assigments_partition_id = assert_cast<ColumnInt32 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_partition_id_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
-    auto & assigments_current_offset = assert_cast<ColumnUInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & assigments_current_offset = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_current_offset_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
 
@@ -148,19 +149,22 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             // assigments_current_offset_last_offset += 2;
             // assigments_current_offset_offsets.push_back(assigments_current_offset_last_offset);
 
-            last_exception_time.insert(0);
+            auto exception_info = consumer->getExceptionInfo();
 
-            std::string fake_last_exception = "fake_last_exception";
-            last_exception.insertData(fake_last_exception.data(), fake_last_exception.size());
 
-            last_poll_time.insert(0);
-            num_messages_read.insert(0);
-            last_commit_time.insert(0);
-            num_commits.insert(0);
-            last_rebalance_time.insert(0);
-            num_rebalance_revocations.insert(0);
-            num_rebalance_assigments.insert(0);
-            is_currently_used.insert(0);
+            last_exception.insertData(exception_info.first.data(), exception_info.first.size());
+            last_exception_time.insert(exception_info.second);
+
+            last_poll_time.insert(consumer->last_poll_timestamp_usec.load());
+            num_messages_read.insert(consumer->num_messages_read.load());
+            last_commit_time.insert(consumer->last_commit_timestamp_usec.load());
+            num_commits.insert(consumer->num_commits.load());
+            last_rebalance_time.insert(consumer->last_rebalance_timestamp_usec.load());
+
+            num_rebalance_revocations.insert(consumer->num_rebalance_revocations.load());
+            num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
+
+            is_currently_used.insert(consumer->stalled_status != KafkaConsumer::CONSUMER_STOPPED && consumer->assignment.has_value() && consumer->assignment.value().size() > 0);
         }
 
     };
