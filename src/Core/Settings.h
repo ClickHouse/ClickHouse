@@ -850,7 +850,7 @@ class IColumn;
     M(Bool, input_format_csv_use_best_effort_in_schema_inference, true, "Use some tweaks and heuristics to infer schema in CSV format", 0) \
     M(Bool, input_format_tsv_use_best_effort_in_schema_inference, true, "Use some tweaks and heuristics to infer schema in TSV format", 0) \
     M(Bool, input_format_csv_detect_header, true, "Automatically detect header with names and types in CSV format", 0) \
-    M(Bool, input_format_csv_skip_whitespaces_tabs, true, "Skips spaces and tabs(\\t) characters in the CSV strings", 0) \
+    M(Bool, input_format_csv_use_whitespace_tab_as_delimiter, false, "Use spaces and tabs(\\t) as field delimiter in the CSV strings", 0) \
     M(Bool, input_format_csv_trim_whitespaces, true, "Trims spaces and tabs (\\t) characters at the beginning and end in CSV strings", 0) \
     M(Bool, input_format_tsv_detect_header, true, "Automatically detect header with names and types in TSV format", 0) \
     M(Bool, input_format_custom_detect_header, true, "Automatically detect header with names and types in CustomSeparated format", 0) \
