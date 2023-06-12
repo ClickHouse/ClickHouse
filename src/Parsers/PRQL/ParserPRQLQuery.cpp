@@ -1,6 +1,7 @@
 #include <string>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 
+#include "Parsers/Lexer.h"
 #include "config.h"
 
 #if USE_PRQL
@@ -23,15 +24,20 @@ namespace ErrorCodes
 bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserSetQuery set_p;
+    const auto * begin = pos->begin;
+
 
     if (set_p.parse(pos, node, expected))
-    {
         return true;
-    }
+
+
+    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+        ++pos;
+
+    const auto * end = pos->begin;
 
     uint8_t * sql_query_ptr{nullptr};
     uint64_t sql_query_size{0};
-    const auto * begin = pos->begin;
 
     const auto res
         = prql_to_sql(reinterpret_cast<const uint8_t *>(begin), static_cast<uint64_t>(end - begin), &sql_query_ptr, &sql_query_size);
@@ -39,6 +45,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     SCOPE_EXIT({ prql_free_pointer(sql_query_ptr); });
 
     const auto * sql_query_char_ptr = reinterpret_cast<char *>(sql_query_ptr);
+    const auto * const original_sql_query_ptr = sql_query_char_ptr;
 
     if (res != 0)
     {
@@ -49,19 +56,16 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String error_message;
     node = tryParseQuery(query_p, sql_query_char_ptr, sql_query_char_ptr + sql_query_size - 1, error_message, false, "", false, 1000, 1999);
 
-    while (!pos->isEnd()) ++pos;
+    if (!node)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Error while parsing the SQL query generated from PRQL query :'{}'.\nPRQL Query:'{}'\nSQL query: '{}'",
+            error_message,
+            std::string_view{begin, end},
+            std::string(original_sql_query_ptr, sql_query_size));
 
-    if (node)
-    {
-        return true;
-    }
 
-
-    throw Exception(
-        ErrorCodes::SYNTAX_ERROR,
-        "Error while parsing the SQL query generated from PRQL query. PRQL Query:'{}'; SQL query: '{}'",
-        sql_query_char_ptr,
-        std::string(sql_query_char_ptr, sql_query_size));
+    return true;
 }
 
 }
