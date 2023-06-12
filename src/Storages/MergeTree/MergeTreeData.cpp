@@ -601,14 +601,14 @@ namespace
 
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
-    const IndicesDescription & indices,
+    const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
     ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
     for (const auto & index : indices)
-        for (const auto & index_expr : index.expression_list_ast->children)
+        for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
@@ -640,14 +640,16 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
     return {};
 }
 
-ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
+ExpressionActionsPtr
+MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->getColumns(), getContext());
 }
 
-ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
+ExpressionActionsPtr
+MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->getColumns(), getContext());
 }
 
 
@@ -4789,7 +4791,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 if (partition_ast && partition_ast->all)
                 {
                     if (command.type != PartitionCommand::DROP_PARTITION)
-                        throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DETACH PARTITION ALL currently");
+                        throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH PARTITION ALL currently");
                 }
                 else
                     getPartitionIDFromQuery(command.partition, getContext());
@@ -7154,6 +7156,9 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// Parallel replicas
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
+        if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
+            return QueryProcessingStage::Enum::FetchColumns;
+
         /// ReplicatedMergeTree
         if (supportsReplication())
             return QueryProcessingStage::Enum::WithMergeableState;
@@ -7176,6 +7181,42 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
+bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
+    ContextPtr query_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info) const
+{
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
+
+    MergeTreeDataSelectExecutor reader(*this);
+    auto result_ptr = reader.estimateNumMarksToRead(
+        parts,
+        query_info.prewhere_info,
+        storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
+        storage_snapshot->metadata,
+        storage_snapshot->metadata,
+        query_info,
+        /*added_filter_nodes*/ActionDAGNodes{},
+        query_context,
+        query_context->getSettingsRef().max_threads);
+
+    if (result_ptr->error())
+        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
+
+    LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
+
+    bool decision = result_ptr->marks() >= query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable;
+
+    if (!decision)
+        LOG_DEBUG(log, "Parallel replicas will be disabled, because the estimated number of granules to read {} is less than the threshold which is {}",
+            result_ptr->marks(),
+            query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable);
+
+    return decision;
 }
 
 
