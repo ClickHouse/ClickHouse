@@ -491,7 +491,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
