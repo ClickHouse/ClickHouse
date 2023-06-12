@@ -9,6 +9,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/indexHint.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -895,6 +896,34 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
+void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
+{
+    for (const auto & node : dag->getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData().get());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
 void addBuildSubqueriesForSetsStepIfNeeded(
     QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
@@ -907,20 +936,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     PreparedSets::SubqueriesForSets subqueries_for_sets;
 
     for (const auto & actions_to_execute : result_actions_to_execute)
-    {
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            if (node.column)
-            {
-                const IColumn * column = node.column.get();
-                if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                    column = &column_const->getDataColumn();
-
-                if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-                    useful_sets.insert(column_set->getData().get());
-            }
-        }
-    }
+        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
 
     auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.set.get()); };
     auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
