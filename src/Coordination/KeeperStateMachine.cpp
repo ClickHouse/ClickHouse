@@ -272,9 +272,8 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        rollbackRequestNoLock(request_for_session, true);
-        throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to preprocess stored log, aborting to avoid inconsistent state");
+        std::abort();
     }
 
     if (keeper_context->digest_enabled && request_for_session.digest)
