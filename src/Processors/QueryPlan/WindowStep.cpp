@@ -63,7 +63,7 @@ WindowStep::WindowStep(
 void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto num_streams = pipeline.getNumThreads();
-    
+
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
