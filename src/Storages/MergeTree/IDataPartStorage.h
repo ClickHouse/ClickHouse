@@ -149,6 +149,7 @@ public:
     virtual std::string getDiskName() const = 0;
     virtual std::string getDiskType() const = 0;
     virtual bool isStoredOnRemoteDisk() const { return false; }
+    virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;

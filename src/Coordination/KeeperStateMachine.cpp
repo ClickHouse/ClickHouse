@@ -272,8 +272,8 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     }
     catch (...)
     {
-        rollbackRequest(request_for_session, true);
-        throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to preprocess stored log, aborting to avoid inconsistent state");
+        std::abort();
     }
 
     if (keeper_context->digest_enabled && request_for_session.digest)
@@ -363,6 +363,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
         {
             LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+            return true;
         }
 
         latest_snapshot_ptr = latest_snapshot_buf;
@@ -372,6 +373,10 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         std::lock_guard lock(storage_and_responses_lock);
         auto snapshot_deserialization_result
             = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+
+        /// maybe some logs were preprocessed with log idx larger than the snapshot idx
+        /// we have to apply them to the new storage
+        storage->applyUncommittedState(*snapshot_deserialization_result.storage, s.get_last_log_idx());
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -408,6 +413,14 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
+    storage->rollbackRequest(request_for_session.zxid, allow_missing);
+}
+
+void KeeperStateMachine::rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
+{
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+        return;
+
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
