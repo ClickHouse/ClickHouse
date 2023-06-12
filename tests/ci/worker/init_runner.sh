@@ -189,6 +189,25 @@ get_runner_token() {
     /usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value
 }
 
+is_job_assigned() {
+    local runner_pid
+    runner_pid=$(pgrep Runner.Listener)
+    if [ -z "$runner_pid" ]; then
+        # if runner has finished, it's fine
+        return 0
+    fi
+    local log_file
+    log_file=$(lsof -p "$runner_pid" 2>/dev/null | grep -o "$RUNNER_HOME/_diag/Runner.*log")
+    if [ -z "$log_file" ]; then
+        # assume, the process is over or just started
+        return 0
+    fi
+    # So far it's the only solid way to determine that the job is starting
+    grep -q 'Terminal] .* Running job:' "$log_file" \
+        && return 0 \
+        || return 1
+}
+
 while true; do
     runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid $runner_pid"
@@ -230,18 +249,14 @@ while true; do
             fi
 
         fi
-        # The runner does not provide a way to determine, if it runs the job,
-        # neither the way to determine if it just litens. But there should be a
-        # process for Runner.Worker. So if the runner just hangs around for long,
-        # we check if it's fine to let it go
-        if ! pgrep Runner.Worker > /dev/null; then
+        if ! is_job_assigned; then
             RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
-            echo "The runner is launched $RUNNER_AGE seconds ago and still doesn't have launched Runner.Worker"
+            echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
             if (( 60 < RUNNER_AGE )); then
                 echo "Check if the instance should tear down"
                 if ! no_terminating_metadata; then
                     # Another check if the worker still didn't start
-                    if pgrep Runner.Worker; then
+                    if is_job_assigned; then
                         echo "During the metadata check the job was assigned, continue"
                         continue
                     fi
