@@ -35,7 +35,7 @@ pub unsafe extern "C" fn prql_to_sql(
     // TODO(antaljanosbenjamin): use the checked version once error handling is in place
     let prql_query: String = String::from_utf8_unchecked(query_vec);
     let opts = &Options {
-        format: false,
+        format: true,
         target: Target::Sql(Some(Dialect::ClickHouse)),
         signature_comment: false,
         color: false,
