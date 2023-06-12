@@ -2,7 +2,9 @@
 #include <gtest/gtest.h>
 #include "Common/ZooKeeper/IKeeper.h"
 
+#include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperContext.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
@@ -2346,18 +2348,19 @@ TEST_P(CoordinationTest, TestDurableState)
     }
 }
 
-TEST_P(CoordinationTest, TestCurrentApiVersion)
+TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
     KeeperStorage storage{500, "", keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
-    request->path = DB::keeper_api_version_path;
+    request->path = DB::keeper_api_feature_flags_path;
     auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-    uint8_t keeper_version{0};
-    DB::ReadBufferFromOwnString buf(get_response.data);
-    DB::readIntText(keeper_version, buf);
-    EXPECT_EQ(keeper_version, static_cast<uint8_t>(latest_keeper_api_version));
+    DB::KeeperFeatureFlags feature_flags;
+    feature_flags.setFeatureFlags(get_response.data);
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ));
+    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
 }
 
 TEST_P(CoordinationTest, TestSystemNodeModify)

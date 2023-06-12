@@ -9,6 +9,7 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -152,6 +153,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
+        factory.registerCommand(feature_flags_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -486,7 +490,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(Coordination::latest_keeper_api_version));
+    return toString(0);
 }
 
 String CreateSnapshotCommand::run()
@@ -533,6 +537,27 @@ String CleanResourcesCommand::run()
 {
     keeper_dispatcher.cleanResources();
     return "ok";
+}
+
+String FeatureFlagsCommand::run()
+{
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->feature_flags;
+
+    StringBuffer ret;
+
+    auto append = [&ret] (String key, uint8_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+
+    for (const auto feature : all_keeper_feature_flags)
+        append(SettingFieldKeeperFeatureFlagTraits::toString(feature), feature_flags.isEnabled(feature));
+
+    return ret.str();
+
 }
 
 }
