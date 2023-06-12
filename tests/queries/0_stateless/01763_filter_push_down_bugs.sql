@@ -38,6 +38,31 @@ DROP TABLE IF EXISTS Test;
 
 select x, y from (select [0, 1, 2] as y, 1 as a, 2 as b) array join y as x where a = 1 and b = 2 and (x = 1 or x != 1) and x = 1;
 
+DROP TABLE IF EXISTS t;
 create table t(a UInt8) engine=MergeTree order by a;
 insert into t select * from numbers(2);
 select a from t t1 join t t2 on t1.a = t2.a where t1.a;
+DROP TABLE IF EXISTS t;
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t1 (id Int64, create_time DateTime) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time;
+
+insert into t1 values (101, '2023-05-28 00:00:00'), (102, '2023-05-28 00:00:00');
+insert into t2 values ('2023-05-31 00:00:00');
+
+EXPLAIN indexes=1 SELECT id, delete_time FROM t1
+ CROSS JOIN (
+    SELECT delete_time
+    FROM t2
+) AS d WHERE create_time < delete_time AND id = 101 SETTINGS allow_experimental_analyzer=0;
+
+EXPLAIN indexes=1 SELECT id, delete_time FROM t1
+ CROSS JOIN (
+    SELECT delete_time
+    FROM t2
+) AS d WHERE create_time < delete_time AND id = 101 SETTINGS allow_experimental_analyzer=1;
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
