@@ -6,6 +6,10 @@
 
 SET enable_deflate_qpl_codec = 1;
 
+-- Suppress test failures because stderr contains warning "Initialization of hardware-assisted DeflateQpl failed, falling
+-- back to software DeflateQpl coded."
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS compression_codec;
 
 CREATE TABLE compression_codec(
