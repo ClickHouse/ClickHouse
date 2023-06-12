@@ -79,7 +79,7 @@ def test_simple_write_account_string_table_function(cluster):
     node = cluster.instances["node_0"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azure_blob_storage("
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
         "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
         "'auto', 'key UInt64') VALUES (1), (2)",
@@ -89,7 +89,7 @@ def test_simple_write_account_string_table_function(cluster):
 
     pure_azure = node.query(
         """
-    SELECT count(*) from azure_blob_storage(
+    SELECT count(*) from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')"""

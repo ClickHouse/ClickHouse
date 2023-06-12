@@ -60,116 +60,116 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         if (configuration.format == "auto")
             configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
     }
-
-    if (engine_args.size() < 3 || engine_args.size() > 8)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage Azure requires 3 to 7 arguments: "
-                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
-
-    for (auto & engine_arg : engine_args)
-        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-    std::unordered_map<std::string_view, size_t> engine_args_to_idx;
-
-    configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-    configuration.is_connection_string = isConnectionString(configuration.connection_url);
-
-    configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-    configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
-
-    auto is_format_arg = [] (const std::string & s) -> bool
+    else
     {
-        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
-    };
+        if (engine_args.size() < 3 || engine_args.size() > 8)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage Azure requires 3 to 7 arguments: "
+                "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
 
-    if (engine_args.size() == 4)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name/structure");
-        if (is_format_arg(fourth_arg))
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
+
+        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
+
+        configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        configuration.is_connection_string = isConnectionString(configuration.connection_url);
+
+        configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
+        configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+
+        auto is_format_arg
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+
+        if (engine_args.size() == 4)
         {
-            configuration.format = fourth_arg;
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name/structure");
+            if (is_format_arg(fourth_arg))
+            {
+                configuration.format = fourth_arg;
+            }
+            else
+            {
+                configuration.structure = fourth_arg;
+            }
         }
-        else
+        else if (engine_args.size() == 5)
         {
-            configuration.structure = fourth_arg;
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                configuration.format = fourth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            }
         }
+        else if (engine_args.size() == 6)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                configuration.format = fourth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+                configuration.structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+                if (!is_format_arg(sixth_arg))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+                configuration.format = sixth_arg;
+            }
+        }
+        else if (engine_args.size() == 7)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format, compression and structure must be last arguments");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+                if (!is_format_arg(sixth_arg))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+                configuration.format = sixth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            }
+        }
+        else if (engine_args.size() == 8)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+                if (!is_format_arg(sixth_arg))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+                configuration.format = sixth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+                configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+            }
+        }
+
+        configuration.blobs_paths = {configuration.blob_path};
+
+        if (configuration.format == "auto")
+            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
     }
-    else if (engine_args.size() == 5)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            configuration.format = fourth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        }
-    }
-    else if (engine_args.size() == 6)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            configuration.format = fourth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-            configuration.structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            configuration.format = sixth_arg;
-        }
-    }
-    else if (engine_args.size() == 7)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format, compression and structure must be last arguments");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            configuration.format = sixth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-        }
-    }
-    else if (engine_args.size() == 8)
-    {
-
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            configuration.format = sixth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-            configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
-        }
-    }
-
-    configuration.blobs_paths = {configuration.blob_path};
-
-    if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
 }
 
 void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -185,7 +185,6 @@ void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, 
     auto & args = args_func.at(0)->children;
 
     parseArgumentsImpl(args, context);
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CONFIGURATION {}", configuration.connection_url);
 }
 
 
@@ -208,15 +207,63 @@ void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, 
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
+        auto is_format_arg
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+
+
         if (args.size() == 3)
         {
-            /// Add format=auto before structure argument.
+            /// Add format=auto & compression=auto before structure argument.
+            args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
         else if (args.size() == 4)
         {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name/structure");
+            if (is_format_arg(fourth_arg))
+            {
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(structure_literal);
+            }
+            else
+            {
+                args.back() = structure_literal;
+            }
+        }
+        else if (args.size() == 5)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
+            if (!is_format_arg(fourth_arg))
+            {
+                /// Add format=auto & compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+            }
             args.push_back(structure_literal);
+        }
+        else if (args.size() == 6)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
+            if (!is_format_arg(fourth_arg))
+            {
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(structure_literal);
+            }
+            else
+            {
+                args.back() = structure_literal;
+            }
+        }
+        else if (args.size() == 7)
+        {
+            args.push_back(structure_literal);
+        }
+        else if (args.size() == 8)
+        {
+            args.back() = structure_literal;
         }
     }
 }
