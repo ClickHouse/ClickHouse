@@ -154,7 +154,6 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
 namespace ActionLocks
