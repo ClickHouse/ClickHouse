@@ -76,6 +76,7 @@
 #include <random>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 #include "config.h" // USE_PRQL
 
 #if USE_PRQL
@@ -375,14 +376,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_for_logging;
     size_t log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
 
-
-    const auto parse_sql_query = [&settings, max_query_size, &ast](const char * query_begin, const char * query_end)
-    {
-        ParserQuery parser(query_end, settings.allow_settings_after_format_in_insert);
-        /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, query_begin, query_end, "", max_query_size, settings.max_parser_depth);
-    };
-
     /// Parse the query from string.
     try
     {
@@ -396,27 +389,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 #if USE_PRQL
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            uint8_t * sql_query_ptr{nullptr};
-            uint64_t sql_query_size{0};
-
-            const auto res = prql_to_sql(
-                reinterpret_cast<const uint8_t *>(begin), static_cast<uint64_t>(end - begin), &sql_query_ptr, &sql_query_size);
-
-            SCOPE_EXIT({ prql_free_pointer(sql_query_ptr); });
-
-            const auto * sql_query_char_ptr = reinterpret_cast<char *>(sql_query_ptr);
-
-            if (res != 0)
-            {
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error: '{}'", sql_query_char_ptr);
-            }
-
-            parse_sql_query(sql_query_char_ptr, sql_query_char_ptr + sql_query_size - 1);
+            ParserPRQLQuery parser (end);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
 #endif
         else
         {
-            parse_sql_query(begin, end);
+            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
 
         const char * query_end = end;

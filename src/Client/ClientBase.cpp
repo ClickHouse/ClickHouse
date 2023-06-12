@@ -46,6 +46,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -72,8 +73,11 @@
 #include <iostream>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
+#include "Core/SettingsEnums.h"
+#include "Parsers/PRQL/ParserPRQLQuery.h"
 #include "config_version.h"
 #include "config.h"
 
@@ -338,6 +342,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+#if USE_PRQL
+    else if (dialect == Dialect::prql)
+        parser = std::make_unique<ParserPRQLQuery>(end);
+#endif
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
