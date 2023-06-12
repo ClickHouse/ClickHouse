@@ -54,7 +54,7 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
     out = std::format(
         "if(isNull(IPv4StringToNumOrNull({0}) as ip_{3}) "
         "or isNull({1} as range_start_ip_{3}) or isNull({2} as range_mask_{3}), null, "
-        "bitXor(range_start_ip_{3}, bitAnd(ip_{3}, bitNot(toUInt32(intExp2(toInt32(32 - range_mask_{3})) - 1)))) = 0)",
+        "bitXor(range_start_ip_{3}, bitAnd(ip_{3}, bitNot(toUInt32(intExp2(toInt32(32 - range_mask_{3})) - 1)))) = 0) ",
         ip_address,
         kqlCallToExpression("parse_ipv4", {ip_range}, pos.max_depth),
         kqlCallToExpression("ipv4_netmask_suffix", {ip_range}, pos.max_depth),
@@ -246,7 +246,7 @@ bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
     out = std::format(
         "ifNull(if(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32_{3}) and toTypeName({0}) = 'String' or ({1}) < 0 "
         "or isNull(ifNull(param_as_uint32_{3}, {2}) as ip_as_number_{3}), null, "
-        "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(32 - toInt32({1})) - 1))))), '')",
+        "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(toInt32(32 - ({1}))) - 1))))), '')",
         ParserKQLBase::getExprFromToken(ip_address, pos.max_depth),
         mask ? *mask : "32",
         kqlCallToExpression("parse_ipv4", {"tostring(" + ip_address + ")"}, pos.max_depth),
