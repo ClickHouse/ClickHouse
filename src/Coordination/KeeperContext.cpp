@@ -11,6 +11,10 @@ KeeperContext::KeeperContext()
     feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
     feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
     system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+
+
+    /// for older clients, the default is equivalent to WITH_MULTI_READ version
+    system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
