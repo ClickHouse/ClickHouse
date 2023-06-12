@@ -462,7 +462,7 @@ Block StorageRedis::getSampleBlock(const Names &) const
 }
 
 SinkToStoragePtr StorageRedis::write(
-    const ASTPtr & /*query*/, 
+    const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/,
     bool /*async_insert*/)
