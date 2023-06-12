@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
