@@ -364,7 +364,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             settings.max_download_buffer_size);
 
         res = wrapInParallelReadBufferIfSupported(
-            buf, threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
+            buf, threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
             max_download_threads, settings.max_download_buffer_size, file_size);
     }
 
