@@ -129,7 +129,7 @@ namespace
             }
             else if (is_directory)
             {
-                Strings result_part = LSWithFoldedRegexpMatching(fs::path(full_path).append(processed_suffix),
+                Strings result_part = LSWithFoldedRegexpMatching(fs::path(full_path),
                                            fs, last_mod_times, processed_suffix + dir_or_file_name, suffix_with_globs, current_glob, matcher,
                                                       max_depth - 1, next_slash_after_glob_pos);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
