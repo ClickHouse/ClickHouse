@@ -46,10 +46,12 @@ ENV CXX=clang++-${LLVM_VERSION}
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
-ENV PATH="/rust/cargo/env:${PATH}"
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
+    rustup toolchain install nightly && \
+    rustup default nightly && \
+    rustup component add rust-src && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
@@ -69,13 +71,14 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         libc6 \
         libc6-dev \
         libc6-dev-arm64-cross \
+        python3-boto3 \
         yasm \
         zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists
 
 # Download toolchain and SDK for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
@@ -97,7 +100,7 @@ ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
 
-ARG CLANG_TIDY_SHA1=03644275e794b0587849bfc2ec6123d5ae0bdb1c
+ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
 RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache

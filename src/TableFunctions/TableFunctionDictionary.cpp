@@ -2,6 +2,10 @@
 
 #include <Parsers/ASTLiteral.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -42,10 +46,33 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
-    auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
-    auto result = ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
+    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
+    auto load_result = external_loader.load(resolved_name);
+    if (load_result)
+    {
+        /// for regexp tree dictionary, the table structure will be different with dictionary structure. it is:
+        /// - id. identifier of the tree node
+        /// - parent_id.
+        /// - regexp. the regular expression
+        /// - keys. the names of attributions of dictionary structure
+        /// - values. the values of each attribution
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result);
+        if (dictionary->getTypeName() == "RegExpTree")
+        {
+            return ColumnsDescription(NamesAndTypesList({
+                {"id", std::make_shared<DataTypeUInt64>()},
+                {"parent_id", std::make_shared<DataTypeUInt64>()},
+                {"regexp", std::make_shared<DataTypeString>()},
+                {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+                {"values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
+            }));
+        }
+    }
 
-    return result;
+    /// otherwise, we get table structure by dictionary structure.
+    auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
+    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
+
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(

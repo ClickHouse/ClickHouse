@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 WITH
     ( SELECT sleep(0.0001) FROM system.one ) as a1,
     ( SELECT sleep(0.0001) FROM system.one ) as a2,

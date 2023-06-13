@@ -59,7 +59,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 {
     if (send_events)
     {
-        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
 

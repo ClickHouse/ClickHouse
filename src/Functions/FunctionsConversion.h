@@ -41,6 +41,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/Concepts.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
@@ -143,13 +144,6 @@ struct ConvertImpl
 
         using ColVecFrom = typename FromDataType::ColumnType;
         using ColVecTo = typename ToDataType::ColumnType;
-
-        if (std::is_same_v<Name, NameToUnixTimestamp>)
-        {
-            if (isDateOrDate32(named_from.type))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type {} of first argument of function {}",
-                    named_from.type->getName(), Name::name);
-        }
 
         if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
             && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>))
@@ -305,6 +299,8 @@ struct ConvertImpl
                         {
                             if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
                                 vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
+                            else if constexpr (std::is_same_v<Name, NameToUnixTimestamp> && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
                             else
                                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
@@ -803,7 +799,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, Con
     }
 };
 
-static ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+static inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))
@@ -1800,13 +1796,13 @@ public:
 
                 if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
                     return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
 
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
@@ -2071,7 +2067,7 @@ public:
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
-            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
@@ -2121,7 +2117,7 @@ public:
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
             else if constexpr (to_decimal)
@@ -2870,20 +2866,37 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                if constexpr (IsDataTypeNumber<LeftDataType>)
                 {
-                    if (wrapper_cast_type == CastType::accurate)
+                    if constexpr (IsDataTypeNumber<RightDataType>)
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
-                            arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
-                    }
-                    else
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
-                            arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                                arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                                arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                        }
+                        return true;
                     }
 
-                    return true;
+                    if constexpr (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>)
+                    {
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateConvertStrategyAdditions>(
+                                arguments, result_type, input_rows_count);
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::template execute<DateTimeAccurateOrNullConvertStrategyAdditions>(
+                                arguments, result_type, input_rows_count);
+                        }
+                        return true;
+                    }
                 }
 
                 return false;
@@ -3097,12 +3110,18 @@ private:
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
+        DataTypePtr from_type_holder;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
         const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
         /// Convert from Map
         if (from_type_map)
-            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
+        {
+            /// Recreate array of unnamed tuples because otherwise it may work
+            /// unexpectedly while converting to array of named tuples.
+            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
+            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
+        }
 
         if (!from_type)
         {
@@ -3294,7 +3313,7 @@ private:
         };
     }
 
-    WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3315,7 +3334,7 @@ private:
     }
 
     /// The case of: [(key1, value1), (key2, value2), ...]
-    WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3341,8 +3360,12 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
-                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from tuple requires 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_tuple->getName(),
+                    to_type->getName());
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3363,14 +3386,18 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from array requires nested tuple of 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_array->getName(),
+                    to_type->getName());
 
-            return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
+            return createArrayToMapWrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
         else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
         {
-            return createMapToMapWrrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
+            return createMapToMapWrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
         }
         else
         {

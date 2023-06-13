@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <base/errnoToString.h>
+#include <libnuraft/log_val_type.hxx>
 
 
 namespace DB
@@ -211,9 +212,14 @@ public:
     void flush()
     {
         auto * file_buffer = tryGetFileBuffer();
-        /// Fsync file system if needed
-        if (file_buffer && log_file_settings.force_sync)
-            file_buffer->sync();
+        if (file_buffer)
+        {
+            /// Fsync file system if needed
+            if (log_file_settings.force_sync)
+                file_buffer->sync();
+            else
+                file_buffer->next();
+        }
     }
 
     uint64_t getStartIndex() const
@@ -274,7 +280,17 @@ private:
         flush();
 
         if (log_file_settings.max_size != 0)
-            ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
+        {
+            int res = -1;
+            do
+            {
+                res = ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
+            }
+            while (res < 0 && errno == EINTR);
+
+            if (res != 0)
+                LOG_WARNING(log, "Could not ftruncate file. Error: {}, errno: {}", errnoToString(), errno);
+        }
 
         if (log_file_settings.compress_logs)
             compressed_buffer.reset();
@@ -464,7 +480,7 @@ public:
                     continue;
 
                 /// Create log entry for read data
-                auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, record.header.value_type);
+                auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, static_cast<nuraft::log_val_type>(record.header.value_type));
                 if (result.first_read_index == 0)
                     result.first_read_index = record.header.index;
 

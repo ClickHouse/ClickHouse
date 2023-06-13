@@ -5,7 +5,7 @@ sidebar_position: 350
 
 # contingency
 
-The `contingency` function calculates the [contingency coefficient](https://en.wikipedia.org/wiki/Contingency_table#Cram%C3%A9r's_V_and_the_contingency_coefficient_C), a value that measures the association between two columns in a table. The computation is similar to [the `cramersV` function](./cramersv) but with a different denominator in the square root.
+The `contingency` function calculates the [contingency coefficient](https://en.wikipedia.org/wiki/Contingency_table#Cram%C3%A9r's_V_and_the_contingency_coefficient_C), a value that measures the association between two columns in a table. The computation is similar to [the `cramersV` function](./cramersv.md) but with a different denominator in the square root.
 
 
 **Syntax**
@@ -16,11 +16,11 @@ contingency(column1, column2)
 
 **Arguments**
 
--   `column1` and `column2` are the columns to be compared
+- `column1` and `column2` are the columns to be compared
 
 **Returned value**
 
--  a value between 0 to 1. The larger the result, the closer the association of the two columns.
+- a value between 0 to 1. The larger the result, the closer the association of the two columns.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

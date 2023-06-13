@@ -10,7 +10,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -612,6 +611,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
+    block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
     Block current_block;

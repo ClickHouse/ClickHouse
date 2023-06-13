@@ -2,7 +2,14 @@
 
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric CacheDictionaryThreads;
+    extern const Metric CacheDictionaryThreadsActive;
+}
 
 namespace DB
 {
@@ -26,7 +33,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
     , configuration(configuration_)
     , update_func(std::move(update_func_))
     , update_queue(configuration.max_update_queue_size)
-    , update_pool(configuration.max_threads_for_updates)
+    , update_pool(CurrentMetrics::CacheDictionaryThreads, CurrentMetrics::CacheDictionaryThreadsActive, configuration.max_threads_for_updates)
 {
     for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
         update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });

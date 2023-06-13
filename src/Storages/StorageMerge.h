@@ -145,7 +145,6 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-    static bool isFinal(const SelectQueryInfo & query_info);
 
 private:
     const size_t required_max_block_size;
@@ -158,6 +157,10 @@ private:
     bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
+
+    /// Store read plan for each child table.
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    std::vector<QueryPlan> child_plans;
 
     SelectQueryInfo query_info;
     ContextMutablePtr context;

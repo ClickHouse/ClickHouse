@@ -64,8 +64,11 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setAsyncCallback(AsyncCallback async_callback) override;
+
 private:
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -78,17 +81,12 @@ private:
     };
 
     /// Get a replica where you can read the data.
-    ReplicaState & getReplicaForReading(bool is_draining);
+    ReplicaState & getReplicaForReading();
 
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    Poco::Timespan receive_timeout;
 
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;

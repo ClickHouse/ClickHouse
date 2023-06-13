@@ -6,15 +6,23 @@ from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/fast_background_pool.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
+
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/fast_background_pool.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
+node3 = cluster.add_instance(
+    "node3",
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -148,17 +156,17 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
     node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts_2")
 
     def check_parts_loading(node, partition, loaded, failed, skipped):
-        for (min_block, max_block) in loaded:
+        for min_block, max_block in loaded:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert node.contains_in_log(f"Loading Active part {part_name}")
             assert node.contains_in_log(f"Finished loading Active part {part_name}")
 
-        for (min_block, max_block) in failed:
+        for min_block, max_block in failed:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert node.contains_in_log(f"Loading Active part {part_name}")
             assert not node.contains_in_log(f"Finished loading Active part {part_name}")
 
-        for (min_block, max_block) in skipped:
+        for min_block, max_block in skipped:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert not node.contains_in_log(f"Loading Active part {part_name}")
             assert not node.contains_in_log(f"Finished loading Active part {part_name}")
@@ -193,4 +201,56 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
             GROUP BY partition ORDER BY partition"""
         )
         == "111\t1\n222\t1\n333\t1\n"
+    )
+
+
+def test_merge_tree_load_parts_filesystem_error(started_cluster):
+    if node3.is_built_with_sanitizer() or node3.is_debug_build():
+        pytest.skip(
+            "Skip with debug build and sanitizers. \
+            This test intentionally triggers LOGICAL_ERROR which leads to crash with those builds"
+        )
+
+    node3.query(
+        """
+        CREATE TABLE mt_load_parts (id UInt32)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity_bytes = 0"""
+    )
+
+    node3.query("SYSTEM STOP MERGES mt_load_parts")
+
+    for i in range(2):
+        node3.query(f"INSERT INTO mt_load_parts VALUES ({i})")
+
+    # We want to somehow check that exception thrown on part creation is handled during part loading.
+    # It can be a filesystem exception triggered at initialization of part storage but it hard
+    # to trigger it because it should be an exception on stat/listDirectory.
+    # The most easy way to trigger such exception is to use chmod but clickhouse server
+    # is run with root user in integration test and this won't work. So let's do
+    # some stupid things: create a table without adaptive granularity and change mark
+    # extensions of data files in part to make clickhouse think that it's a compact part which
+    # cannot be created in such table. This will trigger a LOGICAL_ERROR on part creation.
+
+    def corrupt_part(table, part_name):
+        part_path = node3.query(
+            "SELECT path FROM system.parts WHERE table = '{}' and name = '{}'".format(
+                table, part_name
+            )
+        ).strip()
+
+        node3.exec_in_container(
+            ["bash", "-c", f"mv {part_path}id.cmrk {part_path}id.cmrk3"],
+            privileged=True,
+        )
+
+    corrupt_part("mt_load_parts", "all_1_1_0")
+    node3.restart_clickhouse(kill=True)
+
+    assert node3.query("SELECT * FROM mt_load_parts") == "1\n"
+    assert (
+        node3.query(
+            "SELECT name FROM system.detached_parts WHERE table = 'mt_load_parts'"
+        )
+        == "broken-on-start_all_1_1_0\n"
     )

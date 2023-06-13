@@ -34,6 +34,8 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
 
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+
 
 namespace CurrentMetrics
 {
@@ -416,10 +418,11 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_)
 {
     columns = new_columns;
     serialization_infos = new_infos;
+    metadata_version = metadata_version_;
 
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
@@ -629,7 +632,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!parent_part)
         {
             loadTTLInfos();
-            loadProjections(require_columns_checksums, check_consistency);
+            loadProjections(require_columns_checksums, check_consistency, false /* if_not_loaded */);
         }
 
         if (check_consistency)
@@ -660,6 +663,7 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
         appendFilesOfPartitionAndMinMaxIndex(files);
         appendFilesOfTTLInfos(files);
         appendFilesOfDefaultCompressionCodec(files);
+        appendFilesOfMetadataVersion(files);
     }
 
     if (!parent_part && include_projection)
@@ -686,13 +690,13 @@ void IMergeTreeDataPart::addProjectionPart(
     const String & projection_name,
     std::shared_ptr<IMergeTreeDataPart> && projection_part)
 {
-    /// Here should be a check that projection we are trying to add
-    /// does not exist, but unfortunately this check fails in tests.
-    /// TODO: fix.
+    if (hasProjection(projection_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection_name, name);
+
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency)
+void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -700,9 +704,18 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
         auto path = projection.name + ".proj";
         if (getDataPartStorage().exists(path))
         {
-            auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
-            part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
-            addProjectionPart(projection.name, std::move(part));
+            if (hasProjection(projection.name))
+            {
+                if (!if_not_loaded)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection.name, name);
+            }
+            else
+            {
+                auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
+                part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                addProjectionPart(projection.name, std::move(part));
+            }
         }
     }
 }
@@ -797,6 +810,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().exists(TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(TXN_VERSION_METADATA_FILE_NAME);
+
+    if (getDataPartStorage().exists(METADATA_VERSION_FILE_NAME))
+        result.emplace(METADATA_VERSION_FILE_NAME);
 
     return result;
 }
@@ -971,9 +987,20 @@ void IMergeTreeDataPart::removeVersionMetadata()
     getDataPartStorage().removeFileIfExists("txn_version.txt");
 }
 
+
+void IMergeTreeDataPart::removeMetadataVersion()
+{
+    getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
+}
+
 void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
 {
     files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+}
+
+void IMergeTreeDataPart::appendFilesOfMetadataVersion(Strings & files)
+{
+    files.push_back(METADATA_VERSION_FILE_NAME);
 }
 
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
@@ -1288,8 +1315,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
-    bool exists = metadata_manager->exists("columns.txt");
-    if (!exists)
+    bool is_readonly_storage = getDataPartStorage().isReadonly();
+
+    if (!metadata_manager->exists("columns.txt"))
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
@@ -1304,7 +1332,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-        writeColumns(loaded_columns, {});
+        if (!is_readonly_storage)
+            writeColumns(loaded_columns, {});
     }
     else
     {
@@ -1321,16 +1350,27 @@ void IMergeTreeDataPart::loadColumns(bool require)
         .choose_kind = false,
     };
 
-    SerializationInfoByName infos(loaded_columns, settings);
-    exists =  metadata_manager->exists(SERIALIZATION_FILE_NAME);
-    if (exists)
+    SerializationInfoByName infos;
+    if (metadata_manager->exists(SERIALIZATION_FILE_NAME))
     {
         auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
-        infos.readJSON(*in);
+        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
     }
 
-    setColumns(loaded_columns, infos);
+    int32_t loaded_metadata_version;
+    if (metadata_manager->exists(METADATA_VERSION_FILE_NAME))
+    {
+        auto in = metadata_manager->read(METADATA_VERSION_FILE_NAME);
+        readIntText(loaded_metadata_version, *in);
+    }
+    else
+    {
+        loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+    }
+
+    setColumns(loaded_columns, infos, loaded_metadata_version);
 }
+
 
 /// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
@@ -1525,6 +1565,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         size_t file_size = getDataPartStorage().getFileSize(TXN_VERSION_METADATA_FILE_NAME);
         auto buf = getDataPartStorage().readFile(TXN_VERSION_METADATA_FILE_NAME, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
 
+        /// FIXME https://github.com/ClickHouse/ClickHouse/issues/48465
+        if (dynamic_cast<CachedOnDiskReadBufferFromFile *>(buf.get()))
+            return true;
+
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};
         VersionMetadata file;
@@ -1647,12 +1691,6 @@ void IMergeTreeDataPart::remove()
         {
             LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
-        }
-
-        if (getState() == MergeTreeDataPartState::Temporary)
-        {
-            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
-            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
         }
 
         auto [can_remove, files_not_to_remove] = canRemovePart();

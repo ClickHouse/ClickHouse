@@ -1,6 +1,7 @@
 #include <Planner/CollectSets.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Storages/StorageSet.h>
 
@@ -52,7 +53,8 @@ public:
 
         if (storage_set)
         {
-            planner_context.registerSet(set_key, PlannerSet(storage_set->getSet()));
+            /// Handle storage_set as ready set.
+            planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -62,16 +64,13 @@ public:
                 constant_node->getResultType(),
                 settings);
 
-            planner_context.registerSet(set_key, PlannerSet(std::move(set)));
+            planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
-            in_second_argument_node_type == QueryTreeNodeType::UNION)
+            in_second_argument_node_type == QueryTreeNodeType::UNION ||
+            in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            bool tranform_null_in = settings.transform_null_in;
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
-
-            planner_context.registerSet(set_key, PlannerSet(std::move(set), in_second_argument));
+            planner_context.registerSet(set_key, PlannerSet(in_second_argument));
         }
         else
         {

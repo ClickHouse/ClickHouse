@@ -3,6 +3,7 @@ slug: /en/operations/caches
 sidebar_position: 65
 sidebar_label: Caches
 title: "Cache Types"
+description: When performing queries, ClickHouse uses different caches.
 ---
 
 When performing queries, ClickHouse uses different caches.
@@ -22,6 +23,6 @@ Additional cache types:
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
-- [(Experimental) Query cache](query-cache.md).
+- [Query cache](query-cache.md).
 
 To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
