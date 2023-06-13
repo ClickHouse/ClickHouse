@@ -327,16 +327,16 @@ struct FormatSettings
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class EnumComparingMode
+    enum class CapnProtoEnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
         BY_VALUES, // Values should be the same, names can be different.
     };
 
-    struct
+    struct CapnProto
     {
-        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        CapnProtoEnumComparingMode enum_comparing_mode = CapnProtoEnumComparingMode::BY_VALUES;
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
