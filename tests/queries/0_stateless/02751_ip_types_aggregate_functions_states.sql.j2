@@ -3,8 +3,8 @@
 
 {# this test checks backward compatibility of aggregate functions States against IPv4, IPv6 types #}
 
-{% set ip4_generator = "select number::UInt32::IPv4 ip from numbers(999999999,50) order by ip" %}
-{% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(number)||reinterpretAsFixedString(number), 16))) AS ip FROM numbers(1010011101, 50) order by ip" %}
+{% set ip4_generator = "select num::UInt32::IPv4 ip from (select arrayJoin(range(999999999, number)) as num from numbers(999999999,50)) order by ip" %}
+{% set ip6_generator = "SELECT toIPv6(IPv6NumToString(toFixedString(reinterpretAsFixedString(num)||reinterpretAsFixedString(num), 16))) AS ip FROM (select arrayJoin(range(1010011101, number)) as num from numbers(1010011101,50)) order by ip" %}
 {% set ip_generators = {'ip4': ip4_generator, 'ip6': ip6_generator} %}
 
 
