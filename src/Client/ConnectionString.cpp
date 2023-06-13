@@ -142,11 +142,11 @@ bool tryParseConnectionString(
     try
     {
         /** Poco::URI doesn't support several hosts in URI.
-          * Split string clickhouse:[user_info]host1:port1, ... , hostN:portN[database]?[query_parameters]
+          * Split string clickhouse:[user[:password]@]host1:port1, ... , hostN:portN[database]?[query_parameters]
           * into multiple string for each host:
-          * clickhouse:[user_info]host1:port1[database]?[query_parameters]
+          * clickhouse:[user[:password]@]host1:port1[database]?[query_parameters]
           * ...
-          * clickhouse:[user_info]hostN:portN[database]?[query_parameters]
+          * clickhouse:[user[:password]@]hostN:portN[database]?[query_parameters]
           */
         Poco::URI uri;
         const auto * last_host_begin = connection_string.begin() + offset;

@@ -202,15 +202,16 @@ Instead of --host, --port, --user and --password options, ClickHouse client also
 clickhouse-client alternatively supports connecting to clickhouse server using a connection string similar to [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING), [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). It has the following syntax:
 
 ```text
-clickhouse:[//[user_info@][hosts_and_ports]][/database][?query_parameters]
+clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 ```
 
 Where
 
-- `user_spec` - (optional) is a user and an optional password,
-- `hostspec` - (optional) is a list of hosts and optional ports `host[:port] [, host:[port]], ...`,
+- `user` - (optional) is a user name,
+- `password` - (optional) is a user password. If `:` is specified and the password is blank, the client will prompt for the user's password.
+- `hosts_and_ports` - (optional) is a list of hosts and optional ports `host[:port] [, host:[port]], ...`,
 - `database` - (optional) is the database name,
-- `paramspec` - (optional) is a list of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
+- `query_parameters` - (optional) is a list of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
 
 
 
@@ -239,7 +240,7 @@ URI allows multiple hosts to be connected to. Connection strings can contain mul
 
 ### Percent encoding {#connection_string_uri_percent_encoding}
 
-Non-US ASCII characters in the user name, password, hosts, database or query parameters must be [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding).
+Non-US ASCII, spaces and special characters, and special characters in the `user`, `password`, `hosts`, `database` and `query parameters` must be [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding).
 
 ### Examples {#connection_string_examples}
 
@@ -306,10 +307,13 @@ Connect to default host using default port, default user, and default database.
 clickhouse-client clickhouse:
 ```
 
-Connect to the default host using the default port, using user user_name and no password.
+Connect to the default host using the default port, using user `my_user` and no password.
 
 ``` bash
-clickhouse-client clickhouse://user_name@
+clickhouse-client clickhouse://my_user@
+
+# Using a blank password between : and @ means to asking user to enter the password before starting the connection.
+clickhouse-client clickhouse://my_user:@
 ```
 
 Connect to localhost using email as the user name. `@` symbol is percent encoded to `%40`.
