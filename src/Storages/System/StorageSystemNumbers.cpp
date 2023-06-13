@@ -5,6 +5,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -24,6 +25,11 @@ public:
         : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
+
+    static Block createHeader()
+    {
+        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
+    }
 
 protected:
     Chunk generate() override
@@ -48,11 +54,6 @@ private:
     UInt64 block_size;
     UInt64 next;
     UInt64 step;
-
-    static Block createHeader()
-    {
-        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
-    }
 };
 
 
@@ -68,21 +69,19 @@ public:
         size_t y;
     };
 
-    NumbersRangedSource(const Ranges & ranges_, UInt64 block_size_, RangesPos start_, RangesPos end_)
-        : ISource(createHeader())
+    NumbersRangedSource(const Ranges & ranges_, UInt64 base_block_size_, RangesPos start_, RangesPos end_, size_t size_)
+        : ISource(NumbersSource::createHeader())
         , ranges(ranges_)
-        , block_size(block_size_)
+        , base_block_size(base_block_size_)
         , cursor(start_)
-        , end(end_) {}
+        , end(end_)
+        , size(size_) {}
 
     String getName() const override { return "NumbersRange"; }
 
 protected:
     Chunk generate() override
     {
-        if (block_size == 0)
-            return {};
-
         if (ranges.empty())
             return {};
 
@@ -96,15 +95,21 @@ protected:
             return r.right.get<UInt64>() - (r.right_included ? 0 : 1);
         };
 
+        auto block_size = std::min(base_block_size, size);
+
+        if (!block_size)
+            return {};
+
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
 
-        for (; cursor.x <= end.x;)
+        size_t provided = 0;
+        for (; size != 0 && block_size - provided != 0;)
         {
-            size_t need = block_size - vec.size();
+            size_t need = block_size - provided;
 
             auto& range = ranges[cursor.x];
-            UInt64 * pos = vec.data(); /// This also accelerates the code.
+            UInt64 * pos = vec.data(); /// This will accelerates the code.
 
             size_t can_provide = cursor.x == end.x ? end.y - cursor.y : last_value(range) - first_value(range) + 1 - cursor.y;
 
@@ -114,26 +119,28 @@ protected:
                 for (size_t i=0; i < need; i++)
                     *pos++ = (start_value + i);
 
+                provided += need;
                 cursor.y += need;
-                break;
             }
             else if (can_provide == need)
             {
                 for (size_t i=0; i < need; i++)
                     *pos++ = (start_value + i);
 
+                provided += need;
                 cursor.x++;
                 cursor.y = 0;
-                break;
             }
             else
             {
                 for (size_t i=0; i < can_provide; i++)
                     *pos++ = (start_value + i);
 
+                provided += can_provide;
                 cursor.x++;
                 cursor.y = 0;
             }
+            size -= provided;
         }
 
         progress(column->size(), column->byteSize());
@@ -143,15 +150,14 @@ protected:
 
 private:
     Ranges ranges;
-    UInt64 block_size;
+    /// Base block size, will change if there is no enough numbers
+    UInt64 base_block_size;
 
     RangesPos cursor;
     RangesPos end; /// not included
 
-    static Block createHeader()
-    {
-        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
-    }
+    /// how many numbers left
+    size_t size;
 };
 
 }
@@ -197,31 +203,38 @@ Pipe StorageSystemNumbers::read(
     if (condition.extractPlainRanges(ranges))
     {
         std::cout << "Ranges:\n";
-        for (auto & r : ranges)
+        for (auto & r : ranges) // TODO delete
         {
             std::cout << r.toString() << std::endl;
         }
 
         /// Intersect ranges with table range
         Range table_range(
-            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : NEGATIVE_INFINITY, limit.has_value());
+            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : POSITIVE_INFINITY, limit.has_value());
         Ranges intersected_ranges;
 
         for (auto & r : ranges)
         {
             auto intersected_range = table_range.intersectWith(r);
             if (intersected_range)
-            intersected_ranges.push_back(*intersected_range);
+                intersected_ranges.push_back(*intersected_range);
         }
 
         std::cout << "Intersected Ranges:\n";
-        for (auto & r : intersected_ranges)
+        for (auto & r : intersected_ranges) // TODO delete
         {
             std::cout << r.toString() << std::endl;
         }
 
+        /// got noting
+        if (intersected_ranges.empty())
+        {
+            pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader()));
+            return pipe;
+        }
+
         /// 1. If intersected ranges is limited, use NumbersRangedSource
-        if (intersected_ranges.empty() && !intersected_ranges.rbegin()->right.isPositiveInfinity())
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity())
         {
             auto size_of_range = [] (const Range & r) -> size_t
             {
@@ -257,7 +270,8 @@ Pipe StorageSystemNumbers::read(
             NumbersRangedSource::RangesPos start({0, 0});
             for (size_t i = 0; i < num_streams; ++i)
             {
-                auto need = total_size * (i + 1) / num_streams - total_size * i / num_streams;
+                auto size = total_size * (i + 1) / num_streams - total_size * i / num_streams;
+                size_t need = size;
 
                 /// find end
                 NumbersRangedSource::RangesPos end(start);
@@ -283,7 +297,7 @@ Pipe StorageSystemNumbers::read(
                     }
                 }
 
-                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, max_block_size, start, end);
+                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, max_block_size, start, end, size);
                 start = end;
 
                 if (i == 0)

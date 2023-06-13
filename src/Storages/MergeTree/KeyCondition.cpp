@@ -2265,7 +2265,7 @@ bool KeyCondition::matchesExactContinuousRange() const
     return true;
 }
 
-bool KeyCondition::extractPlainRanges(Ranges ranges) const
+bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 {
     if (key_indices.empty() || key_indices.size() > 1)
         return false;
@@ -2290,6 +2290,9 @@ bool KeyCondition::extractPlainRanges(Ranges ranges) const
     /// Intersect a ranges and return a new plain(ordered and no intersection) ranges.
     [[maybe_unused]] auto intersect_ranges = [&](Ranges & to_be_intersect) -> Ranges
     {
+        if (to_be_intersect.size() <= 1)
+            return to_be_intersect;
+
         std::sort(to_be_intersect.begin(), to_be_intersect.end(), left_bound_comparison);
         Ranges ret;
 
@@ -2322,6 +2325,9 @@ bool KeyCondition::extractPlainRanges(Ranges ranges) const
     /// Union ranges and return a new plain(ordered and no intersection) ranges.
     auto union_ranges = [&](Ranges & to_be_union) -> Ranges
     {
+        if (to_be_union.size() <= 1)
+            return to_be_union;
+
         std::sort(to_be_union.begin(), to_be_union.end(), left_bound_comparison);
         Ranges ret;
 
@@ -2404,7 +2410,7 @@ bool KeyCondition::extractPlainRanges(Ranges ranges) const
             }
             else /// union
             {
-                new_range.emplace_back(left_itr->unionWith(*right_itr));
+                new_range.emplace_back(*(left_itr->unionWith(*right_itr)));
                 if (right_bound_comparison(*left_itr, *right_itr))
                     left_itr++;
                 else
@@ -2526,30 +2532,30 @@ bool KeyCondition::extractPlainRanges(Ranges ranges) const
                 if (element.set_index->size() == 0)
                     rpn_stack.push({Range::createWholeUniverseWithoutNull()});
 
-//                const auto & values = element.set_index->getOrderedSet();
+                const auto & values = element.set_index->getOrderedSet();
                 Ranges points_range;
 
-//                std::optional<FieldRef> pre;
-//                for (size_t i=0; i<element.set_index->size(); i++) /// TODO values ordered ?
-//                {
-//                    FieldRef cur;
-//                    values[0]->get(i, cur);
-//
-//                    if (cur.isNull())
-//                        return false;
-//                    if (pre)
-//                    {
-//                        if (*pre == cur) /// skip blank range
-//                            continue;
-//                        points_range.push_back({*pre, false, cur, false});
-//                    }
-//                    else
-//                    {
-//                        points_range.push_back(Range::createRightBounded(cur, false));
-//                    }
-//                    pre = cur;
-//                    points_range.push_back(Range::createLeftBounded(*pre, false));
-//                }
+                std::optional<FieldRef> pre;
+                for (size_t i=0; i<element.set_index->size(); i++) /// TODO values ordered ?
+                {
+                    FieldRef cur;
+                    values[0]->get(i, cur);
+
+                    if (cur.isNull())
+                        return false;
+                    if (pre)
+                    {
+                        if (*pre == cur) /// skip blank range
+                            continue;
+                        points_range.push_back({*pre, false, cur, false});
+                    }
+                    else
+                    {
+                        points_range.push_back(Range::createRightBounded(cur, false));
+                    }
+                    pre = cur;
+                    points_range.push_back(Range::createLeftBounded(*pre, false));
+                }
                 rpn_stack.push(std::move(points_range));
             }
             else if (element.function == RPNElement::FUNCTION_IN_RANGE)

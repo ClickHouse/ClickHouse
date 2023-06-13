@@ -206,9 +206,8 @@ public:
         if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
             right_bound_use_mine = false;
 
-        std::optional<Range> ret = Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
                      right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-        return ret;
     }
 
     /// If me near by r, they can be combined to a continuous range.
@@ -240,9 +239,8 @@ public:
         if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
             right_bound_use_mine = true;
 
-        std::optional<Range> ret = Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
                      right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-        return ret;
     }
 
     bool containsRange(const Range & r) const
@@ -454,7 +452,7 @@ public:
     ///     original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
     ///     plain ranges: (1, 10), [12, 12]
     /// Note that only support one column key condition.
-    bool extractPlainRanges(Ranges ranges) const;
+    bool extractPlainRanges(Ranges & ranges) const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
