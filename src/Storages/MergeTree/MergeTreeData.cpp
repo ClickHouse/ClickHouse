@@ -99,6 +99,7 @@
 
 #include <fmt/format.h>
 #include <Poco/Logger.h>
+#include <Poco/Net/NetException.h>
 
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
@@ -1253,6 +1254,14 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         mark_broken();
         return res;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        throw;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        throw;
     }
     catch (...)
     {
