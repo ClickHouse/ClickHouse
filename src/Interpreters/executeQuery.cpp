@@ -104,7 +104,6 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SYNTAX_ERROR;
 }
 
 
