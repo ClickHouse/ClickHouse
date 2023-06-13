@@ -141,7 +141,17 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     index->name = name->as<ASTIdentifier &>().name();
     index->set(index->expr, expr);
     index->set(index->type, type);
-    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
+
+    if (granularity)
+        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    else
+    {
+        if (index->type->name == "annoy")
+            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else
+            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    }
+
     node = index;
 
     return true;
