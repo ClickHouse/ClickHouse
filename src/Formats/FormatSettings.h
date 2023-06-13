@@ -36,7 +36,8 @@ struct FormatSettings
     bool defaults_for_omitted_fields = true;
 
     bool seekable_read = true;
-    UInt64 max_rows_to_read_for_schema_inference = 100;
+    UInt64 max_rows_to_read_for_schema_inference = 25000;
+    UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
     String column_names_for_schema_inference;
     String schema_inference_hints;
