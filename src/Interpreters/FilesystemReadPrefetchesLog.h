@@ -24,7 +24,7 @@ struct FilesystemReadPrefetchesLogElement
     String path;
     UInt64 offset;
     Int64 size; /// -1 means unknown
-    Decimal64 prefetch_submit_time{};
+    std::chrono::system_clock::time_point prefetch_submit_time;
     std::optional<Stopwatch> execution_watch;
     Priority priority;
     FilesystemPrefetchState state;

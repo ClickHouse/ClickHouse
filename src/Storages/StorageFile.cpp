@@ -51,6 +51,8 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <shared_mutex>
+#include <cmath>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -628,8 +630,11 @@ public:
                 if (!read_buf)
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
+                const Settings & settings = context->getSettingsRef();
+                chassert(!storage->paths.empty());
+                const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -950,6 +955,7 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
+            write_buf->finalize();
             throw;
         }
     }
@@ -1043,7 +1049,8 @@ private:
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context)
+    ContextPtr context,
+    bool /*async_insert*/)
 {
     if (format_name == "Distributed")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
