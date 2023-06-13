@@ -1400,16 +1400,20 @@ public:
             || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
 
-        return canBeNativeType(arguments[0]) && canBeNativeType(arguments[1]) && canBeNativeType(result_type);
+        DataTypePtr common_type = getLeastSupertype(arguments);
+        return canBeNativeType(arguments[0]) && canBeNativeType(arguments[1]) && canBeNativeType(result_type) && canBeNativeType(common_type);
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
         assert(2 == arguments.size());
 
+        DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = nativeCast(b, arguments[0], result_type);
-        auto * y = nativeCast(b, arguments[1], result_type);
+        auto * x = nativeCast(b, arguments[0], common_type);
+        auto * y = nativeCast(b, arguments[1], common_type);
+
         auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*arguments[0].type) || typeIsSigned(*arguments[1].type));
 
         return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
