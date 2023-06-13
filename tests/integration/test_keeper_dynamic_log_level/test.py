@@ -31,7 +31,7 @@ def test_adjust_log_level(start_cluster):
                 [
                     "bash",
                     "-c",
-                    "grep '<Trace>' /var/log/clickhouse-keeper.log | wc -l",
+                    "grep '<Trace>' /var/log/clickhouse-server/clickhouse-server.log | wc -l",
                 ],
                 privileged=True,
                 user="root",
@@ -49,9 +49,9 @@ def test_adjust_log_level(start_cluster):
 <clickhouse>
     <logger>
         <level>trace</level>
-        <log>/var/log/clickhouse-keeper.log</log>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog_level>error</errorlog_level>
-        <errorlog>/var/log/clickhouse-keeper.err.log</errorlog>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <size>200M</size>
         <count>10</count>
     </logger>
@@ -60,7 +60,7 @@ def test_adjust_log_level(start_cluster):
             """,
         ]
     )
-    time.sleep(3)
+    time.sleep(2)
     node.exec_in_container(
         [
             "bash",
@@ -76,7 +76,7 @@ def test_adjust_log_level(start_cluster):
                 [
                     "bash",
                     "-c",
-                    "grep '<Trace>' /var/log/clickhouse-keeper.log | wc -l",
+                    "grep '<Trace>' /var/log/clickhouse-server/clickhouse-server.log | wc -l",
                 ],
                 privileged=True,
                 user="root",
