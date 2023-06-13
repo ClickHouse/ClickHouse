@@ -60,20 +60,9 @@ public:
         auto res_column = ColumnInt64::create(input_rows_count);
         auto & res_data = res_column->getData();
 
-        if (const auto * src_column_non_const = typeid_cast<const ColumnDateTime *>(&src_column))
-        {
-            const auto & src_data = src_column_non_const->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (UInt32(src_data[i]) * 1000 - snowflake_epoch) << time_shift;
-        }
-        else if (const auto * src_column_const = typeid_cast<const ColumnConst *>(&src_column))
-        {
-            UInt32 src_val = src_column_const->getValue<UInt32>();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val * 1000 - snowflake_epoch) << time_shift;
-        }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
+        const auto & src_data = typeid_cast<const ColumnUInt32 &>(src_column).getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res_data[i] = (Int64(src_data[i]) * 1000 - snowflake_epoch) << time_shift;
 
         return res_column;
     }
@@ -172,20 +161,9 @@ public:
         auto res_column = ColumnInt64::create(input_rows_count);
         auto & res_data = res_column->getData();
 
-        if (const auto * src_column_non_const = typeid_cast<const ColumnDateTime64 *>(&src_column))
-        {
-            const auto & src_data = src_column_non_const->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (UInt32(src_data[i]) * 1000 - snowflake_epoch) << time_shift;
-        }
-        else if (const auto * src_column_const = typeid_cast<const ColumnConst *>(&src_column))
-        {
-            UInt32 src_val = src_column_const->getValue<UInt32>();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val * 1000 - snowflake_epoch) << time_shift;
-        }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
+        const auto & src_data = typeid_cast<const ColumnDecimal<DateTime64> &>(src_column).getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res_data[i] = (src_data[i] - snowflake_epoch) << time_shift;
 
         return res_column;
     }
