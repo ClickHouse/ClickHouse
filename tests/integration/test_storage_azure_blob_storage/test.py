@@ -551,6 +551,7 @@ def test_schema_inference_no_globs_tf(cluster):
         "499500\t2890\t332833500\ttest_schema_inference_no_globs_tf.csv\tcont/test_schema_inference_no_globs_tf.csv"
     ]
 
+
 def test_schema_inference_from_globs_tf(cluster):
     node = cluster.instances["node"]
     unique_prefix = random.randint(1, 10000)
