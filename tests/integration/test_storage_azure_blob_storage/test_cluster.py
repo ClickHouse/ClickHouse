@@ -75,22 +75,51 @@ def get_azure_file_content(filename):
     return download_stream.readall().decode("utf-8")
 
 
-def test_simple_write_account_string_table_function(cluster):
+def test_select_all(cluster):
     node = cluster.instances["node_0"]
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', "
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1', "
+        "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
+        "'auto', 'key UInt64, data String') VALUES (1, 'a'), (2, 'b')",
+    )
+    print(get_azure_file_content("test_cluster_select_all.csv"))
+
+    pure_azure = node.query(
+        """
+    SELECT * from azureBlobStorage(
+        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
+        'auto')"""
+    )
+    print(pure_azure)
+    distributed_azure = node.query(
+        """
+    SELECT * from azureBlobStorageCluster(
+        'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
+        'auto')"""
+    )
+    print(distributed_azure)
+    assert TSV(pure_azure) == TSV(distributed_azure)
+
+
+def test_count(cluster):
+    node = cluster.instances["node_0"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
         "'auto', 'key UInt64') VALUES (1), (2)",
     )
-    print(get_azure_file_content("test_simple_write_tf.csv"))
-    # assert get_azure_file_content("test_simple_write_tf.csv") == '1,"a"\n'
+    print(get_azure_file_content("test_cluster_count.csv"))
 
     pure_azure = node.query(
         """
     SELECT count(*) from azureBlobStorage(
-        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1',
+        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')"""
     )
@@ -98,10 +127,130 @@ def test_simple_write_account_string_table_function(cluster):
     distributed_azure = node.query(
         """
     SELECT count(*) from azureBlobStorageCluster(
-        'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1',
+        'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')"""
     )
     print(distributed_azure)
-
     assert TSV(pure_azure) == TSV(distributed_azure)
+
+
+def test_union_all(cluster):
+    node = cluster.instances["node_0"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', "
+        "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', "
+        "'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
+    )
+
+    pure_azure = node.query(
+        """
+    SELECT * FROM
+    (
+        SELECT * from azureBlobStorage(
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'auto', 'a Int32, b String')
+        UNION ALL
+        SELECT * from azureBlobStorage(
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'auto', 'a Int32, b String')
+    )
+    ORDER BY (a)
+    """
+    )
+    azure_distributed = node.query(
+        """
+    SELECT * FROM
+    (
+        SELECT * from azureBlobStorageCluster(
+            'simple_cluster',
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'auto', 'a Int32, b String')
+        UNION ALL
+        SELECT * from azureBlobStorageCluster(
+            'simple_cluster',
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'auto', 'a Int32, b String')
+    )
+    ORDER BY (a)
+    """
+    )
+
+    assert TSV(pure_azure) == TSV(azure_distributed)
+
+def test_skip_unavailable_shards(cluster):
+    node = cluster.instances["node_0"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1', "
+        "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
+        "'auto', 'a UInt64') VALUES (1), (2)",
+    )
+    result = node.query(
+        """
+    SELECT count(*) from azureBlobStorageCluster(
+        'cluster_non_existent_port',
+        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
+    SETTINGS skip_unavailable_shards = 1
+    """
+    )
+
+    assert result == "2\n"
+
+
+def test_unset_skip_unavailable_shards(cluster):
+    # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
+    node = cluster.instances["node_0"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_unset_skip_unavailable.csv', 'devstoreaccount1', "
+        "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
+        "'auto', 'a UInt64') VALUES (1), (2)",
+    )
+    result = node.query(
+        """
+    SELECT count(*) from azureBlobStorageCluster(
+        'cluster_non_existent_port',
+        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
+    """
+    )
+
+    assert result == "2\n"
+
+def test_cluster_with_named_collection(cluster):
+    node = cluster.instances["node_0"]
+
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
+        "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
+        "'auto', 'a UInt64') VALUES (1), (2)",
+    )
+
+    pure_azure = node.query(
+        """
+    SELECT * from azureBlobStorage(
+        'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
+    """
+    )
+
+    azure_cluster = node.query(
+        """
+    SELECT * from azureBlobStorageCluster(
+        'simple_cluster', azure_conf2, container='cont', blob_path='test_cluster_with_named_collection.csv')
+    """
+    )
+
+    assert TSV(pure_azure) == TSV(azure_cluster)
