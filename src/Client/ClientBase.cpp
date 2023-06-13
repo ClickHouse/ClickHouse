@@ -568,6 +568,13 @@ try
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
+                if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
+                }
+
                 if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
                 {
                     throw Exception(
@@ -589,9 +596,22 @@ try
                             range.second);
                 }
 
+                std::error_code ec;
+                if (std::filesystem::is_regular_file(out_file, ec))
+                {
+                    if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                    {
+                        throw Exception(
+                            ErrorCodes::CANNOT_OPEN_FILE,
+                            "File {} exists, consider using 'INTO OUTFILE ... APPEND' or 'INTO OUTFILE ... TRUNCATE' if appropriate.",
+                            out_file);
+                    }
+                }
                 auto flags = O_WRONLY | O_EXCL;
                 if (query_with_output->is_outfile_append)
                     flags |= O_APPEND;
+                else if (query_with_output->is_outfile_truncate)
+                    flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
 
