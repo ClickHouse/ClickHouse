@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/azureBlobStorageg
+slug: /en/sql-reference/table-functions/azureBlobStorage
 sidebar_label: azureBlobStorage
 keywords: [azure blob storage]
 ---
