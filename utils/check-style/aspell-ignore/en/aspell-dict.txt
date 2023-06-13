@@ -26,6 +26,7 @@ AlertManager
 Alexey
 AnyEvent
 AppleClang
+Approximative
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -1005,6 +1006,7 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
+approximative
 argMax
 argMin
 argmax
@@ -2420,6 +2422,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unintuitive
 uniq
 uniqCombined
 uniqExact
