@@ -180,7 +180,8 @@ private:
     SelectQueryInfo getModifiedQueryInfo(const ContextPtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot,
-        Names & column_names_as_aliases) const;
+        Names & column_names_as_aliases,
+        Aliases & aliases) const;
 
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,

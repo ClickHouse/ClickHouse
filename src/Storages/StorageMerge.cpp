@@ -475,7 +475,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
 
         Names column_names_as_aliases;
-        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, column_names_as_aliases);
+        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, column_names_as_aliases, aliases);
 
         if (!context->getSettingsRef().allow_experimental_analyzer)
         {
@@ -566,7 +566,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot,
-    Names & column_names_as_aliases) const
+    Names & column_names_as_aliases,
+    Aliases & aliases) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -611,18 +612,23 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
 
                 if (is_alias)
                 {
-                    column_node = buildQueryTree(column_default->expression, modified_context);
+                    // column_node = buildQueryTree(column_default->expression, modified_context);
+                    column_node = std::make_shared<IdentifierNode>(Identifier{column});
 
                     LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT before: {}\n{}", column_node->dumpTree(), modified_query_info.table_expression->dumpTree());
-
-                    column_node->setAlias(column);
 
                     QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
                     query_analysis_pass.run(column_node, modified_context);
 
                     LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT after: {}", column_node->dumpTree());
 
+                    auto * resolved_column = column_node->as<ColumnNode>();
+                    if (!resolved_column || !resolved_column->getExpression())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias column is not resolved");
+
+                    column_node = resolved_column->getExpression();
                     column_name_to_node.emplace(column, column_node);
+                    aliases.push_back({ .name = column, .type = resolved_column->getResultType(), .expression = column_node->toAST() });
                 }
                 else
                 {
@@ -634,6 +640,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
                 actions_visitor.visit(filter_actions_dag, column_node);
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
+            if (column_names_as_aliases.empty())
+                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
             LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "Required names: {}", toString(column_names_as_aliases));
         }
 
@@ -1029,7 +1038,7 @@ void ReadFromMerge::convertingSourceStream(
         {
             pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
 
-            auto actions_dag = std::make_shared<ActionsDAG>();
+            auto actions_dag = std::make_shared<ActionsDAG>(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
             query_tree->setAlias(alias.name);
@@ -1038,7 +1047,12 @@ void ReadFromMerge::convertingSourceStream(
             query_analysis_pass.run(query_tree, local_context);
 
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
-            actions_visitor.visit(actions_dag, query_tree);
+            const auto & nodes = actions_visitor.visit(actions_dag, query_tree);
+
+            if (nodes.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
+
+            actions_dag->addOrReplaceInOutputs(actions_dag->addAlias(*nodes.front(), alias.name));
 
             auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
