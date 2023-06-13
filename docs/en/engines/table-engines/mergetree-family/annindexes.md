@@ -129,7 +129,9 @@ skip data at the granularity of index blocks.
 
 The `GRANULARITY` parameter determines how many ANN sub-indexes are created. Bigger `GRANULARITY` values mean fewer but larger ANN
 sub-indexes, up to the point where a column (or a column's data part) has only a single sub-index. In that case, the sub-index has a
-"global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most `LIMIT [N]`-many such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a
+"global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most 
+`LIMIT [N]`-many such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a
+
 brute-force distance calculation over all rows of the granules. With a small `GRANULARITY` value, each of the sub-indexes returns up to
 `LIMIT N`-many granules. As a result, more granules need to be loaded and post-filtered. Note that the search accuracy is with both cases
 equally good, only the processing performance differs. It is generally recommended to use a large `GRANULARITY` for ANN indexes and fall
