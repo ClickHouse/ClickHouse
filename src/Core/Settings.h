@@ -526,7 +526,6 @@ class IColumn;
     M(Bool, convert_query_to_cnf, false, "Convert SELECT query to CNF", 0) \
     M(Bool, optimize_or_like_chain, false, "Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.", 0) \
     M(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, "Move arithmetic operations out of aggregation functions", 0) \
-    M(Bool, optimize_duplicate_order_by_and_distinct, false, "Remove duplicate ORDER BY and DISTINCT if it's possible", 0) \
     M(Bool, optimize_redundant_functions_in_order_by, true, "Remove functions from ORDER BY if its argument is also in ORDER BY", 0) \
     M(Bool, optimize_if_chain_to_multiif, false, "Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.", 0) \
     M(Bool, optimize_multiif_to_if, true, "Replace 'multiIf' with only one condition to 'if'.", 0) \
@@ -818,6 +817,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
     MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
     MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
+    MAKE_OBSOLETE(M, Bool, optimize_duplicate_order_by_and_distinct, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
