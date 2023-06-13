@@ -102,14 +102,13 @@ protected:
 
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
+        UInt64 * pos = vec.data(); /// This will accelerates the code.
 
         size_t provided = 0;
         for (; size != 0 && block_size - provided != 0;)
         {
             size_t need = block_size - provided;
-
             auto& range = ranges[cursor.x];
-            UInt64 * pos = vec.data(); /// This will accelerates the code.
 
             size_t can_provide = cursor.x == end.x ? end.y - cursor.y : last_value(range) - first_value(range) + 1 - cursor.y;
 
@@ -117,30 +116,32 @@ protected:
             if (can_provide > need)
             {
                 for (size_t i=0; i < need; i++)
-                    *pos++ = (start_value + i);
+                    *(pos++) = start_value + i;
 
                 provided += need;
                 cursor.y += need;
+                size -= need;
             }
             else if (can_provide == need)
             {
                 for (size_t i=0; i < need; i++)
-                    *pos++ = (start_value + i);
+                    *(pos++) = start_value + i;
 
                 provided += need;
                 cursor.x++;
                 cursor.y = 0;
+                size -= need;
             }
             else
             {
                 for (size_t i=0; i < can_provide; i++)
-                    *pos++ = (start_value + i);
+                    *(pos++) = start_value + i;
 
                 provided += can_provide;
                 cursor.x++;
                 cursor.y = 0;
+                size -= can_provide;
             }
-            size -= provided;
         }
 
         progress(column->size(), column->byteSize());
@@ -230,11 +231,10 @@ Pipe StorageSystemNumbers::read(
         if (intersected_ranges.empty())
         {
             pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader()));
-            return pipe;
-        }
+            return
 
         /// 1. If intersected ranges is limited, use NumbersRangedSource
-        if (!intersected_ranges.rbegin()->right.isPositiveInfinity())
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_info.limit > 0)
         {
             auto size_of_range = [] (const Range & r) -> size_t
             {
@@ -261,12 +261,16 @@ Pipe StorageSystemNumbers::read(
             };
 
             size_t total_size = size_of_ranges(intersected_ranges);
+
+            if (query_info.limit > 0 && query_info.limit < total_size)
+                total_size =  query_info.limit;
+
             num_streams = std::min(num_streams, total_size / max_block_size);
 
             if (num_streams == 0)
                 num_streams = 1;
 
-            /// Split ranges evenly
+            /// Split ranges evenly, every sub ranges will have approximately amount of numbers.
             NumbersRangedSource::RangesPos start({0, 0});
             for (size_t i = 0; i < num_streams; ++i)
             {
@@ -281,13 +285,13 @@ Pipe StorageSystemNumbers::read(
                     if (can_provide > need)
                     {
                         end.y += need;
-                        break;
+                        need = 0;
                     }
                     else if (can_provide == need)
                     {
-                        end.x++;
+                        end.x++; /// TODO if last range end.y++ but but end.x
                         end.y = 0;
-                        break;
+                        need = 0;
                     }
                     else
                     {

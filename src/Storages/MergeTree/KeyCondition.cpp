@@ -2296,11 +2296,12 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         std::sort(to_be_intersect.begin(), to_be_intersect.end(), left_bound_comparison);
         Ranges ret;
 
+        size_t first_disjunct_range = 1;
         for (size_t i = 0; i < to_be_intersect.size() - 1;)
         {
             auto & cur = to_be_intersect[i];
-            size_t first_disjunct_range = i + 1;
-            for (size_t j=i+1; j<to_be_intersect.size(); j++)
+            first_disjunct_range = i + 1;
+            for (size_t j=first_disjunct_range; j<to_be_intersect.size(); j++)
             {
                 if (cur.leftThan(to_be_intersect[j]))
                 {
@@ -2319,6 +2320,9 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             ret.push_back(std::move(combined_range));
             i = first_disjunct_range;
         }
+        /// push the last one
+        if (first_disjunct_range == to_be_intersect.size() - 1)
+            ret.push_back(to_be_intersect[first_disjunct_range]);
         return ret;
     };
 
@@ -2331,11 +2335,12 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         std::sort(to_be_union.begin(), to_be_union.end(), left_bound_comparison);
         Ranges ret;
 
+        size_t first_disjunct_range = 1;
         for (size_t i = 0; i < to_be_union.size() - 1;)
         {
             auto & cur = to_be_union[i];
-            size_t first_disjunct_range = to_be_union.size();
-            for (size_t j=i+1; j<to_be_union.size(); j++)
+            first_disjunct_range = i + 1;
+            for (size_t j=first_disjunct_range; j<to_be_union.size(); j++)
             {
                 if (cur.leftThan(to_be_union[j]))
                 {
@@ -2354,6 +2359,10 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             ret.push_back(std::move(combined_range));
             i = first_disjunct_range;
         }
+        /// push the last one
+        if (first_disjunct_range == to_be_union.size() - 1)
+            ret.push_back(to_be_union[first_disjunct_range]);
+
         return ret;
     };
 
@@ -2545,17 +2554,19 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                         return false;
                     if (pre)
                     {
-                        if (*pre == cur) /// skip blank range
-                            continue;
-                        points_range.push_back({*pre, false, cur, false});
+                        Range r(*pre, false, cur, false);
+                        /// skip blank range
+                        if (!(r.left > r.right || (r.left == r.right && !r.left_included && !r.right_included)))
+                            points_range.push_back(r);
                     }
                     else
                     {
                         points_range.push_back(Range::createRightBounded(cur, false));
                     }
                     pre = cur;
-                    points_range.push_back(Range::createLeftBounded(*pre, false));
                 }
+
+                points_range.push_back(Range::createLeftBounded(*pre, false));
                 rpn_stack.push(std::move(points_range));
             }
             else if (element.function == RPNElement::FUNCTION_IN_RANGE)
