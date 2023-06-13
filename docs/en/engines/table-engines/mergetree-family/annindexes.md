@@ -202,10 +202,10 @@ CHECK length(vectors) = 256`.
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
 values mean more accurate results at the cost of longer query runtime:
 
-``` sql
+```sql
 SELECT *
 FROM table_name
 ORDER BY L2Distance(vectors, Point)
 LIMIT N
-SETTINGS annoy_index_search_k_nodes=100
+SETTINGS annoy_index_search_k_nodes=100;
 ```
