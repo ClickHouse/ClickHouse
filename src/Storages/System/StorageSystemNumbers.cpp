@@ -239,13 +239,15 @@ Pipe StorageSystemNumbers::read(
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);/// TODO subquery
         size_t query_limit = limit_length + limit_offset;
 
-        /// 1. If intersected ranges is limited, use NumbersRangedSource
+        /// If intersected ranges is limited, use NumbersRangedSource
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_limit > 0)
         {
             auto size_of_range = [] (const Range & r) -> size_t
             {
                 size_t size;
-                size = r.right.get<UInt64>() - r.left.get<UInt64>() + 1;
+                uint64_t right = r.right.isPositiveInfinity() ? std::numeric_limits<uint64_t>::max() : r.right.get<UInt64>();
+
+                size = right - r.left.get<UInt64>() + 1;
                 if (!r.left_included)
                     size--;
                 assert (size > 0);
@@ -261,17 +263,16 @@ Pipe StorageSystemNumbers::read(
                 size_t total_size{};
                 for (const Range & r : rs)
                 {
+                    /// total_size will never overflow
                     total_size += size_of_range(r);
                 }
                 return total_size;
             };
 
-            size_t total_size = std::numeric_limits<UInt64>::max();
-            if (!intersected_ranges.rbegin()->right.isPositiveInfinity())
-                total_size = size_of_ranges(intersected_ranges);
+            size_t total_size = size_of_ranges(intersected_ranges);
 
             /// limit total_size by query_limit
-            if (query_limit > 0 && query_limit <= total_size)
+            if (query_limit > 0 && query_limit < total_size)
                 total_size = query_limit;
 
             num_streams = std::min(num_streams, total_size / max_block_size);
@@ -279,7 +280,7 @@ Pipe StorageSystemNumbers::read(
             if (num_streams == 0)
                 num_streams = 1;
 
-            /// Split ranges evenly, every sub ranges will have approximately amount of numbers.
+            /// Split ranges evenly, every sub ranges will have approximately same amount of numbers.
             NumbersRangedSource::RangesPos start({0, 0});
             for (size_t i = 0; i < num_streams; ++i)
             {
@@ -290,7 +291,7 @@ Pipe StorageSystemNumbers::read(
                 NumbersRangedSource::RangesPos end(start);
                 while (need != 0)
                 {
-                    size_t can_provide = size_of_range(ranges[end.x]) - end.y;
+                    size_t can_provide = size_of_range(intersected_ranges[end.x]) - end.y;
                     if (can_provide > need)
                     {
                         end.y += need;

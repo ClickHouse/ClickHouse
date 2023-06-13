@@ -58,7 +58,7 @@ public:
 
 private:
     bool multithreaded;
-    bool even_distribution;
+    [[maybe_unused]] bool even_distribution;
     std::optional<UInt64> limit;
     UInt64 offset;
 };

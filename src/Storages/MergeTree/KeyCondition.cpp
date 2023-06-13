@@ -2300,8 +2300,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         for (size_t i = 0; i < to_be_intersect.size() - 1;)
         {
             auto & cur = to_be_intersect[i];
-            first_disjunct_range = i + 1;
-            for (size_t j=first_disjunct_range; j<to_be_intersect.size(); j++)
+            first_disjunct_range = to_be_intersect.size();
+            for (size_t j=i+1; j<to_be_intersect.size(); j++)
             {
                 if (cur.leftThan(to_be_intersect[j]))
                 {
@@ -2339,8 +2339,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         for (size_t i = 0; i < to_be_union.size() - 1;)
         {
             auto & cur = to_be_union[i];
-            first_disjunct_range = i + 1;
-            for (size_t j=first_disjunct_range; j<to_be_union.size(); j++)
+            first_disjunct_range = to_be_union.size();
+            for (size_t j=i+1; j<to_be_union.size(); j++)
             {
                 if (cur.leftThan(to_be_union[j]))
                 {
@@ -2425,6 +2425,18 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                 else
                     right_itr++;
             }
+        }
+
+        while (left_itr != left_ranges.end())
+        {
+            new_range.push_back(*left_itr);
+            left_itr++;
+        }
+
+        while (right_itr != right_ranges.end())
+        {
+            new_range.push_back(*right_itr);
+            right_itr++;
         }
 
         /// After 'or' operations, new ranges may like: [1, 4], [2, 5]
