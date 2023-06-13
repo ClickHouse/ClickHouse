@@ -956,8 +956,10 @@ public:
     /// Get column types required for partition key
     static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
 
-    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
-    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
+    ExpressionActionsPtr
+    getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    ExpressionActionsPtr
+    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
     /// Get compression codec for part according to TTL rules and <compression>
     /// section from config.xml.
