@@ -6,7 +6,10 @@ add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./Kusto)
 add_headers_and_sources(clickhouse_parsers ./PRQL)
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
-target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access string_utils ch_rust::prql)
+target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access string_utils)
+if (USE_PRQL)
+    target_link_libraries(clickhouse_parsers PRIVATE ch_rust::prql)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.

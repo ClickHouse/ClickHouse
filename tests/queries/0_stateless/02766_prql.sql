@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 CREATE TEMPORARY TABLE IF NOT EXISTS aboba
 (
     user_id UInt32,

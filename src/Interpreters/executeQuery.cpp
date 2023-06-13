@@ -77,11 +77,6 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
-#include "config.h" // USE_PRQL
-
-#if USE_PRQL
-#    include <prql.h>
-#endif
 
 namespace ProfileEvents
 {
@@ -385,13 +380,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
-#if USE_PRQL
         else if (settings.dialect == Dialect::prql && !internal)
         {
             ParserPRQLQuery parser;
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
-#endif
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);

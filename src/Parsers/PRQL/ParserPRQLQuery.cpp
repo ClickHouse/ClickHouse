@@ -19,17 +19,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserSetQuery set_p;
-    const auto * begin = pos->begin;
-
 
     if (set_p.parse(pos, node, expected))
         return true;
 
+#if !USE_PRQL
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect!");
+#else
+    const auto * begin = pos->begin;
 
     while (!pos->isEnd() && pos->type != TokenType::Semicolon)
         ++pos;
@@ -66,6 +69,6 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 
     return true;
+#endif
 }
-
 }
