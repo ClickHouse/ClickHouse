@@ -4751,10 +4751,10 @@ void StorageReplicatedMergeTree::read(
         }
         else
         {
-            header
-                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
             modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
                 table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
