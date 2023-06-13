@@ -83,6 +83,13 @@ public:
                 arguments[0].type->getName(), this->getName());
     }
 
+    bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
+
+    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
+    {
+        return Transform::getPreimage(type, point);
+    }
+
 };
 
 }
