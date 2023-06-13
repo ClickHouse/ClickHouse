@@ -76,8 +76,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include "Core/SettingsEnums.h"
-#include "Parsers/PRQL/ParserPRQLQuery.h"
 #include "config_version.h"
 #include "config.h"
 
@@ -343,7 +341,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>();
+        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth);
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 

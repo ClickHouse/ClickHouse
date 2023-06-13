@@ -30,7 +30,8 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
 
 #if !USE_PRQL
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect!");
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect!");
 #else
     const auto * begin = pos->begin;
 
@@ -57,7 +58,16 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserQuery query_p(end, false);
     String error_message;
-    node = tryParseQuery(query_p, sql_query_char_ptr, sql_query_char_ptr + sql_query_size - 1, error_message, false, "", false, 1000, 1999);
+    node = tryParseQuery(
+        query_p,
+        sql_query_char_ptr,
+        sql_query_char_ptr + sql_query_size - 1,
+        error_message,
+        false,
+        "",
+        false,
+        max_query_size,
+        max_parser_depth);
 
     if (!node)
         throw Exception(

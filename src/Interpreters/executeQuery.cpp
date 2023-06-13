@@ -382,7 +382,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser;
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else
