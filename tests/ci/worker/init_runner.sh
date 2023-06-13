@@ -87,9 +87,34 @@ terminate_and_exit() {
 
 declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
 
+check_proceed_spot_termination() {
+    # The function checks and proceeds spot instance termination if exists
+    # The event for spot instance termination
+    if TERMINATION_DATA=$(curl -s --fail http://169.254.169.254/latest/meta-data/spot/instance-action); then
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html#instance-action-metadata
+        _action=$(jq '.action' -r <<< "$TERMINATION_DATA")
+        _time=$(jq '.time | fromdate' <<< "$TERMINATION_DATA")
+        _until_action=$((_time - $(date +%s)))
+        echo "Received the '$_action' event that will be effective in $_until_action seconds"
+        if (( _until_action <= 30 )); then
+            echo "The action $_action will be done in $_until_action, killing the runner and exit"
+            local runner_pid
+            runner_pid=$(pgrep Runner.Listener)
+            if [ -n "$runner_pid" ]; then
+                # Kill the runner to not allow it cancelling the job
+                kill -9 "$runner_pid"
+            fi
+            sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
+            terminate_and_exit
+        fi
+    fi
+}
+
 no_terminating_metadata() {
     # The function check that instance could continue work
     # Returns 1 if any of termination events are received
+
+    # The event for rebalance recommendation. Not strict, so we have some room to make a decision here
     if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
         echo 'Received recommendation to rebalance, checking the uptime'
         UPTIME=$(< /proc/uptime)
@@ -107,6 +132,7 @@ no_terminating_metadata() {
         fi
     fi
 
+    # Checks if the ASG in a lifecycle hook state
     local ASG_STATUS
     ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
     if [ "$ASG_STATUS" == "Terminated" ]; then
@@ -210,14 +236,15 @@ is_job_assigned() {
 
 while true; do
     runner_pid=$(pgrep Runner.Listener)
-    echo "Got runner pid $runner_pid"
+    echo "Got runner pid '$runner_pid'"
 
     if [ -z "$runner_pid" ]; then
-        cd $RUNNER_HOME || exit 1
+        cd $RUNNER_HOME || terminate_and_exit
         detect_delayed_termination
         # If runner is not active, check that it needs to terminate itself
         echo "Checking if the instance suppose to terminate"
         no_terminating_metadata || terminate_on_event
+        check_proceed_spot_termination
 
         echo "Going to configure runner"
         sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" --ephemeral \
@@ -225,6 +252,7 @@ while true; do
 
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
+        check_proceed_spot_termination
 
         echo "Run"
         sudo -u ubuntu \
@@ -234,21 +262,8 @@ while true; do
         sleep 15
     else
         echo "Runner is working with pid $runner_pid, checking the metadata in background"
-        if TERMINATION_DATA=$(curl -s --fail http://169.254.169.254/latest/meta-data/spot/instance-action); then
-            # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html#instance-action-metadata
-            _action=$(jq '.action' -r <<< "$TERMINATION_DATA")
-            _time=$(jq '.time | fromdate' <<< "$TERMINATION_DATA")
-            _until_action=$((_time - $(date +%s)))
-            echo "Received the $_action event that will be effective in $_until_action seconds"
-            if (( _until_action <= 30 )); then
-                echo "The action $_action will be done in $_until_action, killing the runner and exit"
-                # Kill the runner to not allow it cancelling the job
-                kill -9 "$runner_pid"
-                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
-                terminate_and_exit
-            fi
+        check_proceed_spot_termination
 
-        fi
         if ! is_job_assigned; then
             RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
             echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
