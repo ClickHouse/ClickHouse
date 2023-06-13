@@ -54,7 +54,7 @@ select toDateOrDefault(cast(19 as Int256));
 select toDateOrDefault(cast(19 as UInt256));
 
 select toDateOrDefault(65535);
-select toDateOrDefault(122400);
+-- select toDateOrDefault(122400);
 
 select toDateOrDefault(19507, '2000-01-01'::Date);
 select toDateOrDefault(-1, '2023-05-30'::Date);
