@@ -33,10 +33,10 @@ SELECT
 
 
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab(tz String, val Int64) engine=Log;
-INSERT INTO tab VALUES ('Asia/Singapore', 42);
+CREATE TABLE tab(val Int64, tz String) engine=Log;
+INSERT INTO tab VALUES (42, 'Asia/Singapore');
 
-SELECT * FROM tab WHERE snowflakeToDateTime(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
-SELECT * FROM tab WHERE snowflakeToDateTime64(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT 1 FROM tab WHERE snowflakeToDateTime(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT 1 FROM tab WHERE snowflakeToDateTime64(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
 
 DROP TABLE tab;
