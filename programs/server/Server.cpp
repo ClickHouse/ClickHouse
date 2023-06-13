@@ -1972,6 +1972,7 @@ void Server::createServers(
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
+    logger().debug("protocols under key: %s", protocols);
     for (const auto & protocol : protocols)
     {
         std::vector<std::string> hosts;
@@ -2020,8 +2021,27 @@ void Server::createServers(
 
     for (const auto & listen_host : listen_hosts)
     {
+        /// WebSocket
+        const char * port_name = "web_socket_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+             Poco::Net::ServerSocket socket;
+             auto address = socketBindListen(config, socket, listen_host, port);
+             /// Not sure that this is correct timeout
+             socket.setReceiveTimeout(settings.http_receive_timeout);
+             socket.setSendTimeout(settings.http_send_timeout);
+
+             return ProtocolServerAdapter(
+                 listen_host,
+                 port_name,
+                 "ws://" + address.toString(),
+                 std::make_unique<HTTPServer>(
+                     httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPWebSocketHandler-factory"), server_pool, socket, http_params));
+        });
+
+
         /// HTTP
-        const char * port_name = "http_port";
+        port_name = "http_port";
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;

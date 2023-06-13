@@ -1,5 +1,7 @@
 #pragma once
 
+
+#include <Server/HTTPWebSocketHandler.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <base/types.h>
 

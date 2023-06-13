@@ -7,11 +7,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "NotFoundHandler.h"
-#include "StaticRequestHandler.h"
-#include "ReplicasStatusHandler.h"
+#include "HTTPWebSocketHandler.h"
 #include "InterserverIOHTTPHandler.h"
+#include "NotFoundHandler.h"
 #include "PrometheusRequestHandler.h"
+#include "ReplicasStatusHandler.h"
+#include "StaticRequestHandler.h"
 #include "WebUIRequestHandler.h"
 
 
@@ -115,6 +116,8 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
         return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
+    else if (name == "HTTPWebSocketHandler-factory")
+        return createHTTPWebSocketMainHandlerFactory(server, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }

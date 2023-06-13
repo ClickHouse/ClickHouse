@@ -8,6 +8,9 @@
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
     <mysql_port>9004</mysql_port>
+    <web_socket_port>1234</web_socket_port>
+
+    <listen_host>0.0.0.0</listen_host>
 
     <path>./</path>
 

@@ -22,27 +22,28 @@
 
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session_)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
     , max_field_name_size(context->getMaxFieldNameSize())
     , max_field_value_size(context->getMaxFieldValueSize())
+    , session(session_)
 {
     response.attachRequest(this);
 
     /// Now that we know socket is still connected, obtain addresses
-    client_address = session.clientAddress();
-    server_address = session.serverAddress();
-    secure = session.socket().secure();
+    client_address = session_.clientAddress();
+    server_address = session_.serverAddress();
+    secure = session_.socket().secure();
 
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
 
-    session.socket().setReceiveTimeout(receive_timeout);
-    session.socket().setSendTimeout(send_timeout);
+    session_.socket().setReceiveTimeout(receive_timeout);
+    session_.socket().setSendTimeout(send_timeout);
 
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket());
-    socket = session.socket().impl();
+    auto in = std::make_unique<ReadBufferFromPocoSocket>(session_.socket());
+    socket = session_.socket().impl();
 
     readRequest(*in);  /// Try parse according to RFC7230
 
