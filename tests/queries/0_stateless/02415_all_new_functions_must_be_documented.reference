@@ -785,6 +785,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

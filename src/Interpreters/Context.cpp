@@ -377,7 +377,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -391,7 +391,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -405,7 +405,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -419,7 +419,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
+                LOG_DEBUG(log, "Destructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -433,7 +433,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing marks loader");
+                LOG_DEBUG(log, "Destructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -447,7 +447,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                LOG_DEBUG(log, "Destructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }
@@ -3555,9 +3555,9 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const

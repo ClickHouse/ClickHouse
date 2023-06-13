@@ -2,6 +2,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -42,6 +43,7 @@
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
@@ -72,6 +74,12 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event SelectQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -902,12 +910,42 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
             if (!planner_set)
                 continue;
 
-            if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
+            auto subquery_to_execute = planner_set->getSubqueryNode();
+
+            if (planner_set->getSet().isCreated() || !subquery_to_execute)
                 continue;
+
+            if (auto * table_node = subquery_to_execute->as<TableNode>())
+            {
+                auto storage_snapshot = table_node->getStorageSnapshot();
+                auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+
+                size_t columns_to_select_size = columns_to_select.size();
+
+                auto column_nodes_to_select = std::make_shared<ListNode>();
+                column_nodes_to_select->getNodes().reserve(columns_to_select_size);
+
+                NamesAndTypes projection_columns;
+                projection_columns.reserve(columns_to_select_size);
+
+                for (auto & column : columns_to_select)
+                {
+                    column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, subquery_to_execute));
+                    projection_columns.emplace_back(column.name, column.type);
+                }
+
+                auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(planner_context->getQueryContext()));
+                subquery_for_table->setIsSubquery(true);
+                subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
+                subquery_for_table->getJoinTree() = std::move(subquery_to_execute);
+                subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
+
+                subquery_to_execute = std::move(subquery_for_table);
+            }
 
             auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(
-                planner_set->getSubqueryNode(),
+                subquery_to_execute,
                 subquery_options,
                 planner_context->getGlobalPlannerContext());
             subquery_planner.buildQueryPlanIfNeeded();
@@ -1155,6 +1193,9 @@ void Planner::buildPlanForUnionNode()
 
 void Planner::buildPlanForQueryNode()
 {
+    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1192,13 +1233,14 @@ void Planner::buildPlanForQueryNode()
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (planner_context->getTableExpressionNodeToData().size() > 1
-        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    /// Check support for JOIN for parallel replicas with custom key
+    if (planner_context->getTableExpressionNodeToData().size() > 1)
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
         {
-                    LOG_WARNING(
-            &Poco::Logger::get("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            LOG_WARNING(
+                &Poco::Logger::get("Planner"),
+                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));

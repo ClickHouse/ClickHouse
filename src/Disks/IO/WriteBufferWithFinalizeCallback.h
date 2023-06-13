@@ -19,8 +19,6 @@ public:
         FinalizeCallback && create_callback_,
         const String & remote_path_);
 
-    ~WriteBufferWithFinalizeCallback() override;
-
     String getFileName() const override { return remote_path; }
 
 private:
