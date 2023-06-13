@@ -1,5 +1,4 @@
--- Tags: no-fasttest
--- no-fasttest because uniqTheta
+-- Tags: no-parallel, no-fasttest
 
 {# this test checks backward compatibility of aggregate functions States against IPv4, IPv6 types #}
 
@@ -22,7 +21,6 @@ from ( {{ ip_generator }} ) format Vertical;
 {% endfor -%}
 
 
-
 {% for generator_name, ip_generator in ip_generators.items() %}
 
 select '----- finalizeAggregation / State / {{ generator_name }} -----';
@@ -33,7 +31,6 @@ select
 from ( {{ ip_generator }} ) format Vertical;
 
 {% endfor -%}
-
 
 
 {% for generator_name, ip_generator in ip_generators.items() %}
@@ -48,7 +45,6 @@ from ( {{ ip_generator }} ) format Vertical;
 {% endfor -%}
 
 
-
 {% for generator_name, ip_generator in ip_generators.items() %}
 
 select '----- finalizeAggregation / IfState / {{ generator_name }} -----';
@@ -59,8 +55,6 @@ select
 from ( {{ ip_generator }} ) format Vertical;
 
 {% endfor -%}
-
-
 
 
 {% set agg_func_list = [ "argMin", "argMax" ] %}
@@ -77,8 +71,6 @@ from ( {{ ip_generator }} ) format Vertical;
 {% endfor -%}
 
 
-
-
 {% for generator_name, ip_generator in ip_generators.items() %}
 
 select '----- Arg / finalizeAggregation / State / {{ generator_name }} -----';
@@ -89,6 +81,8 @@ select
 from ( {{ ip_generator }} ) format Vertical;
 
 {% endfor -%}
+
+
 
 
 {# let's test functions with not deterministic result against 1 row, to make it deterministic #}
@@ -112,7 +106,6 @@ from ( {{ ip_generator }} ) format Vertical;
 {% endfor -%}
 
 
-
 {% for generator_name, ip_generator in ip_generators.items() %}
 
 select '----- finalizeAggregation / State / {{ generator_name }} -----';
@@ -124,3 +117,54 @@ from ( {{ ip_generator }} ) format Vertical;
 
 {% endfor -%}
 
+
+
+{% set agg_func_list = [ "sumMap", "minMap", "maxMap" ] %}
+
+{% for generator_name, ip_generator in ip_generators.items() %}
+
+select '----- Map/Map hash / State / {{ generator_name }} -----';
+select
+  {% for func in agg_func_list  -%}
+     cityHash64(hex( {{ func }}State(map(ip, 1::Int64)) )) AS {{ func }}State{{ "," if not loop.last }}
+  {% endfor -%}
+from ( {{ ip_generator }} ) format Vertical;
+
+{% endfor -%}
+
+
+
+{% for generator_name, ip_generator in ip_generators.items() %}
+
+select '----- Map/Map finalizeAggregation / State / {{ generator_name }} -----';
+select
+  {% for func in agg_func_list -%}
+     finalizeAggregation( {{ func }}State(map(ip, 1::Int64)) ) AS {{ func }}{{ "," if not loop.last }}
+  {% endfor -%}
+from ( {{ ip_generator }} ) format Vertical;
+
+{% endfor -%}
+
+
+{% for generator_name, ip_generator in ip_generators.items() %}
+
+select '----- Map/Array hash / State / {{ generator_name }} -----';
+select
+  {% for func in agg_func_list -%}
+     cityHash64(hex( {{ func }}State([ip], [1::Int64]) )) AS {{ func }}State{{ "," if not loop.last }}
+  {% endfor -%}
+from ( {{ ip_generator }} ) format Vertical;
+
+{% endfor -%}
+
+
+{% for generator_name, ip_generator in ip_generators.items() %}
+
+select '----- Map/Array finalizeAggregation / State / {{ generator_name }} -----';
+select
+  {% for func in agg_func_list -%}
+     finalizeAggregation( {{ func }}State([ip], [1::Int64]) ) AS {{ func }}{{ "," if not loop.last }}
+  {% endfor -%}
+from ( {{ ip_generator }} ) format Vertical;
+
+{% endfor -%}
