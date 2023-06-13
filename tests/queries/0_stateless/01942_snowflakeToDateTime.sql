@@ -31,4 +31,12 @@ SELECT
 	snowflakeToDateTime64(i64, tz) as dt64,
 	toTypeName(dt64);
 
-SELECT materialize('Asia/Singapore') a, snowflakeToDateTime(649::Int64, a) settings allow_nonconst_timezone_arguments = 1
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab(tz String, val Int64) engine=Log;
+INSERT INTO tab VALUES ('Asia/Singapore', 42);
+
+SELECT * FROM tab WHERE snowflakeToDateTime(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT * FROM tab WHERE snowflakeToDateTime64(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+
+DROP TABLE tab;
