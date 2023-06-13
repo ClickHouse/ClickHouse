@@ -236,7 +236,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
     ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-    grep -o "Join\|Filter column: notEquals(l.number_0, 1_UInt8)"
+    grep -o "Join\|Filter column: notEquals(number_0, 1_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
@@ -255,7 +255,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
     ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-        grep -o "Join\|Filter column: notEquals(l.number_0, 1_UInt8)"
+        grep -o "Join\|Filter column: notEquals(number_0, 1_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)

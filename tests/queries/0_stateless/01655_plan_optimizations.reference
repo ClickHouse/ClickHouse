@@ -172,7 +172,7 @@ Filter column: notEquals(number, 1)
 Join
 > (analyzer) one condition of filter is pushed down before LEFT JOIN
 Join
-Filter column: notEquals(l.number_0, 1_UInt8)
+Filter column: notEquals(number_0, 1_UInt8)
 0	0
 3	3
 > one condition of filter is pushed down before INNER JOIN
@@ -181,7 +181,7 @@ Filter column: notEquals(number, 1)
 Join
 > (analyzer) one condition of filter is pushed down before INNER JOIN
 Join
-Filter column: notEquals(l.number_0, 1_UInt8)
+Filter column: notEquals(number_0, 1_UInt8)
 3	3
 > filter is pushed down before UNION
 Union
