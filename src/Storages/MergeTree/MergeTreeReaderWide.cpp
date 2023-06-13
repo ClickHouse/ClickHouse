@@ -58,7 +58,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
+void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
 {
     prefetched_streams.clear();
 
@@ -90,7 +90,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 }
 
 void MergeTreeReaderWide::prefetchForAllColumns(
-    Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+    int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
@@ -137,7 +137,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading);
+        prefetchForAllColumns(/* priority */0, num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -242,7 +242,7 @@ void MergeTreeReaderWide::addStreams(
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read, stream_name, DATA_FILE_EXTENSION,
+            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
@@ -305,7 +305,7 @@ void MergeTreeReaderWide::deserializePrefix(
 }
 
 void MergeTreeReaderWide::prefetchForColumn(
-    Priority priority,
+    int64_t priority,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,

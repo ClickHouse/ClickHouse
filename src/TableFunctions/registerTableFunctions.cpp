@@ -16,7 +16,6 @@ void registerTableFunctions()
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
-    registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
@@ -29,11 +28,8 @@ void registerTableFunctions()
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
     registerTableFunctionOSS(factory);
-    registerTableFunctionGCS(factory);
     registerTableFunctionHudi(factory);
-#if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
-#endif
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
 #endif
@@ -71,12 +67,6 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
-
-#if USE_AZURE_BLOB_STORAGE
-    registerTableFunctionAzureBlobStorage(factory);
-#endif
-
-
 }
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>

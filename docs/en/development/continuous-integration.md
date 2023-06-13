@@ -102,7 +102,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-- **Compiler**: `clang-16`, optionally with the name of a target platform
+- **Compiler**: `clang-15`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Status**: `success` or `fail`

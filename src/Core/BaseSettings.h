@@ -501,11 +501,9 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
     const auto & accessor = Traits::Accessor::instance();
     while (true)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
-        if (read_name.empty() /* empty string is a marker of the end of settings */)
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty() /* empty string is a marker of the end of settings */)
             break;
-
-        std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;

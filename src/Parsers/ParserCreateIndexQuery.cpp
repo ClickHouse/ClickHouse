@@ -36,26 +36,17 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     if (!data_type_p.parse(pos, type, expected))
         return false;
 
-    if (s_granularity.ignore(pos, expected))
-    {
-        if (!granularity_p.parse(pos, granularity, expected))
-            return false;
-    }
+    if (!s_granularity.ignore(pos, expected))
+        return false;
+
+    if (!granularity_p.parse(pos, granularity, expected))
+        return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->part_of_create_index_query = true;
+    index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
-
-    if (granularity)
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    else
-    {
-        if (index->type->name == "annoy")
-            index->granularity = 100'000'000;
-        else
-            index->granularity = 1;
-    }
     node = index;
 
     return true;

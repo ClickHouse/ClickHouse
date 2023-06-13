@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -73,13 +72,9 @@ class FunctionSnowflakeToDateTime : public IFunction
 {
 private:
     const char * name;
-    const bool allow_nonconst_timezone_arguments;
 
 public:
-    explicit FunctionSnowflakeToDateTime(const char * name_, ContextPtr context)
-        : name(name_)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
-    {}
+    explicit FunctionSnowflakeToDateTime(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -97,7 +92,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
 
         return std::make_shared<DataTypeDateTime>(timezone);
     }
@@ -167,13 +162,9 @@ class FunctionSnowflakeToDateTime64 : public IFunction
 {
 private:
     const char * name;
-    const bool allow_nonconst_timezone_arguments;
 
 public:
-    explicit FunctionSnowflakeToDateTime64(const char * name_, ContextPtr context)
-        : name(name_)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
-    {}
+    explicit FunctionSnowflakeToDateTime64(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -191,7 +182,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
 
         return std::make_shared<DataTypeDateTime64>(3, timezone);
     }

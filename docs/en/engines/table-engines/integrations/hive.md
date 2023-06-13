@@ -6,7 +6,7 @@ sidebar_label: Hive
 
 # Hive
 
-The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently it supports input formats as below:
+The Hive engine allows you to perform `SELECT` quries on HDFS Hive table. Currently it supports input formats as below:
 
 - Text: only supports simple scalar column types except `binary`
 
@@ -28,17 +28,17 @@ PARTITION BY expr
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original Hive table structure:
-- Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
-- Column types should be the same from those in the original Hive table.
-- Partition by expression should be consistent with the original Hive table, and columns in partition by expression should be in the table structure.
+-   Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
+-   Column types should be the same from those in the original Hive table.
+-   Partition by expression should be consistent with the original Hive table, and columns in partition by expression should be in the table structure.
 
 **Engine Parameters**
 
-- `thrift://host:port` — Hive Metastore address
+-   `thrift://host:port` — Hive Metastore address
 
-- `database` — Remote database name.
+-   `database` — Remote database name.
 
-- `table` — Remote table name.
+-   `table` — Remote table name.
 
 ## Usage Example {#usage-example}
 

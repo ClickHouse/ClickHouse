@@ -14,14 +14,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 
 namespace DB
 {
@@ -179,45 +177,17 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
             else if (isTuple(data_type))
             {
                 const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
-                const auto & nested_types = tuple_data_type->getElements();
-                const auto & nested_names = tuple_data_type->getElementNames();
+                auto nested_types = tuple_data_type->getElements();
                 const auto & nested_columns = assert_cast<const ColumnTuple *>(column.get())->getColumns();
-                bool have_explicit_names = tuple_data_type->haveExplicitNames();
-                for (uint32_t i = 0; i != nested_names.size(); ++i)
+                for (const auto & name : tuple_data_type->getElementNames())
                 {
-                    capnp::StructSchema::Field nested_field = have_explicit_names ? nested_struct_schema.getFieldByName(nested_names[i]) : nested_struct_schema.getFields()[i];
-                    auto field_builder = initStructFieldBuilder(nested_columns[i], row_num, struct_builder, nested_field);
-                    auto value = convertToDynamicValue(nested_columns[i], nested_types[i], row_num, nested_names[i], field_builder, enum_comparing_mode, temporary_text_data_storage);
+                    auto pos = tuple_data_type->getPositionByName(name);
+                    auto field_builder
+                        = initStructFieldBuilder(nested_columns[pos], row_num, struct_builder, nested_struct_schema.getFieldByName(name));
+                    auto value = convertToDynamicValue(nested_columns[pos], nested_types[pos], row_num, column_name, field_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
-                        struct_builder.set(nested_field, *value);
+                        struct_builder.set(name, *value);
                 }
-            }
-            else if (isMap(data_type))
-            {
-                /// We output Map type as follow CapnProto schema
-                ///
-                /// struct Map {
-                ///     struct Entry {
-                ///         key @0: Key;
-                ///         value @1: Value;
-                ///     }
-                ///     entries @0 :List(Entry);
-                /// }
-                ///
-                /// And we don't need to check that struct have this form here because we checked it before.
-                const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-                DataTypes key_value_types = {map_type.getKeyType(), map_type.getValueType()};
-                Names key_value_names = {"key", "value"};
-                auto entries_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_value_types, key_value_names));
-
-                /// Nested column in Map is actually Array(Tuple), so we can output it according to "entries" field schema.
-                const auto & entries_column = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
-
-                auto entries_field = nested_struct_schema.getFields()[0];
-                auto field_builder = initStructFieldBuilder(entries_column, row_num, struct_builder, entries_field);
-                auto entries_value = convertToDynamicValue(entries_column, entries_type, row_num, column_name, field_builder, enum_comparing_mode, temporary_text_data_storage);
-                if (entries_value)
-                    struct_builder.set(entries_field, *entries_value);
             }
             else
             {

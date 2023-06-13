@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -46,6 +46,9 @@
 
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -439,10 +442,10 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
@@ -620,11 +623,12 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
+            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
-                return tmp_data->createRawStream();
+                return WriteBufferFromTemporaryFile::create(tmp_path_template);
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
@@ -800,11 +804,11 @@ void HTTPHandler::processQuery(
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out->addHeaderCORS(true);
 
-    auto append_callback = [my_context = context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
-        auto prev = my_context->getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        my_context->setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);

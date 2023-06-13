@@ -49,7 +49,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     struct Configuration
     {
@@ -74,12 +74,6 @@ public:
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
         ContextPtr context_, bool require_table = true);
-
-    static ColumnsDescription getTableStructureFromData(
-        mysqlxx::PoolWithFailover & pool_,
-        const String & database,
-        const String & table,
-        const ContextPtr & context_);
 
 private:
     friend class StorageMySQLSink;

@@ -94,7 +94,7 @@ public:
     };
 
     explicit ParallelParsingInputFormat(Params params)
-        : IInputFormat(std::move(params.header), &params.in)
+        : IInputFormat(std::move(params.header), params.in)
         , internal_parser_creator(params.internal_parser_creator)
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
@@ -317,8 +317,8 @@ private:
         }
     }
 
-    void segmentatorThreadFunction(ThreadGroupPtr thread_group);
-    void parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number);
+    void segmentatorThreadFunction(ThreadGroupStatusPtr thread_group);
+    void parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.

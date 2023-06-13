@@ -127,17 +127,24 @@ Cluster::Address::Address(
 
 
 Cluster::Address::Address(
-    const DatabaseReplicaInfo & info,
-    const ClusterConnectionParameters & params,
+    const String & host_port_,
+    const String & user_,
+    const String & password_,
+    UInt16 clickhouse_port,
+    bool treat_local_port_as_remote,
+    bool secure_,
+    Int64 priority_,
     UInt32 shard_index_,
-    UInt32 replica_index_)
-    : user(params.username), password(params.password)
+    UInt32 replica_index_,
+    String cluster_name_,
+    String cluster_secret_)
+    : user(user_), password(password_)
 {
     bool can_be_local = true;
     std::pair<std::string, UInt16> parsed_host_port;
-    if (!params.treat_local_port_as_remote)
+    if (!treat_local_port_as_remote)
     {
-        parsed_host_port = parseAddress(info.hostname, params.clickhouse_port);
+        parsed_host_port = parseAddress(host_port_, clickhouse_port);
     }
     else
     {
@@ -147,25 +154,23 @@ Cluster::Address::Address(
         /// If it doesn't include a port then use the default one and it could be local (if the address is)
         try
         {
-            parsed_host_port = parseAddress(info.hostname, 0);
+            parsed_host_port = parseAddress(host_port_, 0);
             can_be_local = false;
         }
         catch (...)
         {
-            parsed_host_port = parseAddress(info.hostname, params.clickhouse_port);
+            parsed_host_port = parseAddress(host_port_, clickhouse_port);
         }
     }
     host_name = parsed_host_port.first;
-    database_shard_name = info.shard_name;
-    database_replica_name = info.replica_name;
     port = parsed_host_port.second;
-    secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    priority = params.priority;
-    is_local = can_be_local && isLocal(params.clickhouse_port);
+    secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    priority = priority_;
+    is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
-    cluster = params.cluster_name;
-    cluster_secret = params.cluster_secret;
+    cluster = cluster_name_;
+    cluster_secret = cluster_secret_;
 }
 
 
@@ -487,8 +492,44 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
-                     std::move(insert_paths), weight, internal_replication);
+            Addresses shard_local_addresses;
+            Addresses shard_all_addresses;
+
+            ConnectionPoolPtrs all_replicas_pools;
+            all_replicas_pools.reserve(replica_addresses.size());
+
+            for (const auto & replica : replica_addresses)
+            {
+                auto replica_pool = ConnectionPoolFactory::instance().get(
+                    static_cast<unsigned>(settings.distributed_connections_pool_size),
+                    replica.host_name, replica.port,
+                    replica.default_database, replica.user, replica.password, replica.quota_key,
+                    replica.cluster, replica.cluster_secret,
+                    "server", replica.compression,
+                    replica.secure, replica.priority);
+
+                all_replicas_pools.emplace_back(replica_pool);
+                if (replica.is_local)
+                    shard_local_addresses.push_back(replica);
+                shard_all_addresses.push_back(replica);
+            }
+            ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
+                        all_replicas_pools, settings.load_balancing,
+                        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+
+            if (weight)
+                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
+            shards_info.push_back({
+                std::move(insert_paths),
+                current_shard_num,
+                weight,
+                std::move(shard_local_addresses),
+                std::move(shard_all_addresses),
+                std::move(shard_pool),
+                std::move(all_replicas_pools),
+                internal_replication
+            });
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
@@ -506,100 +547,77 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<String>> & names,
-    const ClusterConnectionParameters & params)
+    const String & username,
+    const String & password,
+    UInt16 clickhouse_port,
+    bool treat_local_as_remote,
+    bool treat_local_port_as_remote,
+    bool secure,
+    Int64 priority,
+    String cluster_name,
+    String cluster_secret)
 {
     UInt32 current_shard_num = 1;
 
-    secret = params.cluster_secret;
+    secret = cluster_secret;
 
     for (const auto & shard : names)
     {
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", ""},
-                params,
-                current_shard_num,
-                current.size() + 1);
-
-        addresses_with_failover.emplace_back(current);
-
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
-        ++current_shard_num;
-    }
-
-    initMisc();
-}
-
-Cluster::Cluster(
-    const Settings & settings,
-    const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
-    const ClusterConnectionParameters & params)
-{
-    UInt32 current_shard_num = 1;
-
-    secret = params.cluster_secret;
-
-    for (const auto & shard : infos)
-    {
-        Addresses current;
-        for (const auto & replica : shard)
-            current.emplace_back(
                 replica,
-                params,
+                username,
+                password,
+                clickhouse_port,
+                treat_local_port_as_remote,
+                secure,
+                priority,
                 current_shard_num,
-                current.size() + 1);
+                current.size() + 1,
+                cluster_name,
+                cluster_secret);
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
+        Addresses shard_local_addresses;
+        Addresses all_addresses;
+        ConnectionPoolPtrs all_replicas;
+        all_replicas.reserve(current.size());
+
+        for (const auto & replica : current)
+        {
+            auto replica_pool = ConnectionPoolFactory::instance().get(
+                static_cast<unsigned>(settings.distributed_connections_pool_size),
+                replica.host_name, replica.port,
+                replica.default_database, replica.user, replica.password, replica.quota_key,
+                replica.cluster, replica.cluster_secret,
+                "server", replica.compression, replica.secure, replica.priority);
+            all_replicas.emplace_back(replica_pool);
+            if (replica.is_local && !treat_local_as_remote)
+                shard_local_addresses.push_back(replica);
+            all_addresses.push_back(replica);
+        }
+
+        ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
+                all_replicas, settings.load_balancing,
+                settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+
+        slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
+        shards_info.push_back({
+            {}, // insert_path_for_internal_replication
+            current_shard_num,
+            default_weight,
+            std::move(shard_local_addresses),
+            std::move(all_addresses),
+            std::move(shard_pool),
+            std::move(all_replicas),
+            false // has_internal_replication
+        });
         ++current_shard_num;
     }
 
     initMisc();
-}
-
-void Cluster::addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                       ShardInfoInsertPathForInternalReplication && insert_paths, UInt32 weight, bool internal_replication)
-{
-    Addresses shard_local_addresses;
-    Addresses shard_all_addresses;
-
-    ConnectionPoolPtrs all_replicas_pools;
-    all_replicas_pools.reserve(addresses.size());
-
-    for (const auto & replica : addresses)
-    {
-        auto replica_pool = ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(settings.distributed_connections_pool_size),
-            replica.host_name, replica.port,
-            replica.default_database, replica.user, replica.password, replica.quota_key,
-            replica.cluster, replica.cluster_secret,
-            "server", replica.compression,
-            replica.secure, replica.priority);
-
-        all_replicas_pools.emplace_back(replica_pool);
-        if (replica.is_local && !treat_local_as_remote)
-            shard_local_addresses.push_back(replica);
-        shard_all_addresses.push_back(replica);
-    }
-    ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-        all_replicas_pools, settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
-
-    if (weight)
-        slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
-
-    shards_info.push_back({
-        std::move(insert_paths),
-        current_shard_num,
-        weight,
-        std::move(shard_local_addresses),
-        std::move(shard_all_addresses),
-        std::move(shard_pool),
-        std::move(all_replicas_pools),
-        internal_replication
-    });
 }
 
 

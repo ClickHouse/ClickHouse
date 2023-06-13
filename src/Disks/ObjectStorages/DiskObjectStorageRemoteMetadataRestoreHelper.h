@@ -2,7 +2,6 @@
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <base/getFQDNOrHostName.h>
-#include <future>
 
 namespace DB
 {

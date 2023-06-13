@@ -1429,8 +1429,6 @@ private:
     FunctionPtr array_function;
 };
 
-extern FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
-
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
@@ -1443,14 +1441,6 @@ extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
-
-struct DotProduct
-{
-    static constexpr auto name = "dotProduct";
-
-    static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
-};
 
 struct L1NormTraits
 {
@@ -1540,8 +1530,6 @@ struct CosineDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
 };
 
-using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
-
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
 using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
@@ -1565,33 +1553,33 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
+    factory.registerFunction<FunctionAddTupleOfIntervals>(
         {
-            .description=R"(
+            R"(
 Consecutively adds a tuple of intervals to a Date or a DateTime.
 [example:tuple]
 )",
-            .examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
+            Documentation::Examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(
         {
-            .description=R"(
+            R"(
 Consecutively subtracts a tuple of intervals from a Date or a DateTime.
 [example:tuple]
 )",
-            .examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
+            Documentation::Examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
+    factory.registerFunction<FunctionTupleAddInterval>(
         {
-            .description=R"(
+            R"(
 Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1599,16 +1587,16 @@ Adds an interval to another interval or tuple of intervals. The returned value i
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            .examples{
-                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
-                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
-                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
+            Documentation::Examples{
+                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
+                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
+                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)"},
                 },
-            .categories{"Tuple", "Interval"}
+            Documentation::Categories{"Tuple", "Interval"}
         });
-    factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
+    factory.registerFunction<FunctionTupleSubtractInterval>(
         {
-            .description=R"(
+            R"(
 Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1616,19 +1604,19 @@ Adds an negated interval to another interval or tuple of intervals. The returned
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            .examples{
-                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
-                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
-                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
+            Documentation::Examples{
+                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
+                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
+                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)"},
                 },
-            .categories{"Tuple", "Interval"}
+            Documentation::Categories{"Tuple", "Interval"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
 
-    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
-    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDotProduct>();
+    factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();

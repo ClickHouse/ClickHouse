@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <chrono>

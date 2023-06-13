@@ -56,7 +56,6 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
-#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -69,7 +68,6 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
-#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -149,11 +147,6 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
-    , size_limits_for_set_used_with_index(
-        (settings_.use_index_for_in_with_subqueries_max_values &&
-            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
-        size_limits_for_set :
-        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -457,7 +450,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->getFuture(set_key).isValid())
+    if (prepared_sets->get(set_key))
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -466,57 +459,25 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return;
     }
 
-    auto build_set = [&] () -> SetPtr
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
+    auto io = interpreter_subquery->execute();
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
+    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
+
+    Block block;
+    while (executor.pull(block))
     {
-        LOG_TRACE(getLogger(), "Building set, key: {}", set_key.toString());
+        if (block.rows() == 0)
+            continue;
 
-        auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-        auto io = interpreter_subquery->execute();
-        PullingAsyncPipelineExecutor executor(io.pipeline);
-
-        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set_used_with_index, true, getContext()->getSettingsRef().transform_null_in);
-        set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-        Block block;
-        while (executor.pull(block))
-        {
-            if (block.rows() == 0)
-                continue;
-
-            /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-            if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-                return nullptr;
-        }
-
-        set->finishInsert();
-
-        return set;
-    };
-
-    SetPtr set;
-
-    auto set_cache = getContext()->getPreparedSetsCache();
-    if (set_cache)
-    {
-        auto from_cache = set_cache->findOrPromiseToBuild(set_key.toString());
-        if (from_cache.index() == 0)
-        {
-            set = build_set();
-            std::get<0>(from_cache).set_value(set);
-        }
-        else
-        {
-            LOG_TRACE(getLogger(), "Waiting for set, key: {}", set_key.toString());
-            set = std::get<1>(from_cache).get();
-        }
-    }
-    else
-    {
-        set = build_set();
+        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+            return;
     }
 
-    if (!set)
-        return;
+    set->finishInsert();
 
     prepared_sets->set(set_key, std::move(set));
 }
@@ -595,6 +556,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -615,6 +577,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -637,6 +600,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
+        true /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -658,6 +622,7 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
         no_makeset_for_subqueries,
         false /* no_makeset */,
         false /*only_consts */,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -969,15 +934,6 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     return select_query;
 }
 
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    const Settings & csettings = getContext()->getSettingsRef();
-    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    const bool enable_parallel_processing_of_joins
-        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
-    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
-}
-
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
@@ -1064,6 +1020,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     const auto & settings = context->getSettings();
 
+    Block left_sample_block(left_sample_columns);
+    for (auto & column : left_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     std::vector<String> tried_algorithms;
@@ -1109,10 +1072,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-
-        // Grace hash join requires that columns exist in left_sample_block.
-        Block left_sample_block(left_sample_columns);
-        if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+        if (GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
@@ -1899,8 +1859,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
+            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns.begin(), required_columns.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)
