@@ -116,6 +116,9 @@ runClient "clickhouse:///?" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HO
 runClient "clickhouse://:/?" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse:" --database "$CLICKHOUSE_DATABASE" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS' 
 
+# Using clickhouse-client and connection is prohibited
+runClient "clickhouse:" --connection "connection" 2>&1 | grep -o 'BAD_ARGUMENTS'
+
 # Space is used in connection string (This is prohibited).
 runClient " clickhouse:" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse: " 2>&1 | grep -o 'BAD_ARGUMENTS'

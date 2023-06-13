@@ -147,12 +147,13 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 clickhouse-client также поддерживает подключение к серверу clickhouse с помощью строки подключения, аналогичной [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING), [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Она имеет следующий синтаксис:
 
 ```text
-clickhouse:[//[user_info@][hosts_and_ports]][/database][?query_parameters]
+clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 ```
 
 Где
 
-- `user_spec` - (необязательно) - это пользователь и необязательный пароль,
+- `user` - (необязательно) - это имя пользователя,
+- `password` - (необязательно) - Пароль пользователя. Если символ `:` укаказан, и пароль пуст, то клиент запросит ввести пользователя пароль.
 - `hostspec` - (необязательно) - список хостов и необязательных портов. `host[:port] [, host:[port]], ...`,
 - `database` - (необязательно) - это имя базы данных,
 - `paramspec` - (опционально) список пар ключ-значение `param1=value1[,&param2=value2], ...`. Для некоторых параметров значение не требуется. Имена и значения параметров чувствительны к регистру.
@@ -182,7 +183,7 @@ URI позволяет подключаться к нескольким хост
 
 ### Кодирование URI {#connection_string_uri_percent_encoding}
 
-Не US ASCII символы в имени пользователя, пароле, хостах, базе данных или параметрах запроса должны быть [закодированы](https://ru.wikipedia.org/wiki/URL#%D0%9A%D0%BE%D0%B4%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_URL).
+Не US ASCII и специальные символы в имени пользователя, пароле, хостах, базе данных и параметрах запроса должны быть [закодированы](https://ru.wikipedia.org/wiki/URL#%D0%9A%D0%BE%D0%B4%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_URL).
 
 ### Примеры {#connection_string_examples}
 
@@ -248,10 +249,13 @@ clickhouse-client clickhouse://localhost/my_database -s
 clickhouse-client clickhouse:
 ```
 
-Подключиться к хосту по умолчанию через порт по умолчанию, используя имя пользователя user_name без пароля.
+Подключиться к хосту по умолчанию через порт по умолчанию, используя имя пользователя `my_user` без пароля.
 
 ``` bash
-clickhouse-client clickhouse://user_name@
+clickhouse-client clickhouse://my_user@
+
+# Использование пустого пароля между : и @ означает, что пользователь должен ввести пароль перед началом соединения.
+clickhouse-client clickhouse://my_user:@
 ```
 
 Подключиться к localhost, используя электронную почту, как имя пользователя. Символ `@` закодирован как `%40`.
