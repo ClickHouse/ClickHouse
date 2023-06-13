@@ -73,9 +73,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
 Int64 ConnectionPoolWithFailover::getPriority() const
 {
-    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto & a, const auto & b)
+    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto &a, const auto &b)
     {
-        return a->getPriority() < b->getPriority();
+        return a->getPriority() - b->getPriority();
     }))->getPriority();
 }
 

@@ -21,7 +21,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -233,7 +232,7 @@ public:
                         if (thread_pool_read)
                         {
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
-                                getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
+                                IObjectStorage::getThreadPoolReader(), read_settings, std::move(buf));
                         }
                         else
                         {
@@ -905,7 +904,7 @@ HiveFiles StorageHive::collectHiveFiles(
     return hive_files;
 }
 
-SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }

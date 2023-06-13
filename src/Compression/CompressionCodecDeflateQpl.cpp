@@ -96,7 +96,7 @@ qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 & job_id)
     if (isJobPoolReady())
     {
         UInt32 retry = 0;
-        UInt32 index = distribution(random_engine);
+        auto index = distribution(random_engine);
         while (!tryLockJob(index))
         {
             index = distribution(random_engine);

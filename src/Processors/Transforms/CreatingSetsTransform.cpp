@@ -91,7 +91,7 @@ void CreatingSetsTransform::startSubquery()
 
     if (subquery.table)
         /// TODO: make via port
-        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false));
+        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
 
     done_with_set = !subquery.set_in_progress;
     done_with_table = !subquery.table;

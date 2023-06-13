@@ -30,11 +30,10 @@ std::string extractTimeZoneNameFromColumn(const IColumn * column, const String &
 }
 
 
-std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num, bool allow_nonconst_timezone_arguments)
+std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     /// Explicit time zone may be passed in last argument.
-    if ((arguments.size() == time_zone_arg_num + 1)
-       && (!allow_nonconst_timezone_arguments || arguments[time_zone_arg_num].column))
+    if (arguments.size() == time_zone_arg_num + 1)
     {
         return extractTimeZoneNameFromColumn(arguments[time_zone_arg_num].column.get(), arguments[time_zone_arg_num].name);
     }

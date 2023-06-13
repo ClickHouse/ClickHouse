@@ -505,8 +505,8 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
-            last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
@@ -1692,7 +1692,7 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);

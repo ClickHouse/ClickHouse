@@ -87,8 +87,7 @@ private:
     size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
-    std::pair<std::vector<String>, bool> commitPart(
+    std::vector<String> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,

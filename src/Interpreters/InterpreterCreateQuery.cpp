@@ -848,6 +848,21 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         }
     }
 
+    if (!create.attach && !settings.allow_experimental_geo_types)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            const auto & type = name_and_type_pair.type->getName();
+            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' which type is '{}' "
+                                "because experimental geo types are not allowed. "
+                                "Set setting allow_experimental_geo_types = 1 in order to allow it",
+                                name_and_type_pair.name, type);
+            }
+        }
+    }
+
     if (!create.attach && !settings.allow_experimental_object_type)
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())

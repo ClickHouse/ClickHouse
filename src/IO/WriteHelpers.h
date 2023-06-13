@@ -316,15 +316,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             pos = next_pos;
             switch (*pos)
             {
-                case quote_character:
-                {
-                    if constexpr (escape_quote_with_quote)
-                        writeChar(quote_character, buf);
-                    else
-                        writeChar('\\', buf);
-                    writeChar(quote_character, buf);
-                    break;
-                }
                 case '\b':
                     writeChar('\\', buf);
                     writeChar('b', buf);
@@ -353,6 +344,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
+                case quote_character:
+                {
+                    if constexpr (escape_quote_with_quote)
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
+                    break;
+                }
                 default:
                     writeChar(*pos, buf);
             }
@@ -625,15 +625,13 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-/// @brief Serialize `uuid` into an array of characters in big-endian byte order.
-/// @param uuid UUID to serialize.
-/// @return Array of characters in big-endian byte order.
-std::array<char, 36> formatUUID(const UUID & uuid);
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
-    const auto serialized_uuid = formatUUID(uuid);
-    buf.write(serialized_uuid.data(), serialized_uuid.size());
+    char s[36];
+    formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
+    buf.write(s, sizeof(s));
 }
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);

@@ -94,7 +94,7 @@ def nats_cluster():
 def nats_setup_teardown():
     print("NATS is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test SYNC")
+    instance.query("DROP DATABASE test NO DELAY")
     instance.query("CREATE DATABASE test")
 
 

@@ -13,8 +13,8 @@ The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data th
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
 ) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
@@ -57,7 +57,7 @@ or via config (since version 21.11):
 </named_collections>
 ```
 
-Some parameters can be overridden by key value arguments:
+Some parameters can be overriden by key value arguments:
 ``` sql
 SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
 ```

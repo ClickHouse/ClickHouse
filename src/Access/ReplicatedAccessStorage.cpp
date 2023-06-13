@@ -525,9 +525,9 @@ void ReplicatedAccessStorage::refreshEntities(const zkutil::ZooKeeperPtr & zooke
     }
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
-    auto watch_entities_list = [my_watched_queue = watched_queue](const Coordination::WatchResponse &)
+    auto watch_entities_list = [watched_queue = watched_queue](const Coordination::WatchResponse &)
     {
-        [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
+        [[maybe_unused]] bool push_result = watched_queue->push(UUIDHelpers::Nil);
     };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
@@ -592,10 +592,10 @@ void ReplicatedAccessStorage::refreshEntityNoLock(const zkutil::ZooKeeperPtr & z
 
 AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
-    const auto watch_entity = [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
+    const auto watch_entity = [watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
-            [[maybe_unused]] bool push_result = my_watched_queue->push(id);
+            [[maybe_unused]] bool push_result = watched_queue->push(id);
     };
 
     Coordination::Stat entity_stat;
@@ -680,12 +680,12 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
-         my_zookeeper_path = zookeeper_path,
+         zookeeper_path = zookeeper_path,
          type,
          &backup_entries_collector,
          backup_coordination]
         {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(my_zookeeper_path, type))
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }
@@ -708,9 +708,9 @@ void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
+    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
-        for (const auto & [id, entity] : my_entities)
+        for (const auto & [id, entity] : entities)
             insertWithID(id, entity, replace_if_exists, throw_if_exists);
     });
 }

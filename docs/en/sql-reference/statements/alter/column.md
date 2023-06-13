@@ -132,7 +132,7 @@ Comments are stored in the `comment_expression` column returned by the [DESCRIBE
 Example:
 
 ``` sql
-ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
+ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
 ## MODIFY COLUMN

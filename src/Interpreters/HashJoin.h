@@ -155,7 +155,7 @@ public:
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addJoinedBlock(const Block & source_block_, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
 
     void checkTypesOfKeys(const Block & block) const override;
 

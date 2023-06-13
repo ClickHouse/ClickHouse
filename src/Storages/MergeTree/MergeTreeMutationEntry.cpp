@@ -75,7 +75,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             TransactionID::write(tid, *out);
             *out << "\n";
         }
-        out->finalize();
         out->sync();
     }
     catch (...)

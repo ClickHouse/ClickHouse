@@ -64,7 +64,7 @@ This is a cryptographic hash function. It works at least three times faster than
 The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
 1.  The first and the second hash value are concatenated to an array which is hashed.
-2.  The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
+2.  The previously calculated hash value and the hash of the third input paramter are hashed in a similar way.
 3.  This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
@@ -278,8 +278,6 @@ cityHash64(par1,...)
 ```
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
-
-Note that Google changed the algorithm of CityHash after it has been added to ClickHouse. In other words, ClickHouse's cityHash64 and Google's upstream CityHash now produce different results. ClickHouse cityHash64 corresponds to CityHash v1.0.2.
 
 **Arguments**
 
@@ -626,7 +624,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## gccMurmurHash
 
-Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between Clang and GCC builds.
+Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
 
 **Syntax**
 
@@ -1090,7 +1088,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 **Arguments**
 
 - `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `shinglesize` — The size of a word shingle. Optinal. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
