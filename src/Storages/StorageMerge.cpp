@@ -34,6 +34,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -668,6 +669,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_query_info);
 
 #pragma GCC diagnostic ignored "-Wunreachable-code"
+#pragma GCC diagnostic ignored "-Wunused-variable"
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -679,7 +681,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         bool direct_read = false;
 
-        if ( !view ||  allow_experimental_analyzer)
+        if (!view || allow_experimental_analyzer)
         // if (!view ||  allow_experimental_analyzer)
         {
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "direct storage->read");
@@ -741,25 +743,18 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "ReadFromMergeTree detected, DAG size {}", filters_dags_size);
             for (size_t i = 0; i < filters_dags_size; ++i)
             {
-                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "adding filter");
+                LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "adding filter {}", filter_dags[i]->dumpDAG());
                 read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
             }
         }
-        builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(modified_context),
-            BuildQueryPipelineSettings::fromContext(modified_context));
-        if (auto * source_step_with_filter = typeid_cast<SourceStepWithFilter *>(plan.getRootNode()->step.get()))
+        if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter*>((plan.getRootNode()->step.get())))
         {
             auto row_policy_filter = modified_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
 
             if (row_policy_filter)
             {
-
-
                 // row_policy_filter->expression
                 // auto pipe_columns = builder.getHeader().getNamesAndTypesList();
-
-
                 ASTPtr expr = row_policy_filter->expression;
 
                 // auto * select_ast = expr /* query_ast */ ->as<ASTSelectQuery>();
@@ -771,7 +766,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 // String filter_column_name = expr_list->children.at(0)->getColumnName();
                 // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_column_name: {} ", filter_column_name);
 
-                auto syntax_result = TreeRewriter(modified_context).analyze(expr, builder->getHeader().getNamesAndTypesList() /* pipe_columns*/);
+                auto syntax_result = TreeRewriter(modified_context).analyze(expr, header/*builder->getHeader().*/.getNamesAndTypesList() /* pipe_columns*/);
                 // auto syntax_result = TreeRewriter(local_context).analyze(expr, NamesAndTypesList());
                 auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, modified_context};
 
@@ -785,7 +780,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 {
                     LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "req_col: {}", req_col);
                 }
-
 
 
                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
@@ -806,12 +800,18 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                     std::inserter(filter_columns, filter_columns.begin()));
 
 
-
                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "SourceStepWithFilter detected");
-                source_step_with_filter->addFilter(filter_dag_ptr, filter_columns.front());
+                auto found_column = filter_dag_ptr->tryFindInOutputs(filter_columns.front());
+                assert(found_column);
+
+                // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "found column {}", found_column->dumpDAG());
+
+                source_step_with_filter->addFilter(/* filter_actions */  filter_dag_ptr, filter_columns.front());
             }
         }
-
+        builder = plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(modified_context),
+            BuildQueryPipelineSettings::fromContext(modified_context));
 
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
@@ -1124,9 +1124,6 @@ void ReadFromMerge::convertingSourceStream(
         LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "column name: {} (header.getColumnsWithTypeAndName())", column_with_type_and_name.name);
     }
 
-
-
-
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
                                                                 convert_actions_match_columns_mode);
@@ -1149,7 +1146,6 @@ void ReadFromMerge::convertingSourceStream(
 
         if (row_policy_filter)
         {
-
 
             // row_policy_filter->expression
             // auto pipe_columns = builder.getHeader().getNamesAndTypesList();
@@ -1174,14 +1170,12 @@ void ReadFromMerge::convertingSourceStream(
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "actions_dag: {},<> {}", actions_dag->dumpNames(), actions_dag->dumpDAG());
 
 
-
             auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
             auto required_columns = filter_actions->getRequiredColumns();
             for (const auto & req_col : required_columns)
             {
                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "req_col: {}", req_col);
             }
-
 
 
             LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
@@ -1210,8 +1204,6 @@ void ReadFromMerge::convertingSourceStream(
             // block = filter_actions->getActionsDAG().updateHeader(std::move(block));
             // LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "block from updateHeader {}", block.dumpStructure());
 
-
-
             builder.addSimpleTransform([&](const Block & stream_header)
             {
                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "stream_header {}", stream_header.dumpStructure());
@@ -1228,7 +1220,6 @@ void ReadFromMerge::convertingSourceStream(
             // row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
             // query_plan.addStep(std::move(row_level_filter_step));
         }
-
 
     }
 }

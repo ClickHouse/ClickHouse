@@ -561,7 +561,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
 
-
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
