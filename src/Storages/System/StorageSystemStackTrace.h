@@ -37,8 +37,6 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
-
 protected:
     mutable std::mutex mutex;
     Poco::Logger * log;

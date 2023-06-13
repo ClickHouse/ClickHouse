@@ -61,8 +61,6 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
-
     static NamesAndAliases getNamesAndAliases() { return {}; }
 };
 

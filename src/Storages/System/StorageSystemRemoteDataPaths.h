@@ -22,8 +22,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 };
 
 }
