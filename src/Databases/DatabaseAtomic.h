@@ -36,6 +36,7 @@ public:
             bool dictionary) override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTableCaseInsensitive(ContextPtr context, const String & table_name, bool sync) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
@@ -58,6 +59,7 @@ public:
     void assertCanBeDetached(bool cleanup) override;
 
     UUID tryGetTableUUID(const String & table_name) const override;
+    UUID tryGetTableUUIDCaseInsensitive(const String & table_name) const override;
 
     void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);

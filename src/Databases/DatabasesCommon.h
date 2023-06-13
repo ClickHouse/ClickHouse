@@ -28,6 +28,8 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
+    StoragePtr tryGetTableCaseInsensitive(const String & table_name, ContextPtr context) const override;
+
     bool empty() const override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
@@ -51,6 +53,7 @@ protected:
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
+    StoragePtr detachTableCaseInsensitiveUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 };
 

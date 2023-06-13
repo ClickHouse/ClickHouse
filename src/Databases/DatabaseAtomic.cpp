@@ -110,6 +110,18 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     return table;
 }
 
+void DatabaseAtomic::dropTableCaseInsensitive(ContextPtr local_context, const String & table_name, bool sync)
+{
+    auto table = tryGetTableCaseInsensitive(table_name, local_context);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    if (table)
+        table->dropInnerTableIfAny(sync, local_context);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
+
+    dropTableImpl(local_context, table->getStorageID().table_name, sync);
+}
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto table = tryGetTable(table_name, local_context);
@@ -419,6 +431,13 @@ DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::Fil
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(table_name, getContext()))
+        return table->getStorageID().uuid;
+    return UUIDHelpers::Nil;
+}
+
+UUID DatabaseAtomic::tryGetTableUUIDCaseInsensitive(const String & table_name) const
+{
+    if (auto table = tryGetTableCaseInsensitive(table_name, getContext()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

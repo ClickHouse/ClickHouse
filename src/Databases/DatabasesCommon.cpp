@@ -12,6 +12,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -191,6 +192,17 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.find(table_name) != tables.end();
 }
 
+StoragePtr DatabaseWithOwnTablesBase::tryGetTableCaseInsensitive(const String & table_name, ContextPtr) const
+{
+    std::lock_guard lock(mutex);
+    auto it = std::find_if(tables.begin(), tables.end(), [&](const auto& pair) {
+        return boost::iequals(pair.first, table_name);
+    });
+    if (it != tables.end())
+        return it->second;
+    return {};
+
+}
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
@@ -231,6 +243,29 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     StoragePtr res;
 
     auto it = tables.find(table_name);
+    if (it == tables.end())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                        backQuote(database_name), backQuote(table_name));
+    res = it->second;
+    tables.erase(it);
+    res->is_detached = true;
+
+    auto table_id = res->getStorageID();
+    if (table_id.hasUUID())
+    {
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+    }
+
+    return res;
+}
+StoragePtr DatabaseWithOwnTablesBase::detachTableCaseInsensitiveUnlocked(const String & table_name)
+{
+    StoragePtr res;
+
+    auto it = std::find_if(tables.begin(), tables.end(), [&](const auto& pair) {
+        return boost::iequals(pair.first, table_name);
+    });
     if (it == tables.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));

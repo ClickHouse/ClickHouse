@@ -12,6 +12,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <boost/algorithm/string.hpp>
 #include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
@@ -121,6 +122,29 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
     return tables_cache.find(table_name) != tables_cache.end();
 }
 
+StoragePtr DatabaseLazy::tryGetTableCaseInsensitive(const String & table_name, ContextPtr) const
+{
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
+    {
+        std::lock_guard lock(mutex);
+        auto it = std::find_if(tables_cache.begin(), tables_cache.end(), [&](const auto& pair) {
+            return boost::iequals(pair.first, table_name);
+        });
+        if (it == tables_cache.end())
+            return {};
+
+        if (it->second.table)
+        {
+            cache_expiration_queue.erase(it->second.expiration_iterator);
+            it->second.last_touched = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), it->second.last_touched, table_name);
+
+            return it->second.table;
+        }
+    }
+
+    return loadTable(table_name);
+}
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });

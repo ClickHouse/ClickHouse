@@ -34,6 +34,11 @@ public:
         const String & table_name,
         bool sync) override;
 
+    void dropTableCaseInsensitive(
+        ContextPtr context,
+        const String & table_name,
+        bool sync) override;
+
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
 
@@ -45,6 +50,7 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
 
     UUID tryGetTableUUID(const String & table_name) const override;
+    UUID tryGetTableUUIDCaseInsensitive(const String & table_name) const override;
 
     void drop(ContextPtr context) override;
 

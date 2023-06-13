@@ -170,9 +170,13 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
+    /// Get the table with case insensitivity for work. Return default tryGetTable implementation if not implemented.
+    virtual StoragePtr tryGetTableCaseInsensitive(const String & name, ContextPtr context) const { return tryGetTable(name, context); }
+
     StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
+    virtual UUID tryGetTableUUIDCaseInsensitive(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
@@ -200,6 +204,14 @@ public:
         [[maybe_unused]] bool sync = false)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
+    }
+
+    virtual void dropTableCaseInsensitive( /// NOLINT
+        ContextPtr context,
+        const String & name,
+        [[maybe_unused]] bool sync = false)
+    {
+        return dropTable(context, name, sync);
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.

@@ -59,6 +59,7 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr) const override { return tryGetTable(table_name); }
     StoragePtr tryGetTable(const String & table_name) const;
+    StoragePtr tryGetTableCaseInsensitive(const String & table_name, ContextPtr) const override;
 
     bool empty() const override;
 

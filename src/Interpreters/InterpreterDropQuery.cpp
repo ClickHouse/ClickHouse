@@ -137,7 +137,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 table_id.getNameForLogs());
 
         /// Now get UUID, so we can wait for table data to be finally dropped
-        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
+        /// If case insensitivity setting is enabled, perform the lookup without case sensitivity
+        if (context_->getSettingsRef().enable_case_insensitive_tables)
+            table_id.uuid = database->tryGetTableUUIDCaseInsensitive(table_id.table_name);
+        else
+            table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = !query_ptr->as<ASTDropQuery>()->table;
@@ -245,7 +249,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            database->dropTable(context_, table_id.table_name, query.sync);
+            /// If case insensitivity setting is enabled, perform the lookup without case sensitivity
+            if (context_->getSettingsRef().enable_case_insensitive_tables)
+                database->dropTableCaseInsensitive(context_, table_id.table_name, query.sync);
+            else
+                database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to drop mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created

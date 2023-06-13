@@ -95,6 +95,45 @@ void DatabaseMemory::dropTable(
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
+void DatabaseMemory::dropTableCaseInsensitive(
+    ContextPtr /*context*/,
+    const String & table_name,
+    bool /*sync*/)
+{
+    StoragePtr table;
+    {
+        std::lock_guard lock{mutex};
+        table = detachTableCaseInsensitiveUnlocked(table_name);
+    }
+    try
+    {
+        /// Remove table without lock since:
+        /// - it does not require it
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
+        table->drop();
+
+        if (table->storesDataOnDisk())
+        {
+            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
+            if (fs::exists(table_data_dir))
+                fs::remove_all(table_data_dir);
+        }
+    }
+    catch (...)
+    {
+        std::lock_guard lock{mutex};
+        attachTableUnlocked(table_name, table);
+        throw;
+    }
+
+    std::lock_guard lock{mutex};
+    table->is_dropped = true;
+    create_queries.erase(table_name);
+    UUID table_uuid = table->getStorageID().uuid;
+    if (table_uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+}
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
@@ -128,6 +167,13 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(table_name, getContext()))
+        return table->getStorageID().uuid;
+    return UUIDHelpers::Nil;
+}
+
+UUID DatabaseMemory::tryGetTableUUIDCaseInsensitive(const String & table_name) const
+{
+    if (auto table = tryGetTableCaseInsensitive(table_name, getContext()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

@@ -338,7 +338,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(table_id.table_name, context_);
+    StoragePtr table = nullptr;
+    /// If case insensitivity setting is enabled, perform the table_name lookup without case sensitivity
+    if (context_->getSettingsRef().enable_case_insensitive_tables)
+        table = database->tryGetTableCaseInsensitive(table_id.table_name, context_);
+    else
+        table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
     if (!table)
@@ -356,7 +361,12 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
     {
         if (database_name == SYSTEM_DATABASE)
         {
-            auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
+            StoragePtr storage = nullptr;
+            /// If case insensitivity setting is enabled, perform the table_name lookup without case sensitivity
+            if (getContext()->getSettingsRef().enable_case_insensitive_tables)
+                storage = getSystemDatabase()->tryGetTableCaseInsensitive(table_id.table_name, getContext());
+            else
+                storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
         if (database_name == INFORMATION_SCHEMA)
