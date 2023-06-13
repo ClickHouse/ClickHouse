@@ -3870,7 +3870,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=6
@@ -3905,7 +3905,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=6
@@ -3940,7 +3940,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=6
@@ -3975,7 +3975,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=6
@@ -4010,7 +4010,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=4
           RUN_BY_HASH_TOTAL=6
@@ -4045,7 +4045,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan)
+          CHECK_NAME=Integration tests (asan, analyzer)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=5
           RUN_BY_HASH_TOTAL=6
