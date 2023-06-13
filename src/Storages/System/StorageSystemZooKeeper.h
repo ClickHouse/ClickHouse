@@ -35,7 +35,6 @@ public:
     bool isSystemStorage() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const override;
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 };
 
 }

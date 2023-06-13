@@ -30,8 +30,6 @@ public:
         size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 };
 
 }

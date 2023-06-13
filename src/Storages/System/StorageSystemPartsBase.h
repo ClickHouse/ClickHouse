@@ -69,8 +69,6 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
-
 private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
