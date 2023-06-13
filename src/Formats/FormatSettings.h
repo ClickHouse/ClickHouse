@@ -136,6 +136,7 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
         bool trim_whitespaces = true;
     } csv;
 
@@ -157,6 +158,7 @@ struct FormatSettings
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } custom;
 
     struct
@@ -292,6 +294,7 @@ struct FormatSettings
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } tsv;
 
     struct
