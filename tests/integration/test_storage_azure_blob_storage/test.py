@@ -558,6 +558,7 @@ def test_schema_inference_from_globs_tf(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     max_path = ""
+    
     for i in range(10):
         for j in range(10):
             path = "{}/{}_{}/{}.csv".format(
