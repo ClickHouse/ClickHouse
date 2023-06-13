@@ -657,7 +657,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, object_size}},
         read_settings,
-        /* cache_log */nullptr);
+        /* cache_log */nullptr, /* use_external_buffer */true);
 
     auto modified_settings{read_settings};
     /// FIXME: Changing this setting to default value breaks something around parquet reading
@@ -1086,7 +1086,7 @@ Pipe StorageS3::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
 
