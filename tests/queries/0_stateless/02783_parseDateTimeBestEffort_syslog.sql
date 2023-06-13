@@ -1,5 +1,3 @@
-SELECT 'parseDateTimeBestEffort';
-
 WITH
     86400 AS secs_in_day,
     now() AS ts_now,
