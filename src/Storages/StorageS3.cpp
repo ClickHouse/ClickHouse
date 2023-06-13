@@ -575,19 +575,21 @@ StorageS3Source::StorageS3Source(
 
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
-    auto [current_key, info] = (*file_iterator)();
-    if (current_key.empty())
-        return {};
+    KeyWithInfo key_with_info;
+    size_t object_size;
+    do
+    {
+        key_with_info = (*file_iterator)();
+        if (key_with_info.key.empty())
+            return {};
 
-    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id, request_settings);
+        object_size = key_with_info.info ? key_with_info.info->size : S3::getObjectSize(*client, bucket, key_with_info.key, version_id, request_settings);
+    }
+    while (getContext()->getSettingsRef().s3_skip_empty_files && object_size == 0);
 
-    /// If object is empty and s3_skip_empty_files=1, skip it and go to the next key.
-    if (getContext()->getSettingsRef().s3_skip_empty_files && object_size == 0)
-        return createReader();
+    auto compression_method = chooseCompressionMethod(key_with_info.key, compression_hint);
 
-    auto compression_method = chooseCompressionMethod(current_key, compression_hint);
-
-    auto read_buf = createS3ReadBuffer(current_key, object_size);
+    auto read_buf = createS3ReadBuffer(key_with_info.key, object_size);
     auto input_format = FormatFactory::instance().getInput(
             format, *read_buf, sample_block, getContext(), max_block_size,
             format_settings, std::nullopt, std::nullopt,
@@ -606,7 +608,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(bucket) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(bucket) / key_with_info.key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
@@ -1451,41 +1453,53 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto [key, info] = (*file_iterator)();
+        StorageS3Source::KeyWithInfo key_with_info;
+        std::unique_ptr<ReadBuffer> buf;
 
-        if (key.empty())
+        while (true)
         {
-            if (first)
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path "
-                    "in S3 or all files are empty. You must specify table structure manually", configuration.format);
+            key_with_info = (*file_iterator)();
 
-            return nullptr;
-        }
-
-        if (ctx->getSettingsRef().s3_skip_empty_files && info->size == 0)
-            return read_buffer_iterator(cached_columns);
-
-        /// S3 file iterator could get new keys after new iteration, check them in schema cache.
-        if (ctx->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
-        {
-            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);
-            prev_read_keys_size = read_keys.size();
-            if (columns_from_cache)
+            if (key_with_info.key.empty())
             {
-                cached_columns = *columns_from_cache;
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because there are no files with provided path "
+                        "in S3 or all files are empty. You must specify table structure manually",
+                        configuration.format);
+
                 return nullptr;
             }
-        }
 
-        first = false;
-        int zstd_window_log_max = static_cast<int>(ctx->getSettingsRef().zstd_window_log_max);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromS3>(
-                configuration.client, configuration.url.bucket, key, configuration.url.version_id, configuration.request_settings, ctx->getReadSettings()),
-            chooseCompressionMethod(key, configuration.compression_method),
-            zstd_window_log_max);
+            /// S3 file iterator could get new keys after new iteration, check them in schema cache.
+            if (ctx->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
+            {
+                columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);
+                prev_read_keys_size = read_keys.size();
+                if (columns_from_cache)
+                {
+                    cached_columns = *columns_from_cache;
+                    return nullptr;
+                }
+            }
+
+            if (ctx->getSettingsRef().s3_skip_empty_files && key_with_info.info && key_with_info.info->size == 0)
+                continue;
+
+            int zstd_window_log_max = static_cast<int>(ctx->getSettingsRef().zstd_window_log_max);
+            buf = wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromS3>(
+                    configuration.client, configuration.url.bucket, key_with_info.key, configuration.url.version_id, configuration.request_settings, ctx->getReadSettings()),
+                chooseCompressionMethod(key_with_info.key, configuration.compression_method),
+                zstd_window_log_max);
+
+            if (!ctx->getSettingsRef().s3_skip_empty_files || !buf->eof())
+            {
+                first = false;
+                return buf;
+            }
+        }
     };
 
     ColumnsDescription columns;

@@ -404,21 +404,26 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription & columns) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths.end())
+        String path;
+        struct stat file_stat;
+        do
         {
-            if (first)
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                                format);
-            return nullptr;
-        }
+            if (it == paths.end())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                        format);
+                return nullptr;
+            }
 
-        auto path = *it++;
-        auto file_stat = getFileStat(path, false, -1, "File");
-        if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
-            return read_buffer_iterator(columns);
+            path = *it++;
+            file_stat = getFileStat(path, false, -1, "File");
+        }
+        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
 
         first = false;
         return createReadBuffer(path, file_stat, false, -1, compression_method, context);

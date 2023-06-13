@@ -241,30 +241,34 @@ StorageURLSource::StorageURLSource(
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
     {
-        const auto current_uri_options = (*uri_iterator)();
-        if (current_uri_options.empty())
-            return false;
+        std::vector<String> current_uri_options;
+        std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
+        do
+        {
+            current_uri_options = (*uri_iterator)();
+            if (current_uri_options.empty())
+                return false;
 
-        auto first_option = uri_options.begin();
-        auto [actual_uri, buf] = getFirstAvailableURIAndReadBuffer(
-            first_option,
-            current_uri_options.end(),
-            context,
-            params,
-            http_method,
-            callback,
-            timeouts,
-            credentials,
-            headers,
-            glob_url,
-            current_uri_options.size() == 1);
+            auto first_option = current_uri_options.cbegin();
+            uri_and_buf = getFirstAvailableURIAndReadBuffer(
+                first_option,
+                current_uri_options.end(),
+                context,
+                params,
+                http_method,
+                callback,
+                timeouts,
+                credentials,
+                headers,
+                glob_url,
+                current_uri_options.size() == 1);
 
-        /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
-        if (context->getSettingsRef().engine_url_skip_empty_files && getFileSizeFromReadBuffer(*buf) == 0)
-            return initialize();
+            /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
+        }
+        while (context->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
 
-        curr_uri = actual_uri;
-        read_buf = std::move(buf);
+        curr_uri = uri_and_buf.first;
+        read_buf = std::move(uri_and_buf.second);
 
         try
         {
@@ -347,7 +351,7 @@ Chunk StorageURLSource::generate()
     return {};
 }
 
-std::tuple<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
+std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
     ContextPtr context,
@@ -590,38 +594,41 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     if (context->getSettingsRef().schema_inference_use_cache_for_url)
         columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin(), first = true](ColumnsDescription & columns) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == urls_to_check.cend())
+        std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
+        do
         {
-            if (first)
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "Cannot extract table structure from {} format file, because all files are empty. "
-                            "You must specify table structure manually", format);
-            return nullptr;
-        }
+            if (it == urls_to_check.cend())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because all files are empty. "
+                        "You must specify table structure manually",
+                        format);
+                return nullptr;
+            }
 
-        auto [_, buf] = StorageURLSource::getFirstAvailableURIAndReadBuffer(
-            it,
-            urls_to_check.cend(),
-            context,
-            {},
-            Poco::Net::HTTPRequest::HTTP_GET,
-            {},
-            getHTTPTimeouts(context),
-            credentials,
-            headers,
-            false,
-            false);
+            uri_and_buf = StorageURLSource::getFirstAvailableURIAndReadBuffer(
+                it,
+                urls_to_check.cend(),
+                context,
+                {},
+                Poco::Net::HTTPRequest::HTTP_GET,
+                {},
+                getHTTPTimeouts(context),
+                credentials,
+                headers,
+                false,
+                false);
 
-        ++it;
-
-        if (context->getSettingsRef().engine_url_skip_empty_files && buf_factory->getFileSize() == 0)
-            return read_buffer_iterator(columns);
+            ++it;
+        } while (context->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
 
         first = false;
         return wrapReadBufferWithCompressionMethod(
-            std::move(buf),
+            std::move(uri_and_buf.second),
             compression_method,
             static_cast<int>(context->getSettingsRef().zstd_window_log_max));
     };

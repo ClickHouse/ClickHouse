@@ -140,14 +140,6 @@ namespace
 
         return LSWithRegexpMatching("/", fs, path_from_uri);
     }
-
-    size_t getFileSize(const String & path_from_uri, const String & uri_without_path, ContextPtr context)
-    {
-        HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
-        auto * info = hdfsGetPathInfo(fs.get(), path_from_uri.data());
-        return info->mSize;
-    }
 }
 
 StorageHDFS::StorageHDFS(
@@ -218,26 +210,36 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
     ReadBufferIterator read_buffer_iterator
         = [&, my_uri_without_path = uri_without_path, it = paths_with_info.begin(), first = true](
-              ColumnsDescription & columns) mutable -> std::unique_ptr<ReadBuffer>
+              ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths_with_info.end())
+        PathWithInfo path_with_info;
+        std::unique_ptr<ReadBuffer> buf;
+        while (true)
         {
-            if (first)
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                "Cannot extract table structure from {} format file, because all files are empty. "
-                                "You must specify table structure manually", format);
-            return nullptr;
+            if (it == paths_with_info.end())
+            {
+                if (first)
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                    "Cannot extract table structure from {} format file, because all files are empty. "
+                                    "You must specify table structure manually", format);
+                return nullptr;
+            }
+
+            path_with_info = *it++;
+            if (ctx->getSettingsRef().hdfs_skip_empty_files && path_with_info.info && path_with_info.info->size == 0)
+                continue;
+
+            auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
+            auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, path_with_info.path, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+            const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+            buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+
+            if (!ctx->getSettingsRef().hdfs_skip_empty_files || !buf->eof())
+            {
+                first = false;
+                return buf;
+            }
         }
-
-        auto path_with_info = *it++;
-        if (ctx->getSettingsRef().hdfs_skip_empty_files && path_with_info.info && path_with_info.info->size == 0)
-            return read_buffer_iterator(columns);
-
-        first = false;
-        auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, path_with_info.path, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
     };
 
     ColumnsDescription columns;
@@ -362,26 +364,28 @@ HDFSSource::HDFSSource(
 
 bool HDFSSource::initialize()
 {
-    auto path_with_info = (*file_iterator)();
-    if (path_with_info.path.empty())
-        return false;
-
-    current_path = path_with_info.path;
-    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
-
-    if (getContext()->getSettingsRef().hdfs_skip_empty_files)
+    StorageHDFS::PathWithInfo path_with_info;
+    bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;
+    while (true)
     {
-        auto file_size = path_with_info.info ? path_with_info.info->size : getFileSize(path_from_uri, uri_without_path, getContext());
-        /// If file is empty and hdfs_skip_empty_files=1, skip it and go to the next file.
-        if (file_size == 0)
-            return initialize();
-    }
+        path_with_info = (*file_iterator)();
+        if (path_with_info.path.empty())
+            return false;
 
-    auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    auto impl = std::make_unique<ReadBufferFromHDFS>(
-        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+        if (path_with_info.info && skip_empty_files && path_with_info.info->size == 0)
+            continue;
+
+        current_path = path_with_info.path;
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
+
+        auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
+        auto impl = std::make_unique<ReadBufferFromHDFS>(
+            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+        const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+        read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+        if (!skip_empty_files || !read_buf->eof())
+            break;
+    }
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
