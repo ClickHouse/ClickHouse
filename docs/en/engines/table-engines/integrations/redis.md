@@ -6,7 +6,7 @@ sidebar_label: Redis
 
 # Redis
 
-This engine allows integrating ClickHouse with [Redis](https://redis.io/).
+This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 
 ## Creating a Table {#creating-a-table}
 
@@ -110,3 +110,10 @@ Flush Redis db asynchronously. Also `Truncate` support SYNC mode.
 ```sql
 TRUNCATE TABLE redis_table SYNC;
 ```
+
+
+## Limitations {#limitations}
+
+Redis engine also support scanning query, such as `where k > xx`, but it has some limitations:
+1. Scanning query may produce some duplicated keys in a very rare case when it is rehashing, details see [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269)
+2. During the scanning keys could be created and deleted, so the resulting dataset can not represent a valid point in time.
