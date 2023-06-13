@@ -88,6 +88,7 @@
 
 #include <fmt/format.h>
 #include <Poco/Logger.h>
+#include <Poco/Net/NetException.h>
 
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
@@ -1204,6 +1205,14 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         res.is_broken = true;
         tryLogCurrentException(log, fmt::format("while loading part {} on path {}", res.part->name, part_path));
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        throw;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        throw;
     }
     catch (...)
     {
