@@ -1,4 +1,7 @@
 -- Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-upgrade-check
+-- no-fasttest: has dependency on external annoy library not available in fasttest build
+-- no-ubsan: issues in external library
+-- no-cpu-aarch64: issues in external library
 
 SET allow_experimental_annoy_index = 1;
 SET allow_experimental_analyzer = 0;
@@ -33,13 +36,12 @@ CREATE TABLE tab(id Int32, vector Nullable(Float32), INDEX annoy_index vector TY
 SELECT '--- Test default GRANULARITY (should be 100 mio. for annoy)---';
 
 CREATE TABLE tab (id Int32, vector Array(Float32), INDEX annoy_index(vector) TYPE annoy) ENGINE=MergeTree ORDER BY id;
-SHOW CREATE TABLE tab;
+SELECT granularity FROM system.data_skipping_indices WHERE table = 'tab' AND name = 'annoy_index';
 DROP TABLE tab;
 
 CREATE TABLE tab (id Int32, vector Array(Float32)) ENGINE=MergeTree ORDER BY id;
 ALTER TABLE tab ADD INDEX annoy_index(vector) TYPE annoy;
-SHOW CREATE TABLE tab;
-
+SELECT granularity FROM system.data_skipping_indices WHERE table = 'tab' AND name = 'annoy_index';
 DROP TABLE tab;
 
 SELECT '--- Test with Array, GRANULARITY = 1, index_granularity = 5 ---';
