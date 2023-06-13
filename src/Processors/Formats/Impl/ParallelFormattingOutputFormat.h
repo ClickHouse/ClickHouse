@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
-#include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>

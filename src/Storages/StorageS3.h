@@ -16,6 +16,7 @@
 #include <Poco/URI.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -30,7 +31,6 @@ namespace DB
 {
 
 class PullingPipelineExecutor;
-class StorageS3SequentialSource;
 class NamedCollection;
 
 class StorageS3Source : public ISource, WithContext
@@ -94,6 +94,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
+            bool need_total_size = true,
             KeysWithInfo * read_keys = nullptr);
 
         KeyWithInfo next() override;
@@ -232,7 +233,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext
+class StorageS3 : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -240,11 +241,6 @@ public:
         Configuration() = default;
 
         String getPath() const { return url.key; }
-
-        void appendToPath(const String & suffix)
-        {
-            url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
-        }
 
         bool update(ContextPtr context);
 
@@ -297,7 +293,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
@@ -347,6 +343,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
+        bool need_total_size = true,
         KeysWithInfo * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
@@ -357,6 +354,10 @@ private:
     bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const KeysWithInfo::const_iterator & begin,

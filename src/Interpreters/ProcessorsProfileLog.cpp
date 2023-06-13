@@ -29,6 +29,7 @@ NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
         {"plan_step", std::make_shared<DataTypeUInt64>()},
         {"plan_group", std::make_shared<DataTypeUInt64>()},
 
+        {"initial_query_id", std::make_shared<DataTypeString>()},
         {"query_id", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"elapsed_us", std::make_shared<DataTypeUInt64>()},
@@ -60,6 +61,7 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(plan_step);
     columns[i++]->insert(plan_group);
+    columns[i++]->insertData(initial_query_id.data(), initial_query_id.size());
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insertData(processor_name.data(), processor_name.size());
     columns[i++]->insert(elapsed_us);

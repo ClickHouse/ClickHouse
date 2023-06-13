@@ -3,7 +3,7 @@
 #include "config.h"
 #include <set>
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_PARQUET
 #include <Storages/DataLakes/S3MetadataReader.h>
 #include <Storages/StorageS3.h>
 #include <parquet/file_reader.h>
@@ -11,10 +11,11 @@
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Formats/FormatFactory.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <parquet/arrow/reader.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <IO/ReadHelpers.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <parquet/arrow/reader.h>
 #include <ranges>
 
 namespace fs = std::filesystem;

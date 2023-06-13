@@ -16,21 +16,21 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 **Arguments**
 
--   `host:port` — MySQL server address.
+- `host:port` — MySQL server address.
 
--   `database` — Remote database name.
+- `database` — Remote database name.
 
--   `table` — Remote table name.
+- `table` — Remote table name.
 
--   `user` — MySQL user.
+- `user` — MySQL user.
 
--   `password` — User password.
+- `password` — User password.
 
--   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
+- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
     - `0` - The query is executed as `INSERT INTO`.
     - `1` - The query is executed as `REPLACE INTO`.
 
--   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
+- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
 
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`
 
@@ -109,5 +109,5 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 
 **See Also**
 
--   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
--   [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+- [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
+- [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)

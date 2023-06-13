@@ -49,10 +49,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     struct Configuration
     {
+        using Addresses = std::vector<std::pair<String, UInt16>>;
+
         String host;
         UInt16 port = 0;
         String username = "default";
@@ -63,14 +65,21 @@ public:
         bool replace_query = false;
         String on_duplicate_clause;
 
-        std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+        Addresses addresses; /// Failover replicas.
         String addresses_expr;
     };
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings);
 
     static Configuration processNamedCollectionResult(
-        const NamedCollection & named_collection, MySQLSettings & storage_settings, bool require_table = true);
+        const NamedCollection & named_collection, MySQLSettings & storage_settings,
+        ContextPtr context_, bool require_table = true);
+
+    static ColumnsDescription getTableStructureFromData(
+        mysqlxx::PoolWithFailover & pool_,
+        const String & database,
+        const String & table,
+        const ContextPtr & context_);
 
 private:
     friend class StorageMySQLSink;

@@ -72,6 +72,8 @@ public:
     virtual bool hasActiveConnections() const = 0;
 
     virtual ~IConnections() = default;
+
+    virtual void setAsyncCallback(AsyncCallback) {}
 };
 
 }

@@ -136,6 +136,8 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
+        bool trim_whitespaces = true;
     } csv;
 
     struct HiveText
@@ -156,6 +158,7 @@ struct FormatSettings
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } custom;
 
     struct
@@ -205,7 +208,8 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_size = 1000000;
+        UInt64 row_group_rows = 1000000;
+        UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
@@ -213,9 +217,11 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool preserve_order = false;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        bool output_compliant_nested_types = true;
     } parquet;
 
     struct Pretty
@@ -288,6 +294,7 @@ struct FormatSettings
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } tsv;
 
     struct

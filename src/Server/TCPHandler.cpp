@@ -505,8 +505,8 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
-            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
@@ -1231,6 +1231,9 @@ void TCPHandler::receiveHello()
     is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+            LOG_WARNING(LogFrequencyLimiter(log, 10),
+                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         receiveClusterNameAndSalt();
         return;
     }
@@ -1245,10 +1248,17 @@ void TCPHandler::receiveHello()
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
         {
-            session->authenticate(
-                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
-                getClientAddress(client_info));
-            return;
+            try
+            {
+                session->authenticate(
+                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    getClientAddress(client_info));
+                return;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+            }
         }
     }
 #endif
@@ -1314,11 +1324,6 @@ void TCPHandler::sendHello()
         /// Contains lots of stuff (including time), so this should be enough for NONCE.
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
-    }
-    else
-    {
-        LOG_WARNING(LogFrequencyLimiter(log, 10),
-            "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
     }
     out->next();
 }
@@ -1687,7 +1692,7 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);

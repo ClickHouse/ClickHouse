@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Common/HashTable/Hash.h>
-
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -56,18 +55,18 @@ class PlannerSet
 {
 public:
     /// Construct planner set that is ready for execution
-    explicit PlannerSet(SetPtr set_)
+    explicit PlannerSet(FutureSet set_)
         : set(std::move(set_))
     {}
 
     /// Construct planner set with set and subquery node
-    explicit PlannerSet(SetPtr set_, QueryTreeNodePtr subquery_node_)
-        : set(std::move(set_))
+    explicit PlannerSet(QueryTreeNodePtr subquery_node_)
+        : set(promise_to_build_set.get_future())
         , subquery_node(std::move(subquery_node_))
     {}
 
-    /// Get set
-    const SetPtr & getSet() const
+    /// Get a reference to a set that might be not built yet
+    const FutureSet & getSet() const
     {
         return set;
     }
@@ -78,8 +77,15 @@ public:
         return subquery_node;
     }
 
+    /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
+    std::promise<SetPtr> extractPromiseToBuildSet()
+    {
+        return std::move(promise_to_build_set);
+    }
+
 private:
-    SetPtr set;
+    std::promise<SetPtr> promise_to_build_set;
+    FutureSet set;
 
     QueryTreeNodePtr subquery_node;
 };
@@ -186,7 +192,7 @@ public:
     const PlannerSet & getSetOrThrow(const SetKey & key) const;
 
     /// Get set for key, if no set is registered null is returned
-    const PlannerSet * getSetOrNull(const SetKey & key) const;
+    PlannerSet * getSetOrNull(const SetKey & key);
 
     /// Get registered sets
     const SetKeyToSet & getRegisteredSets() const

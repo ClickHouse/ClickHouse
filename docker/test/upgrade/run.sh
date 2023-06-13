@@ -59,6 +59,9 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
+
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -82,6 +85,9 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
+
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
 
 start
 

@@ -380,7 +380,7 @@ decide that we would look at the types of crimes reported over time in the five 
 New York City.  These fields might be then included in the `ORDER BY`:
 
 | Column      | Description (from the data dictionary)                 |
-| ----------- | ---------------------------------------------------    |
+| ----------- | --------------------------------------------------- |
 | OFNS_DESC   | Description of offense corresponding with key code     |
 | RPT_DT      | Date event was reported to police                      |
 | BORO_NM     | The name of the borough in which the incident occurred |
