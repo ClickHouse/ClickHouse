@@ -184,6 +184,7 @@ def test_union_all(cluster):
 
     assert TSV(pure_azure) == TSV(azure_distributed)
 
+
 def test_skip_unavailable_shards(cluster):
     node = cluster.instances["node_0"]
     azure_query(
@@ -226,6 +227,7 @@ def test_unset_skip_unavailable_shards(cluster):
     )
 
     assert result == "2\n"
+
 
 def test_cluster_with_named_collection(cluster):
     node = cluster.instances["node_0"]
