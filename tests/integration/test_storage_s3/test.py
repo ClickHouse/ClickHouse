@@ -929,7 +929,9 @@ def test_truncate_table(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy_without_named_collections"]  # type: ClickHouseInstance
+    instance = started_cluster.instances[
+        "dummy_without_named_collections"
+    ]  # type: ClickHouseInstance
     name = "test_table"
 
     instance.query("CREATE USER user")
@@ -979,7 +981,7 @@ def test_predefined_connection_configuration(started_cluster):
         "To execute this query it's necessary to have grant USE NAMED COLLECTION ON no_collection"
         in error
     )
-    instance = started_cluster.instances["dummy"] # has named collection access
+    instance = started_cluster.instances["dummy"]  # has named collection access
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
     assert "There is no named collection `no_collection`" in error
 
