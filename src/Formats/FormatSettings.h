@@ -136,6 +136,7 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
         bool trim_whitespaces = true;
     } csv;
 
@@ -157,6 +158,7 @@ struct FormatSettings
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } custom;
 
     struct
@@ -292,6 +294,7 @@ struct FormatSettings
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
+        bool skip_trailing_empty_lines = false;
     } tsv;
 
     struct
@@ -324,16 +327,16 @@ struct FormatSettings
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class EnumComparingMode
+    enum class CapnProtoEnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
         BY_VALUES, // Values should be the same, names can be different.
     };
 
-    struct
+    struct CapnProto
     {
-        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        CapnProtoEnumComparingMode enum_comparing_mode = CapnProtoEnumComparingMode::BY_VALUES;
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
