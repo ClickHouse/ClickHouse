@@ -170,12 +170,14 @@ void listFilesWithRegexpMatchingImpl(
     /// slashes_in_glob counter is a upper-bound estimate of recursion depth
     /// needed to process complex cases when `/` is included into glob, e.g. /pa{th1/a,th2/b}.csv
     size_t slashes_in_glob = 0;
-    const size_t next_slash_after_glob_pos = [&](){
+    const size_t next_slash_after_glob_pos = [&]()
+    {
         if (!has_glob)
             return suffix_with_globs.find('/', 1);
 
         size_t in_curly = 0;
-        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++) {
+        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
+        {
             if (*it == '{')
                 ++in_curly;
             else if (*it == '/')
