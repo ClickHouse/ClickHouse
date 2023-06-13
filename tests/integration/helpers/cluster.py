@@ -4187,6 +4187,8 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
+        if os.environ.get('USE_NEW_ANALYZER') is not None:
+            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)

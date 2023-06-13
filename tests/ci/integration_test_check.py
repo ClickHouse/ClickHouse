@@ -226,6 +226,8 @@ def main():
         download_all_deb_packages(check_name, reports_path, build_path)
 
     my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
+    if "analyzer" in check_name.lower():
+        my_env["USE_NEW_ANALYZER"] = "1"
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
