@@ -100,7 +100,7 @@ ANN indexes support two types of queries:
 
 :::tip
 To avoid writing out large vectors, you can use [query
-parameters](/docs/en//interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
+parameters](/docs/en/interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
 
 ```bash
 clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
@@ -128,14 +128,14 @@ granularity of granules, sub-indexes extrapolate matching rows to granule granul
 skip data at the granularity of index blocks.
 
 The `GRANULARITY` parameter determines how many ANN sub-indexes are created. Bigger `GRANULARITY` values mean fewer but larger ANN
-sub-indexes, up to the point where a column (or a column part) has only a single sub-index. In that case, the sub-index has a "global" view of
-all column rows and can directly return all granules of the column (part) with relevant rows (there are at at most `LIMIT <N>`-many
-such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a brute-force distance
-calculation over all rows of the granules. With a small `GRANULARITY` value, each of the sub-indexes returns up to `LIMIT N`-many granules.
-As a result, more granules need to be loaded and post-filtered. Note that the search accuracy is with both cases equally good, only the
-processing performance differs. It is generally recommended to use a large `GRANULARITY` for ANN indexes and fall back to a smaller
-`GRANULARITY` values only in case of problems like excessive memory consumption of the ANN structures. If no `GRANULARITY` was specified for
-ANN indexes, the default value is 100 million.
+sub-indexes, up to the point where a column (or a column's data part) has only a single sub-index. In that case, the sub-index has a
+"global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most `LIMIT
+<N>`-many such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a
+brute-force distance calculation over all rows of the granules. With a small `GRANULARITY` value, each of the sub-indexes returns up to
+`LIMIT N`-many granules. As a result, more granules need to be loaded and post-filtered. Note that the search accuracy is with both cases
+equally good, only the processing performance differs. It is generally recommended to use a large `GRANULARITY` for ANN indexes and fall
+back to a smaller `GRANULARITY` values only in case of problems like excessive memory consumption of the ANN structures. If no `GRANULARITY`
+was specified for ANN indexes, the default value is 100 million.
 
 
 # Available ANN Indexes
@@ -204,7 +204,7 @@ values mean more accurate results at the cost of longer query runtime:
 
 ``` sql
 SELECT *
-FROM table_name [WHERE ...]
+FROM table_name
 ORDER BY L2Distance(vectors, Point)
 LIMIT N
 SETTINGS annoy_index_search_k_nodes=100
