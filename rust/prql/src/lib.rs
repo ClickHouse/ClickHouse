@@ -32,8 +32,8 @@ pub unsafe extern "C" fn prql_to_sql(
     out_size: *mut u64,
 ) -> i64 {
     let query_vec = unsafe { slice::from_raw_parts(query, size.try_into().unwrap()) }.to_vec();
-    // TODO(antaljanosbenjamin): use the checked version once error handling is in place
-    let prql_query: String = String::from_utf8_unchecked(query_vec);
+    let prql_query: String =
+        String::from_utf8(query_vec).expect("The PRQL query must be UTF-8 encoded!");
     let opts = &Options {
         format: true,
         target: Target::Sql(Some(Dialect::ClickHouse)),
