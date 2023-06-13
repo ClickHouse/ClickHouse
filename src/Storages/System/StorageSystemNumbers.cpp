@@ -1,15 +1,16 @@
-#include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/System/StorageSystemNumbers.h>
-#include <Storages/SelectQueryInfo.h>
+#include <Common/Exception.h>
 
+#include <Interpreters/InterpreterSelectQuery.cpp>
 #include <Processors/ISource.h>
+#include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/LimitTransform.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemNumbers.h>
 
 
 namespace DB
@@ -227,14 +228,19 @@ Pipe StorageSystemNumbers::read(
             std::cout << r.toString() << std::endl;
         }
 
-        /// got noting
+        /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
         {
             pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader()));
-            return
+            return pipe;
+        }
+
+        auto & query = query_info.query->as<ASTSelectQuery &>();
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);/// TODO subquery
+        size_t query_limit = limit_length + limit_offset;
 
         /// 1. If intersected ranges is limited, use NumbersRangedSource
-        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_info.limit > 0)
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_limit > 0)
         {
             auto size_of_range = [] (const Range & r) -> size_t
             {
@@ -260,10 +266,13 @@ Pipe StorageSystemNumbers::read(
                 return total_size;
             };
 
-            size_t total_size = size_of_ranges(intersected_ranges);
+            size_t total_size = std::numeric_limits<UInt64>::max();
+            if (!intersected_ranges.rbegin()->right.isPositiveInfinity())
+                total_size = size_of_ranges(intersected_ranges);
 
-            if (query_info.limit > 0 && query_info.limit < total_size)
-                total_size =  query_info.limit;
+            /// limit total_size by query_limit
+            if (query_limit > 0 && query_limit <= total_size)
+                total_size = query_limit;
 
             num_streams = std::min(num_streams, total_size / max_block_size);
 
@@ -305,12 +314,7 @@ Pipe StorageSystemNumbers::read(
                 start = end;
 
                 if (i == 0)
-                {
-                    auto rows_appr = total_size;
-                    if (query_info.limit > 0 && query_info.limit < rows_appr)
-                        rows_appr = query_info.limit;
-                    source->addTotalRowsApprox(rows_appr);
-                }
+                    source->addTotalRowsApprox(total_size);
 
                 pipe.addSource(std::move(source));
             }
