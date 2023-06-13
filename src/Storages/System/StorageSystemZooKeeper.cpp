@@ -12,11 +12,17 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/IFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
@@ -155,8 +161,24 @@ public:
     }
 };
 
+class ReadFromSystemZooKeeper final : public SourceStepWithFilter
+{
+public:
+    ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info_, ContextPtr context_);
+
+    String getName() const override { return "ReadFromSystemZooKeeper"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+private:
+    void fillData(MutableColumns & res_columns) const;
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+    ContextPtr context;
+};
+
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : IStorageSystemOneBlock<StorageSystemZooKeeper>(table_id_)
+        : IStorage(table_id_)
 {
         StorageInMemoryMetadata storage_metadata;
         ColumnsDescription desc;
@@ -173,7 +195,27 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         setInMemoryMetadata(storage_metadata);
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
+bool StorageSystemZooKeeper::mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const
+{
+    return node->as<ASTIdentifier>() && node->getColumnName() == "path";
+}
+
+void StorageSystemZooKeeper::read(
+    QueryPlan & query_plan,
+    const Names & /*column_names*/,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
+{
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, context);
+    query_plan.addStep(std::move(read_step));
+}
+
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
@@ -229,125 +271,102 @@ static String pathCorrected(const String & path)
     return path_corrected;
 }
 
-
-static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, bool allow_unrestricted)
+static bool isPathNode(const ActionsDAG::Node * node)
 {
-    const auto * function = elem.as<ASTFunction>();
-    if (!function)
-        return false;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
 
-    if (function->name == "and")
+    return node->result_name == "path";
+}
+
+static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextPtr context, bool allow_unrestricted)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return;
+
+    auto function_name = node.function_base->getName();
+    if (function_name == "and")
     {
-        for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context, allow_unrestricted))
-                return true;
+        for (const auto * child : node.children)
+            extractPathImpl(*child, res, context, allow_unrestricted);
 
-        return false;
+        return;
     }
 
-    const auto & args = function->arguments->as<ASTExpressionList &>();
-    if (args.children.size() != 2)
-        return false;
+    if (node.children.size() != 2)
+        return;
 
-    if (function->name == "in")
+    if (function_name == "in")
     {
-        const ASTIdentifier * ident = args.children.at(0)->as<ASTIdentifier>();
-        if (!ident || ident->name() != "path")
-            return false;
+        if (!isPathNode(node.children.at(0)))
+            return;
 
-        ASTPtr value = args.children.at(1);
+        auto value = node.children.at(1)->column;
+        if (!value)
+            return;
 
-        if (value->as<ASTSubquery>())
-        {
-            auto interpreter_subquery = interpretSubquery(value, context, {}, {});
-            auto pipeline = interpreter_subquery->execute().pipeline;
-            SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
-            Set set(limites, true, context->getSettingsRef().transform_null_in);
-            set.setHeader(pipeline.getHeader().getColumnsWithTypeAndName());
+        const IColumn * column = value.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
 
-            PullingPipelineExecutor executor(pipeline);
-            Block block;
-            while (executor.pull(block))
-            {
-                set.insertFromBlock(block.getColumnsWithTypeAndName());
-            }
-            set.finishInsert();
+        const ColumnSet * column_set = typeid_cast<const ColumnSet *>(column);
+        if (!column_set)
+            return;
 
-            set.checkColumnsNumber(1);
-            const auto & set_column = *set.getSetElements()[0];
-            for (size_t row = 0; row < set_column.size(); ++row)
-                res.emplace_back(set_column[row].safeGet<String>(), ZkPathType::Exact);
-        }
-        else
-        {
-            auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-            const auto * literal = evaluated->as<ASTLiteral>();
-            if (!literal)
-                return false;
+        auto set = column_set->getData();
+        if (!set || !set->isCreated())
+            return;
 
-            if (String str; literal->value.tryGet(str))
-            {
-                res.emplace_back(str, ZkPathType::Exact);
-            }
-            else if (Tuple tuple; literal->value.tryGet(tuple))
-            {
-                for (auto element : tuple)
-                    res.emplace_back(element.safeGet<String>(), ZkPathType::Exact);
-            }
-            else
-                return false;
-        }
+        if (!set->hasExplicitSetElements())
+            return;
 
-        return true;
+        set->checkColumnsNumber(1);
+        auto type = set->getElementsTypes()[0];
+        if (!isString(removeNullable(removeLowCardinality(type))))
+            return;
+
+        auto values = set->getSetElements()[0];
+        size_t size = values->size();
+
+        for (size_t row = 0; row < size; ++row)
+            res.emplace_back(values->getDataAt(row).toString(), ZkPathType::Exact);
     }
-    else if (function->name == "equals")
+    else if (function_name == "equals")
     {
-        const ASTIdentifier * ident;
-        ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
-        else
-            return false;
+        const ActionsDAG::Node * value = nullptr;
 
-        if (ident->name() != "path")
-            return false;
+        if (isPathNode(node.children.at(0)))
+            value = node.children.at(1);
+        else if (isPathNode(node.children.at(1)))
+            value = node.children.at(0);
 
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal)
-            return false;
+        if (!value || !value->column)
+            return;
 
-        if (literal->value.getType() != Field::Types::String)
-            return false;
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
 
-        res.emplace_back(literal->value.safeGet<String>(), ZkPathType::Exact);
-        return true;
+        if (value->column->size() != 1)
+            return;
+
+        res.emplace_back(value->column->getDataAt(0).toString(), ZkPathType::Exact);
     }
-    else if (allow_unrestricted && function->name == "like")
+    else if (allow_unrestricted && function_name == "like")
     {
-        const ASTIdentifier * ident;
-        ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
-        else
-            return false;
+        if (!isPathNode(node.children.at(0)))
+            return;
 
-        if (ident->name() != "path")
-            return false;
+        const auto * value = node.children.at(1);
+        if (!value->column)
+            return;
 
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal)
-            return false;
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
 
-        if (literal->value.getType() != Field::Types::String)
-            return false;
+        if (value->column->size() != 1)
+            return;
 
-        String pattern = literal->value.safeGet<String>();
+        String pattern = value->column->getDataAt(0).toString();
         bool has_metasymbol = false;
         String prefix; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)
@@ -376,30 +395,28 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
         }
 
         res.emplace_back(prefix, has_metasymbol ? ZkPathType::Prefix : ZkPathType::Exact);
-
-        return true;
     }
-
-    return false;
 }
 
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
-static Paths extractPath(const ASTPtr & query, ContextPtr context, bool allow_unrestricted)
+static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, ContextPtr context, bool allow_unrestricted)
 {
-    const auto & select = query->as<ASTSelectQuery &>();
-    if (!select.where())
-        return allow_unrestricted ? Paths{{"/", ZkPathType::Recurse}} : Paths();
-
     Paths res;
-    return extractPathImpl(*select.where(), res, context, allow_unrestricted) ? res : Paths();
+    for (const auto * node : filter_nodes)
+        extractPathImpl(*node, res, context, allow_unrestricted);
+
+    if (filter_nodes.empty() && allow_unrestricted)
+        res.emplace_back("/", ZkPathType::Recurse);
+
+    return res;
 }
 
 
-void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
 {
-    Paths paths = extractPath(query_info.query, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    Paths paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
@@ -486,5 +503,26 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     }
 }
 
+ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, ContextPtr context_)
+    : SourceStepWithFilter({.header = header})
+    , storage_limits(query_info.storage_limits)
+    , context(std::move(context_))
+{
+}
+
+void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    const auto & header = getOutputStream().header;
+    MutableColumns res_columns = header.cloneEmptyColumns();
+    fillData(res_columns);
+
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
+
+    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+    source->setStorageLimits(storage_limits);
+    processors.emplace_back(source);
+    pipeline.init(Pipe(std::move(source)));
+}
 
 }

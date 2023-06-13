@@ -1,5 +1,7 @@
 -- this SELECT produces empty chunk in FillingTransform
 
+SET enable_positional_arguments = 0;
+
 SELECT
     2 AS x,
     arrayJoin([NULL, NULL, NULL])

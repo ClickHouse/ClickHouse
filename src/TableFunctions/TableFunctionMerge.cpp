@@ -53,7 +53,7 @@ std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTree
             result.push_back(i);
     }
 
-    return {0};
+    return result;
 }
 
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)

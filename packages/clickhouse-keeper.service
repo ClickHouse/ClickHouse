@@ -14,7 +14,8 @@ User=clickhouse
 Group=clickhouse
 Restart=always
 RestartSec=30
-RuntimeDirectory=%p  # %p is resolved to the systemd unit name
+# %p is resolved to the systemd unit name
+RuntimeDirectory=%p
 ExecStart=/usr/bin/clickhouse-keeper --config=/etc/clickhouse-keeper/keeper_config.xml --pid-file=%t/%p/%p.pid
 # Minus means that this file is optional.
 EnvironmentFile=-/etc/default/%p

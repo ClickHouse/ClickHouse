@@ -1,6 +1,8 @@
 #include <Planner/Planner.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -33,11 +35,15 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
@@ -69,6 +75,12 @@
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
 
+namespace ProfileEvents
+{
+    extern const Event SelectQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
+
 namespace DB
 {
 
@@ -79,26 +91,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_PREWHERE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 /** ClickHouse query planner.
   *
-  * TODO: Support JOIN with JOIN engine.
-  * TODO: Support VIEWs.
-  * TODO: JOIN drop unnecessary columns after ON, USING section
-  * TODO: Support RBAC. Support RBAC for ALIAS columns
-  * TODO: Support PREWHERE
-  * TODO: Support DISTINCT
-  * TODO: Support trivial count optimization
-  * TODO: Support projections
-  * TODO: Support read in order optimization
-  * TODO: UNION storage limits
-  * TODO: Support max streams
-  * TODO: Support ORDER BY read in order optimization
-  * TODO: Support GROUP BY read in order optimization
-  * TODO: Support Key Condition. Support indexes for IN function.
-  * TODO: Better support for quota and limits.
+  * TODO: Support projections.
+  * TODO: Support trivial count using partition predicates.
+  * TODO: Support trivial count for table functions.
+  * TODO: Support indexes for IN function.
   */
 
 namespace
@@ -132,37 +133,6 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
             "Storage {} (table {}) does not support transactions",
             storage->getName(),
             storage->getStorageID().getNameForLogs());
-    }
-}
-
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & query_node)
-{
-    auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expression = extractLeftTableExpression(query_node_typed.getJoinTree());
-
-    if (auto * table_node = table_expression->as<TableNode>())
-    {
-        auto storage = table_node->getStorage();
-        if (!storage->supportsPrewhere())
-            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Storage {} (table {}) does not support PREWHERE",
-                storage->getName(),
-                storage->getStorageID().getNameForLogs());
-    }
-    else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
-    {
-        auto storage = table_function_node->getStorage();
-        if (!storage->supportsPrewhere())
-            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Table function storage {} (table {}) does not support PREWHERE",
-                storage->getName(),
-                storage->getStorageID().getNameForLogs());
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-            "Subquery {} does not support PREWHERE",
-            query_node->formatASTForErrorMessage());
     }
 }
 
@@ -214,9 +184,14 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-        }
 
-        if (query_node.hasOffset())
+            if (query_node.hasOffset() && limit_length)
+            {
+                /// Constness of offset is validated during query analysis stage
+                limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            }
+        }
+        else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
@@ -390,7 +365,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    Aggregator::Params params(aggregation_analysis_result.aggregation_keys,
+    auto keys = aggregation_analysis_result.aggregation_keys;
+    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        keys.insert(keys.begin(), "__grouping_set");
+
+    Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
@@ -559,7 +538,8 @@ void addMergeSortingStep(QueryPlan & query_plan,
     auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(),
         sort_description,
         max_block_size,
-        query_analysis_result.partial_sorting_limit);
+        query_analysis_result.partial_sorting_limit,
+        settings.exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
@@ -651,7 +631,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
 
-    auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
+    const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
+    auto filling_step = std::make_unique<FillingStep>(
+        query_plan.getCurrentDataStream(),
+        sort_description,
+        std::move(fill_description),
+        interpolate_description,
+        settings.use_with_fill_by_sorting_prefix);
     query_plan.addStep(std::move(filling_step));
 }
 
@@ -919,22 +906,60 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
         for (const auto & node : actions_to_execute->getNodes())
         {
             const auto & set_key = node.result_name;
-            const auto * planner_set = planner_context->getSetOrNull(set_key);
+            auto * planner_set = planner_context->getSetOrNull(set_key);
             if (!planner_set)
                 continue;
 
-            if (planner_set->getSet()->isCreated() || !planner_set->getSubqueryNode())
+            auto subquery_to_execute = planner_set->getSubqueryNode();
+
+            if (planner_set->getSet().isCreated() || !subquery_to_execute)
                 continue;
+
+            if (auto * table_node = subquery_to_execute->as<TableNode>())
+            {
+                auto storage_snapshot = table_node->getStorageSnapshot();
+                auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+
+                size_t columns_to_select_size = columns_to_select.size();
+
+                auto column_nodes_to_select = std::make_shared<ListNode>();
+                column_nodes_to_select->getNodes().reserve(columns_to_select_size);
+
+                NamesAndTypes projection_columns;
+                projection_columns.reserve(columns_to_select_size);
+
+                for (auto & column : columns_to_select)
+                {
+                    column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, subquery_to_execute));
+                    projection_columns.emplace_back(column.name, column.type);
+                }
+
+                auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(planner_context->getQueryContext()));
+                subquery_for_table->setIsSubquery(true);
+                subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
+                subquery_for_table->getJoinTree() = std::move(subquery_to_execute);
+                subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
+
+                subquery_to_execute = std::move(subquery_for_table);
+            }
 
             auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(
-                planner_set->getSubqueryNode(),
+                subquery_to_execute,
                 subquery_options,
                 planner_context->getGlobalPlannerContext());
             subquery_planner.buildQueryPlanIfNeeded();
 
+            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+            bool tranform_null_in = settings.transform_null_in;
+            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+
             SubqueryForSet subquery_for_set;
+            subquery_for_set.key = set_key;
+            subquery_for_set.set_in_progress = set;
             subquery_for_set.set = planner_set->getSet();
+            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
@@ -942,6 +967,46 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
     }
 
     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+}
+
+/// Support for `additional_result_filter` setting
+void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
+    const QueryNode & query_node,
+    const SelectQueryOptions & select_query_options,
+    PlannerContextPtr & planner_context
+)
+{
+    if (select_query_options.subquery_depth != 0)
+        return;
+
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto additional_result_filter_ast = parseAdditionalResultFilter(settings);
+    if (!additional_result_filter_ast)
+        return;
+
+    ColumnsDescription fake_column_descriptions;
+    NameSet fake_name_set;
+    for (const auto & column : query_node.getProjectionColumns())
+    {
+        fake_column_descriptions.add(ColumnDescription(column.name, column.type));
+        fake_name_set.emplace(column.name);
+    }
+
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
+
+    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
+    if (!filter_info.actions || !query_plan.isInitialized())
+        return;
+
+    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
+        filter_info.actions,
+        filter_info.column_name,
+        filter_info.do_remove_column);
+    filter_step->setStepDescription("additional result filter");
+    query_plan.addStep(std::move(filter_step));
 }
 
 }
@@ -1128,20 +1193,11 @@ void Planner::buildPlanForUnionNode()
 
 void Planner::buildPlanForQueryNode()
 {
+    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
-
-    if (query_node.hasPrewhere())
-    {
-        checkStorageSupportPrewhere(query_tree);
-
-        if (query_node.hasWhere())
-            query_node.getWhere() = mergeConditionNodes({query_node.getPrewhere(), query_node.getWhere()}, query_context);
-        else
-            query_node.getWhere() = query_node.getPrewhere();
-
-        query_node.getPrewhere() = {};
-    }
 
     if (query_node.hasWhere())
     {
@@ -1150,11 +1206,7 @@ void Planner::buildPlanForQueryNode()
             query_node.getWhere() = {};
     }
 
-    SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
-    select_query_info.query_tree = query_tree;
-    select_query_info.planner_context = planner_context;
+    SelectQueryInfo select_query_info = buildSelectQueryInfo();
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
@@ -1176,8 +1228,31 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
+    collectTableExpressionData(query_tree, planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+
+    /// Check support for JOIN for parallel replicas with custom key
+    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    {
+        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("Planner"),
+                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+        }
+        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+        }
+    }
+
+    /// TODO: Also disable parallel replicas in case of FINAL
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1205,6 +1280,12 @@ void Planner::buildPlanForQueryNode()
         query_processing_info);
 
     std::vector<ActionsDAGPtr> result_actions_to_execute;
+
+    for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (table_expression_data.getPrewhereFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+    }
 
     if (query_processing_info.isIntermediateStage())
     {
@@ -1410,7 +1491,8 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_node);
         }
 
-        addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+        if (query_node.hasOrderBy())
+            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
         bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
@@ -1439,10 +1521,18 @@ void Planner::buildPlanForQueryNode()
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
         }
+
+        // For additional_result_filter setting
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+}
+
+SelectQueryInfo Planner::buildSelectQueryInfo() const
+{
+    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

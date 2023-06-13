@@ -13,60 +13,11 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
+from helpers.s3_tools import prepare_s3_bucket
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-# Creates S3 bucket for tests and allows anonymous read-write access to it.
-def prepare_s3_bucket(started_cluster):
-    # Allows read-write access for bucket without authorization.
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
-
-    minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
-
-    started_cluster.minio_restricted_bucket = "{}-with-auth".format(
-        started_cluster.minio_bucket
-    )
-    if minio_client.bucket_exists(started_cluster.minio_restricted_bucket):
-        minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
-
-    minio_client.make_bucket(started_cluster.minio_restricted_bucket)
 
 
 def put_s3_file_content(started_cluster, bucket, filename, data):
@@ -1056,13 +1007,13 @@ def test_seekable_formats(started_cluster):
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
     )
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
     instance.query(f"SELECT * FROM {table_function} FORMAT Null")
 
@@ -1073,7 +1024,7 @@ def test_seekable_formats(started_cluster):
     result = result.strip()
     assert result.endswith("MiB")
     result = result[: result.index(".")]
-    assert int(result) > 80
+    assert int(result) > 150
 
 
 def test_seekable_formats_url(started_cluster):
@@ -1083,23 +1034,23 @@ def test_seekable_formats_url(started_cluster):
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
     )
-    assert int(result) == 1000000
+    assert int(result) == 1500000
 
 
 def test_empty_file(started_cluster):
@@ -1685,7 +1636,7 @@ def test_ast_auth_headers(started_cluster):
     filename = "test.csv"
 
     result = instance.query_and_get_error(
-        f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
+        f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', 'dummy String')"
     )
 
     assert "HTTP response code: 403" in result

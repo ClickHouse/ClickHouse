@@ -19,13 +19,13 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -41,6 +41,7 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
+#include "Storages/ColumnDefault.h"
 #include "config_version.h"
 
 #include <Common/CurrentMetrics.h>
@@ -373,7 +374,7 @@ Pipe StorageKafka::read(
 }
 
 
-SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
@@ -834,10 +835,21 @@ void registerStorageKafka(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
-        bool has_settings = args.storage_def->settings;
+        const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
+        String collection_name;
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : kafka_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    kafka_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+        }
+
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -901,14 +913,10 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        String collection_name;
-        if (named_collection)
+        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+        /// In case of named collection we already validated the arguments.
+        if (collection_name.empty())
         {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-        }
-        else
-        {
-            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
             CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
             CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
@@ -958,6 +966,20 @@ void registerStorageKafka(StorageFactory & factory)
         if (kafka_settings->kafka_poll_max_batch_size.changed && kafka_settings->kafka_poll_max_batch_size.value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
+        }
+        NamesAndTypesList supported_columns;
+        for (const auto & column : args.columns)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Alias)
+                supported_columns.emplace_back(column.name, column.type);
+            if (column.default_desc.kind == ColumnDefaultKind::Default && !column.default_desc.expression)
+                supported_columns.emplace_back(column.name, column.type);
+        }
+        // Kafka engine allows only ordinary columns without default expression or alias columns.
+        if (args.columns.getAll() != supported_columns)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
+                                                       "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);

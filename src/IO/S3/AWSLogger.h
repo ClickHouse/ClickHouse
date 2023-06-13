@@ -4,8 +4,10 @@
 
 #if USE_AWS_S3
 #include <aws/core/utils/logging/LogSystemInterface.h>
+#include <base/types.h>
+#include <unordered_map>
 
-#include <Common/logger_useful.h>
+namespace Poco { class Logger; }
 
 namespace DB::S3
 {

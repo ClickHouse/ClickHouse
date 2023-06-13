@@ -10,6 +10,7 @@
 #include <libnuraft/nuraft.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -38,7 +39,7 @@ struct ChangelogRecordHeader
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
     uint64_t index = 0; /// entry log number
     uint64_t term = 0;
-    nuraft::log_val_type value_type{};
+    int32_t value_type{};
     uint64_t blob_size = 0;
 };
 

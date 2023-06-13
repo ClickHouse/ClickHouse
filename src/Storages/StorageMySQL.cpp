@@ -20,6 +20,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Databases/MySQL/FetchTablesColumnsList.h>
 
 
 namespace DB
@@ -29,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 static String backQuoteMySQL(const String & x)
@@ -64,12 +67,36 @@ StorageMySQL::StorageMySQL(
     , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
+ColumnsDescription StorageMySQL::getTableStructureFromData(
+    mysqlxx::PoolWithFailover & pool_,
+    const String & database,
+    const String & table,
+    const ContextPtr & context_)
+{
+    const auto & settings = context_->getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings.mysql_datatypes_support_level);
+
+    const auto columns = tables_and_columns.find(table);
+    if (columns == tables_and_columns.end())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
+                        (database.empty() ? "" : (backQuote(database) + "." + backQuote(table))));
+
+    return columns->second;
+}
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
@@ -83,6 +110,7 @@ Pipe StorageMySQL::read(
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
+        column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         remote_database_name,
@@ -224,7 +252,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     return std::make_shared<StorageMySQLSink>(
         *this,
@@ -235,31 +263,59 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
-
-StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
+StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
 {
-    StorageMySQLConfiguration configuration;
+    StorageMySQL::Configuration configuration;
 
-    if (auto named_collection = getExternalDataSourceConfiguration(
-            engine_args, context_, /* is_database_engine */false, /* throw_on_no_collection */true, storage_settings))
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
+    auto mysql_settings = storage_settings.all();
+    for (const auto & setting : mysql_settings)
+        optional_arguments.insert(setting.getName());
+
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
+    if (require_table)
+        required_arguments.insert("table");
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
+
+    configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
+    if (configuration.addresses_expr.empty())
     {
-        auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
-        configuration.set(common_configuration);
+        configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
+        configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-        storage_settings.applyChanges(settings_changes);
+    }
+    else
+    {
+        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 3306);
+    }
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "replace_query")
-                configuration.replace_query = checkAndGetLiteralArgument<bool>(arg_value, "replace_query");
-            else if (arg_name == "on_duplicate_clause")
-                configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(arg_value, "on_duplicate_clause");
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, replace_query, on_duplicate_clause.", arg_name);
-        }
+    configuration.username = named_collection.getAny<String>({"username", "user"});
+    configuration.password = named_collection.get<String>("password");
+    configuration.database = named_collection.getAny<String>({"db", "database"});
+    if (require_table)
+        configuration.table = named_collection.get<String>("table");
+    configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
+    configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
+
+    for (const auto & setting : mysql_settings)
+    {
+        const auto & setting_name = setting.getName();
+        if (named_collection.has(setting_name))
+            storage_settings.set(setting_name, named_collection.get<String>(setting_name));
+    }
+
+    return configuration;
+}
+
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings)
+{
+    StorageMySQL::Configuration configuration;
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
+    {
+        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
     else
     {
@@ -271,10 +327,10 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
@@ -324,6 +380,7 @@ void registerStorageMySQL(StorageFactory & factory)
     },
     {
         .supports_settings = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

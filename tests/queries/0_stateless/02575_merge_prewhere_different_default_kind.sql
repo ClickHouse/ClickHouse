@@ -6,20 +6,22 @@ DROP TABLE IF EXISTS t2;
 
 CREATE TABLE m
 (
-    `a` String,
-    `f` UInt8
+    a String,
+    date Date,
+    f UInt8
 )
 ENGINE = Merge(currentDatabase(), '^(t1|t2)$');
 
 CREATE TABLE t1
 (
     a String,
+    date Date,
     f UInt8 ALIAS 0
 )
 ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 8192;
-INSERT INTO t1 VALUES ('OK');
+INSERT INTO t1 (a) VALUES ('OK');
 
 -- { echoOn }
 -- for pure PREWHERE it is not addressed yet.
@@ -32,12 +34,13 @@ SELECT * FROM m WHERE f = 0 SETTINGS optimize_move_to_prewhere=1;
 CREATE TABLE t2
 (
     a String,
+    date Date,
     f UInt8,
 )
 ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 8192;
-INSERT INTO t2 VALUES ('OK', 1);
+INSERT INTO t2 (a) VALUES ('OK');
 
 -- { echoOn }
 SELECT * FROM m WHERE f = 0 SETTINGS optimize_move_to_prewhere=1;

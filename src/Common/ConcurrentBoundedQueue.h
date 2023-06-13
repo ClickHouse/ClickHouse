@@ -1,6 +1,6 @@
 #pragma once
 
-#include <queue>
+#include <deque>
 #include <type_traits>
 #include <atomic>
 #include <condition_variable>
@@ -18,7 +18,8 @@ template <typename T>
 class ConcurrentBoundedQueue
 {
 private:
-    std::queue<T> queue;
+    using Container = std::deque<T>;
+    Container queue;
 
     mutable std::mutex queue_mutex;
     std::condition_variable push_condition;
@@ -28,7 +29,7 @@ private:
 
     size_t max_fill = 0;
 
-    template <typename ... Args>
+    template <bool back, typename ... Args>
     bool emplaceImpl(std::optional<UInt64> timeout_milliseconds, Args &&...args)
     {
         {
@@ -51,13 +52,17 @@ private:
             if (is_finished)
                 return false;
 
-            queue.emplace(std::forward<Args>(args)...);
+            if constexpr (back)
+                queue.emplace_back(std::forward<Args>(args)...);
+            else
+                queue.emplace_front(std::forward<Args>(args)...);
         }
 
         pop_condition.notify_one();
         return true;
     }
 
+    template <bool front>
     bool popImpl(T & x, std::optional<UInt64> timeout_milliseconds)
     {
         {
@@ -80,8 +85,16 @@ private:
             if (is_finished && queue.empty())
                 return false;
 
-            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-            queue.pop();
+            if constexpr (front)
+            {
+                detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+                queue.pop_front();
+            }
+            else
+            {
+                detail::moveOrCopyIfThrow(std::move(queue.back()), x);
+                queue.pop_back();
+            }
         }
 
         push_condition.notify_one();
@@ -93,6 +106,12 @@ public:
     explicit ConcurrentBoundedQueue(size_t max_fill_)
         : max_fill(max_fill_)
     {}
+
+    /// Returns false if queue is finished
+    [[nodiscard]] bool pushFront(const T & x)
+    {
+        return emplaceImpl</* back= */ false>(/* timeout_milliseconds= */ std::nullopt , x);
+    }
 
     /// Returns false if queue is finished
     [[nodiscard]] bool push(const T & x)
@@ -109,37 +128,37 @@ public:
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
     {
-        return emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
-    }
-
-    /// Returns false if queue is finished and empty
-    [[nodiscard]] bool pop(T & x)
-    {
-        return popImpl(x, std::nullopt /*timeout in milliseconds*/);
+        return emplaceImpl</* back= */ true>(std::nullopt /* timeout in milliseconds */, std::forward<Args>(args)...);
     }
 
     /// Returns false if queue is finished or object was not pushed during timeout
     [[nodiscard]] bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
-        return emplaceImpl(milliseconds, x);
+        return emplaceImpl</* back= */ true>(milliseconds, x);
     }
 
     [[nodiscard]] bool tryPush(T && x, UInt64 milliseconds = 0)
     {
-        return emplaceImpl(milliseconds, std::move(x));
+        return emplaceImpl</* back= */ true>(milliseconds, std::move(x));
     }
 
     /// Returns false if queue is finished or object was not emplaced during timeout
     template <typename... Args>
     [[nodiscard]] bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
-        return emplaceImpl(milliseconds, std::forward<Args...>(args...));
+        return emplaceImpl</* back= */ true>(milliseconds, std::forward<Args>(args)...);
+    }
+
+    /// Returns false if queue is finished and empty
+    [[nodiscard]] bool pop(T & x)
+    {
+        return popImpl</* front= */ true>(x, std::nullopt /*timeout in milliseconds*/);
     }
 
     /// Returns false if queue is (finished and empty) or (object was not popped during timeout)
     [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds)
     {
-        return popImpl(x, milliseconds);
+        return popImpl</* front= */ true>(x, milliseconds);
     }
 
     /// Returns false if queue is empty.
@@ -153,7 +172,7 @@ public:
                 return false;
 
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-            queue.pop();
+            queue.pop_front();
         }
 
         push_condition.notify_one();
@@ -222,7 +241,7 @@ public:
             if (is_finished)
                 return;
 
-            std::queue<T> empty_queue;
+            Container empty_queue;
             queue.swap(empty_queue);
         }
 
@@ -235,7 +254,7 @@ public:
         {
             std::lock_guard lock(queue_mutex);
 
-            std::queue<T> empty_queue;
+            Container empty_queue;
             queue.swap(empty_queue);
             is_finished = true;
         }

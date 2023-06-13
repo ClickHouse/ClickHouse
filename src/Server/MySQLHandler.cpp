@@ -22,6 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include "config_version.h"
 
@@ -155,7 +156,7 @@ void MySQLHandler::run()
             payload.readStrict(command);
 
             // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
+            LimitReadBuffer limited_payload(payload, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
 
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
@@ -339,10 +340,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
         {
-            if (prev)
-                prev(progress);
+            if (my_prev)
+                my_prev(progress);
 
             affected_rows += progress.written_rows;
         });

@@ -1,6 +1,7 @@
 #include "ThreadPoolRemoteFSReader.h"
 
 #include "config.h"
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -10,10 +11,10 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/AsyncReadCounters.h>
-#include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 
 #include <future>
+#include <memory>
 
 
 namespace ProfileEvents
@@ -26,6 +27,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric RemoteRead;
+    extern const Metric ThreadPoolRemoteFSReaderThreads;
+    extern const Metric ThreadPoolRemoteFSReaderThreadsActive;
 }
 
 namespace DB
@@ -60,7 +63,7 @@ IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t
 
 
 ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
-    : pool(pool_size, pool_size, queue_size_)
+    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolRemoteFSReaderThreads, CurrentMetrics::ThreadPoolRemoteFSReaderThreadsActive, pool_size, pool_size, queue_size_))
 {
 }
 
@@ -71,18 +74,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     return scheduleFromThreadPool<Result>([request]() -> Result
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
-
-        std::optional<AsyncReadIncrement> increment;
-        if (CurrentThread::isInitialized())
-        {
-            auto query_context = CurrentThread::get().getQueryContext();
-            if (query_context)
-                increment.emplace(query_context->getAsyncReadCounters());
-        }
-
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
-        auto watch = std::make_unique<Stopwatch>(CLOCK_MONOTONIC);
+        auto async_read_counters = remote_fs_fd->getReadCounters();
+        std::optional<AsyncReadIncrement> increment = async_read_counters ? std::optional<AsyncReadIncrement>(async_read_counters) : std::nullopt;
+
+        auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch->stop();
 
@@ -90,7 +87,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.size);
 
         return Result{ .size = result.size, .offset = result.offset, .execution_watch = std::move(watch) };
-    }, pool, "VFSRead", request.priority);
+    }, *pool, "VFSRead", request.priority);
+}
+
+void ThreadPoolRemoteFSReader::wait()
+{
+    pool->wait();
 }
 
 }

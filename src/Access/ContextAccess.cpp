@@ -81,6 +81,11 @@ namespace
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
 
+            /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
+            static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
+            if ((level == 0) && (max_flags_with_children & create_table))
+                res |= create_arbitrary_temporary_table;
+
             /// ALTER_TTL => ALTER_MATERIALIZE_TTL
             static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
             static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
@@ -502,13 +507,17 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (!flags)
         return true;
 
-    /// Access to temporary tables is controlled in an unusual way, not like normal tables.
-    /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
-    /// and other grants are considered as always given.
-    /// The DatabaseCatalog class won't resolve StorageID for temporary tables
-    /// which shouldn't be accessed.
-    if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
-        return access_granted();
+    const auto parameter_type = flags.getParameterType();
+    if (parameter_type == AccessFlags::NONE)
+    {
+        /// Access to temporary tables is controlled in an unusual way, not like normal tables.
+        /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
+        /// and other grants are considered as always given.
+        /// The DatabaseCatalog class won't resolve StorageID for temporary tables
+        /// which shouldn't be accessed.
+        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
+            return access_granted();
+    }
 
     auto acs = getAccessRightsWithImplicit();
     bool granted;
@@ -606,7 +615,14 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
+        else
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
+    }
+    else if (element.any_database)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
     else if (element.any_table)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);

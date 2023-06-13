@@ -25,6 +25,8 @@ public:
     {
         IColumn & column;
         DataTypePtr type;
+        bool is_tuple_element;
+        std::optional<size_t> array_size;
         UInt8 * read;
     };
 
@@ -37,7 +39,7 @@ public:
     bool visit_bin(const char * value, size_t size);
     bool visit_boolean(bool value);
     bool start_array(size_t size);
-    bool end_array();
+    bool end_array_item();
     bool visit_nil();
     bool start_map(uint32_t size);
     bool start_map_key();

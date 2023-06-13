@@ -90,7 +90,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
+    Strings mutation_ids;
+    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
+    LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString());
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -127,9 +130,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock)
+            if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
+                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
+
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
@@ -162,25 +167,24 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    const Settings & settings = storage.getContext()->getSettingsRef();
+    task_context = Context::createCopy(storage.getContext());
+    task_context->makeQueryContext();
+    task_context->setCurrentQueryId("");
+
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        settings);
+        task_context);
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    fake_query_context = Context::createCopy(storage.getContext());
-    fake_query_context->makeQueryContext();
-    fake_query_context->setCurrentQueryId("");
-
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, fake_query_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
+            entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
-        priority += item->getBytesOnDisk();
+        priority.value += item->getBytesOnDisk();
 
     return {true, true, [this] (const ExecutionStatus & execution_status)
     {

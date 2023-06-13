@@ -61,12 +61,17 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
 void TableNode::updateTreeHashImpl(HashState & state) const
 {
-    auto full_name = storage_id.getFullNameNotQuoted();
-    state.update(full_name.size());
-    state.update(full_name);
-
-    state.update(temporary_table_name.size());
-    state.update(temporary_table_name);
+    if (!temporary_table_name.empty())
+    {
+        state.update(temporary_table_name.size());
+        state.update(temporary_table_name);
+    }
+    else
+    {
+        auto full_name = storage_id.getFullNameNotQuoted();
+        state.update(full_name.size());
+        state.update(full_name);
+    }
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
@@ -81,11 +86,16 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     return result_table_node;
 }
 
-ASTPtr TableNode::toASTImpl() const
+ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     if (!temporary_table_name.empty())
         return std::make_shared<ASTTableIdentifier>(temporary_table_name);
 
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (!storage_id.hasDatabase())
+        return std::make_shared<ASTTableIdentifier>(storage_id.getTableName());
     return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
 }
 
