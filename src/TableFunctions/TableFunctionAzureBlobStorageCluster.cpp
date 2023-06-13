@@ -71,7 +71,12 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
 
 void registerTableFunctionAzureBlobStorageCluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionAzureBlobStorageCluster>();
+    factory.registerFunction<TableFunctionAzureBlobStorageCluster>(
+        {.documentation
+         = {.description=R"(The table function can be used to read the data stored on Azure Blob Storage in parallel for many nodes in a specified cluster.)",
+            .examples{{"azureBlobStorageCluster", "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])", ""}}},
+         .allow_readonly = false}
+        );
 }
 
 
