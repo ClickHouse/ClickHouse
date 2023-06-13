@@ -240,7 +240,7 @@ URI allows multiple hosts to be connected to. Connection strings can contain mul
 
 ### Percent encoding {#connection_string_uri_percent_encoding}
 
-Non-US ASCII, spaces and special characters, and special characters in the `user`, `password`, `hosts`, `database` and `query parameters` must be [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding).
+Non-US ASCII, spaces and special characters in the `user`, `password`, `hosts`, `database` and `query parameters` must be [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding).
 
 ### Examples {#connection_string_examples}
 
