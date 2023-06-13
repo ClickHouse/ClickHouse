@@ -229,7 +229,7 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
         *.gen.*)
             ;;
         *.sh)
-            test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
+            test_case_zk_prefix="\(\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX\|{database}\)"
             grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.sql|*.sql.j2)
