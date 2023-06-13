@@ -477,7 +477,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
-        LOG_WARNING(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
+        LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
         context->setSetting("parallel_replicas_custom_key", String{""});
     }
 
@@ -487,7 +487,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
-            LOG_WARNING(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+            LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             context->setSetting("parallel_replicas_custom_key", String{""});
         }
@@ -503,7 +503,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
-            LOG_WARNING(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
+            LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
