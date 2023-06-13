@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include "Coordination/KeeperConstants.h"
 
 namespace DB
 {
@@ -18,17 +19,26 @@ namespace ErrorCodes
 class RandomFaultInjection
 {
 public:
+    bool must_fail_after_op = false;
+    bool must_fail_before_op = false;
+
     RandomFaultInjection(double probability, UInt64 seed_) : rndgen(seed_), distribution(probability) { }
 
     void beforeOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_before_op)
+        {
+            must_fail_before_op = false;
             throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
+        }
     }
     void afterOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_after_op)
+        {
+            must_fail_after_op = false;
             throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
+        }
     }
 
 private:
@@ -41,6 +51,9 @@ private:
 ///
 class ZooKeeperWithFaultInjection
 {
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
+
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
@@ -257,19 +270,22 @@ public:
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
     {
+        path_created.clear();
+
         auto error = access(
             "tryCreate",
             path,
             [&]() { return keeper->tryCreate(path, data, mode, path_created); },
-            [&](Coordination::Error &)
+            [&](Coordination::Error & code)
             {
                 try
                 {
-                    if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
+                    if (!path_created.empty() && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
                     {
-                        keeper->remove(path);
+                        keeper->remove(path_created);
                         if (unlikely(logger))
-                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={}", seed, "tryCreate", path);
+                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={} path_created={} code={}",
+                                seed, "tryCreate", path, path_created, code);
                     }
                 }
                 catch (const zkutil::KeeperException & e)
@@ -277,10 +293,11 @@ public:
                     if (unlikely(logger))
                         LOG_TRACE(
                             logger,
-                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
+                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} path_created={} code={} message={} ",
                             seed,
                             "tryCreate",
                             path,
+                            path_created,
                             e.code,
                             e.message());
                 }
@@ -289,8 +306,8 @@ public:
         /// collect ephemeral nodes when no fault was injected (to clean up later)
         if (unlikely(fault_policy))
         {
-            if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
-                ephemeral_nodes.push_back(path);
+            if (!path_created.empty() && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
+                ephemeral_nodes.push_back(path_created);
         }
 
         return error;
@@ -356,6 +373,10 @@ public:
         return access("trySet", path, [&]() { return keeper->trySet(path, data, version, stat); });
     }
 
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+    {
+        return access("checkExistsAndGetCreateAncestorsOps", path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    }
 
     void handleEphemeralNodeExistenceNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
     {
@@ -379,6 +400,11 @@ public:
         }
 
         ephemeral_nodes.clear();
+    }
+
+    KeeperApiVersion getApiVersion() const
+    {
+        return keeper->getApiVersion();
     }
 
 private:

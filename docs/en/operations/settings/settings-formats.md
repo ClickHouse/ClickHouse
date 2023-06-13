@@ -7,6 +7,23 @@ toc_max_heading_level: 2
 
 # Format settings {#format-settings}
 
+## format_display_secrets_in_show_and_select {#format_display_secrets_in_show_and_select}
+
+Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
+table functions, and dictionaries.
+
+User wishing to see secrets must also have
+[`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
+turned on and a
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 Enables or disables skipping insertion of extra data.
@@ -24,8 +41,8 @@ Supported formats:
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -52,8 +69,8 @@ Supported formats:
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -72,8 +89,8 @@ Supported formats:
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -87,8 +104,8 @@ When this option is enabled, extended table metadata are sent from server to cli
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -103,8 +120,8 @@ For complex default expressions `input_format_defaults_for_omitted_fields` must 
 
 Possible values:
 
--   0 — Inserting `NULL` into a not nullable column causes an exception.
--   1 — `NULL` fields are initialized with default column values.
+- 0 — Inserting `NULL` into a not nullable column causes an exception.
+- 1 — `NULL` fields are initialized with default column values.
 
 Default value: `1`.
 
@@ -179,11 +196,11 @@ The setting does not apply to [date and time functions](../../sql-reference/func
 
 Possible values:
 
--   `'best_effort'` — Enables extended parsing.
+- `'best_effort'` — Enables extended parsing.
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
--   `'basic'` — Use basic parser.
+- `'basic'` — Use basic parser.
 
     ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
@@ -191,8 +208,8 @@ Default value: `'basic'`.
 
 See also:
 
--   [DateTime data type.](../../sql-reference/data-types/datetime.md)
--   [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
 ## date_time_output_format {#date_time_output_format}
 
@@ -200,15 +217,15 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--   `simple` - Simple output format.
+- `simple` - Simple output format.
 
     ClickHouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--   `iso` - ISO output format.
+- `iso` - ISO output format.
 
     ClickHouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--   `unix_timestamp` - Unix timestamp output format.
+- `unix_timestamp` - Unix timestamp output format.
 
     ClickHouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
@@ -216,8 +233,8 @@ Default value: `simple`.
 
 See also:
 
--   [DateTime data type.](../../sql-reference/data-types/datetime.md)
--   [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
@@ -298,8 +315,8 @@ By default, when inserting data into a `Distributed` table with more than one sh
 
 Possible values:
 
--   0 — Insertion is rejected if there are multiple shards and no distributed key is given.
--   1 — Insertion is done randomly among all available shards when no distributed key is given.
+- 0 — Insertion is rejected if there are multiple shards and no distributed key is given.
+- 1 — Insertion is done randomly among all available shards when no distributed key is given.
 
 Default value: `0`.
 
@@ -311,18 +328,18 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
--   [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
+- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
 See also:
 
--   [Usage of Nested Structures](../../interfaces/formats.md/#jsoneachrow-nested) with the `JSONEachRow` format.
+- [Usage of Nested Structures](../../interfaces/formats.md/#jsoneachrow-nested) with the `JSONEachRow` format.
 
 ## input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
 
@@ -373,8 +390,8 @@ Such integers are enclosed in quotes by default. This behavior is compatible wit
 
 Possible values:
 
--   0 — Integers are output without quotes.
--   1 — Integers are enclosed in quotes.
+- 0 — Integers are output without quotes.
+- 1 — Integers are enclosed in quotes.
 
 Default value: 1.
 
@@ -390,8 +407,8 @@ Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/format
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -526,8 +543,8 @@ Enables the ability to output all rows as a JSON array in the [JSONEachRow](../.
 
 Possible values:
 
--   1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
--   0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
+- 1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
+- 0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
 
 Default value: `0`.
 
@@ -594,8 +611,8 @@ When enabled, always treat enum values as enum ids for TSV input format. It's re
 
 Possible values:
 
--   0 — Enum values are parsed as values or as enum IDs.
--   1 — Enum values are parsed only as enum IDs.
+- 0 — Enum values are parsed as values or as enum IDs.
+- 1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -711,6 +728,12 @@ My NULL
 My NULL
 ```
 
+### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of TSV file will be skipped.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -743,8 +766,8 @@ When enabled, always treat enum values as enum ids for CSV input format. It's re
 
 Possible values:
 
--   0 — Enum values are parsed as values or as enum IDs.
--   1 — Enum values are parsed only as enum IDs.
+- 0 — Enum values are parsed as values or as enum IDs.
+- 1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -865,6 +888,44 @@ My NULL
 My NULL
 ```
 
+### input_format_csv_skip_trailing_empty_lines {input_format_csv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of CSV file will be skipped.
+
+Disabled by default.
+
+### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+
+Trims spaces and tabs in non-quoted CSV strings.
+
+Default value: `true`.
+
+**Examples**
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+```
+
+Result
+
+```text
+"string"
+```
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
+```
+
+Result
+
+```text
+"  string  "
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
@@ -873,11 +934,11 @@ Enables or disables the full SQL parser if the fast stream parser can’t parse 
 
 Possible values:
 
--   0 — Disabled.
+- 0 — Disabled.
 
     In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
 
--   1 — Enabled.
+- 1 — Enabled.
 
     In this case, you can use an SQL expression as a value, but data insertion is much slower this way. If you insert only formatted data, then ClickHouse behaves as if the setting value is 0.
 
@@ -923,8 +984,8 @@ Enables or disables template deduction for SQL expressions in [Values](../../int
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -934,9 +995,9 @@ For the following query:
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0`, expressions are interpreted separately for each row (this is very slow for large number of rows).
--   If `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1`, expressions in the first, second and third rows are parsed using template `lower(String)` and interpreted together, expression in the forth row is parsed with another template (`upper(String)`).
--   If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1`, the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
+- If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0`, expressions are interpreted separately for each row (this is very slow for large number of rows).
+- If `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1`, expressions in the first, second and third rows are parsed using template `lower(String)` and interpreted together, expression in the forth row is parsed with another template (`upper(String)`).
+- If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1`, the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
 
 ### input_format_values_accurate_types_of_literals {#input_format_values_accurate_types_of_literals}
 
@@ -950,11 +1011,11 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 
 Possible values:
 
--   0 — Disabled.
+- 0 — Disabled.
 
     In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 
--   1 — Enabled.
+- 1 — Enabled.
 
     In this case, ClickHouse checks the actual type of literal and uses an expression template of the corresponding type. In some cases, it may significantly slow down expression evaluation in `Values`.
 
@@ -968,8 +1029,8 @@ Enables or disables the ability to insert the data into [Nested](../../sql-refer
 
 Possible values:
 
--   0 — Data can not be inserted into `Nested` columns as an array of structs.
--   1 — Data can be inserted into `Nested` columns as an array of structs.
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
@@ -997,8 +1058,8 @@ Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardina
 
 Possible values:
 
--   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
--   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+- 0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
+- 1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
 
 Default value: `0`.
 
@@ -1028,8 +1089,8 @@ Enables or disables the ability to insert the data into [Nested](../../sql-refer
 
 Possible values:
 
--   0 — Data can not be inserted into `Nested` columns as an array of structs.
--   1 — Data can be inserted into `Nested` columns as an array of structs.
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
@@ -1077,8 +1138,8 @@ Enables or disables the ability to insert the data into [Nested](../../sql-refer
 
 Possible values:
 
--   0 — Data can not be inserted into `Nested` columns as an array of structs.
--   1 — Data can be inserted into `Nested` columns as an array of structs.
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
@@ -1165,7 +1226,7 @@ Possible values:
 
 - `bin` - as 16-bytes binary.
 - `str` - as a string of 36 bytes.
-- `ext` - as extention with ExtType = 2.
+- `ext` - as extension with ExtType = 2.
 
 Default value: `ext`.
 
@@ -1192,8 +1253,8 @@ Enables using fields that are not specified in [Avro](../../interfaces/formats.m
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -1211,9 +1272,9 @@ Type: string
 
 Possible values:
 
--   `null` — No compression
--   `deflate` — Compress with Deflate (zlib)
--   `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+- `null` — No compression
+- `deflate` — Compress with Deflate (zlib)
+- `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
 
 Default value: `snappy` (if available) or `deflate`.
 
@@ -1260,8 +1321,8 @@ Limits the width of value displayed in [Pretty](../../interfaces/formats.md/#pre
 
 Possible values:
 
--   Positive integer.
--   0 — The value is cut completely.
+- Positive integer.
+- 0 — The value is cut completely.
 
 Default value: `10000` symbols.
 
@@ -1336,8 +1397,8 @@ Adds row numbers to output in the [Pretty](../../interfaces/formats.md/#pretty) 
 
 Possible values:
 
--   0 — Output without row numbers.
--   1 — Output with row numbers.
+- 0 — Output without row numbers.
+- 1 — Output with row numbers.
 
 Default value: `0`.
 
@@ -1381,12 +1442,12 @@ Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md/#
 
 Possible values:
 
--   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md/#tabseparated).
--   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md/#data-format-values).
--   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md/#csv).
--   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow).
--   `'XML'` — Similarly to [XML](../../interfaces/formats.md/#xml).
--   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md/#tabseparatedraw).
+- `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md/#tabseparated).
+- `'Quoted'` — Similarly to [Values](../../interfaces/formats.md/#data-format-values).
+- `'CSV'` — Similarly to [CSV](../../interfaces/formats.md/#csv).
+- `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow).
+- `'XML'` — Similarly to [XML](../../interfaces/formats.md/#xml).
+- `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md/#tabseparatedraw).
 
 Default value: `'Escaped'`.
 
@@ -1426,6 +1487,12 @@ Sets the character that is interpreted as a suffix after the result set for [Cus
 
 Default value: `''`.
 
+### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
+
 ## Regexp format settings {#regexp-format-settings}
 
 ### format_regexp_escaping_rule {#format_regexp_escaping_rule}
@@ -1434,12 +1501,12 @@ Field escaping rule.
 
 Possible values:
 
--   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md/#tabseparated).
--   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md/#data-format-values).
--   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md/#csv).
--   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow).
--   `'XML'` — Similarly to [XML](../../interfaces/formats.md/#xml).
--   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md/#tabseparatedraw).
+- `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md/#tabseparated).
+- `'Quoted'` — Similarly to [Values](../../interfaces/formats.md/#data-format-values).
+- `'CSV'` — Similarly to [CSV](../../interfaces/formats.md/#csv).
+- `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow).
+- `'XML'` — Similarly to [XML](../../interfaces/formats.md/#xml).
+- `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md/#tabseparatedraw).
 
 Default value: `Raw`.
 
@@ -1457,9 +1524,9 @@ Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfac
 
 Possible values:
 
--   `'by_values'` — Values in enums should be the same, names can be different.
--   `'by_names'` — Names in enums should be the same, values can be different.
--   `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
+- `'by_values'` — Values in enums should be the same, names can be different.
+- `'by_names'` — Names in enums should be the same, values can be different.
+- `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
 Default value: `'by_values'`.
 

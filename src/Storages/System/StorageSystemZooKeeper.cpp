@@ -215,7 +215,7 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
@@ -314,7 +314,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         auto set = column_set->getData();
-        if (!set->isCreated())
+        if (!set || !set->isCreated())
             return;
 
         if (!set->hasExplicitSetElements())

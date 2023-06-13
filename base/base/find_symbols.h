@@ -34,9 +34,51 @@
   * If no such characters, returns nullptr.
   */
 
+struct SearchSymbols
+{
+    static constexpr auto BUFFER_SIZE = 16;
+
+    SearchSymbols() = default;
+
+    explicit SearchSymbols(std::string in)
+        : str(std::move(in))
+    {
+#if defined(__SSE4_2__)
+        if (str.size() > BUFFER_SIZE)
+        {
+            throw std::runtime_error("SearchSymbols can contain at most " + std::to_string(BUFFER_SIZE) + " symbols and " + std::to_string(str.size()) + " was provided\n");
+        }
+
+        char tmp_safety_buffer[BUFFER_SIZE] = {0};
+
+        memcpy(tmp_safety_buffer, str.data(), str.size());
+
+        simd_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(tmp_safety_buffer));
+#endif
+    }
+
+#if defined(__SSE4_2__)
+    __m128i simd_vector;
+#endif
+    std::string str;
+};
+
 namespace detail
 {
 template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); } // NOLINT(misc-redundant-expression)
+
+static bool is_in(char c, const char * symbols, size_t num_chars)
+{
+    for (size_t i = 0u; i < num_chars; ++i)
+    {
+        if (c == symbols[i])
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 #if defined(__SSE2__)
 template <char s0>
@@ -52,6 +94,43 @@ inline __m128i mm_is_in(__m128i bytes)
     __m128i eq0 = _mm_cmpeq_epi8(bytes, _mm_set1_epi8(s0));
     __m128i eq = mm_is_in<s1, tail...>(bytes);
     return _mm_or_si128(eq0, eq);
+}
+
+inline __m128i mm_is_in(__m128i bytes, const char * symbols, size_t num_chars)
+{
+    __m128i accumulator = _mm_setzero_si128();
+    for (size_t i = 0; i < num_chars; ++i)
+    {
+        __m128i eq = _mm_cmpeq_epi8(bytes, _mm_set1_epi8(symbols[i]));
+        accumulator = _mm_or_si128(accumulator, eq);
+    }
+
+    return accumulator;
+}
+
+inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t num_chars)
+{
+    std::array<__m128i, 16u> result {};
+
+    for (size_t i = 0; i < num_chars; ++i)
+    {
+        result[i] = _mm_set1_epi8(symbols[i]);
+    }
+
+    return result;
+}
+
+inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles)
+{
+    __m128i accumulator = _mm_setzero_si128();
+
+    for (const auto & needle : needles)
+    {
+        __m128i eq = _mm_cmpeq_epi8(bytes, needle);
+        accumulator = _mm_or_si128(accumulator, eq);
+    }
+
+    return accumulator;
 }
 #endif
 
@@ -94,6 +173,32 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 
     for (; pos < end; ++pos)
         if (maybe_negate<positive>(is_in<symbols...>(*pos)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <bool positive, ReturnMode return_mode>
+inline const char * find_first_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    const char * pos = begin;
+
+#if defined(__SSE2__)
+    const auto needles = mm_is_in_prepare(symbols, num_chars);
+    for (; pos + 15 < end; pos += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+
+        __m128i eq = mm_is_in_execute(bytes, needles);
+
+        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+        if (bit_mask)
+            return pos + __builtin_ctz(bit_mask);
+    }
+#endif
+
+    for (; pos < end; ++pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
@@ -179,6 +284,41 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
+template <bool positive, ReturnMode return_mode>
+inline const char * find_first_symbols_sse42(const char * const begin, const char * const end, const SearchSymbols & symbols)
+{
+    const char * pos = begin;
+
+    const auto num_chars = symbols.str.size();
+
+#if defined(__SSE4_2__)
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+
+    const __m128i set = symbols.simd_vector;
+
+    for (; pos + 15 < end; pos += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+
+        if constexpr (positive)
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
+        }
+        else
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
+        }
+    }
+#endif
+
+    for (; pos < end; ++pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols.str.data(), num_chars)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
 
 /// NOTE No SSE 4.2 implementation for find_last_symbols_or_null. Not worth to do.
 
@@ -192,6 +332,17 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
     else
 #endif
         return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
+}
+
+template <bool positive, ReturnMode return_mode>
+inline const char * find_first_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
+{
+#if defined(__SSE4_2__)
+    if (symbols.str.size() >= 5)
+        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
+    else
+#endif
+        return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
 }
 
 }
@@ -211,6 +362,11 @@ inline char * find_first_symbols(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end));
 }
 
+inline const char * find_first_symbols(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End>(haystack, symbols);
+}
+
 template <char... symbols>
 inline const char * find_first_not_symbols(const char * begin, const char * end)
 {
@@ -221,6 +377,11 @@ template <char... symbols>
 inline char * find_first_not_symbols(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::End, symbols...>(begin, end));
+}
+
+inline const char * find_first_not_symbols(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_first_symbols_dispatch<false, detail::ReturnMode::End>(haystack, symbols);
 }
 
 template <char... symbols>
@@ -235,6 +396,11 @@ inline char * find_first_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
+inline const char * find_first_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr>(haystack, symbols);
+}
+
 template <char... symbols>
 inline const char * find_first_not_symbols_or_null(const char * begin, const char * end)
 {
@@ -247,6 +413,10 @@ inline char * find_first_not_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
+inline const char * find_first_not_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr>(haystack, symbols);
+}
 
 template <char... symbols>
 inline const char * find_last_symbols_or_null(const char * begin, const char * end)

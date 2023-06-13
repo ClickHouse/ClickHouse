@@ -12,7 +12,7 @@
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --input-shadow-color: rgba(0, 255, 0, 1);
-            --error-color: red;
+            --error-color: white;
             --legend-background: rgba(255, 255, 255, 0.75);
             --title-color: #666;
             --text-color: black;
@@ -76,7 +76,7 @@
         #charts
         {
             height: 100%;
-            display: none;
+            display: flex;
             flex-flow: row wrap;
             gap: 1rem;
         }
@@ -121,6 +121,19 @@
         .unconnected #url {
             width: 100%;
         }
+        .unconnected #button-options {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: 1fr;
+            gap: 0.3rem;
+        }
+        .unconnected #user {
+            margin-right: 0;
+            width: auto;
+        }
+        .unconnected #password {
+            width: auto;
+        }
         #user {
             margin-right: 0.25rem;
             width: 50%;
@@ -136,7 +149,15 @@
             width: 100%;
 
             display: flex;
-            flex-flow: row nowrap;  
+            flex-flow: row nowrap;
+        }
+        .unconnected #username-password {
+            width: 100%;
+
+            gap: 0.3rem;
+
+            display: grid;
+            grid-template-columns: 1fr 1fr;
         }
 
         .inputs #chart-params {
@@ -177,7 +198,10 @@
         .themes {
             float: right;
             font-size: 20pt;
-            margin-bottom: 1rem;
+            gap: 0.3rem;
+
+            display: flex;
+            justify-content: center;
         }
 
         #toggle-dark, #toggle-light {
@@ -206,6 +230,8 @@
         }
 
         #add, #reload {
+            padding: .25rem 0.5rem;
+            text-align: center;
             font-weight: bold;
             user-select: none;
             cursor: pointer;
@@ -214,16 +240,24 @@
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
-            margin-right: 0 !important;
-            margin-left: 1rem;
+            margin-right: 1rem !important;
+            margin-left: 0rem;
             margin-bottom: 1rem;
         }
+
+        /* .unconnected #reload {
+            margin-left: 3px;
+        } */
 
         #add:hover, #reload:hover {
             background: var(--button-background-color);
         }
 
         #auth-error {
+            align-self: center;
+            width: 60%;
+            padding: .5rem;
+
             color: var(--error-color);
 
             display: flex;
@@ -352,15 +386,15 @@
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
             </div>
         </div>
-        <div>
-            <input id="reload" type="button" value="Reload">
-            <input id="add" type="button" value="Add chart" style="display: none;">
+        <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+            <input id="add" type="button" value="Add chart" style="display: none;">
+            <input id="reload" type="button" value="Reload">
             <div id="chart-params"></div>
         </div>
     </form>
+    <div id="auth-error"></div>
 </div>
-<div id="auth-error"></div>
 <div id="charts"></div>
 <script>
 
@@ -390,10 +424,21 @@ if (location.protocol != 'file:') {
     user = 'default';
 }
 
-const errorCodeRegex = /Code: (\d+)/
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
 }
+const errorMessages = [
+    {
+        regex: /TypeError: Failed to fetch/,
+        messageFunc: () => 'Error authenticating with database. Please check your connection url and try again.',
+    },
+    {
+        regex: /Code: (\d+)/,
+        messageFunc: (match) => {
+            return errorCodeMessageMap[match[1]]
+        }
+    }
+]
 
 /// This is just a demo configuration of the dashboard.
 
@@ -404,7 +449,7 @@ let queries = [
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "CPU Usage (cores)",
@@ -412,7 +457,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Queries Running",
@@ -420,7 +465,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Merges Running",
@@ -428,7 +473,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Selected Bytes/second",
@@ -436,7 +481,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "IO Wait",
@@ -444,7 +489,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "CPU Wait",
@@ -452,7 +497,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "OS CPU Usage (Userspace)",
@@ -461,7 +506,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSUserTimeNormalized'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "OS CPU Usage (Kernel)",
@@ -470,7 +515,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSSystemTimeNormalized'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Read From Disk",
@@ -478,7 +523,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Read From Filesystem",
@@ -486,7 +531,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Memory (tracked)",
@@ -494,7 +539,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Load Average (15 minutes)",
@@ -503,7 +548,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'LoadAverage15'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Selected Rows/second",
@@ -511,7 +556,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Inserted Rows/second",
@@ -519,7 +564,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Total MergeTree Parts",
@@ -528,7 +573,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'TotalPartsOfMergeTreeTables'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Max Parts For Partition",
@@ -537,7 +582,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'MaxPartCountForPartition'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     }
 ];
 
@@ -769,21 +814,6 @@ document.getElementById('reload').addEventListener('click', e => {
     reloadAll();
 });
 
-function showReloadIfNeeded() {
-    const is_any_field_changed = (host != document.getElementById('url').value
-                               || user != document.getElementById('user').value
-                               || password != document.getElementById('password').value);
-    if (is_any_field_changed) {
-        document.getElementById('reload').style.display = '';
-    } else {
-        document.getElementById('reload').style.display = 'none';
-    }
-}
-
-document.getElementById('password').addEventListener('input', e => { showReloadIfNeeded(); })
-document.getElementById('user').addEventListener('input', e => { showReloadIfNeeded(); })
-document.getElementById('url').addEventListener('input', e => { showReloadIfNeeded(); })
-
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
 
@@ -875,14 +905,12 @@ async function draw(idx, chart, url_params, query) {
     }
 
     if (error) {
-        const errorMatch = error.match(errorCodeRegex)
-        if (errorMatch && errorMatch[1]) {
-            const code = errorMatch[1]
-            if (errorCodeMessageMap[code]) {
-                const authError = new Error(errorCodeMessageMap[code])
-                authError.code = code
-                throw authError
-            }
+        const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
+        if (errorMatch) {
+            const match = error.match(errorMatch.regex)
+            const message = errorMatch.messageFunc(match)
+            const authError = new Error(message)
+            throw authError
         }
     }
 
@@ -950,7 +978,8 @@ async function draw(idx, chart, url_params, query) {
 
 function showAuthError(message) {
     const charts = document.querySelector('#charts');
-    charts.style.display = 'none';
+    charts.style.height = '0px';
+    charts.style.opacity = '0';
     const add = document.querySelector('#add');
     add.style.display = 'none';
 
@@ -961,7 +990,8 @@ function showAuthError(message) {
 
 function hideAuthError() {
     const charts = document.querySelector('#charts');
-    charts.style.display = 'flex';
+    charts.style.height = 'auto';
+    charts.style.opacity = '1';
 
     const authError = document.querySelector('#auth-error');
     authError.textContent = '';
@@ -972,13 +1002,13 @@ let firstLoad = true;
 
 async function drawAll() {
     let params = getParamsForURL();
-    const charts = document.getElementsByClassName('chart');
+    const chartsArray = document.getElementsByClassName('chart');
 
     if (!firstLoad) {
         hideAuthError();
     }
     await Promise.all([...Array(queries.length)].map(async (_, i) => {
-        return draw(i, charts[i], params, queries[i].query).catch((e) => {
+        return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
             if (!firstLoad) {
                 showAuthError(e.message);
             }
@@ -995,6 +1025,9 @@ async function drawAll() {
             element.classList.remove('unconnected');
             const add = document.querySelector('#add');
             add.style.display = 'block';
+        } else {
+            const charts = document.querySelector('#charts')
+            charts.style.height = '0px';
         }
     })
 }

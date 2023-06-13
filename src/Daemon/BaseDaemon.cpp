@@ -2,7 +2,6 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -359,10 +358,13 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            bare_stacktrace << "Stack trace:";
+            DB::WriteBufferFromOwnString bare_stacktrace;
+            DB::writeString("Stack trace:", bare_stacktrace);
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
+            {
+                DB::writeChar(' ', bare_stacktrace);
+                DB::writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            }
 
             LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }

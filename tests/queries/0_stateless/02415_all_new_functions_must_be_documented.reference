@@ -97,6 +97,7 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -417,17 +418,10 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
-mapApply
-mapContains
-mapContainsKeyLike
-mapExtractKeyLike
-mapFilter
 mapFromArrays
-mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
-mapValues
 match
 materialize
 max2
@@ -661,6 +655,7 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
+space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -789,6 +784,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

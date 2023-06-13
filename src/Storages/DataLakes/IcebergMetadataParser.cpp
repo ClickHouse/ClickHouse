@@ -12,6 +12,7 @@
 #include <Storages/StorageS3.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -243,7 +244,13 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
 
             const auto * str_col = assert_cast<const ColumnString *>(col_str.get());
             for (size_t i = 0; i < str_col->size(); ++i)
-                keys.emplace_back(str_col->getDataAt(i).toView());
+            {
+                const auto data_path = std::string(str_col->getDataAt(i).toView());
+                const auto pos = data_path.find(configuration.url.key);
+                if (pos == std::string::npos)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration.url.key, data_path);
+                keys.emplace_back(data_path.substr(pos));
+            }
         }
 
         return keys;

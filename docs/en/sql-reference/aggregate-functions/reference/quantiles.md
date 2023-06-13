@@ -29,21 +29,21 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
--   `level` — Levels of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
+- `level` — Levels of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
+- [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
 
 Type of array values:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -81,21 +81,21 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
--   `level` — Levels of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
+- `level` — Levels of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
+- [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
 
 Type of array values:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -115,25 +115,25 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesApprox
+## quantilesGK
 
-`quantilesApprox` works similarly with `quantileApprox` but allows us to calculate quantities at different levels simultaneously and returns an array.
+`quantilesGK` works similarly with `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
 
 **Syntax**
 
 ``` sql
-quantilesApprox(accuracy, level1, level2, ...)(expr)
+quantilesGK(accuracy, level1, level2, ...)(expr)
 ```
 
 **Returned value**
 
--   [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
+- [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
 
 Type of array values:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -141,32 +141,32 @@ Query:
 
 
 ``` sql
-SELECT quantilesApprox(1, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [1,1,1]                                              │
-└──────────────────────────────────────────────────────┘
+┌─quantilesGK(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [1,1,1]                                          │
+└──────────────────────────────────────────────────┘
 
-SELECT quantilesApprox(10, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(10, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [156,413,659]                                         │
-└───────────────────────────────────────────────────────┘
+┌─quantilesGK(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [156,413,659]                                     │
+└───────────────────────────────────────────────────┘
 
 
-SELECT quantilesApprox(100, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [251,498,741]                                          │
-└────────────────────────────────────────────────────────┘
+┌─quantilesGK(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [251,498,741]                                      │
+└────────────────────────────────────────────────────┘
 
-SELECT quantilesApprox(1000, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(1000, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [249,499,749]                                           │
-└─────────────────────────────────────────────────────────┘
+┌─quantilesGK(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [249,499,749]                                       │
+└─────────────────────────────────────────────────────┘
 ```

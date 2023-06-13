@@ -250,9 +250,21 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
     return {std::move(internal_column), internal_type, column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & type_hint)
 {
-    auto internal_type = std::make_shared<DataTypeDate32>();
+    DataTypePtr internal_type;
+    bool check_date_range = false;
+    /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
+    if (!type_hint || (type_hint && isDate32(*type_hint)))
+    {
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_date_range = true;
+    }
+    else
+    {
+        internal_type = std::make_shared<DataTypeInt32>();
+    }
+
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -261,17 +273,27 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
     {
         arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
-        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        /// Check date range only when requested type is actually Date32
+        if (check_date_range)
         {
-            Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-            if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
-                throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, column_name, DATE_LUT_MAX_DAY_NUM};
+            for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            {
+                Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
+                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+                    throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                            "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]", days_num, column_name, DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
 
-            column_data.emplace_back(days_num);
+                column_data.emplace_back(days_num);
+            }
+        }
+        else
+        {
+            std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
+            const auto * raw_data = reinterpret_cast<const Int32 *>(buffer->data()) + chunk.offset();
+            column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
         }
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
@@ -731,7 +753,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
-            return readColumnWithDate32Data(arrow_column, column_name);
+            return readColumnWithDate32Data(arrow_column, column_name, type_hint);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
         // ClickHouse writes Date as arrow UINT16 and DateTime as arrow UINT32,

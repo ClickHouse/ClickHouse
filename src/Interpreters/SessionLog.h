@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Columns/IColumn.h>

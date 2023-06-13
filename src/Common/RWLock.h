@@ -37,7 +37,7 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 ///
 /// NOTE: it is dangerous to acquire lock with NO_QUERY, because FastPath doesn't
 /// exist for this case and deadlock, described in previous note,
-/// may accur in case of recursive locking.
+/// may occur in case of recursive locking.
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
