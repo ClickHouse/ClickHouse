@@ -783,7 +783,7 @@ Strings Context::getWarnings() const
     {
         if (setting.isValueChanged() && setting.isObsolete())
         {
-            res += (obsolete_settings_count ? ", `" : "`") + setting.getName() + "`";
+            res += (obsolete_settings_count ? ", '" : "'") + setting.getName() + "'";
             ++obsolete_settings_count;
         }
     }
