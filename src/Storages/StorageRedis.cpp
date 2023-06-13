@@ -3,12 +3,12 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Parsers/ASTDropQuery.h>
 
 #include <Storages/KVStorageUtils.h>
 #include <Storages/KeyDescription.h>
@@ -19,6 +19,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -87,9 +88,11 @@ public:
         return storage.getBySerializedKeys(raw_keys, nullptr);
     }
 
-    /// TODO scan may get duplicated keys
+    /// TODO scan may get duplicated keys when Redis is rehashing, it is a very rare case.
     Chunk generateFullScan()
     {
+        checkStackSize();
+
         /// redis scan ending
         if (iterator == 0)
             return {};
