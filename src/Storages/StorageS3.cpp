@@ -264,7 +264,7 @@ private:
         }
 
         if (request_settings.throw_on_zero_files_match && result_batch.empty())
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {}", request.GetPrefix());
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {} (this error can be suppressed by setting `s3_throw_on_zero_files_match = false`)", request.GetPrefix());
 
         KeysWithInfo temp_buffer;
         temp_buffer.reserve(result_batch.size());
