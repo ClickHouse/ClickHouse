@@ -87,7 +87,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 ## Расшифровка {#decryption}
 
-Элементы с текстовыми узлами могут быть зашифрован с помощью [кодеков шифрования](../../sql-reference/statements/create/table.md#encryption-codecs). В этом случае секция `<encryption_codecs>` должна быть включена в конфигурационный файл и каждый элемент с зашифрованным текстом должен иметь аттрибут `encryption_codec` с именем кодека.
+Элементы с текстовыми узлами могут быть зашифрован с помощью [кодеков шифрования](../sql-reference/statements/create/table.md#create-query-encryption-codecs). В этом случае секция `<encryption_codecs>` должна быть включена в конфигурационный файл и каждый элемент с зашифрованным текстом должен иметь аттрибут `encryption_codec` с именем кодека.
 
 Пример:
 
