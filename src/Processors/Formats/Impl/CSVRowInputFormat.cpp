@@ -302,14 +302,27 @@ bool CSVFormatReader::readField(
         return false;
     }
 
+    auto skip_all = [&]()
+    {
+        if (!is_last_file_column || !format_settings.csv.ignore_extra_columns)
+        {
+            return;
+        }
+        //std::cout << "skip !!!" << std::endl;
+        buf->position() = find_first_symbols<'\n'>(buf->position(), buf->buffer().end());
+    };
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
+        bool res = SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
+        skip_all();
+        return res;
     }
 
     /// Read the column normally.
     serialization->deserializeTextCSV(column, *buf, format_settings);
+
+    skip_all();
     return true;
 }
 
