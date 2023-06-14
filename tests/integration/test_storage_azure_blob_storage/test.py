@@ -300,10 +300,10 @@ def test_put_get_with_globs(cluster):
 
             azure_query(
                 node,
-                f"CREATE TABLE test_{i}_{j} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
+                f"CREATE TABLE test_put_{i}_{j} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
             )
 
-            query = f"insert into test_{i}_{j} VALUES {values}"
+            query = f"insert into test_put_{i}_{j} VALUES {values}"
             azure_query(node, query)
 
     azure_query(
@@ -332,9 +332,9 @@ def test_azure_glob_scheherazade(cluster):
                 unique_num = random.randint(1, 10000)
                 azure_query(
                     node,
-                    f"CREATE TABLE test_{i}_{unique_num} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
+                    f"CREATE TABLE test_scheherazade_{i}_{unique_num} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
                 )
-                query = f"insert into test_{i}_{unique_num} VALUES {values}"
+                query = f"insert into test_scheherazade_{i}_{unique_num} VALUES {values}"
                 azure_query(node, query)
 
         jobs.append(
