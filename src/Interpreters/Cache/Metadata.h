@@ -125,6 +125,8 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     Poco::Logger * log;
+
+    void downloadImpl(FileSegment & file_segment);
 };
 
 

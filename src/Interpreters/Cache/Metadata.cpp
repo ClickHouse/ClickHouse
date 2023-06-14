@@ -1,10 +1,16 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheDownloadQueueElements;
+}
 
 namespace DB
 {
@@ -256,6 +262,7 @@ void CacheMetadata::doCleanup()
             continue;
         }
 
+        chassert(it->second->empty());
         locked_metadata->markAsRemoved();
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
@@ -306,6 +313,8 @@ public:
             std::lock_guard lock(mutex);
             queue.push(file_segment);
         }
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
         cv.notify_one();
     }
 
@@ -324,10 +333,10 @@ private:
 
 void CacheMetadata::downloadThreadFunc()
 {
-    std::optional<Memory<>> memory;
     while (true)
     {
         std::weak_ptr<FileSegment> file_segment_weak;
+
         {
             std::unique_lock lock(download_queue->mutex);
 
@@ -344,65 +353,104 @@ void CacheMetadata::downloadThreadFunc()
             download_queue->queue.pop();
         }
 
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDownloadQueueElements);
+
         FileSegmentsHolderPtr holder;
+        try
         {
-            auto file_segment = file_segment_weak.lock();
-            if (!file_segment
-                || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
-                continue;
-
-            auto lock = lockKeyMetadata(file_segment->key(), KeyNotFoundPolicy::RETURN_NULL);
-            if (!lock)
-                continue;
-
-            holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
-        }
-
-        auto & file_segment = holder->front();
-        chassert(file_segment.assertCorrectness());
-
-        if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
-            continue;
-
-        LOG_TRACE(log, "Downloading file segment: {}", file_segment.getInfoForLog());
-
-        auto reader = file_segment.getRemoteFileReader();
-
-        /// If remote_fs_read_method == 'threadpool',
-        /// reader iteself does not allocate the buffer, but uses the buffer passed to it.
-        /// So will need to allocate a buffer here as well.
-        if (reader->buffer().begin() == nullptr)
-        {
-            if (!memory)
-                memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
-            reader->set(memory->data(), memory->size());
-        }
-
-        size_t offset = file_segment.getCurrentWriteOffset(false);
-        while (!reader->eof())
-        {
-            auto size = reader->available();
-
-            if (!file_segment.reserve(size))
-                return;
-
-            try
             {
-                file_segment.write(reader->position(), size, offset);
-                offset += size;
-            }
-            catch (ErrnoException & e)
-            {
-                int code = e.getErrno();
-                if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
-                {
-                    LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+                auto file_segment = file_segment_weak.lock();
+                if (!file_segment
+                    || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
                     continue;
-                }
-                throw;
+
+                auto lock = lockKeyMetadata(file_segment->key(), KeyNotFoundPolicy::RETURN_NULL);
+                if (!lock)
+                    continue;
+
+                holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+            }
+
+            downloadImpl(holder->front());
+        }
+        catch (...)
+        {
+            if (holder)
+            {
+                const auto & file_segment = holder->front();
+                LOG_ERROR(
+                    log, "Error during background download of {}:{} ({}): {}",
+                    file_segment.key(), file_segment.offset(),
+                    file_segment.getInfoForLog(), getCurrentExceptionMessage(true));
+            }
+            else
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                chassert(false);
             }
         }
     }
+}
+
+void CacheMetadata::downloadImpl(FileSegment & file_segment)
+{
+    chassert(file_segment.assertCorrectness());
+
+    if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
+        return;
+
+    LOG_TEST(
+        log, "Downloading {} bytes for file segment {}",
+        file_segment.range().size() - file_segment.getDownloadedSize(false), file_segment.getInfoForLog());
+
+    auto reader = file_segment.getRemoteFileReader();
+
+    /// If remote_fs_read_method == 'threadpool',
+    /// reader iteself bever owns/allocates the buffer.
+    std::optional<Memory<>> memory;
+    if (reader->internalBuffer().empty())
+    {
+        memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+        reader->set(memory->data(), memory->size());
+    }
+
+    size_t offset = file_segment.getCurrentWriteOffset(false);
+    if (offset != static_cast<size_t>(reader->getPosition()))
+        reader->seek(offset, SEEK_SET);
+
+    while (!reader->eof())
+    {
+        auto size = reader->available();
+
+        if (!file_segment.reserve(size))
+        {
+            LOG_TEST(
+                log, "Failed to reserve space during background download "
+                "for {}:{} (downloaded size: {}/{})",
+                file_segment.key(), file_segment.offset(),
+                file_segment.getDownloadedSize(false), file_segment.range().size());
+            return;
+        }
+
+        try
+        {
+            file_segment.write(reader->position(), size, offset);
+            offset += size;
+            reader->position() += size;
+        }
+        catch (ErrnoException & e)
+        {
+            int code = e.getErrno();
+            if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+            {
+                LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+                return;
+            }
+            throw;
+        }
+    }
+
+    LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
 
 void CacheMetadata::cancelDownload()

@@ -49,6 +49,9 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".boundary_alignment"))
         boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));
 
+    if (config.has(config_prefix + ".background_download_threads"))
+        background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
+
     delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
 }
 

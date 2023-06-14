@@ -282,8 +282,11 @@ void FileSegment::resetRemoteFileReader()
 
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
-    if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+    if (isCompleted(false)
+        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+    {
         return std::move(remote_file_reader);
+    }
     return nullptr;
 }
 
@@ -598,7 +601,6 @@ void FileSegment::complete()
 
     auto remove_from_cache = [&, this]()
     {
-        LOG_TEST(log, "Remove file segment {} (nothing downloaded)", range().toString());
         locked_key->removeFileSegment(offset(), segment_lock);
         setDetachedState(segment_lock);
     };
@@ -625,6 +627,12 @@ void FileSegment::complete()
             chassert(!is_last_holder);
             break;
         }
+        case State::EMPTY:
+        {
+            if (is_last_holder)
+                remove_from_cache();
+            break;
+        }
         case State::PARTIALLY_DOWNLOADED:
         {
             if (is_last_holder)
@@ -637,12 +645,6 @@ void FileSegment::complete()
             }
             break;
         }
-        case State::EMPTY:
-        {
-            if (is_last_holder)
-                remove_from_cache();
-            break;
-        }
         case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
         {
             chassert(current_downloaded_size != range().size());
@@ -653,7 +655,7 @@ void FileSegment::complete()
                 {
                     remove_from_cache();
                 }
-                else if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+                else
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
 
