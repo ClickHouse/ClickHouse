@@ -406,7 +406,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment)
     auto reader = file_segment.getRemoteFileReader();
 
     /// If remote_fs_read_method == 'threadpool',
-    /// reader iteself bever owns/allocates the buffer.
+    /// reader itself never owns/allocates the buffer.
     std::optional<Memory<>> memory;
     if (reader->internalBuffer().empty())
     {
