@@ -58,7 +58,19 @@ SELECT * FROM merge(currentDatabase(), 02763_merge)
 4
 4
 4
-SELECT * FROM merge(currentDatabase(), 02763_merge) WHEER x>2
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2
+3
+3
+3
+4
+4
+4
+aaa	6
+aaa	6
+aaa	6
+aaa	8
+aaa	8
+aaa	8
 3
 3
 3
@@ -105,7 +117,19 @@ SELECT * FROM merge(currentDatabase(), 02763_merge)
 4
 4
 4
-SELECT * FROM merge(currentDatabase(), 02763_merge) WHEER x>2
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2
+3
+3
+3
+4
+4
+4
+aaa	6
+aaa	6
+aaa	6
+aaa	8
+aaa	8
+aaa	8
 3
 3
 3

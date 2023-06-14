@@ -1137,7 +1137,7 @@ void ReadFromMerge::convertingSourceStream(
     });
 
 
-    bool explicit_row_policy_filter_needed = false;
+    bool explicit_row_policy_filter_needed = true;
 
     if (explicit_row_policy_filter_needed)
     {
