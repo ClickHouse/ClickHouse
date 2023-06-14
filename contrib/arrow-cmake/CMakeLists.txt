@@ -139,8 +139,6 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/Compression.hh"
         "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.cc"
         "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.hh"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.cc"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.hh"
         "${ORC_SOURCE_SRC_DIR}/Dispatch.hh"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/Int128.cc"
