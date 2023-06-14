@@ -1686,7 +1686,7 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 Обнаружить заголовок с именами и типами в формате CSV.
- 
+
 Значение по умолчанию - `true`.
 
 ## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
@@ -1726,6 +1726,12 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 ```text
 "  string  "
 ```
+
+## input_format_csv_ignore_extra_columns {#input_format_csv_ignore_extra_columns}
+
+Игнорировать дополнительные столбцы.
+
+Выключено по умолчанию.
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 

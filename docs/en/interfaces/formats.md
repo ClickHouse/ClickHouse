@@ -470,6 +470,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_csv_detect_header) - automatically detect header with names and types in CSV format. Default value - `true`.
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
+- [input_format_csv_ignore_extra_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_ignore_extra_columns) - ignore extra colums in CSV input. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -2062,7 +2063,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
   - logical_type - column logical type
   - compression - compression used for this column
   - total_uncompressed_size - total uncompressed bytes size of the column, calculated as the sum of total_uncompressed_size of the column from all row groups
-  - total_compressed_size - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups 
+  - total_compressed_size - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups
   - space_saved - percent of space saved by compression, calculated as (1 - total_compressed_size/total_uncompressed_size).
   - encodings - the list of encodings used for this column
 - row_groups - the list of row groups metadata with the next structure:

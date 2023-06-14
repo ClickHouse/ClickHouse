@@ -39,11 +39,14 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s NULLS LAST";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (s String, n UInt64 DEFAULT 1, d Date DEFAULT '2019-06-19') ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (s String, n UInt64 DEFAULT 3, d String DEFAULT 'String4') ENGINE = Memory";
 
-echo 'Hello world, 1, 2016-01-01
-Hello world, 2 ,2016-01-02,
-Hello world, 3 ,2016-01-03, 2016-01-13
-Hello world, 4 ,2016-01-04, 2016-01-14, 2016-01-15' | $CLICKHOUSE_CLIENT --input_format_csv_empty_as_default=1 --input_format_csv_ignore_extra_columns=1 --query="INSERT INTO csv FORMAT CSV";
+echo 'Hello, 1, String1
+Hello, 2, String2,
+Hello, 3, String3, 2016-01-13
+Hello, 4,        , 2016-01-14
+Hello, 5, String5, 2016-01-15, 2016-01-16
+Hello, 6, String6, "line with a
+break"' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --input_format_csv_empty_as_default=1 --input_format_csv_ignore_extra_columns=1 --query="INSERT INTO csv FORMAT CSV";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s, n";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";

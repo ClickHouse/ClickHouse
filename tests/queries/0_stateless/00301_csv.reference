@@ -11,7 +11,9 @@ default-eof	1	2019-06-19
 2016-01-01 01:02:03	NUL
 2016-01-02 01:02:03	Nhello
 \N	\N
-Hello world	1	2016-01-01
-Hello world	2	2016-01-02
-Hello world	3	2016-01-03
-Hello world	4	2016-01-04
+Hello	1	String1
+Hello	2	String2
+Hello	3	String3
+Hello	4	String4
+Hello	5	String5
+Hello	6	String6

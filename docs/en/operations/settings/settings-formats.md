@@ -931,6 +931,11 @@ Result
 ```text
 "  string  "
 ```
+### input_format_csv_ignore_extra_columns {#input_format_csv_ignore_extra_columns}
+
+Ignore extra colums in CSV input.
+
+Disabled by default.
 
 ## Values format settings {#values-format-settings}
 
