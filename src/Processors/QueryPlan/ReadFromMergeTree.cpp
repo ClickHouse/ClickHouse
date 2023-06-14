@@ -1884,6 +1884,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+    pipeline.addContext(context);
     // Attach QueryIdHolder if needed
     if (query_id_holder)
         pipeline.setQueryIdHolder(std::move(query_id_holder));
