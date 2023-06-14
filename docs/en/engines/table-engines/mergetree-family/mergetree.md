@@ -491,7 +491,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -779,7 +779,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
-for adhoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
+for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
 See [dynamic storage](#dynamic-storage) for more details.
 :::
 
@@ -856,7 +856,7 @@ Tags:
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
-Cofiguration examples:
+Configuration examples:
 
 ``` xml
 <storage_configuration>
@@ -1138,7 +1138,7 @@ These parameters define the cache layer:
 
 Cache parameters:
 - `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+- `max_size` — The size (amount of disk space) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
@@ -1224,7 +1224,7 @@ Limit parameters (mainly for internal usage):
 * `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
 * `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
 * `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
-* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurenly for one object.
+* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurrently for one object.
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iterator>
 #include <bit>
+#include <span>
 
 #include <type_traits>
 
@@ -15,6 +16,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>
@@ -623,12 +625,6 @@ struct NullOutput
     void push_back(char) {} /// NOLINT
 };
 
-void parseUUID(const UInt8 * src36, UInt8 * dst16);
-void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16);
-void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
-void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
-
-
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
@@ -770,6 +766,8 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
+UUID parseUUID(std::span<const UInt8> src);
+
 template <typename ReturnType = void>
 inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 {
@@ -797,12 +795,9 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
                     return ReturnType(false);
                 }
             }
-
-            parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
         }
-        else
-            parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
 
+        uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
     else
@@ -1098,30 +1093,11 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-
 template <std::endian endian, typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
-    if constexpr (std::endian::native != endian)
-        x = std::byteswap(x);
-}
-
-template <std::endian endian, typename T>
-requires is_big_int_v<T>
-inline void readBinaryEndian(T & x, ReadBuffer & buf)
-{
-    if constexpr (std::endian::native == endian)
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            readBinaryEndian<endian>(x.items[i], buf);
-    }
-    else
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            readBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
-    }
+    transformEndianness<endian>(x);
 }
 
 template <typename T>
