@@ -17,6 +17,8 @@ The following queries are equivalent:
 SELECT * FROM numbers(10);
 SELECT * FROM numbers(0, 10);
 SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 10;
+SELECT * FROM system.numbers WHERE number IN (1, 3);
 ```
 
 Examples:
