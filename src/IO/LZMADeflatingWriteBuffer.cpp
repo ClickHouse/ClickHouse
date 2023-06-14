@@ -44,11 +44,6 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
             LZMA_VERSION_STRING);
 }
 
-LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
-{
-    finalize();
-}
-
 void LZMADeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
