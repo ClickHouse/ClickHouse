@@ -751,7 +751,7 @@ namespace
     private:
         using Reader = typename CapnpType::Reader;
 
-        CapnpType::Reader getData(const ColumnPtr & column, size_t row_num)
+        typename CapnpType::Reader getData(const ColumnPtr & column, size_t row_num)
         {
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
@@ -801,7 +801,7 @@ namespace
     private:
         using Reader = typename CapnpType::Reader;
 
-        CapnpType::Reader getData(const ColumnPtr & column, size_t row_num)
+        typename CapnpType::Reader getData(const ColumnPtr & column, size_t row_num)
         {
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
