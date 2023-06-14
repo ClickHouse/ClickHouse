@@ -56,7 +56,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 ## Decryption {#decryption}
 
-Elements with text nodes may be encrypted with [encryption codecs](../../sql-reference/statements/create/table.md#encryption-codecs). In this case `<encryption_codecs>` section should be included in configuration file and each element node with encrypted text should have `encryption_codec` attribute with name of codec.
+Elements with text nodes may be encrypted with [encryption codecs](../sql-reference/statements/create/table.md#encryption-codecs). In this case `<encryption_codecs>` section should be included in configuration file and each element node with encrypted text should have `encryption_codec` attribute with name of codec.
 
 Example:
 
