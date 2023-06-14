@@ -1,4 +1,11 @@
--- Tags: no-fasttest
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-random-settings
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -n -q "
 CREATE TEMPORARY TABLE IF NOT EXISTS aboba
 (
     user_id UInt32,
@@ -16,7 +23,7 @@ SET dialect = 'prql';
 from aboba
 derive [
     a = 2,
-    b = s"LEFT(message, 2)"
+    b = s\"LEFT(message, 2)\"
 ]
 select [ user_id, message, a, b ];
 
@@ -43,11 +50,20 @@ SET dialect = 'prql';
 
 from aboba
 select [ user_id, message, metric ]
-derive creation_date = s"toTimeZone(creation_date, 'Europe/Amsterdam')"
+derive creation_date = s\"toTimeZone(creation_date, 'Europe/Amsterdam')\"
 select [ user_id, message, creation_date, metric];
+"
 
-from aboba
-select [non_existing_column]; -- { serverError UNKNOWN_IDENTIFIER }
+function check_error_code()
+{
+    if $CLICKHOUSE_CLIENT --dialect="prql" -q "$1" 2>&1 | grep -q "$2"
+    then
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+}
 
-from non_existing_table
-select [a]; -- { serverError UNKNOWN_TABLE }
+check_error_code "from s\"SELECT system.users\" | select non_existent_column" "UNKNOWN_IDENTIFIER"
+
+check_error_code "from non_existent_table" "UNKNOWN_TABLE"
