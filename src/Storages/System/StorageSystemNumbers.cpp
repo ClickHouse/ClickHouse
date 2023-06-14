@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
 
-#include <Interpreters/InterpreterSelectQuery.cpp>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>

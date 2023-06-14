@@ -1273,7 +1273,7 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
 }
 
 
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context)
+std::pair<UInt64, UInt64> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context)
 {
     UInt64 length = 0;
     UInt64 offset = 0;

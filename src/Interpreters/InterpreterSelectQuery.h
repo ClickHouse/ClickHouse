@@ -134,6 +134,8 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
