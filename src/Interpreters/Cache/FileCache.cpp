@@ -51,6 +51,7 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , boundary_alignment(settings.boundary_alignment)
+    , background_download_threads(settings.background_download_threads)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
 {
@@ -125,12 +126,10 @@ void FileCache::initialize()
 
     is_initialized = true;
 
-    size_t num_threads=2;
-    for (size_t i = 0; i < num_threads; ++i)
+    for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
-    auto & schedule_pool = Context::getGlobalContextInstance()->getSchedulePool();
-    cleanup_task = schedule_pool.createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
+    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }
@@ -644,27 +643,14 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
         if (releasable)
         {
-            auto segment = segment_metadata->file_segment;
-            if (segment->state() == FileSegment::State::DOWNLOADED)
-            {
-                const auto & key = segment->key();
+            const auto & key = segment_metadata->file_segment->key();
+            auto it = to_delete.find(key);
+            if (it == to_delete.end())
+                it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
+            it->second.add(segment_metadata);
 
-                auto it = to_delete.find(key);
-                if (it == to_delete.end())
-                    it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
-                it->second.add(segment_metadata);
-
-                freeable_space += segment_metadata->size();
-                freeable_count += 1;
-
-                return PriorityIterationResult::CONTINUE;
-            }
-
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
-
-            locked_key.removeFileSegment(segment->offset(), segment->lock());
-            return PriorityIterationResult::REMOVE_AND_CONTINUE;
+            freeable_space += segment_metadata->size();
+            freeable_count += 1;
         }
         return PriorityIterationResult::CONTINUE;
     };
@@ -1005,10 +991,6 @@ void FileCache::cleanupThreadFunc()
 {
     try
     {
-#ifdef ABORT_ON_LOGICAL_ERROR
-        assertCacheCorrectness();
-#endif
-
         cleanup();
     }
     catch (...)
