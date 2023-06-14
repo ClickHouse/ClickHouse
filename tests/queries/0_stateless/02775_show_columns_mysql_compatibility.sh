@@ -14,12 +14,12 @@ PORT=9004
 # First run the clickhouse test to create the ClickHouse Tables
 
 echo "Drop tables if they exist"
-${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS tab"
-${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde"
-${CLICKHOUSE_LOCAL} --query "DROP TABLE IF EXISTS database_123456789abcde.tab"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tab"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS database_123456789abcdef"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS database_123456789abcdef.tab"
 
 echo "Create tab table "
-${CLICKHOUSE_LOCAL} -n -q "
+${CLICKHOUSE_CLIENT} -n -q "
     SET allow_suspicious_low_cardinality_types=1;
     SET allow_experimental_object_type=1;
     CREATE TABLE tab
@@ -70,13 +70,13 @@ ${CLICKHOUSE_LOCAL} -n -q "
 
 
 echo "Create pseudo-random database name"
-${CLICKHOUSE_LOCAL} --query "CREATE DATABASE database_123456789abcde;"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE database_123456789abcdef;"
 
 echo "Create tab duplicate table"
-${CLICKHOUSE_LOCAL} -n -q "
+${CLICKHOUSE_CLIENT} -n -q "
     SET allow_suspicious_low_cardinality_types=1;
     SET allow_experimental_object_type =1;
-    CREATE TABLE database_123456789abcde.tab
+    CREATE TABLE database_123456789abcdef.tab
     (
         uint8 UInt8,
         uint16 UInt16,
@@ -138,9 +138,9 @@ SHOW COLUMNS FROM tab NOT ILIKE '%INT%';
 SHOW COLUMNS FROM tab WHERE field LIKE '%int%';
 SHOW COLUMNS FROM tab LIMIT 1;
 SHOW COLUMNS FROM tab;
-SHOW COLUMNS FROM tab FROM database_123456789abcde;
-SHOW COLUMNS FROM database_123456789abcde.tab;
-DROP DATABASE database_123456789abcde;
+SHOW COLUMNS FROM tab FROM database_123456789abcdef;
+SHOW COLUMNS FROM database_123456789abcdef.tab;
+DROP DATABASE database_123456789abcdef;
 DROP TABLE tab;
 EOT
 
