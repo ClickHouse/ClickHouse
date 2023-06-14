@@ -54,6 +54,42 @@ XML substitution example:
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
+## Decryption {#decryption}
+
+Elements with text nodes may be encrypted with [encryption codecs](../../sql-reference/statements/create/table.md#encryption-codecs). In this case `<encryption_codecs>` section should be included in configuration file and each element node with encrypted text should have `encryption_codec` attribute with name of codec.
+
+Example:
+
+```xml
+<clickhouse>
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password  encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+</clickhouse>
+```
+
+To get the encrypted value `encrypt_decrypt` example application may be used.
+
+Example:
+
+``` bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+``` text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+:::note
+The decryption is executed after creation of preprocessed configuration file. It means that elements with `encryption_codec` attribute in the preprocessed configuration file are encrypted. But the values of corresponding parameters in server's memory are decrypted.
+:::
+
 ## User Settings {#user-settings}
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.

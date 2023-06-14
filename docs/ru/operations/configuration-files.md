@@ -85,6 +85,42 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 Сервер следит за изменениями конфигурационных файлов, а также файлов и ZooKeeper-узлов, которые были использованы при выполнении подстановок и переопределений, и перезагружает настройки пользователей и кластеров на лету. То есть, можно изменять кластера, пользователей и их настройки без перезапуска сервера.
 
+## Расшифровка {#decryption}
+
+Элементы с текстовыми узлами могут быть зашифрован с помощью [кодеков шифрования](../../sql-reference/statements/create/table.md#encryption-codecs). В этом случае секция `<encryption_codecs>` должна быть включена в конфигурационный файл и каждый элемент с зашифрованным текстом должен иметь аттрибут `encryption_codec` с именем кодека.
+
+Пример:
+
+```xml
+<clickhouse>
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password  encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+</clickhouse>
+```
+
+Чтобы получить зашифрованное значение может быть использовано приложение-пример `encrypt_decrypt` .
+
+Пример:
+
+``` bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+``` text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+:::note
+Расшифровка выполняется после создания конфигурационного файла предобработки. Это означает что элементы с аттрибутом `encryption_codec` в конфигурационном файле предобработки зашифрованы. Но значения соответствующих параметров в памяти сервера расшифрованы.
+:::
+
 ## Примеры записи конфигурации на YAML {#example}
 
 Здесь можно рассмотреть пример реальной конфигурации записанной на YAML: [config.yaml.example](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
