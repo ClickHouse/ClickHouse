@@ -47,6 +47,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 /// Get method for string name. Throw exception for wrong name
 EncryptionMethod getEncryptionMethod(const std::string & name)
 {
@@ -56,6 +59,8 @@ EncryptionMethod getEncryptionMethod(const std::string & name)
         return AES_256_GCM_SIV;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", name);
+}
+
 }
 
 /// For cutting preprocessed path to this base
