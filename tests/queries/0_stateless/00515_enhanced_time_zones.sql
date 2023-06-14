@@ -68,4 +68,4 @@ DETACH TABLE tab;
 ATTACH TABLE tab SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
 ATTACH TABLE tab SETTINGS allow_nonconst_timezone_arguments = 1;
 
-DROP TABLE tab;
+DROP TABLE tab SYNC;
