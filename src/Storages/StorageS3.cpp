@@ -460,7 +460,7 @@ public:
         for (auto && key : all_keys)
         {
             std::optional<S3::ObjectInfo> info;
-            if (need_total_size)
+            if (need_total_size && all_keys.size() == 1)
             {
                 info = S3::getObjectInfo(client_, bucket, key, version_id_, request_settings_);
                 total_size += info->size;
