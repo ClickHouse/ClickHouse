@@ -1,3 +1,4 @@
+#include <cassert>
 #include <memory>
 #include <Functions/FunctionFactory.h>
 #include <Poco/Logger.h>
@@ -63,7 +64,7 @@ void FunctionArrayFold::getLambdaArgumentTypes(DataTypes & arguments) const
         if (!array_type)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument {} of function {} must be array. Found {} instead.", toString(i + 1), getName(), arguments[i + 1]->getName());
+                "Argument {} of function {} must be array. Found {} instead.", i + 1, getName(), arguments[i + 1]->getName());
 
         nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
     }
@@ -100,7 +101,7 @@ DataTypePtr FunctionArrayFold::getReturnTypeImpl(const ColumnsWithTypeAndName & 
     return DataTypePtr(accumulator_type);
 }
 
-ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows_count) const
 {
     const auto & column_function_with_type_and_name = arguments[0];
     if (!column_function_with_type_and_name.column)
@@ -112,8 +113,8 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
     const size_t arguments_count = arguments.size();
+    assert(arguments_count > 2);
     ColumnPtr column_offset;
-    // ColumnPtr column_first_array_ptr;
     const ColumnArray * column_first_array = nullptr;
     ColumnsWithTypeAndName arrays;
     arrays.reserve(arguments_count - 1);
@@ -123,17 +124,18 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         const auto & array_with_type_and_name = arguments[i];
         ColumnPtr column_array_ptr = array_with_type_and_name.column;
         const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
-        const DataTypePtr & type_array_ptr = array_with_type_and_name.type;
-        const auto * type_array = checkAndGetDataType<DataTypeArray>(type_array_ptr.get());
         if (!column_array)
         {
             const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
             if (!column_const_array)
                 throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN, "Expected array column, found  {}", column_array_ptr->getName());
+                    ErrorCodes::ILLEGAL_COLUMN, "Expected array column, found {}", column_array_ptr->getName());
             column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
             column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
         }
+
+        const DataTypePtr & type_array_ptr = array_with_type_and_name.type;
+        const auto * type_array = checkAndGetDataType<DataTypeArray>(type_array_ptr.get());
         if (!type_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected array type, found {}.", type_array_ptr->getName());
 
@@ -153,21 +155,22 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         {
             column_first_array = column_array;
         }
-        arrays.emplace_back(ColumnWithTypeAndName(
-            column_array->getDataPtr(), 
-            recursiveRemoveLowCardinality(type_array->getNestedType()), array_with_type_and_name.name));
+        arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
+                                                  recursiveRemoveLowCardinality(type_array->getNestedType()),
+                                                  array_with_type_and_name.name));
     }
-
     arrays.emplace_back(arguments.back());
 
+    if (rows_count == 0)
+            return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+
     ColumnWithTypeAndName column_accumulator = arguments.back();
-    const size_t row_count = column_first_array->size();
-    std::vector<size_t> array_size_vec(row_count);
-    const auto & array_offsets = column_first_array->getOffsets();
-    size_t max_array_size = row_count ? array_offsets[0] : 0;
+    std::vector<size_t> array_size_vec(rows_count);
+    const ColumnArray::Offsets& array_offsets = column_first_array->getOffsets();
+    size_t max_array_size = rows_count ? array_offsets[0] : 0;
     std::map<size_t, ColumnPtr> row_res;
 
-    for (size_t i = 0; i < row_count; ++i)
+    for (size_t i = 0; i < rows_count; ++i)
     {
         auto size = array_offsets[i] - array_offsets[i - 1];
         array_size_vec[i] = size;
@@ -192,7 +195,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
             const ColumnPtr& column_array_element_ptr = array_element_with_type_and_name.column;
             MutableColumnPtr column_lambda_input = array_element_with_type_and_name.column->cloneEmpty();
             
-            for (size_t irow = 0; irow < row_count; ++irow)
+            for (size_t irow = 0; irow < rows_count; ++irow)
             {
                 if (array_size_vec[irow] >= array_size) 
                 {
@@ -225,7 +228,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
 
         column_accumulator.column = lambda_result;
 
-        for (size_t irow = 0; irow < row_count; ++irow)
+        for (size_t irow = 0; irow < rows_count; ++irow)
         {
             if (array_size_vec[irow] - array_size == 0)
             {
