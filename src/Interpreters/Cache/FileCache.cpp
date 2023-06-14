@@ -1014,7 +1014,6 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
-        return true;
     });
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
 }
