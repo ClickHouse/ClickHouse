@@ -594,4 +594,4 @@ def test_partition_by_tf(cluster):
 
     assert "1,2,3\n" == get_azure_file_content("test_partition_tf_3.csv")
     assert "3,2,1\n" == get_azure_file_content("test_partition_tf_1.csv")
-    assert "78,43,45\n" == get_azure_file_content("test_partition_tfs_45.csv")
+    assert "78,43,45\n" == get_azure_file_content("test_partition_tf_45.csv")
