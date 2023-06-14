@@ -71,7 +71,7 @@ def get_json_params_dict(
     }
 
 
-def get_env_for_runner(build_path, repo_path, result_path, work_path):
+def get_env_for_runner(check_name, build_path, repo_path, result_path, work_path):
     binary_path = os.path.join(build_path, "clickhouse")
     odbc_bridge_path = os.path.join(build_path, "clickhouse-odbc-bridge")
     library_bridge_path = os.path.join(build_path, "clickhouse-library-bridge")
@@ -87,6 +87,9 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
     my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = os.path.join(work_path, "params.json")
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
+
+    if "analyzer" in check_name.lower():
+        my_env["USE_NEW_ANALYZER"] = "1"
 
     return my_env
 
@@ -225,9 +228,7 @@ def main():
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
-    if "analyzer" in check_name.lower():
-        my_env["USE_NEW_ANALYZER"] = "1"
+    my_env = get_env_for_runner(check_name, build_path, repo_path, result_path, work_path)
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
