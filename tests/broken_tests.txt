@@ -49,7 +49,6 @@
 01586_columns_pruning
 01624_soft_constraints
 01651_bugs_from_15889
-01655_plan_optimizations
 01656_test_query_log_factories_info
 01681_bloom_filter_nullable_column
 01700_system_zookeeper_path_in
