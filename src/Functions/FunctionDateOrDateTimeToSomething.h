@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// See DateTimeTransforms.h
@@ -87,7 +88,12 @@ public:
 
     RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
     {
-        return Transform::getPreimage(type, point);
+        if constexpr (Transform::hasPreimage())
+            return Transform::getPreimage(type, point);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Function {} has no information about its preimage",
+                Transform::name);
     }
 
 };

@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_CONVERT_TYPE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /** Transformations.
@@ -323,11 +322,7 @@ struct ToTimeImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -399,11 +394,7 @@ struct ToStartOfSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -451,11 +442,7 @@ struct ToStartOfMillisecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -499,11 +486,7 @@ struct ToStartOfMicrosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -541,11 +524,7 @@ struct ToStartOfNanosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -744,7 +723,7 @@ struct ToYearImpl
         return time_zone.toYear(DayNum(d));
     }
 
-    static inline bool hasPreimage() { return true; }
+    static inline constexpr bool hasPreimage() { return true; }
 
     static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
     {
@@ -839,11 +818,7 @@ struct ToQuarterImpl
     {
         return time_zone.toQuarter(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -868,11 +843,7 @@ struct ToMonthImpl
     {
         return time_zone.toMonth(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -898,11 +869,7 @@ struct ToDayOfMonthImpl
         return time_zone.toDayOfMonth(DayNum(d));
     }
 
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToStartOfMonthImpl;
 };
 
@@ -950,11 +917,7 @@ struct ToDayOfYearImpl
     {
         return time_zone.toDayOfYear(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -979,11 +942,7 @@ struct ToHourImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -1012,11 +971,7 @@ struct TimezoneOffsetImpl
         throwDateTimeIsNotSupported(name);
     }
 
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToTimeImpl;
 };
 
@@ -1040,11 +995,7 @@ struct ToMinuteImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfHourImpl;
 };
@@ -1069,11 +1020,7 @@ struct ToSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfMinuteImpl;
 };
@@ -1098,11 +1045,7 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1159,11 +1102,7 @@ struct ToISOWeekImpl
     {
         return time_zone.toISOWeek(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToISOYearImpl;
 };
@@ -1206,11 +1145,7 @@ struct ToRelativeYearNumImpl
     {
         return time_zone.toYear(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1242,11 +1177,7 @@ struct ToRelativeQuarterNumImpl
     {
         return time_zone.toRelativeQuarterNum(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1278,11 +1209,7 @@ struct ToRelativeMonthNumImpl
     {
         return time_zone.toRelativeMonthNum(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1314,11 +1241,7 @@ struct ToRelativeWeekNumImpl
     {
         return time_zone.toRelativeWeekNum(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1350,11 +1273,7 @@ struct ToRelativeDayNumImpl
     {
         return static_cast<DayNum>(d);
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1392,11 +1311,7 @@ struct ToRelativeHourNumImpl
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1428,11 +1343,7 @@ struct ToRelativeMinuteNumImpl
     {
         return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1461,11 +1372,7 @@ struct ToRelativeSecondNumImpl
     {
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1490,7 +1397,7 @@ struct ToYYYYMMImpl
     {
         return time_zone.toNumYYYYMM(DayNum(d));
     }
-    static inline bool hasPreimage() { return true; }
+    static inline constexpr bool hasPreimage() { return true; }
 
     static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
     {
@@ -1539,11 +1446,7 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1568,11 +1471,7 @@ struct ToYYYYMMDDhhmmssImpl
     {
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
     }
-    static inline bool hasPreimage() { return false; }
-    static inline RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", name);
-    }
+    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
