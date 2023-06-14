@@ -15,7 +15,7 @@ PORT=9004
 
 echo "Drop tables if they exist"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tab"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS database_123456789abcdef"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS database_123456789abcdef"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS database_123456789abcdef.tab"
 
 echo "Create tab table "
