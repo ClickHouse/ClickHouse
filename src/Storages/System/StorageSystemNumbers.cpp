@@ -200,7 +200,7 @@ Pipe StorageSystemNumbers::read(
     {
         /// Intersect ranges with table range
         Range table_range(
-            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : POSITIVE_INFINITY, limit.has_value());
+            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : POSITIVE_INFINITY, false);
 
         Ranges intersected_ranges;
         for (auto & r : ranges)
