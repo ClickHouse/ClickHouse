@@ -63,7 +63,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
-    format_settings.csv.ignore_extra_columns = settings.input_format_csv_ignore_extra_columns;
     format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
@@ -72,6 +71,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
     format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
     format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
+    format_settings.csv.ignore_extra_columns = settings.input_format_csv_ignore_extra_columns;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;

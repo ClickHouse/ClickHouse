@@ -288,6 +288,8 @@ bool CSVFormatReader::readField(
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
 
+    bool res = false;
+
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
     if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
@@ -299,31 +301,28 @@ bool CSVFormatReader::readField(
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
         column.insertDefault();
-        return false;
     }
-
-    auto skip_all = [&]()
-    {
-        if (!is_last_file_column || !format_settings.csv.ignore_extra_columns)
-        {
-            return;
-        }
-        //std::cout << "skip !!!" << std::endl;
-        buf->position() = find_first_symbols<'\n'>(buf->position(), buf->buffer().end());
-    };
-    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+    else if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
-        bool res = SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
-        skip_all();
-        return res;
+        res = SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
+    }
+    else
+    {
+        /// Read the column normally.
+        serialization->deserializeTextCSV(column, *buf, format_settings);
+        res = true;
     }
 
-    /// Read the column normally.
-    serialization->deserializeTextCSV(column, *buf, format_settings);
-
-    skip_all();
-    return true;
+    if (is_last_file_column && format_settings.csv.ignore_extra_columns)
+    {
+        while (checkChar(format_settings.csv.delimiter, *buf))
+        {
+            skipField();
+            skipWhitespacesAndTabs(*buf);
+        }
+    }
+    return res;
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
