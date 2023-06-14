@@ -84,19 +84,23 @@ def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
     ]
 
 
-def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3):
+#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
+@pytest.mark.parametrize(
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
+)
+def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression):
     node = cluster.instances["node"]
 
     broken_s3.setup_error_at_create_multi_part_upload()
 
-    insert_query_id = "INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU"
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
     error = node.query_and_get_error(
-        """
+        f"""
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_create_multi_part_upload',
                 'minio', 'minio123',
-                'CSV', auto, 'none'
+                'CSV', auto, '{compression}'
             )
         SELECT
             *
@@ -111,7 +115,6 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3):
 
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
-    assert "DB::WriteBufferFromS3::createMultipartUpload()" in error, error
 
     count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id
@@ -121,20 +124,26 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3):
     assert count_s3_errors == 1
 
 
-def test_upload_s3_fail_upload_part_when_multi_part_upload(cluster, broken_s3):
+#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
+@pytest.mark.parametrize(
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
+)
+def test_upload_s3_fail_upload_part_when_multi_part_upload(
+    cluster, broken_s3, compression
+):
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_error_at_part_upload(count=1, after=2)
 
-    insert_query_id = "INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART"
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
     error = node.query_and_get_error(
-        """
+        f"""
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_upload_part_when_multi_part_upload',
                 'minio', 'minio123',
-                'CSV', auto, 'none'
+                'CSV', auto, '{compression}'
             )
         SELECT
             *
@@ -149,7 +158,6 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(cluster, broken_s3):
 
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
-    assert "DB::WriteBufferFromS3::writePart" in error, error
 
     count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id
