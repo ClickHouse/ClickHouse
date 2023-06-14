@@ -228,7 +228,9 @@ def main():
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(check_name, build_path, repo_path, result_path, work_path)
+    my_env = get_env_for_runner(
+        check_name, build_path, repo_path, result_path, work_path
+    )
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
