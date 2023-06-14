@@ -146,7 +146,7 @@ EOT
 
 # Now run the MySQL test script on the ClickHouse DB
 echo "Run MySQL test"
-${MYSQL_CLIENT} --user="$USER" --password="$PASSWORD" --host="$HOST" --port="$PORT" < $TEMP_FILE
+MYSQL_PWD=$PASSWORD ${MYSQL_CLIENT} --user="$USER" --host="$HOST" --port="$PORT" < $TEMP_FILE
 
 # Clean up the temp file
 rm $TEMP_FILE
