@@ -11,3 +11,7 @@ default-eof	1	2019-06-19
 2016-01-01 01:02:03	NUL
 2016-01-02 01:02:03	Nhello
 \N	\N
+Hello world	1	2016-01-01
+Hello world	2	2016-01-02
+Hello world	3	2016-01-03
+Hello world	4	2016-01-04
