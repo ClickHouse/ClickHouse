@@ -334,7 +334,9 @@ def test_azure_glob_scheherazade(cluster):
                     node,
                     f"CREATE TABLE test_scheherazade_{i}_{unique_num} ({table_format}) Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV')",
                 )
-                query = f"insert into test_scheherazade_{i}_{unique_num} VALUES {values}"
+                query = (
+                    f"insert into test_scheherazade_{i}_{unique_num} VALUES {values}"
+                )
                 azure_query(node, query)
 
         jobs.append(
