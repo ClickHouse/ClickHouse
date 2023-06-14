@@ -54,7 +54,7 @@ CREATE TABLE table
 (
   `id` Int64,
   `vectors` Array(Float32),
-  INDEX <ann_index_name> vectors TYPE <ann_index_type>(<ann_index_parameters>) [GRANULARITY <N>]
+  INDEX [ann_index_name vectors TYPE [ann_index_type]([ann_index_parameters]) [GRANULARITY [N]]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -67,7 +67,7 @@ CREATE TABLE table
 (
   `id` Int64,
   `vectors` Tuple(Float32[, Float32[, ...]]),
-  INDEX <ann_index_name> vectors TYPE <ann_index_type>(<ann_index_parameters>) [GRANULARITY <N>]
+  INDEX [ann_index_name] vectors TYPE [ann_index_type]([ann_index_parameters]) [GRANULARITY [N]]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -114,7 +114,7 @@ without `LIMIT` clause cannot utilize ANN indexes. Also ANN indexes are only use
 approximate neighbor search.
 
 **Differences to Skip Indexes** Similar to regular [skip indexes](https://clickhouse.com/docs/en/optimize/skipping-indexes), ANN indexes are
-constructed over granules and each indexed block consists of `GRANULARITY = <N>`-many granules (`<N>` = 1 by default for normal skip
+constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skip
 indexes). For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`,
 then each indexed block will contain 16384 rows. However, data structures and algorithms for approximate neighborhood search (usually
 provided by external libraries) are inherently row-oriented. They store a compact representation of a set of rows and also return rows for
@@ -129,8 +129,8 @@ skip data at the granularity of index blocks.
 
 The `GRANULARITY` parameter determines how many ANN sub-indexes are created. Bigger `GRANULARITY` values mean fewer but larger ANN
 sub-indexes, up to the point where a column (or a column's data part) has only a single sub-index. In that case, the sub-index has a
-"global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most `LIMIT
-<N>`-many such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a
+"global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most 
+`LIMIT [N]`-many such granules). In a second step, ClickHouse will load these granules and identify the actually best rows by performing a
 brute-force distance calculation over all rows of the granules. With a small `GRANULARITY` value, each of the sub-indexes returns up to
 `LIMIT N`-many granules. As a result, more granules need to be loaded and post-filtered. Note that the search accuracy is with both cases
 equally good, only the processing performance differs. It is generally recommended to use a large `GRANULARITY` for ANN indexes and fall
@@ -151,7 +151,7 @@ This type of ANN index implements [the Annoy algorithm](https://github.com/spoti
 space in random linear surfaces (lines in 2D, planes in 3D etc.).
 
 <div class='vimeo-container'>
-  <iframe src="//www.youtube.com/watch?v=QkCCyLW0ehU"
+  <iframe src="//www.youtube.com/embed/QkCCyLW0ehU"
     width="640"
     height="360"
     frameborder="0"
@@ -169,7 +169,7 @@ CREATE TABLE table
 (
   id Int64,
   vectors Array(Float32),
-  INDEX <ann_index_name> vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -182,7 +182,7 @@ CREATE TABLE table
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
-  INDEX <ann_index_name> vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -202,10 +202,10 @@ CHECK length(vectors) = 256`.
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
 values mean more accurate results at the cost of longer query runtime:
 
-``` sql
+```sql
 SELECT *
 FROM table_name
 ORDER BY L2Distance(vectors, Point)
 LIMIT N
-SETTINGS annoy_index_search_k_nodes=100
+SETTINGS annoy_index_search_k_nodes=100;
 ```

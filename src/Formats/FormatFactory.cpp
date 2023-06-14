@@ -186,6 +186,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
