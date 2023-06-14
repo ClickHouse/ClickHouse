@@ -642,6 +642,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
+    // kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & json_string)
+    // {
+    //     LOG_DEBUG(log, "kafka statistics {}", json_string);
+    // });
+
+
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
