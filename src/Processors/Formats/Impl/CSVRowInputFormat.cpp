@@ -25,10 +25,14 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkBadDelimiter(char delimiter, bool use_whitespace_tab_as_delimiter)
+    void checkBadDelimiter(char delimiter, bool allow_whitespace_or_tab_as_delimiter)
     {
+        if ((delimiter == ' ' || delimiter == '\t') && allow_whitespace_or_tab_as_delimiter)
+        {
+            return;
+        }
         constexpr std::string_view bad_delimiters = " \t\"'.UL";
-        if (bad_delimiters.find(delimiter) != std::string_view::npos && !use_whitespace_tab_as_delimiter)
+        if (bad_delimiters.find(delimiter) != std::string_view::npos)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "CSV format may not work correctly with delimiter '{}'. Try use CustomSeparated format instead",
@@ -68,7 +72,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
-    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.use_whitespace_tab_as_delimiter);
+    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
@@ -90,7 +94,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
-    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.use_whitespace_tab_as_delimiter);
+    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
 }
 
 void CSVRowInputFormat::syncAfterError()
@@ -134,9 +138,9 @@ static void skipEndOfLine(ReadBuffer & in)
 }
 
 /// Skip `whitespace` symbols allowed in CSV.
-static inline void skipWhitespacesAndTabs(ReadBuffer & in, const bool & use_whitespace_tab_as_delimiter)
+static inline void skipWhitespacesAndTabs(ReadBuffer & in, const bool & allow_whitespace_or_tab_as_delimiter)
 {
-    if (use_whitespace_tab_as_delimiter)
+    if (allow_whitespace_or_tab_as_delimiter)
     {
         return;
     }
@@ -150,7 +154,7 @@ CSVFormatReader::CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings
 
 void CSVFormatReader::skipFieldDelimiter()
 {
-    skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     assertChar(format_settings.csv.delimiter, *buf);
 }
 
@@ -158,7 +162,7 @@ template <bool read_string>
 String CSVFormatReader::readCSVFieldIntoString()
 {
     if (format_settings.csv.trim_whitespaces) [[likely]]
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     String field;
     if constexpr (read_string)
@@ -170,14 +174,14 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     NullOutput out;
     readCSVStringInto(out, *buf, format_settings.csv);
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
 {
-    skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     if (buf->eof())
         return;
@@ -186,7 +190,7 @@ void CSVFormatReader::skipRowEndDelimiter()
     if (*buf->position() == format_settings.csv.delimiter)
         ++buf->position();
 
-    skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     if (buf->eof())
         return;
 
@@ -198,7 +202,7 @@ void CSVFormatReader::skipHeaderRow()
     do
     {
         skipField();
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     } while (checkChar(format_settings.csv.delimiter, *buf));
 
     skipRowEndDelimiter();
@@ -211,7 +215,7 @@ std::vector<String> CSVFormatReader::readRowImpl()
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     } while (checkChar(format_settings.csv.delimiter, *buf));
 
     skipRowEndDelimiter();
@@ -224,7 +228,7 @@ bool CSVFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         assertChar(delimiter, *buf);
     }
     catch (const DB::Exception &)
@@ -250,7 +254,7 @@ bool CSVFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 
 bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 {
-    skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     if (buf->eof())
         return true;
@@ -259,7 +263,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     if (*buf->position() == format_settings.csv.delimiter)
     {
         ++buf->position();
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         if (buf->eof())
             return true;
     }
@@ -287,7 +291,7 @@ bool CSVFormatReader::readField(
     const String & /*column_name*/)
 {
     if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
-        skipWhitespacesAndTabs(*buf, format_settings.csv.use_whitespace_tab_as_delimiter);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
