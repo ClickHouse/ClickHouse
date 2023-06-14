@@ -325,6 +325,9 @@ CI_CONFIG = {
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
+        "Integration tests (asan, analyzer)": {
+            "required_build": "package_asan",
+        },
         "Integration tests (tsan)": {
             "required_build": "package_tsan",
         },
