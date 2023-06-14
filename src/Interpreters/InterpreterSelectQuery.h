@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
@@ -187,6 +188,7 @@ private:
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
+    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
 
     enum class Modificator
     {
