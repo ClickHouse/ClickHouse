@@ -216,16 +216,17 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
             auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
             avro::NodePtr root_node = file_reader->dataSchema().root();
-            int leaves_num = static_cast<int>(root_node->leaves());
-            if (leaves_num < 2)
+            size_t leaves_num = root_node->leaves();
+            size_t expected_min_num = metadata.format_version == 1 ? 3 : 2;
+            if (leaves_num < expected_min_num)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Unexpected number of columns {}. Expected at least 2",
-                    root_node->leaves());
+                    "Unexpected number of columns {}. Expected at least {}",
+                    root_node->leaves(), expected_min_num);
             }
 
-            avro::NodePtr data_file_node = root_node->leafAt(leaves_num - 1);
+            avro::NodePtr data_file_node = root_node->leafAt(static_cast<int>(leaves_num) - 1);
             if (data_file_node->type() != avro::Type::AVRO_RECORD)
             {
                 throw Exception(
