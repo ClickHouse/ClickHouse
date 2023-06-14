@@ -15,7 +15,7 @@ SETTINGS disk = disk(type = cache,
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
-                     disk = 's3disk');
+                     disk = 's3_disk');
 
 INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
 "
