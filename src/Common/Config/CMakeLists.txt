@@ -15,6 +15,7 @@ target_link_libraries(clickhouse_common_config
         Poco::XML
     PRIVATE
         string_utils
+        dbms
 )
 
 add_library(clickhouse_common_config_no_zookeeper_log ${SRCS})
@@ -25,6 +26,7 @@ target_link_libraries(clickhouse_common_config_no_zookeeper_log
         Poco::XML
     PRIVATE
         string_utils
+        dbms
 )
 
 if (TARGET ch_contrib::yaml_cpp)
