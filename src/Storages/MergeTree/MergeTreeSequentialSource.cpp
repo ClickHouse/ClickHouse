@@ -312,7 +312,7 @@ public:
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
             KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression, NameSet{});
-            LOG_DEBUG(log, "ReadFromPart (MergeTreeSequentialSource) Key condition: {}", key_condition.toString());
+            LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(

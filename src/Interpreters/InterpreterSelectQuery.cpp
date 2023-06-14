@@ -93,14 +93,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 
-#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
 }
-#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 namespace DB
 {
@@ -134,9 +132,6 @@ FilterDAGInfoPtr generateFilterActions(
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
 {
-    LOG_TRACE(&Poco::Logger::get("generateFilterActions"), "top of");
-
-
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
     const auto & db_name = table_id.getDatabaseName();
@@ -551,15 +546,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
-    {
-        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, table name: {}, calling getRowPolicyFilter", (void*)this, table_id.getTableName());
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    }
-    else
-    {
-        LOG_TRACE(&Poco::Logger::get("InterpretSelectQuery ctor"), " {}, no storage", (void*)this);
-    }
-
 
     StorageView * view = nullptr;
     if (storage)
@@ -863,8 +850,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Add prewhere actions with alias columns and record needed columns from storage.
     if (storage)
     {
-        LOG_TRACE(log, "calling addPrewhereAliasActions");
-
         addPrewhereAliasActions();
         analysis_result.required_columns = required_columns;
     }
@@ -960,8 +945,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     analysis_result = ExpressionAnalysisResult(
         *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
-    LOG_TRACE(log, "getSampleBlockImpl {} : source_header after ExpressionAnalysisResult {}", (void*) this, source_header.dumpStructure());
-
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -971,12 +954,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         {
             header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
-            {
-                LOG_TRACE(log, "getSampleBlockImpl {} : erasing column {}", (void*) this, analysis_result.prewhere_info->prewhere_column_name);
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
-            }
         }
-        LOG_TRACE(log, "getSampleBlockImpl {} : returning header", (void*) this);
         return header;
     }
 
@@ -1462,7 +1441,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
         executeFetchColumns(from_stage, query_plan);
 
-        LOG_TRACE(log, "executeImpl {}, {} -> {}", (void*) this, QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
+        LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
@@ -1528,15 +1507,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             // Thus, we don't actually need to check if projection is active.
             if (!query_info.projection && expressions.filter_info)
             {
-                LOG_TRACE(log, "executeImpl, adding Row-level security filter; column_name {}, block {}",
-                    expressions.filter_info->column_name, query_plan.getCurrentDataStream().header.dumpStructure());
-
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.filter_info->actions,
                     expressions.filter_info->column_name,
                     expressions.filter_info->do_remove_column);
-
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
@@ -2075,16 +2050,11 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     auto & expressions = analysis_result;
     if (expressions.filter_info)
     {
-        LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info", (void*)this);
-
         if (!expressions.prewhere_info)
         {
             const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
-            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1 - does_storage_support_prewhere {} shouldMoveToPrewhere() {}",
-                (void*)this, does_storage_support_prewhere, shouldMoveToPrewhere());
             if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
-                LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 1.5", (void*)this);
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereInfo>(
                     std::move(expressions.filter_info->actions),
@@ -2097,20 +2067,11 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
         else
         {
-            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {}, expressions.filter_info 2", (void*)this);
             /// Add row level security actions to prewhere.
             expressions.prewhere_info->row_level_filter = std::move(expressions.filter_info->actions);
             expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
             expressions.prewhere_info->row_level_filter->projectInput(false);
             expressions.filter_info = nullptr;
-        }
-        if (expressions.prewhere_info)
-        {
-            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " {} dump: {}", (void*)this, expressions.prewhere_info->dump());
-        }
-        else
-        {
-            LOG_TRACE(&Poco::Logger::get("addPrewhereAliasActions"), " no prewhere_info");
         }
     }
 
