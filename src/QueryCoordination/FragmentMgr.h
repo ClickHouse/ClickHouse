@@ -31,9 +31,11 @@ public:
     // Keep fragments that need to be executed by themselves
     void fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & self_fragment);
 
-    void beginFragments(String query_id);
+    void executeQueryPipelines(String query_id);
 
     void receiveData(const ExchangeDataRequest & exchange_data_request, Block & block);
+
+    QueryPipeline findRootQueryPipeline(String query_id);
 
     static FragmentMgr & getInstance()
     {
@@ -42,7 +44,9 @@ public:
     }
 
 private:
-    void buildQueryPipelines(String query_id);
+    FragmentMgr() = default;
+
+    void fragmentsToQueryPipelines(String query_id);
 
     void cleanerThread();
 
@@ -59,6 +63,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> cleaner;
 
     QueryFragment query_fragment;
+    mutable std::mutex fragments_mutex;
 
     PipelineExecutors executors;
 };

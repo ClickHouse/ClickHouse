@@ -1,5 +1,5 @@
 
-#include <QueryCoordination/FragmentRequest.h>
+#include <QueryCoordination/IO/FragmentRequest.h>
 
 namespace DB
 {

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QueryCoordination/IO/FragmentRequest.h>
+#include <IO/VarInt.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <vector>
 
@@ -12,12 +15,27 @@ class FragmentsRequest
 public:
     void write(WriteBuffer & out) const
     {
-        Coordination::write(query, out);
+        /// query has been sent
 
-        Coordination::write(fragments_request.size(), out);
+        writeVarInt(fragments_request.size(), out);
         for (const FragmentRequest & fragment_request : fragments_request)
         {
             fragment_request.write(out);
+        }
+    }
+
+    void read(ReadBuffer & in)
+    {
+        /// query has been read
+
+        Int64 fragment_size;
+        readVarInt(fragment_size, in);
+
+        for (Int64 i = 0; i < fragment_size; ++i)
+        {
+            FragmentRequest request;
+            request.read(in);
+            fragments_request.emplace_back(request);
         }
     }
 

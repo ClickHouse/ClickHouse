@@ -420,12 +420,21 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 
+            /// For fragments query
             /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
             if (state.fragments_request && query_context->getSettingsRef().allow_experimental_fragment
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
                 FragmentMgr::getInstance().fragmentsToDistributed(
                     query_context->getInitialQueryId(), state.fragments_request->fragmentsRequest());
+
+                /// send ready
+                writeVarUInt(Protocol::Server::FragmentsReady, *out);
+                out->next();
+
+                /// receive begin
+                receivePacket();
+
                 continue;
             }
 
@@ -1367,13 +1376,20 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::PlanFragmentsBeginProcess:
             readStringBinary(state.query_id, *in);
-            FragmentMgr::getInstance().beginFragments(state.query_id);
+            FragmentMgr::getInstance().executeQueryPipelines(state.query_id);
             return false;
 
         case Protocol::Client::ExchangeData:
-            // TODO read exchange_data_request
-            state.exchange_data_request.emplace();
+        {
+            ExchangeDataRequest exchange_data_request;
+            exchange_data_request.read(*in);
+            state.exchange_data_request.emplace(exchange_data_request);
+
+            /// read exchange data
+            readData();
+
             return false;
+        }
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
@@ -1482,8 +1498,10 @@ void TCPHandler::receiveClusterNameAndSalt()
 void TCPHandler::receiveFragments()
 {
     receiveQuery();
-    /// TODO
-    // state.fragment_requests.read()
+
+    FragmentsRequest fragments_request;
+    fragments_request.read(*in);
+    state.fragments_request.emplace(fragments_request);
 }
 
 void TCPHandler::receiveQuery()

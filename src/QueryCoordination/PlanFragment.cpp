@@ -8,7 +8,7 @@
 namespace DB
 {
 
-QueryPipeline PlanFragment::buildQueryPipeline(const std::vector<DataSink::Channel> & channels)
+QueryPipeline PlanFragment::buildQueryPipeline(std::vector<DataSink::Channel> & channels)
 {
     auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));

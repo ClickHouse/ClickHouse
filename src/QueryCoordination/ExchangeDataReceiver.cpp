@@ -14,7 +14,7 @@ void ExchangeDataReceiver::onUpdatePorts()
 
 }
 
-void ExchangeDataReceiver::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_)
+void ExchangeDataReceiver::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits_*/)
 {
 
 }
@@ -23,6 +23,9 @@ std::optional<Chunk> ExchangeDataReceiver::tryGenerate()
 {
     // TODO lock
     // TODO block_list empty wait
+
+    if (block_list.empty())
+        return Chunk();
 
     Block & block = block_list.front();
     block_list.pop_front();

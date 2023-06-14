@@ -1,6 +1,6 @@
 
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/ScanStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryCoordination/Coordinator.h>
 #include <Storages/IStorage.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
@@ -9,23 +9,18 @@
 namespace DB
 {
 
-void Coordinator::schedule()
+void Coordinator::scheduleExecuteDistributedPlan()
 {
-    for (auto fragment : fragments)
-    {
-        fragment->finalize();
-    }
-
     // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment
 
-    std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts;
+    std::unordered_map<FragmentID, std::vector<String>> scan_fragment_hosts;
     PoolBase<DB::Connection>::Entry local_shard_connection;
     for (UInt32 i = 0; i < fragments.size(); ++i)
     {
         auto fragment = fragments[i];
         auto lowest_node = fragment->getQueryPlan().getNodes().begin();
 
-        if (auto scan_step = dynamic_cast<ScanStep *>(lowest_node->step.get()))
+        if (auto scan_step = dynamic_cast<ReadFromMergeTree *>(lowest_node->step.get()))
         {
             for (const auto & shard_info : fragment->getCluster()->getShardsInfo())
             {
@@ -33,14 +28,15 @@ void Coordinator::schedule()
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                                     current_settings).getSaturated(
                                         current_settings.max_execution_time);
-                std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+                std::vector<IConnectionPool::Entry> try_results;
 
-                try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, scan_step->getTable()->getStorageID().getQualifiedName());
+//                try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, scan_step->getTable()->getStorageID().getQualifiedName());
+                try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
 
                 if (shard_info.isLocal())
-                    local_shard_connection = try_results[0].entry;
+                    local_shard_connection = try_results[0];
 
-                PoolBase<DB::Connection>::Entry connection =  try_results[0].entry; /// TODO random ?
+                PoolBase<DB::Connection>::Entry connection =  try_results[0]; /// TODO random ?
                 host_connection[connection->getDescription()] = connection;
 
                 scan_fragment_hosts[i].emplace_back(connection->getDescription());
@@ -53,24 +49,26 @@ void Coordinator::schedule()
 
     // For a fragment with a scanstep, process its dest fragment.
 
-    auto process_other_fragment = [this, &local_shard_connection](std::unordered_map<UInt32, std::vector<String>> & fragment_hosts) -> std::unordered_map<UInt32, std::vector<String>>
+    auto process_other_fragment
+        = [this, &local_shard_connection](
+              std::unordered_map<FragmentID, std::vector<String>> & fragment_hosts) -> std::unordered_map<FragmentID, std::vector<String>>
     {
-        std::unordered_map<UInt32, std::vector<String>> local_fragment_hosts;
+        std::unordered_map<FragmentID, std::vector<String>> tmp_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts)
         {
             auto dest_fragment = fragments[fragment_id]->getDestFragment();
 
             if (!dest_fragment)
-                return local_fragment_hosts;
+                return tmp_fragment_hosts;
 
             if (fragment_id_hosts.contains(dest_fragment->getFragmentId()))
-                return local_fragment_hosts;
+                return tmp_fragment_hosts;
 
             if (!dest_fragment->isPartitioned())
             {
                 host_fragment_ids[local_shard_connection->getDescription()].emplace_back(dest_fragment);
                 fragment_id_hosts[dest_fragment->getFragmentId()].emplace_back(local_shard_connection->getDescription());
-                local_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_shard_connection->getDescription());
+                tmp_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_shard_connection->getDescription());
 
                 continue;
             }
@@ -79,38 +77,26 @@ void Coordinator::schedule()
             {
                 host_fragment_ids[host].emplace_back(dest_fragment);
                 fragment_id_hosts[dest_fragment->getFragmentId()].emplace_back(host);
-                local_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                tmp_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
             }
         }
-        return local_fragment_hosts;
+        return tmp_fragment_hosts;
     };
 
-    std::optional<std::unordered_map<UInt32, std::vector<String>>> fragment_hosts(scan_fragment_hosts);
+    std::optional<std::unordered_map<FragmentID, std::vector<String>>> fragment_hosts(scan_fragment_hosts);
     while (!fragment_hosts->empty())
     {
-        std::unordered_map<UInt32, std::vector<String>> local_fragment_hosts = process_other_fragment(fragment_hosts.value());
-        fragment_hosts->swap(local_fragment_hosts);
+        std::unordered_map<FragmentID, std::vector<String>> tmp_fragment_hosts = process_other_fragment(fragment_hosts.value());
+        fragment_hosts->swap(tmp_fragment_hosts);
     }
 
-    sendFragmentToPrepare();
+    sendFragmentToDistributed(local_shard_connection);
 
-    // TODO send begin process
-    for (auto [host, fragments_for_dump] : host_fragment_ids)
-    {
-        if (host == local_shard_connection->getDescription())
-        {
-            FragmentMgr::getInstance().beginFragments(context->getCurrentQueryId());
-        }
-        else
-        {
-            // TODO         host_connection[host]->sendBeginFragment();
-        }
-    }
-
+    sendExecuteQueryPipelines(local_shard_connection);
 }
 
 
-void Coordinator::sendFragmentToPrepare()
+void Coordinator::sendFragmentToDistributed(const PoolBase<DB::Connection>::Entry & local_shard_connection)
 {
     // send
     for (auto [host, fragments_for_send] : host_fragment_ids)
@@ -145,10 +131,43 @@ void Coordinator::sendFragmentToPrepare()
 
                 request.fragments_request.emplace_back(FragmentRequest{.fragment_id = fragment->getFragmentId(), .destinations = std::move(dest_hosts)});
             }
-            host_connection[host]->sendFragments(request);
+
+            auto current_settings = context->getSettingsRef();
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
+                                current_settings).getSaturated(
+                                    current_settings.max_execution_time);
+
+            host_connection[host]->sendFragments(timeouts, query, context->getQueryParameters(), context->getCurrentQueryId(), QueryProcessingStage::Complete, &context->getSettingsRef(),
+                                                 &context->getClientInfo(), false, {}, request);
+        }
+    }
+
+    // receive ready
+    for (auto [host, fragments_for_send] : host_fragment_ids)
+    {
+        if (host != local_shard_connection->getDescription())
+        {
+            const auto & package = host_connection[host]->receivePacket();
+
+            if (package.type != Protocol::Server::FragmentsReady)
+                throw;
         }
     }
 }
 
+void Coordinator::sendExecuteQueryPipelines(const PoolBase<DB::Connection>::Entry & local_shard_connection)
+{
+    for (auto [host, fragments_for_dump] : host_fragment_ids)
+    {
+        if (host == local_shard_connection->getDescription())
+        {
+            FragmentMgr::getInstance().executeQueryPipelines(context->getCurrentQueryId());
+        }
+        else
+        {
+            host_connection[host]->sendExecuteQueryPipelines(context->getCurrentQueryId());
+        }
+    }
+}
 
 }

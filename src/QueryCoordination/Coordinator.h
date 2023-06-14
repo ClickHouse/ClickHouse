@@ -12,19 +12,19 @@ namespace DB
 class Coordinator
 {
 public:
-    void schedule();
-
-    const PlanFragmentPtrs & localFragments() const { return local_fragments; }
-
     Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_) : fragments(fragments_), context(context_) {}
 
+    void scheduleExecuteDistributedPlan();
+
 private:
-    void sendFragmentToPrepare();
+    void sendFragmentToDistributed(const PoolBase<DB::Connection>::Entry & local_shard_connection);
+
+    void sendExecuteQueryPipelines(const PoolBase<DB::Connection>::Entry & local_shard_connection);
 
 private:
     const PlanFragmentPtrs & fragments;
 
-    std::unordered_map<UInt32, std::vector<String>> fragment_id_hosts;
+    std::unordered_map<FragmentID, std::vector<String>> fragment_id_hosts;
 
     // all dest
     std::unordered_map<String, IConnectionPool::Entry> host_connection;

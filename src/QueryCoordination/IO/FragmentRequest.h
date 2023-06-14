@@ -1,7 +1,9 @@
 #pragma once
 
-#include <QueryCoordination/PlanFragment.h>
 #include <Common/typeid_cast.h>
+#include <IO/VarInt.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <vector>
 
 namespace DB
@@ -14,16 +16,32 @@ class FragmentRequest
 public:
     void write(WriteBuffer & out) const
     {
-        Coordination::write(fragment_id, out);
+        writeVarInt(fragment_id, out);
 
-        Coordination::write(destinations.size(), out);
+        writeVarInt(destinations.size(), out);
         for (const String & destination : destinations)
         {
-            Coordination::write(destination, out);
+            writeStringBinary(destination, out);
         }
     }
 
-    UInt32 fragment_id;
+    void read(ReadBuffer & in)
+    {
+        readVarInt(fragment_id, in);
+
+        Int64 destination_size;
+        readVarInt(destination_size, in);
+
+        for (Int64 i = 0; i < destination_size; ++i)
+        {
+            String destination;
+            readStringBinary(destination, in);
+
+            destinations.emplace_back(destination);
+        }
+    }
+
+    Int64 fragment_id;
     Destinations destinations;
 };
 

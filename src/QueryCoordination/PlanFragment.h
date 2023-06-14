@@ -10,9 +10,13 @@
 #include <QueryCoordination/DataPartition.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
+
+using FragmentID = Int32;
+using PlanID = Int32;
 
 /**
  * 1. PlanFragment 划分
@@ -120,18 +124,16 @@ public:
 
     void setFragmentId(UInt32 id) { fragment_id = id; }
 
-    UInt32 getFragmentId() const { return fragment_id; }
+    Int32 getFragmentId() const { return fragment_id; }
 
-    void finalize();
-
-    QueryPipeline buildQueryPipeline(const std::vector<DataSink::Channel> & channels);
+    QueryPipeline buildQueryPipeline(std::vector<DataSink::Channel> & channels);
 
 private:
 
     ContextMutablePtr context;
 
     // id for this plan fragment
-    UInt32 fragment_id;
+    FragmentID fragment_id;
     // nereids planner and original planner generate fragments in different order.
     // This makes nereids fragment id different from that of original planner, and
     // hence different from that in profile.
@@ -161,7 +163,7 @@ private:
     // otherwise it is scheduled to the cluster node according to the DataPartition, the principle of minimum data movement.
     std::shared_ptr<Cluster> cluster;
 
-    UInt32 plan_id_counter = 0;
+    PlanID plan_id_counter = 0;
 };
 
 using PlanFragmentPtr = std::shared_ptr<PlanFragment>;

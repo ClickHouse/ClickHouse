@@ -83,7 +83,8 @@ namespace Protocol
             ProfileEvents = 14,             /// Packet with profile events from server.
             MergeTreeAllRangesAnnounecement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
-            MAX = MergeTreeReadTaskRequest,
+            FragmentsReady = 17,  /// Request from a MergeTree replica to a coordinator
+            MAX = FragmentsReady,
 
         };
 

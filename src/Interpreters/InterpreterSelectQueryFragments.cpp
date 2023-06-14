@@ -65,6 +65,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -877,11 +878,29 @@ void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
     }
 
     /// Extend lifetime of context, table lock, storage.
-    fragments.back()->getQueryPlan().addInterpreterContext(context);
-    if (table_lock)
-        fragments.back()->getQueryPlan().addTableLock(std::move(table_lock));
-    if (storage)
-        fragments.back()->getQueryPlan().addStorageHolder(storage);
+    /// TODO every fragment need context, table lock, storage ?
+    for (auto fragment : fragments)
+    {
+        fragment->getQueryPlan().addInterpreterContext(context);
+        if (table_lock)
+            fragment->getQueryPlan().addTableLock(table_lock);
+        if (storage)
+            fragment->getQueryPlan().addStorageHolder(storage);
+    }
+
+    /// schedule fragments
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        Coordinator coord(fragments, context);
+        coord.scheduleExecuteDistributedPlan();
+    }
+    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        for (auto fragment : fragments)
+        {
+            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
+        }
+    }
 }
 
 PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPlan & query_plan)
@@ -891,19 +910,6 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPl
     WriteBufferFromOwnString buffer;
     fragments.back()->dump(buffer);
     LOG_INFO(log, "Fragment dump: {}", buffer.str());
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        Coordinator coord(fragments, context);
-        coord.schedule();
-    }
-    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        for (auto fragment : fragments)
-        {
-            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
-        }
-    }
 
     return fragments;
 }
@@ -970,7 +976,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     }
 
     PlanFragmentPtr result;
-    if (dynamic_cast<ScanStep *>(root_node.step.get()))
+    /// ReadFromMergeTree
+    if (dynamic_cast<ReadFromMergeTree *>(root_node.step.get()))
     {
         result = createScanFragment(root_node.step);
         fragments.emplace_back(result);
@@ -1051,8 +1058,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
 {
     DataPartition partition;
     partition.type = PartitionType::RANDOM;
-    //    UInt32 a = 1;
-    auto fragment = std::make_shared<PlanFragment>(/*a,*/ std::move(step), partition);
+
+    auto fragment = std::make_shared<PlanFragment>(context, std::move(step), partition);
     fragment->setFragmentInPlanTree(fragment->getRootNode());
     fragment->setCluster(context->getCluster("test_shard_localhost"));
     return fragment;
@@ -1109,14 +1116,19 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
 PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragmentPtr child_fragment, DataPartition & partition)
 {
 
-    std::shared_ptr<ExchangeStep> exchange_step = std::make_shared<ExchangeStep>(child_fragment->getCurrentDataStream());
+    std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), query_info.storage_limits);
 
 //    exchangeNode.setNumInstances(childFragment.getPlanRoot().getNumInstances());
 //    exchangeNode.init(ctx.getRootAnalyzer());
-    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(/*a,*/ std::move(exchange_step), partition);
-    parent_fragment->setFragmentInPlanTree(parent_fragment->getRootNode());
-    parent_fragment->setCluster(context->getCluster("test_shard_localhost"));
+    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, exchange_step, partition);
+
     auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
+
+    exchange_step->setPlanID(exchange_node->plan_id);
+
+    parent_fragment->setFragmentInPlanTree(exchange_node);
+    parent_fragment->setCluster(context->getCluster("test_shard_localhost"));
+
     exchange_node->children.emplace_back(child_fragment->getRootNode());
 
     child_fragment->setDestination(exchange_node);
@@ -1130,12 +1142,7 @@ BlockIO InterpreterSelectQueryFragments::execute()
 
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
-    setQuota(res.pipeline);
+    res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
 
     return res;
 }
@@ -2488,12 +2495,6 @@ void InterpreterSelectQueryFragments::executeFetchColumns(QueryPlan & query_plan
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, QueryProcessingStage::Enum::FetchColumns, max_block_size, max_streams);
-
-        // fake
-        auto plan = std::make_unique<QueryPlan>();
-        auto scan_step = std::make_shared<ScanStep>(query_plan.getCurrentDataStream(), storage);
-        plan->addStep(scan_step);
-        query_plan = std::move(*plan);
 
         if (context->hasQueryContext() && !options.is_internal)
         {

@@ -35,6 +35,7 @@ using Connections = std::vector<ConnectionPtr>;
 class NativeReader;
 class NativeWriter;
 class FragmentsRequest;
+struct ExchangeDataRequest;
 
 
 /** Connection with database server, to use by client.
@@ -107,11 +108,37 @@ public:
         bool with_pending_data/* = false */,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQuery(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const NameToNameMap& query_parameters,
+        const String & query_id_/* = "" */,
+        UInt64 stage/* = QueryProcessingStage::Complete */,
+        const Settings * settings/* = nullptr */,
+        const ClientInfo * client_info/* = nullptr */,
+        bool with_pending_data/* = false */,
+        std::function<void(const Progress &)> process_progress_callback,
+        bool need_protocol);
+
+    void sendFragments(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const NameToNameMap & query_parameters,
+        const String & query_id_,
+        UInt64 stage,
+        const Settings * settings,
+        const ClientInfo * client_info,
+        bool with_pending_data,
+        std::function<void(const Progress &)>,
+        const FragmentsRequest & fragment);
+
+    void sendExecuteQueryPipelines(const String & query_id_);
+
+    void sendExchangeData(const ExchangeDataRequest & request) const;
+
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
-
-    void sendFragments(const FragmentsRequest & fragment);
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 

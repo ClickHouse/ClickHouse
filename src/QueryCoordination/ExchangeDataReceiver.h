@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class ExchangeDataReceiver final : public ISource
+class ExchangeDataReceiver final : public ISource, public std::enable_shared_from_this<ExchangeDataReceiver>
 {
 public:
     ExchangeDataReceiver(const DataStream & data_stream, UInt32 plan_id_) : ISource(data_stream.header), plan_id(plan_id_) { }
@@ -33,7 +33,7 @@ public:
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
-    UInt32 getPlanId() const
+    Int32 getPlanId() const
     {
         return plan_id;
     }
@@ -45,7 +45,7 @@ protected:
 private:
     std::list<Block> block_list;
 
-    UInt32 plan_id;
+    Int32 plan_id;
 };
 
 }

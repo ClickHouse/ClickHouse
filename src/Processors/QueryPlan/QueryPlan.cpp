@@ -191,7 +191,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         }
 
         size_t next_child = frame.pipelines.size();
-        if (next_child == frame.node->children.size())
+        if (next_child == frame.node->children.size() || !all_nodes.contains(frame.node->children[next_child])) /// children belong next fragment
         {
             bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);

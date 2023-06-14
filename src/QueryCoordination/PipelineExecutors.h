@@ -22,8 +22,35 @@ public:
     void execute(QueryPipeline & pipeline);
     void cleanerThread();
 
-    struct Data;
+    struct Data
+    {
+        PipelineExecutorPtr executor;
+        std::exception_ptr exception;
+        std::atomic_bool is_finished = false;
+        std::atomic_bool has_exception = false;
+        ThreadFromGlobalPool thread;
+        Poco::Event finish_event;
+
+        ~Data()
+        {
+            if (thread.joinable())
+                thread.join();
+        }
+
+        void rethrowExceptionIfHas()
+        {
+            if (has_exception)
+            {
+                has_exception = false;
+                std::rethrow_exception(exception);
+            }
+        }
+    };
+
+private:
     std::list<std::unique_ptr<Data>> executors;
+
+    std::mutex data_queue_mutex;
 
     std::unique_ptr<ThreadFromGlobalPool> cleaner;
 
