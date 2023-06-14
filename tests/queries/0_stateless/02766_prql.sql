@@ -31,17 +31,23 @@ group user_id (
 SET dialect = 'clickhouse';
 
 SELECT '---';
-SELECT * FROM aboba;
+SELECT
+    user_id,
+    message,
+    toTimeZone(creation_date, 'Europe/Amsterdam') as creation_date,
+    metric
+FROM aboba;
 SELECT '---';
 
 SET dialect = 'prql';
 
 from aboba
-select [ user_id, message, creation_date, metric ];
+select [ user_id, message, metric ]
+derive creation_date = s"toTimeZone(creation_date, 'Europe/Amsterdam')"
+select [ user_id, message, creation_date, metric];
 
 from aboba
 select [non_existing_column]; -- { serverError UNKNOWN_IDENTIFIER }
-
 
 from non_existing_table
 select [a]; -- { serverError UNKNOWN_TABLE }
