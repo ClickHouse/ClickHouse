@@ -1226,12 +1226,53 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
     return res;
 }
 
+static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicatedMergeTree * storage, const Strings & parts_in_zk,
+                                                           MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+{
+#ifdef ABORT_ON_LOGICAL_ERROR
+    constexpr bool paranoid_check_for_covered_parts_default = true;
+#else
+    constexpr bool paranoid_check_for_covered_parts_default = false;
+#endif
+
+    bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
+        "replicated_merge_tree_paranoid_check_on_startup", paranoid_check_for_covered_parts_default);
+    if (!paranoid_check_for_covered_parts)
+        return;
+
+    ActiveDataPartSet active_set(format_version);
+    for (const auto & part_name : parts_in_zk)
+        active_set.add(part_name);
+
+    const auto disks = storage->getStoragePolicy()->getDisks();
+    auto path = storage->getRelativeDataPath();
+
+    for (const auto & part_name : parts_in_zk)
+    {
+        String covering_part = active_set.getContainingPart(part_name);
+        if (part_name == covering_part)
+            continue;
+
+        bool found = false;
+        for (const DiskPtr & disk : disks)
+            if (disk->exists(fs::path(path) / part_name))
+                found = true;
+
+        if (!found)
+        {
+            LOG_WARNING(log, "Part {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk. "
+                        "It may cause false-positive 'part is lost forever' messages", part_name, covering_part);
+            chassert(false);
+        }
+    }
+}
 
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
     auto zookeeper = getZooKeeper();
 
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
+    paranoidCheckForCoveredPartsInZooKeeperOnStart(this, expected_parts_vec, format_version, log);
 
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
@@ -6805,6 +6846,31 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKee
 }
 
 
+void StorageReplicatedMergeTree::forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & part_name)
+{
+    /// An outdated part is broken and we are going to move it do detached/
+    /// But we need to remove it from ZooKeeper as well. Otherwise it will be considered as "lost forever".
+
+    /// Since the part is Outdated, it should be safe to remove it, but it's still dangerous.
+    /// It could became Outdated because it was merged/mutated (so we have a covering part) or because it was dropped.
+    /// But DROP [PART]ITION waits for all Outdated parts to be loaded, so it's not the case.
+
+    auto zookeeper = getZooKeeper();
+    String part_path = replica_path + "/parts/" + part_name;
+    if (!zookeeper->exists(part_path))
+        return;
+
+    auto part = getActiveContainingPart(part_name);
+    if (!part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Outdated part {} is broken and going to be detached, "
+                        "but there's no active covering part, so we are not sure that it can be safely removed from ZooKeeper "
+                        "(path: {})", part_name, part_path);
+
+    LOG_WARNING(log, "Outdated part {} is broken and going to be detached, removing it from ZooKeeper. The part is covered by {}",
+                part_name, part->name);
+    removePartsFromZooKeeperWithRetries({part_name}, /* infinite retries */ 0);
+}
+
 void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries)
 {
     Strings part_names_to_remove;
@@ -7166,6 +7232,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         }
 
         Coordination::Responses op_results;
+        DataPartsVector parts_holder;
 
         try
         {
@@ -7215,7 +7282,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
                 transaction.commit(&data_parts_lock);
                 if (replace)
+                {
+                    parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &data_parts_lock);
                     removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
+                }
             }
 
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -7235,10 +7305,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        cleanup_thread.wakeup();
-
         lock2.reset();
         lock1.reset();
+
+        /// We need to pull the DROP_RANGE before cleaning the replaced parts (otherwise CHeckThread may decide that parts are lost)
+        queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+        parts_holder.clear();
+        cleanup_thread.wakeup();
+
 
         waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
 
@@ -7405,6 +7479,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         Coordination::Responses op_results;
 
+        /// We should hold replaced parts until we actually create DROP_RANGE in ZooKeeper
+        DataPartsVector parts_holder;
         try
         {
             Coordination::Requests ops;
@@ -7439,6 +7515,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
+                parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &src_data_parts_lock);
                 removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
                 transaction.commit(&src_data_parts_lock);
             }
@@ -7461,7 +7538,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        cleanup_thread.wakeup();
         lock2.reset();
 
         dest_table_storage->waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
@@ -7480,6 +7556,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
         lock1.reset();
+
+        /// We need to pull the DROP_RANGE before cleaning the replaced parts (otherwise CHeckThread may decide that parts are lost)
+        queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+        parts_holder.clear();
+        cleanup_thread.wakeup();
+
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
 
         /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
