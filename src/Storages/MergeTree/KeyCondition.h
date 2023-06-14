@@ -266,7 +266,7 @@ public:
         std::swap(left_included, right_included);
     }
 
-    /// [1, 2]
+    /// range like [1, 2]
     bool fullBounded() const
     {
         return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
@@ -290,7 +290,7 @@ public:
         }
         else if (isInfinite())
         {
-            /// skip blank ranges
+            /// blank ranges
         }
         else /// case: (-inf, 1] or [1, +inf)
         {
@@ -312,7 +312,18 @@ public:
 
 using Ranges = std::vector<Range>;
 
-/// A plain ranges is a serious of ranges who are not blank, ordered and have no overlapping.
+/** A plain ranges is a serious of ranges who
+ *      1. have no intersection in all ranges
+ *      2. ordered by left side
+ *      3. does not contain blank range
+ *
+ * Example:
+ *      query: (k > 1 and key < 5) or (k > 3 and k < 10) or key in (2, 12)
+ *      original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
+ *      plain ranges: (1, 10), [12, 12]
+ *
+ * If it is blank, ranges is empty.
+ */
 struct PlainRanges
 {
     /// How to handle ranges when make it plain.
@@ -475,13 +486,7 @@ public:
 
     bool matchesExactContinuousRange() const;
 
-    /// Extract plain ranges of the condition. Plain ranges must:
-    ///     1. have no intersection in all ranges
-    ///     2. ordered by left side
-    /// Example:
-    ///     query: (k > 1 and key < 5) or (k > 3 and k < 10) or key in (2, 12)
-    ///     original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
-    ///     plain ranges: (1, 10), [12, 12]
+    /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
     bool extractPlainRanges(Ranges & ranges) const;
 

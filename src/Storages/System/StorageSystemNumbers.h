@@ -30,13 +30,11 @@ class Context;
   *
   * Then split the ranges evenly to one or multi-streams. With this way we will get result without large scanning.
   *
-  * 2. If the smart one fails, fall back to full scanning
+  * 2. If fail to extract plain ranges, fall back to ordinary scanning.
   *
   * If multithreaded is specified, numbers will be generated in several streams
   *  (and result could be out of order). If both multithreaded and limit are specified,
   *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
-  *
-  *
   */
 class StorageSystemNumbers final : public IStorage
 {

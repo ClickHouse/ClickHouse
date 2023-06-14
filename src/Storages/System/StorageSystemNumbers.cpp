@@ -218,7 +218,8 @@ Pipe StorageSystemNumbers::read(
         }
 
         auto & query = query_info.query->as<ASTSelectQuery &>();
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);/// TODO subquery
+
+        auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
         size_t query_limit = limit_length + limit_offset;
 
         /// If intersected ranges is unlimited, use NumbersRangedSource
@@ -281,7 +282,7 @@ Pipe StorageSystemNumbers::read(
                     }
                     else if (can_provide == need)
                     {
-                        end.x++; /// TODO if last range end.y++ but but end.x
+                        end.x++;
                         end.y = 0;
                         need = 0;
                     }
@@ -305,7 +306,7 @@ Pipe StorageSystemNumbers::read(
         }
     }
 
-    /// 2. Or fall back to NumbersSource
+    /// Fall back to NumbersSource
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<NumbersSource>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
