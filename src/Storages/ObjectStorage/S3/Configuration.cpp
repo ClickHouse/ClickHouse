@@ -96,6 +96,7 @@ StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(con
         .skip_empty_files = settings.s3_skip_empty_files,
         .list_object_keys_size = settings.s3_list_object_keys_size,
         .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+        .throw_on_zero_files_match_setting_name = "s3_throw_on_zero_files_match",
         .ignore_non_existent_file = settings.s3_ignore_file_doesnt_exist,
     };
 }

@@ -168,6 +168,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        const char * throw_on_zero_files_match_setting_name_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -184,6 +185,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
+    const char * throw_on_zero_files_match_setting_name;
 
     size_t index = 0;
 
