@@ -28,7 +28,6 @@ set(RE2_SOURCES
     ${SRC_DIR}/re2/regexp.cc
     ${SRC_DIR}/re2/set.cc
     ${SRC_DIR}/re2/simplify.cc
-    ${SRC_DIR}/re2/stringpiece.cc
     ${SRC_DIR}/re2/tostring.cc
     ${SRC_DIR}/re2/unicode_casefold.cc
     ${SRC_DIR}/re2/unicode_groups.cc
