@@ -26,9 +26,9 @@
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <boost/algorithm/hex.hpp>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
@@ -194,7 +194,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     DB::Memory<> memory;
     memory.resize(codec.getCompressedReserveSize(static_cast<DB::UInt32>(value.size())));
     auto bytes_written = codec.compress(value.data(), static_cast<DB::UInt32>(value.size()), memory.data());
-    std::string encrypted_value = std::string(memory.data(), bytes_written);
+    auto encrypted_value = std::string(memory.data(), bytes_written);
     std::string hex_value;
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
     return hex_value;
@@ -224,7 +224,7 @@ std::string ConfigProcessor::decryptValue(const std::string & codec_name, const 
 
 void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 {
-    for (Node * node = config_root->firstChild(); node;)
+    for (Node * node = config_root->firstChild(); node; node = node->nextSibling())
     {
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
@@ -244,7 +244,6 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
             }
             decryptRecursive(node);
         }
-        node = node->nextSibling();
     }
 }
 
