@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_RDKAFKA
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -167,3 +171,5 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+#endif
