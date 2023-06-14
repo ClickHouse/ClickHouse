@@ -78,7 +78,7 @@ public:
                 Poco::Logger * log = &Poco::Logger::get("WriteBuffer");
                 LOG_ERROR(
                     log,
-                    "WriteBufferFromS3 is not finalized in destructor. "
+                    "WriteBuffer is not finalized in destructor. "
                     "No exceptions in flight are detected. "
                     "The file might not be written at all or might be truncated. "
                     "Stack trace: {}",

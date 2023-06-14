@@ -1179,13 +1179,13 @@ void ClientBase::resetOutput()
 
     if (out_file_buf)
     {
-        out_file_buf->next();
+        out_file_buf->finalize();
         out_file_buf.reset();
     }
 
     if (out_logs_buf)
     {
-        out_logs_buf->next();
+        out_logs_buf->finalize();
         out_logs_buf.reset();
     }
 
