@@ -10,6 +10,7 @@
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -152,7 +153,9 @@ void CSVFormatReader::skipFieldDelimiter()
 template <bool read_string>
 String CSVFormatReader::readCSVFieldIntoString()
 {
-    skipWhitespacesAndTabs(*buf);
+    if (format_settings.csv.trim_whitespaces) [[likely]]
+        skipWhitespacesAndTabs(*buf);
+
     String field;
     if constexpr (read_string)
         readCSVString(field, *buf, format_settings.csv);
@@ -200,7 +203,6 @@ void CSVFormatReader::skipHeaderRow()
 template <bool is_header>
 std::vector<String> CSVFormatReader::readRowImpl()
 {
-
     std::vector<String> fields;
     do
     {
@@ -280,7 +282,8 @@ bool CSVFormatReader::readField(
     bool is_last_file_column,
     const String & /*column_name*/)
 {
-    skipWhitespacesAndTabs(*buf);
+    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
+        skipWhitespacesAndTabs(*buf);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
@@ -320,6 +323,20 @@ void CSVFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+}
+
+bool CSVFormatReader::checkForSuffix()
+{
+    if (!format_settings.csv.skip_trailing_empty_lines)
+        return buf->eof();
+
+    PeekableReadBufferCheckpoint checkpoint(*buf);
+    while (checkChar('\n', *buf) || checkChar('\r', *buf));
+    if (buf->eof())
+        return true;
+
+    buf->rollbackToCheckpoint();
+    return false;
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)

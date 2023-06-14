@@ -40,6 +40,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -78,6 +79,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
@@ -557,6 +559,8 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     else
         path_for_partitioned_write = table_path_;
 
+    file_renamer = FileRenamer(args.rename_after_processing);
+
     setStorageMetadata(args);
 }
 
@@ -690,7 +694,67 @@ public:
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+            storage->readers_counter.fetch_add(1, std::memory_order_release);
         }
+    }
+
+
+    /**
+      * If specified option --rename_files_after_processing and files created by TableFunctionFile
+      * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions
+      */
+    void beforeDestroy()
+    {
+        if (storage->file_renamer.isEmpty())
+            return;
+
+        int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
+
+        if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
+        {
+            shared_lock.unlock();
+            auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(context)};
+
+            if (!exclusive_lock)
+                return;
+            if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
+                return;
+
+            for (auto & file_path_ref : storage->paths)
+            {
+                try
+                {
+                    auto file_path = fs::path(file_path_ref);
+                    String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
+                    file_path.replace_filename(new_filename);
+
+                    // Normalize new path
+                    file_path = file_path.lexically_normal();
+
+                    // Checking access rights
+                    checkCreationIsAllowed(context, context->getUserFilesPath(), file_path, true);
+
+                    // Checking an existing of new file
+                    if (fs::exists(file_path))
+                        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
+
+                    fs::rename(fs::path(file_path_ref), file_path);
+                    file_path_ref = file_path.string();
+                    storage->was_renamed = true;
+                }
+                catch (const std::exception & e)
+                {
+                    // Cannot throw exception from destructor, will write only error
+                    LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
+                    continue;
+                }
+            }
+        }
+    }
+
+    ~StorageFileSource() override
+    {
+        beforeDestroy();
     }
 
     String getName() const override
@@ -1050,6 +1114,7 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
+            write_buf->finalize();
             throw;
         }
     }
@@ -1143,7 +1208,8 @@ private:
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context)
+    ContextPtr context,
+    bool /*async_insert*/)
 {
     if (format_name == "Distributed")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
@@ -1317,6 +1383,7 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.columns,
                 factory_args.constraints,
                 factory_args.comment,
+                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
