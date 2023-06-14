@@ -4,7 +4,7 @@ slug: /en/operations/system-tables/kafka_consumers
 # kafka_consumers
 
 Contains information about Kafka consumers.
-Applicable for [Kafka table engine](../../engines/table-engines/integration/kafka) (native ClickHouse integration)
+Applicable for [Kafka table engine](../../engines/table-engines/integrations/kafka) (native ClickHouse integration)
 
 Columns:
 

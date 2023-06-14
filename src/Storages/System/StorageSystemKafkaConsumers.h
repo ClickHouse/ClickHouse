@@ -1,5 +1,10 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_RDKAFKA
+
+
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -18,3 +23,5 @@ protected:
 };
 
 }
+
+#endif
