@@ -914,9 +914,9 @@ Result
 "  string  "
 ```
 
-### input_format_csv_use_whitespace_tab_as_delimiter {#input_format_csv_use_whitespace_tab_as_delimiter}
+### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
 
-Use whitespace or tab as field delimiter in CSV strings.
+Allow to use whitespace or tab as field delimiter in CSV strings.
 
 Default value: `false`.
 
@@ -925,7 +925,7 @@ Default value: `false`.
 Query
 
 ```bash
-echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_use_whitespace_tab_as_delimiter=true --format_csv_delimiter=' '
+echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
 ```
 
 Result
@@ -937,7 +937,7 @@ a  b
 Query
 
 ```bash
-echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_use_whitespace_tab_as_delimiter=true --format_csv_delimiter='\t'
+echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
 ```
 
 Result
