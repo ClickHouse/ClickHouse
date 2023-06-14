@@ -89,65 +89,16 @@ public:
         return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
     }
 
-    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.right = right_point;
-        r.right_included = right_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [-Inf, -Inf]
-        if (r.right.isNegativeInfinity() && right_included)
-            r.left_included = true;
-        return r;
-    }
-
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.left = left_point;
-        r.left_included = left_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [+Inf, +Inf]
-        if (r.left.isPositiveInfinity() && left_included)
-            r.right_included = true;
-        return r;
-    }
+    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
+    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
 
     /** Optimize the range. If it has an open boundary and the Field type is "loose"
       * - then convert it to closed, narrowing by one.
       * That is, for example, turn (0,2) into [1].
       */
-    void shrinkToIncludedIfPossible()
-    {
-        if (left.isExplicit() && !left_included)
-        {
-            if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
-            {
-                ++left.get<UInt64 &>();
-                left_included = true;
-            }
-            if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
-            {
-                ++left.get<Int64 &>();
-                left_included = true;
-            }
-        }
-        if (right.isExplicit() && !right_included)
-        {
-            if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
-            {
-                --right.get<UInt64 &>();
-                right_included = true;
-            }
-            if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
-            {
-                --right.get<Int64 &>();
-                right_included = true;
-            }
-        }
-    }
+    void shrinkToIncludedIfPossible();
 
-    bool empty() const { return less(right, left) || ((!left_included || !right_included) && !less(left, right)); }
+    bool empty() const;
 
     /// x contained in the range
     bool contains(const FieldRef & x) const
@@ -156,155 +107,34 @@ public:
     }
 
     /// x is to the left
-    bool rightThan(const FieldRef & x) const
-    {
-        return less(left, x) || (left_included && equals(x, left));
-    }
-
+    bool rightThan(const FieldRef & x) const;
     /// x is to the right
-    bool leftThan(const FieldRef & x) const
-    {
-        return less(x, right) || (right_included && equals(x, right));
-    }
+    bool leftThan(const FieldRef & x) const;
 
     /// completely right than x
-    bool rightThan(const Range & x) const
-    {
-        return less(x.right, left) || (equals(left, x.right) && !(left_included && x.right_included));
-    }
-
+    bool rightThan(const Range & x) const;
     /// completely left than x
-    bool leftThan(const Range & x) const
-    {
-        return less(right, x.left) || (equals(right, x.left) && !(x.left_included && right_included));
-    }
-
-    bool intersectsRange(const Range & r) const
-    {
-        /// r to the left of me.
-        if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
-            return false;
-
-        /// r to the right of me.
-        if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
-            return false;
-
-        return true;
-    }
-
-    std::optional<Range> intersectWith(const Range & r) const
-    {
-        if (!intersectsRange(r))
-            return {};
-
-        bool left_bound_use_mine = true;
-        bool right_bound_use_mine = true;
-
-        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
-            left_bound_use_mine = false;
-
-        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
-            right_bound_use_mine = false;
-
-        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
-                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-    }
-
-    /// If me near by r, they can be combined to a continuous range.
-    /// TODO If filed is integer, case like [2, 3], [4, 5] is excluded.
-    bool nearByWith(const Range & r) const
-    {
-        /// me locates at left
-        if (equals(right, r.left) && ((right_included && !r.left_included) || (!right_included && r.left_included)))
-            return true;
-
-        /// r locate left
-        if (equals(r.right, left) && ((r.right_included && !left_included) || (r.right_included && !left_included)))
-            return true;
-
-        return false;
-    }
-
-    std::optional<Range> unionWith(const Range & r) const
-    {
-        if (!intersectsRange(r) && !nearByWith(r))
-            return {};
-
-        bool left_bound_use_mine = false;
-        bool right_bound_use_mine = false;
-
-        if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
-            left_bound_use_mine = true;
-
-        if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
-            right_bound_use_mine = true;
-
-        return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
-                     right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-    }
-
-    bool containsRange(const Range & r) const
-    {
-        /// r starts to the left of me.
-        if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
-            return false;
-
-        /// r ends right of me.
-        if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
-            return false;
-
-        return true;
-    }
-
-    void invert()
-    {
-        std::swap(left, right);
-        if (left.isPositiveInfinity())
-            left = NEGATIVE_INFINITY;
-        if (right.isNegativeInfinity())
-            right = POSITIVE_INFINITY;
-        std::swap(left_included, right_included);
-    }
+    bool leftThan(const Range & x) const;
 
     /// range like [1, 2]
-    bool fullBounded() const
-    {
-        return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
-    }
-
+    bool fullBounded() const;
     /// (-inf, +inf)
-    bool isInfinite() const
-    {
-        return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
-    }
+    bool isInfinite() const;
+
+    bool intersectsRange(const Range & r) const;
+    bool containsRange(const Range & r) const;
+
+    void invert();
+
+    std::optional<Range> intersectWith(const Range & r) const;
+    std::optional<Range> unionWith(const Range & r) const;
+
+    /// If near by r, they can be combined to a continuous range.
+    /// TODO If filed is integer, case like [2, 3], [4, 5] is excluded.
+    bool nearByWith(const Range & r) const;
 
     /// Invert me.
-    std::vector<Range> invertToRanges() const
-    {
-        std::vector<Range> ranges;
-        /// For full bounded range will generate tow range.
-        if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
-        {
-            ranges.push_back({NEGATIVE_INFINITY, !right_included, left, !left_included});
-            ranges.push_back({right, !right_included, POSITIVE_INFINITY, !left_included});
-        }
-        else if (isInfinite())
-        {
-            /// blank ranges
-        }
-        else /// case: (-inf, 1] or [1, +inf)
-        {
-            Range r = *this;
-            std::swap(r.left, r.right);
-            if (r.left.isPositiveInfinity())
-                r.left = NEGATIVE_INFINITY;
-            if (r.right.isNegativeInfinity())
-                r.right = POSITIVE_INFINITY;
-            std::swap(r.left_included, r.right_included);
-            ranges.push_back(r);
-        }
-        return ranges;
-    }
+    std::vector<Range> invertToRanges() const;
 
     String toString() const;
 };

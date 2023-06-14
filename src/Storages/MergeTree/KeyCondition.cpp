@@ -57,6 +57,209 @@ String Range::toString() const
     return str.str();
 }
 
+std::optional<Range> Range::intersectWith(const Range & r) const
+{
+    if (!intersectsRange(r))
+        return {};
+
+    bool left_bound_use_mine = true;
+    bool right_bound_use_mine = true;
+
+    if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+        left_bound_use_mine = false;
+
+    if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+        right_bound_use_mine = false;
+
+    return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+                 right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
+}
+
+bool Range::nearByWith(const Range & r) const
+{
+    /// me locates at left
+    if (equals(right, r.left) && ((right_included && !r.left_included) || (!right_included && r.left_included)))
+        return true;
+
+    /// r locate left
+    if (equals(r.right, left) && ((r.right_included && !left_included) || (r.right_included && !left_included)))
+        return true;
+
+    return false;
+}
+
+std::optional<Range> Range::unionWith(const Range & r) const
+{
+    if (!intersectsRange(r) && !nearByWith(r))
+        return {};
+
+    bool left_bound_use_mine = false;
+    bool right_bound_use_mine = false;
+
+    if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+        left_bound_use_mine = true;
+
+    if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+        right_bound_use_mine = true;
+
+    return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
+                 right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
+}
+
+std::vector<Range> Range::invertToRanges() const
+{
+    std::vector<Range> ranges;
+    /// For full bounded range will generate tow range.
+    if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
+    {
+        ranges.push_back({NEGATIVE_INFINITY, !right_included, left, !left_included});
+        ranges.push_back({right, !right_included, POSITIVE_INFINITY, !left_included});
+    }
+    else if (isInfinite())
+    {
+        /// blank ranges
+    }
+    else /// case: (-inf, 1] or [1, +inf)
+    {
+        Range r = *this;
+        std::swap(r.left, r.right);
+        if (r.left.isPositiveInfinity())
+            r.left = NEGATIVE_INFINITY;
+        if (r.right.isNegativeInfinity())
+            r.right = POSITIVE_INFINITY;
+        std::swap(r.left_included, r.right_included);
+        ranges.push_back(r);
+    }
+    return ranges;
+}
+
+void Range::shrinkToIncludedIfPossible()
+{
+    if (left.isExplicit() && !left_included)
+    {
+        if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
+        {
+            ++left.get<UInt64 &>();
+            left_included = true;
+        }
+        if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
+        {
+            ++left.get<Int64 &>();
+            left_included = true;
+        }
+    }
+    if (right.isExplicit() && !right_included)
+    {
+        if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
+        {
+            --right.get<UInt64 &>();
+            right_included = true;
+        }
+        if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
+        {
+            --right.get<Int64 &>();
+            right_included = true;
+        }
+    }
+}
+
+bool Range::intersectsRange(const Range & r) const
+{
+    /// r to the left of me.
+    if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
+        return false;
+
+    /// r to the right of me.
+    if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
+        return false;
+
+    return true;
+}
+
+bool Range::containsRange(const Range & r) const
+{
+    /// r starts to the left of me.
+    if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
+        return false;
+
+    /// r ends right of me.
+    if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
+        return false;
+
+    return true;
+}
+
+void Range::invert()
+{
+    std::swap(left, right);
+    if (left.isPositiveInfinity())
+        left = NEGATIVE_INFINITY;
+    if (right.isNegativeInfinity())
+        right = POSITIVE_INFINITY;
+    std::swap(left_included, right_included);
+}
+
+bool Range::rightThan(const FieldRef & x) const
+{
+    return less(left, x) || (left_included && equals(x, left));
+}
+
+bool Range::leftThan(const FieldRef & x) const
+{
+    return less(x, right) || (right_included && equals(x, right));
+}
+
+bool Range::rightThan(const Range & x) const
+{
+    return less(x.right, left) || (equals(left, x.right) && !(left_included && x.right_included));
+}
+
+bool Range::leftThan(const Range & x) const
+{
+    return less(right, x.left) || (equals(right, x.left) && !(x.left_included && right_included));
+}
+
+bool Range::empty() const
+{
+    return less(right, left) || ((!left_included || !right_included) && !less(left, right));
+}
+
+bool Range::fullBounded() const
+{
+    return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
+}
+
+/// (-inf, +inf)
+bool Range::isInfinite() const
+{
+    return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
+}
+
+Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)
+{
+    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    r.right = right_point;
+    r.right_included = right_included;
+    r.shrinkToIncludedIfPossible();
+    // Special case for [-Inf, -Inf]
+    if (r.right.isNegativeInfinity() && right_included)
+        r.left_included = true;
+    return r;
+}
+
+Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null)
+{
+    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    r.left = left_point;
+    r.left_included = left_included;
+    r.shrinkToIncludedIfPossible();
+    // Special case for [+Inf, +Inf]
+    if (r.left.isPositiveInfinity() && left_included)
+        r.right_included = true;
+    return r;
+}
+
+
 PlainRanges::PlainRanges(const Ranges & ranges_, Relation relation, bool ordered)
 {
     if (relation == Relation::UNION)
