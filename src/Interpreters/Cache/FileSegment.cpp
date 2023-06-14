@@ -214,8 +214,10 @@ void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & l
     /// range().size() can equal 0 in case of write-though cache.
     if (!is_unbound && current_downloaded_size != 0 && current_downloaded_size == range().size())
         setDownloadedUnlocked(lock);
-    else
+    else if (current_downloaded_size)
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+    else
+        setDownloadState(State::EMPTY, lock);
 }
 
 void FileSegment::resetDownloader()
@@ -280,22 +282,9 @@ void FileSegment::resetRemoteFileReader()
 
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
-    auto locked_key = lockKeyMetadata(false);
-    if (!locked_key)
-    {
-        assert(isDetached());
+    if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
         return std::move(remote_file_reader);
-    }
-
-    auto segment_lock = segment_guard.lock();
-
-    assert(download_state != State::DETACHED);
-
-    bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
-    if (!downloader_id.empty() || !is_last_holder)
-        return nullptr;
-
-    return std::move(remote_file_reader);
+    return nullptr;
 }
 
 void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
@@ -607,22 +596,17 @@ void FileSegment::complete()
         resetDownloaderUnlocked(segment_lock);
     }
 
-    if (is_downloader || is_last_holder)
+    auto remove_from_cache = [&, this]()
     {
-        if (cache_writer)
-        {
-            cache_writer->finalize();
-            cache_writer.reset();
-        }
-        remote_file_reader.reset();
-    }
+        LOG_TEST(log, "Remove file segment {} (nothing downloaded)", range().toString());
+        locked_key->removeFileSegment(offset(), segment_lock);
+        setDetachedState(segment_lock);
+    };
 
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(segment_lock, *locked_key);
-        setDownloadState(State::DETACHED, segment_lock);
-        locked_key->removeFileSegment(offset(), segment_lock);
+        remove_from_cache();
         return;
     }
 
@@ -633,6 +617,7 @@ void FileSegment::complete()
             chassert(current_downloaded_size == range().size());
             chassert(current_downloaded_size == fs::file_size(getPathInLocalCache()));
             chassert(!cache_writer);
+            chassert(!remote_file_reader);
             break;
         }
         case State::DOWNLOADING:
@@ -640,8 +625,24 @@ void FileSegment::complete()
             chassert(!is_last_holder);
             break;
         }
-        case State::EMPTY:
         case State::PARTIALLY_DOWNLOADED:
+        {
+            if (is_last_holder)
+            {
+                LOG_TEST(
+                    log, "Submitted file segment for background download "
+                    "(having {}/{})", downloaded_size, range().size());
+
+                locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+            }
+            break;
+        }
+        case State::EMPTY:
+        {
+            if (is_last_holder)
+                remove_from_cache();
+            break;
+        }
         case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
         {
             chassert(current_downloaded_size != range().size());
@@ -650,10 +651,9 @@ void FileSegment::complete()
             {
                 if (current_downloaded_size == 0)
                 {
-                    LOG_TEST(log, "Remove file segment {} (nothing downloaded)", range().toString());
-                    locked_key->removeFileSegment(offset(), segment_lock);
+                    remove_from_cache();
                 }
-                else
+                else if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
 
@@ -672,9 +672,8 @@ void FileSegment::complete()
 
                     /// We mark current file segment with state DETACHED, even though the data is still in cache
                     /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
+                    setDetachedState(segment_lock);
                 }
-
-                setDetachedState(segment_lock);
             }
             break;
         }
@@ -844,6 +843,8 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     cache = nullptr;
+    cache_writer.reset();
+    remote_file_reader.reset();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)

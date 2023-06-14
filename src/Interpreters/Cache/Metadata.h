@@ -8,8 +8,12 @@
 
 namespace DB
 {
+
 class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
+class DownloadQueue;
+using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -44,6 +48,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const Key & key_,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
+        DownloadQueue & download_queue_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -69,6 +74,7 @@ private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
+    DownloadQueue & download_queue;
     std::atomic<bool> created_base_directory = false;
 };
 
@@ -109,10 +115,15 @@ public:
 
     void doCleanup();
 
+    void downloadThreadFunc();
+
+    void cancelDownload();
+
 private:
     const std::string path; /// Cache base path
     CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
+    const DownloadQueuePtr download_queue;
     Poco::Logger * log;
 };
 
@@ -158,6 +169,8 @@ struct LockedKey : private boost::noncopyable
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
+
+    void addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 

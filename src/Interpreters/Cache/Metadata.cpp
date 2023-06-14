@@ -46,10 +46,12 @@ KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
     CleanupQueue & cleanup_queue_,
+    DownloadQueue & download_queue_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
+    , download_queue(download_queue_)
     , created_base_directory(created_base_directory_)
 {
     if (created_base_directory)
@@ -123,6 +125,7 @@ private:
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
     , cleanup_queue(std::make_unique<CleanupQueue>())
+    , download_queue(std::make_unique<DownloadQueue>())
     , log(&Poco::Logger::get("CacheMetadata"))
 {
 }
@@ -175,7 +178,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, *download_queue, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -291,6 +294,121 @@ void CacheMetadata::doCleanup()
             chassert(false);
         }
     }
+}
+
+class DownloadQueue
+{
+friend struct CacheMetadata;
+public:
+    void add(std::weak_ptr<FileSegment> file_segment)
+    {
+        {
+            std::lock_guard lock(mutex);
+            queue.push(file_segment);
+        }
+        cv.notify_one();
+    }
+
+private:
+    void cancel()
+    {
+        std::lock_guard lock(mutex);
+        cancelled = true;
+    }
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::queue<std::weak_ptr<FileSegment>> queue;
+    bool cancelled = false;
+};
+
+void CacheMetadata::downloadThreadFunc()
+{
+    std::optional<Memory<>> memory;
+    while (true)
+    {
+        std::weak_ptr<FileSegment> file_segment_weak;
+        {
+            std::unique_lock lock(download_queue->mutex);
+
+            if (download_queue->cancelled)
+                return;
+
+            if (download_queue->queue.empty())
+            {
+                download_queue->cv.wait(lock);
+                continue;
+            }
+
+            file_segment_weak = download_queue->queue.front();
+            download_queue->queue.pop();
+        }
+
+        FileSegmentsHolderPtr holder;
+        {
+            auto file_segment = file_segment_weak.lock();
+            if (!file_segment
+                || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
+                continue;
+
+            auto lock = lockKeyMetadata(file_segment->key(), KeyNotFoundPolicy::RETURN_NULL);
+            if (!lock)
+                continue;
+
+            holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+        }
+
+        auto & file_segment = holder->front();
+        chassert(file_segment.assertCorrectness());
+
+        if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
+            continue;
+
+        LOG_TRACE(log, "Downloading file segment: {}", file_segment.getInfoForLog());
+
+        auto reader = file_segment.getRemoteFileReader();
+
+        /// If remote_fs_read_method == 'threadpool',
+        /// reader iteself does not allocate the buffer, but uses the buffer passed to it.
+        /// So will need to allocate a buffer here as well.
+        if (reader->buffer().begin() == nullptr)
+        {
+            if (!memory)
+                memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+            reader->set(memory->data(), memory->size());
+        }
+
+        size_t offset = file_segment.getCurrentWriteOffset(false);
+        while (!reader->eof())
+        {
+            auto size = reader->available();
+
+            if (!file_segment.reserve(size))
+                return;
+
+            try
+            {
+                file_segment.write(reader->position(), size, offset);
+                offset += size;
+            }
+            catch (ErrnoException & e)
+            {
+                int code = e.getErrno();
+                if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+                {
+                    LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+                    continue;
+                }
+                throw;
+            }
+        }
+    }
+}
+
+void CacheMetadata::cancelDownload()
+{
+    download_queue->cancel();
+    download_queue->cv.notify_all();
 }
 
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
@@ -424,6 +542,14 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
         metadata->getQueueIterator()->updateSize(-diff);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+}
+
+void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
+    key_metadata->download_queue.add(it->second->file_segment);
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
