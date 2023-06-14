@@ -2585,7 +2585,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push({element.range});
             }
-            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)  // TODO already reverted
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
             {
                 rpn_stack.push(element.range.invertToRanges());
             }

@@ -184,12 +184,6 @@ Pipe StorageSystemNumbers::read(
 {
     storage_snapshot->check(column_names);
 
-    if (limit && *limit < max_block_size)
-    {
-        max_block_size = static_cast<size_t>(*limit);
-        multithreaded = false;
-    }
-
     if (!multithreaded)
         num_streams = 1;
 
