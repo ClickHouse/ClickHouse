@@ -583,13 +583,13 @@ def test_partition_by_tf(cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     partition_by = "column3"
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
-    filename = "test_tf_{_partition_id}.csv"
+    filename = "test_partition_tf_{_partition_id}.csv"
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
     )
 
-    assert "1,2,3\n" == get_azure_file_content("test_tf_3.csv")
-    assert "3,2,1\n" == get_azure_file_content("test_tf_1.csv")
-    assert "78,43,45\n" == get_azure_file_content("test_tf_45.csv")
+    assert "1,2,3\n" == get_azure_file_content("test_partition_tf_3.csv")
+    assert "3,2,1\n" == get_azure_file_content("test_partition_tf_1.csv")
+    assert "78,43,45\n" == get_azure_file_content("test_partition_tfs_45.csv")
