@@ -129,17 +129,6 @@ struct RegExpTreeDictionary::RegexTreeNode
         return searcher.Match(haystack, 0, size, re2_st::RE2::Anchor::UNANCHORED, nullptr, 0);
     }
 
-    /// check if this node can cover all the attributes from the query.
-    bool containsAll(const std::unordered_map<String, const DictionaryAttribute &> & matching_attributes) const
-    {
-        for (const auto & [key, value] : matching_attributes)
-        {
-            if (!attributes.contains(key))
-                return false;
-        }
-        return true;
-    }
-
     struct AttributeValue
     {
         Field field;
@@ -691,9 +680,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
             {
                 match_result.insertNodeID(node_ptr->id);
-                /// When this node is leaf and contains all the required attributes, it means a match.
-                if (node_ptr->containsAll(attributes) && node_ptr->children.empty())
-                    break;
             }
         }
 
