@@ -977,13 +977,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
-        /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
-            * implicit_value is used to avoid this exception (to allow user to type just "--password")
-            * Since currently boost provides no way to check if a value has been set implicitly for an option,
-            * the "\n" is used to distinguish this case because there is hardly a chance a user would use "\n"
-            * as the password.
-            */
-        ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
+        ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
@@ -1390,6 +1384,12 @@ void Client::readArguments(
                 ++arg_num;
                 arg = argv[arg_num];
                 addMultiquery(arg, common_arguments);
+            }
+            else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                // Add implicit value to the password. '\n' means client should ask user for password.
+                common_arguments.emplace_back("\n");
             }
             else
                 common_arguments.emplace_back(arg);
