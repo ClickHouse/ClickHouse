@@ -6,4 +6,11 @@
             <insert_keeper_max_retries>0</insert_keeper_max_retries>
         </default>
     </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
 </clickhouse>

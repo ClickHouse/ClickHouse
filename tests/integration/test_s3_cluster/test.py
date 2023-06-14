@@ -68,6 +68,7 @@ def started_cluster():
         cluster.add_instance(
             "s0_0_0",
             main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
+            user_configs=["configs/users.xml"],
             macros={"replica": "node1", "shard": "shard1"},
             with_minio=True,
             with_zookeeper=True,
