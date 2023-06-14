@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
@@ -21,37 +22,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+static ASTPtr buildQueryAST(const ASTPtr & table_expression, const ContextPtr & context, SelectQueryOptions & subquery_options);
+
+static ContextPtr getSubqueryContext(const ContextPtr & context)
 {
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
-    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
-}
-
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
-{
-    if (auto * expr = table_expression->as<ASTTableExpression>())
-    {
-        ASTPtr table;
-        if (expr->subquery)
-            table = expr->subquery;
-        else if (expr->table_function)
-            table = expr->table_function;
-        else if (expr->database_and_table_name)
-            table = expr->database_and_table_name;
-
-        return interpretSubquery(table, context, required_source_columns, options);
-    }
-
-    /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
-    const auto * subquery = table_expression->as<ASTSubquery>();
-    const auto * function = table_expression->as<ASTFunction>();
-    const auto * table = table_expression->as<ASTTableIdentifier>();
-
-    if (!subquery && !table && !function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery.");
-
     /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
       * Because the result of this query is not the result of the entire query.
       * Constraints work instead
@@ -67,7 +41,56 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);
 
+    return subquery_context;
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
+    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
+{
     auto subquery_options = options.subquery();
+    auto query = buildQueryAST(table_expression, context, subquery_options);
+    auto subquery_context = getSubqueryContext(context);
+    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+}
+
+std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).subquery();
+    auto query = buildQueryAST(table_expression, context, subquery_options);
+    auto subquery_context = getSubqueryContext(context);
+    return std::make_shared<InterpreterSelectQueryAnalyzer>(query, subquery_context, subquery_options);
+}
+
+static ASTPtr buildQueryAST(const ASTPtr & table_expression, const ContextPtr & context, SelectQueryOptions & subquery_options)
+{
+    if (auto * expr = table_expression->as<ASTTableExpression>())
+    {
+        ASTPtr table;
+        if (expr->subquery)
+            table = expr->subquery;
+        else if (expr->table_function)
+            table = expr->table_function;
+        else if (expr->database_and_table_name)
+            table = expr->database_and_table_name;
+
+        return buildQueryAST(table, context, subquery_options);
+    }
+
+    /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
+    const auto * subquery = table_expression->as<ASTSubquery>();
+    const auto * function = table_expression->as<ASTFunction>();
+    const auto * table = table_expression->as<ASTTableIdentifier>();
+
+    if (!subquery && !table && !function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery.");
 
     ASTPtr query;
     if (table || function)
@@ -112,7 +135,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    return query;
 }
 
 }
