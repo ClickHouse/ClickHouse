@@ -1268,7 +1268,7 @@ void Client::readArguments(
         std::string_view arg = argv[arg_num];
 
         if (has_connection_string)
-            validateConnectionStringClientOption(arg);
+            checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")
         {

@@ -99,7 +99,6 @@ runClient "click_house:" 2>&1 | grep -o 'BAD_ARGUMENTS'
 TEST_INDEX=1000087
 # Using connection string prohibits to use --host and --port options
 runClient "clickhouse://default:@$CLICKHOUSE_HOST/" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
-runClient "clickhouse://default:@$CLICKHOUSE_HOST/" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://default:@$CLICKHOUSE_HOST:$CLICKHOUSE_PORT_TCP/" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://default:@$CLICKHOUSE_HOST:$CLICKHOUSE_PORT_TCP/" --port "$CLICKHOUSE_PORT_TCP" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://default:@$CLICKHOUSE_HOST:$CLICKHOUSE_PORT_TCP/" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
@@ -109,6 +108,7 @@ runClient "clickhouse://default:@$CLICKHOUSE_HOST/" --port "$CLICKHOUSE_PORT_TCP
 runClient "clickhouse://$CLICKHOUSE_HOST/" --port "$CLICKHOUSE_PORT_TCP" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://:@$CLICKHOUSE_HOST/" --port "$CLICKHOUSE_PORT_TCP" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://$CLICKHOUSE_HOST/" --port "$CLICKHOUSE_PORT_TCP" 2>&1 | grep -o 'BAD_ARGUMENTS'
+runClient "clickhouse://" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse:" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse:///" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
@@ -130,9 +130,9 @@ runClient "clickhouse://host1/ database:" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://user :password@host1" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://user: password@host1" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
-# Query is not first argument
+# Connection string is not first argument
 runClient --multiline "clickhouse://default:@$CLICKHOUSE_HOST/" 2>&1 | grep -o 'BAD_ARGUMENTS'
-# Query used as the first and the second argument of client
+# Connection string used as the first and the second argument of client
 runClient "clickhouse://default:@$CLICKHOUSE_HOST/" "clickhouse://default:@$CLICKHOUSE_HOST/" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
 # Invalid hosts
