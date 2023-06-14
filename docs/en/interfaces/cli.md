@@ -194,7 +194,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--print-profile-events` – Print `ProfileEvents` packets.
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
-Instead of --host, --port, --user and --password options, ClickHouse client also supports connection strings.
+Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 
 
 ## Connection string {#connection_string}
@@ -213,28 +213,27 @@ Where
 - `database` - (optional) is the database name,
 - `query_parameters` - (optional) is a list of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
 
+If no user is specified, `default` user without password will be used.
+If no host is specified, the `localhost` will be used (localhost).
+If no port is specified is not specified, `9000` will be used as port.
+If no database is specified, the `default` database will be used.
 
+If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
-The host component can either be an IP address or a host name. Put an IPv6 address in square brackets to specify it:
+The host component can either be an a host name and IP address. Put an IPv6 address in square brackets to specify it:
 
 ```text
 clickhouse://[2001:db8::1234]
 ```
 
-If user is not specified, `default` user without password will be used.
-If host is not specified, the `localhost` will be used (localhost).
-If port is not specified, `9000` will be used as port.
-If database is not specified, the `default` database will be used.
-
-If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
-
-The connection string must be specified in the first argument of clickhouse-client. The connection string can be combined with other [command-line-options](#command-line-options) except `--host(h)` and `--port`.
-
-### Multiple hosts {#connection_string_multiple_hosts}
-
 URI allows multiple hosts to be connected to. Connection strings can contain multiple hosts. ClickHouse-client will try to connect to these hosts in order (i.e. from left to right). After the connection is established, no attempt to connect to the remaining hosts is made.
 
-### Allowed query_parameters keys {#connection_string_query_parameters}
+
+
+
+The connection string must be specified as the first argument of clickhouse-client. The connection string can be combined with arbitrary other [command-line-options](#command-line-options) except `--host/-h` and `--port`.
+
+The following keys are allowed for component `query_parameter`:
 
 - `secure` or shorthanded `s` - no value. If specified, client will connect to the server over a secure connection (TLS). See `secure` in [command-line-options](#command-line-options)
 
@@ -244,7 +243,7 @@ Non-US ASCII, spaces and special characters in the `user`, `password`, `hosts`, 
 
 ### Examples {#connection_string_examples}
 
-Connect to localhost using port 9000 and execute the query "SELECT 1".
+Connect to localhost using port 9000 and execute the query `SELECT 1`.
 
 ``` bash
 clickhouse-client clickhouse://localhost:9000 --query "SELECT 1"
@@ -262,12 +261,6 @@ Connect to localhost using default user, host with IPV6 address `[::1]` and port
 clickhouse-client clickhouse://[::1]:9000
 ```
 
-Connect to localhost using default user, host with IPV6 address `[2001:db8:3333:4444:5555:6666:7777:8888]` and port `9000`.
-
-``` bash
-clickhouse-client clickhouse://[2001:db8:3333:4444:5555:6666:7777:8888]:9000
-```
-
 Connect to localhost using port 9000 in multiline mode.
 
 ``` bash
@@ -277,7 +270,7 @@ clickhouse-client clickhouse://localhost:9000 '-m'
 Connect to localhost using port 9000 with the user `default`.
 
 ``` bash
-clickhouse-client clickhouse://default@localhost:9000 --user default
+clickhouse-client clickhouse://default@localhost:9000
 
 # equivalent to:
 clickhouse-client clickhouse://localhost:9000 --user default

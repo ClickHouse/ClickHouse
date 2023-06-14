@@ -45,26 +45,26 @@ std::string uriDecode(const std::string & uri_encoded_string, bool plus_as_space
 void getHostAndPort(const Poco::URI & uri, std::vector<std::vector<std::string>> & hosts_and_ports_arguments)
 {
     std::vector<std::string> host_and_port;
-    auto host = uri.getHost();
+    const auto& host = uri.getHost();
     if (!host.empty())
     {
-        host_and_port.push_back("--host="s + uriDecode(host, false));
+        host_and_port.push_back("--host=" + uriDecode(host, false));
     }
 
     // Port can be written without host (":9000"). Empty host name equals to default host.
     auto port = uri.getPort();
     if (port != 0)
-        host_and_port.push_back("--port="s + std::to_string(port));
+        host_and_port.push_back("--port=" + std::to_string(port));
 
     if (!host_and_port.empty())
         hosts_and_ports_arguments.push_back(std::move(host_and_port));
 }
 
 void buildConnectionString(
-    Poco::URI & uri,
-    std::vector<std::vector<std::string>> & hosts_and_ports_arguments,
     std::string_view host_and_port,
-    std::string_view right_part)
+    std::string_view right_part,
+    Poco::URI & uri,
+    std::vector<std::vector<std::string>> & hosts_and_ports_arguments)
 {
     // User info does not matter in sub URI
     auto uri_string = std::string(CONNECTION_URI_SCHEME);
@@ -154,7 +154,7 @@ bool tryParseConnectionString(
         {
             if (*it == ',')
             {
-                buildConnectionString(uri, hosts_and_ports_arguments, {last_host_begin, it}, {hosts_end, connection_string.end()});
+                buildConnectionString({last_host_begin, it}, {hosts_end, connection_string.end()}, uri, hosts_and_ports_arguments);
                 last_host_begin = it + 1;
             }
         }
@@ -166,7 +166,7 @@ bool tryParseConnectionString(
             getHostAndPort(uri, hosts_and_ports_arguments);
         }
         else
-            buildConnectionString(uri, hosts_and_ports_arguments, {last_host_begin, hosts_end}, {hosts_end, connection_string.end()});
+            buildConnectionString({last_host_begin, hosts_end}, {hosts_end, connection_string.end()}, uri, hosts_and_ports_arguments);
 
         Poco::URI::QueryParameters params = uri.getQueryParameters();
         for (const auto & param : params)
@@ -174,12 +174,12 @@ bool tryParseConnectionString(
             if (param.first == "secure" || param.first == "s")
             {
                 if (!param.second.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "secure URI query parameter does not require value");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "secure URI query parameter does not allow value");
 
                 common_arguments.push_back(makeArgument(param.first));
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI query parameter {} is unknown", param.first);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI query parameter {} is not supported", param.first);
         }
 
         auto user_info = uri.getUserInfo();
@@ -188,7 +188,7 @@ bool tryParseConnectionString(
             // Poco::URI doesn't decode user name/password by default.
             // But ClickHouse allows to have users with email user name like: 'john@some_mail.com'
             // john@some_mail.com should be percent-encoded: 'john%40some_mail.com'
-            std::string::size_type pos = user_info.find(':');
+            size_t pos = user_info.find(':');
             if (pos != std::string::npos)
             {
                 common_arguments.push_back("--user");
@@ -229,12 +229,11 @@ bool tryParseConnectionString(
     return true;
 }
 
-void validateConnectionStringClientOption(std::string_view command_line_option)
+void checkIfCmdLineOptionCanBeUsedWithConnectionString(std::string_view command_line_option)
 {
-    const auto prohibited_option_iter = PROHIBITED_CLIENT_OPTIONS.find(command_line_option);
-    if (prohibited_option_iter != PROHIBITED_CLIENT_OPTIONS.end())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Mixing a connection string and {} option is prohibited", prohibited_option_iter->second);
+    if (PROHIBITED_CLIENT_OPTIONS.contains(command_line_option))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Mixing a connection string and {} option is prohibited", PROHIBITED_CLIENT_OPTIONS.at(command_line_option));
 }
 
 }
