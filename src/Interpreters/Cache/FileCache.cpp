@@ -11,6 +11,7 @@
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 
 #include <filesystem>
 
@@ -49,9 +50,9 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
+    , boundary_alignment(settings.boundary_alignment)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
-    , boundary_alignment(settings.boundary_alignment)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -124,7 +125,12 @@ void FileCache::initialize()
 
     is_initialized = true;
 
-    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
+    size_t num_threads=2;
+    for (size_t i = 0; i < num_threads; ++i)
+         download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
+
+    auto & schedule_pool = Context::getGlobalContextInstance()->getSchedulePool();
+    cleanup_task = schedule_pool.createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }
@@ -412,7 +418,12 @@ FileSegmentsHolderPtr FileCache::set(
 }
 
 FileSegmentsHolderPtr
-FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
+FileCache::getOrSet(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    size_t file_size,
+    const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
 
@@ -979,6 +990,10 @@ void FileCache::deactivateBackgroundOperations()
 {
     if (cleanup_task)
         cleanup_task->deactivate();
+
+    metadata.cancelDownload();
+    for (auto & thread : download_threads)
+        thread.join();
 }
 
 void FileCache::cleanup()
@@ -1017,6 +1032,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
+        return true;
     });
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
 }

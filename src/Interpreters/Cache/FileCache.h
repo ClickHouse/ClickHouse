@@ -134,6 +134,7 @@ private:
     const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
     const size_t delayed_cleanup_interval_ms;
+    const size_t boundary_alignment;
 
     Poco::Logger * log;
 
@@ -178,9 +179,9 @@ private:
      */
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
-    void assertInitialized() const;
+    std::vector<ThreadFromGlobalPool> download_threads;
 
-    size_t boundary_alignment;
+    void assertInitialized() const;
 
     void assertCacheCorrectness();
 
