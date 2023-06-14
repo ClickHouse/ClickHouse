@@ -321,8 +321,11 @@ public:
 private:
     void cancel()
     {
-        std::lock_guard lock(mutex);
-        cancelled = true;
+        {
+            std::lock_guard lock(mutex);
+            cancelled = true;
+        }
+        cv.notify_all();
     }
 
     std::mutex mutex;
@@ -333,6 +336,7 @@ private:
 
 void CacheMetadata::downloadThreadFunc()
 {
+    std::optional<Memory<>> memory;
     while (true)
     {
         std::weak_ptr<FileSegment> file_segment_weak;
@@ -371,7 +375,7 @@ void CacheMetadata::downloadThreadFunc()
                 holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
             }
 
-            downloadImpl(holder->front());
+            downloadImpl(holder->front(), memory);
         }
         catch (...)
         {
@@ -392,7 +396,7 @@ void CacheMetadata::downloadThreadFunc()
     }
 }
 
-void CacheMetadata::downloadImpl(FileSegment & file_segment)
+void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
     chassert(file_segment.assertCorrectness());
 
@@ -407,10 +411,10 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment)
 
     /// If remote_fs_read_method == 'threadpool',
     /// reader itself never owns/allocates the buffer.
-    std::optional<Memory<>> memory;
     if (reader->internalBuffer().empty())
     {
-        memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+        if (!memory)
+            memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
         reader->set(memory->data(), memory->size());
     }
 
@@ -456,7 +460,6 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment)
 void CacheMetadata::cancelDownload()
 {
     download_queue->cancel();
-    download_queue->cv.notify_all();
 }
 
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)

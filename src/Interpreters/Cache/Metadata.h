@@ -126,7 +126,7 @@ private:
     const DownloadQueuePtr download_queue;
     Poco::Logger * log;
 
-    void downloadImpl(FileSegment & file_segment);
+    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
 };
 
 
