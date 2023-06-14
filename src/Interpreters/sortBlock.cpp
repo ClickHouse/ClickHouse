@@ -291,7 +291,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     {
         auto & column_to_sort = block.getByPosition(i).column;
         if (is_identity_permutation)
-            column_to_sort = column_to_sort->cut(0, std::min(limit, permutation.size()));
+            column_to_sort = column_to_sort->cut(0, std::min(static_cast<size_t>(limit), permutation.size()));
         else
             column_to_sort = column_to_sort->permute(permutation, limit);
     }
