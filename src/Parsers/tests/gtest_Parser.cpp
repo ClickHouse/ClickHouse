@@ -478,11 +478,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         }
 })));
 
+static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
+static constexpr size_t kDummyMaxParserDepth = 256;
+
 INSTANTIATE_TEST_SUITE_P(
     ParserPRQL,
     ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserPRQLQuery>()),
+        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
                 "from albums\ngroup [author_id] (\n  aggregate [first_pushlied = min published]\n)\njoin a=author side:left [==author_id]\njoin p=purchases side:right [==author_id]\ngroup [a.id, p.purchase_id] (\n  aggregate [avg_sell = min first_pushlied]\n)",
