@@ -159,7 +159,8 @@ CREATE TABLE default.postgresql_copy
     `str` String,
     `int_id` Int32
 )
-ENGINE = MergeTree;
+ENGINE = MergeTree
+ORDER BY (int_id);
 ```
 
 ``` sql
