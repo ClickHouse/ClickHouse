@@ -57,6 +57,213 @@ String Range::toString() const
     return str.str();
 }
 
+PlainRanges::PlainRanges(const Ranges & ranges_, Relation relation, bool ordered)
+{
+    if (relation == Relation::UNION)
+        ranges = makePlainByUnion(ranges_, ordered);
+    else
+        ranges = makePlainByIntersect(ranges_, ordered);
+}
+
+Ranges PlainRanges::makePlainByUnion(const Ranges & ranges_, bool ordered)
+{
+    if (ranges_.size() <= 1)
+        return ranges_;
+
+    auto to_be_union = ranges_;
+
+    if (!ordered)
+        std::sort(to_be_union.begin(), to_be_union.end(), compareByLeftBound);
+
+    Ranges ret;
+    size_t first_disjunct_range = 1;
+
+    for (size_t i = 0; i < to_be_union.size() - 1;)
+    {
+        auto & cur = to_be_union[i];
+        first_disjunct_range = to_be_union.size();
+        for (size_t j=i+1; j<to_be_union.size(); j++)
+        {
+            if (cur.leftThan(to_be_union[j]))
+            {
+                first_disjunct_range = j;
+                break;
+            }
+        }
+
+        /// combine(union) [cur, first_disjunct_range -1]
+        Range combined_range = cur;
+        for (size_t j=i+1; j <first_disjunct_range; j++)
+        {
+            combined_range = *cur.unionWith(to_be_union[j]);
+        }
+
+        ret.push_back(std::move(combined_range));
+        i = first_disjunct_range;
+    }
+    /// push the last one
+    if (first_disjunct_range == to_be_union.size() - 1)
+        ret.push_back(to_be_union[first_disjunct_range]);
+
+    return ret;
+};
+
+Ranges PlainRanges::makePlainByIntersect(const Ranges & ranges_, bool ordered)
+{
+    if (ranges_.size() <= 1)
+        return ranges_;
+
+    auto to_be_intersect = ranges_;
+
+    if (!ordered)
+        std::sort(to_be_intersect.begin(), to_be_intersect.end(), compareByLeftBound);
+
+    Ranges ret;
+    size_t first_disjunct_range = 1;
+
+    for (size_t i = 0; i < to_be_intersect.size() - 1;)
+    {
+        auto & cur = to_be_intersect[i];
+        first_disjunct_range = to_be_intersect.size();
+        for (size_t j=i+1; j<to_be_intersect.size(); j++)
+        {
+            if (cur.leftThan(to_be_intersect[j]))
+            {
+                first_disjunct_range = j;
+                break;
+            }
+        }
+
+        /// combine(intersect) [cur, first_disjunct_range -1]
+        Range combined_range = cur;
+        for (size_t j=i+1; j <first_disjunct_range; j++)
+        {
+            combined_range = *(cur.intersectWith(to_be_intersect[j]));
+        }
+
+        ret.push_back(std::move(combined_range));
+        i = first_disjunct_range;
+    }
+    /// push the last one
+    if (first_disjunct_range == to_be_intersect.size() - 1)
+        ret.push_back(to_be_intersect[first_disjunct_range]);
+
+    return ret;
+}
+
+PlainRanges PlainRanges::unionWith(const PlainRanges & other)
+{
+    auto left_itr = ranges.begin();
+    auto right_itr = other.ranges.begin();
+
+    Ranges new_range;
+    for (; left_itr != ranges.end() && right_itr != other.ranges.end();)
+    {
+        if (left_itr->leftThan(*right_itr))
+        {
+            new_range.push_back(*left_itr);
+            left_itr++;
+        }
+        else if (left_itr->rightThan(*right_itr))
+        {
+            new_range.push_back(*right_itr);
+            right_itr++;
+        }
+        else /// union
+        {
+            new_range.emplace_back(*(left_itr->unionWith(*right_itr)));
+            if (compareByRightBound(*left_itr, *right_itr))
+                left_itr++;
+            else
+                right_itr++;
+        }
+    }
+
+    while (left_itr != ranges.end())
+    {
+        new_range.push_back(*left_itr);
+        left_itr++;
+    }
+
+    while (right_itr != other.ranges.end())
+    {
+        new_range.push_back(*right_itr);
+        right_itr++;
+    }
+
+    /// After 'or' operations, new ranges may like: [1, 4], [2, 5]
+    /// We must combine(union) them.
+
+    return {makePlainByUnion(new_range, true)};
+}
+
+PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
+{
+    auto left_itr = ranges.begin();
+    auto right_itr = other.ranges.begin();
+
+    Ranges new_range;
+    for (; left_itr != ranges.end() && right_itr != other.ranges.end();)
+    {
+        if (left_itr->leftThan(*right_itr))
+        {
+            left_itr++;
+        }
+        else if (left_itr->rightThan(*right_itr))
+        {
+            right_itr++;
+        }
+        else /// intersection
+        {
+            auto intersected = left_itr->intersectWith(*right_itr);
+
+            if (intersected) /// skip blank range
+                new_range.emplace_back(*intersected);
+
+            if (compareByRightBound(*left_itr, *right_itr)) /// TODO [1, +inf), [2, +inf)
+                left_itr++;
+            else
+                right_itr++;
+        }
+    }
+    return PlainRanges(new_range);
+}
+
+bool PlainRanges::compareByLeftBound(const Range & lhs, const Range & rhs)
+{
+    if (lhs.left == NEGATIVE_INFINITY && rhs.left == NEGATIVE_INFINITY)
+        return 0;
+    return lhs.left < rhs.left || (lhs.left == rhs.left && !lhs.left_included && rhs.left_included);
+};
+
+bool PlainRanges::compareByRightBound(const Range & lhs, const Range & rhs)
+{
+    if (lhs.right == POSITIVE_INFINITY && rhs.right == POSITIVE_INFINITY)
+        return 0;
+    return lhs.right < rhs.right || (lhs.right == rhs.right && !lhs.right_included && rhs.right_included);
+};
+
+
+std::vector<Ranges> PlainRanges::revertRanges(const Ranges & to_invert_ranges)
+{
+    /// invert a blank ranges
+    if (to_invert_ranges.empty())
+    {
+        Ranges universe = {Range::createWholeUniverseWithoutNull()};
+        return {universe};
+    }
+
+    std::vector<Ranges> reverted_ranges;
+    for (auto & range : to_invert_ranges)
+    {
+        if (range.isInfinite())
+            /// return a blank ranges
+            return {{}};
+        reverted_ranges.push_back(range.invertToRanges());
+    }
+    return reverted_ranges;
+};
+
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
 /// We call a pattern "perfect prefix" if:
@@ -2270,203 +2477,13 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     if (key_indices.empty() || key_indices.size() > 1)
         return false;
 
+    // TODO only integer
+
     if (hasMonotonicFunctionsChain())
         return false;
 
-    auto left_bound_comparison = [](const Range & lhs, const Range & rhs) -> bool
-    {
-        if (lhs.left == NEGATIVE_INFINITY && rhs.left == NEGATIVE_INFINITY)
-            return 0;
-        return lhs.left < rhs.left || (lhs.left == rhs.left && !lhs.left_included && rhs.left_included);
-    };
-
-    auto right_bound_comparison = [](const Range & lhs, const Range & rhs) -> bool
-    {
-        if (lhs.right == POSITIVE_INFINITY && rhs.right == POSITIVE_INFINITY)
-            return 0;
-        return lhs.right < rhs.right || (lhs.right == rhs.right && !lhs.right_included && rhs.right_included);
-    };
-
-    /// Intersect a ranges and return a new plain(ordered and no intersection) ranges.
-    [[maybe_unused]] auto intersect_ranges = [&](Ranges & to_be_intersect) -> Ranges
-    {
-        if (to_be_intersect.size() <= 1)
-            return to_be_intersect;
-
-        std::sort(to_be_intersect.begin(), to_be_intersect.end(), left_bound_comparison);
-        Ranges ret;
-
-        size_t first_disjunct_range = 1;
-        for (size_t i = 0; i < to_be_intersect.size() - 1;)
-        {
-            auto & cur = to_be_intersect[i];
-            first_disjunct_range = to_be_intersect.size();
-            for (size_t j=i+1; j<to_be_intersect.size(); j++)
-            {
-                if (cur.leftThan(to_be_intersect[j]))
-                {
-                    first_disjunct_range = j;
-                    break;
-                }
-            }
-
-            /// combine(intersect) [cur, first_disjunct_range -1]
-            Range combined_range = cur;
-            for (size_t j=i+1; j <first_disjunct_range; j++)
-            {
-                combined_range = *(cur.intersectWith(to_be_intersect[j]));
-            }
-
-            ret.push_back(std::move(combined_range));
-            i = first_disjunct_range;
-        }
-        /// push the last one
-        if (first_disjunct_range == to_be_intersect.size() - 1)
-            ret.push_back(to_be_intersect[first_disjunct_range]);
-        return ret;
-    };
-
-    /// Union ranges and return a new plain(ordered and no intersection) ranges.
-    auto union_ranges = [&](Ranges & to_be_union) -> Ranges
-    {
-        if (to_be_union.size() <= 1)
-            return to_be_union;
-
-        std::sort(to_be_union.begin(), to_be_union.end(), left_bound_comparison);
-        Ranges ret;
-
-        size_t first_disjunct_range = 1;
-        for (size_t i = 0; i < to_be_union.size() - 1;)
-        {
-            auto & cur = to_be_union[i];
-            first_disjunct_range = to_be_union.size();
-            for (size_t j=i+1; j<to_be_union.size(); j++)
-            {
-                if (cur.leftThan(to_be_union[j]))
-                {
-                    first_disjunct_range = j;
-                    break;
-                }
-            }
-
-            /// combine(union) [cur, first_disjunct_range -1]
-            Range combined_range = cur;
-            for (size_t j=i+1; j <first_disjunct_range; j++)
-            {
-                combined_range = *cur.unionWith(to_be_union[j]);
-            }
-
-            ret.push_back(std::move(combined_range));
-            i = first_disjunct_range;
-        }
-        /// push the last one
-        if (first_disjunct_range == to_be_union.size() - 1)
-            ret.push_back(to_be_union[first_disjunct_range]);
-
-        return ret;
-    };
-
-    /// Intersect two plain ranges together and return a new plain ranges.
-    auto intersect_two_ranges = [&](Ranges & left_ranges, Ranges & right_ranges) -> Ranges
-    {
-        auto left_itr = left_ranges.begin();
-        auto right_itr = right_ranges.begin();
-
-        Ranges new_range;
-        for (; left_itr != left_ranges.end() && right_itr != right_ranges.end();)
-        {
-            if(left_itr->leftThan(*right_itr))
-            {
-                left_itr++;
-            }
-            else if (left_itr->rightThan(*right_itr))
-            {
-                right_itr++;
-            }
-            else /// intersection
-            {
-                auto intersected = left_itr->intersectWith(*right_itr);
-                if (intersected) /// skip blank range
-                    new_range.emplace_back(*intersected);
-
-                if (right_bound_comparison(*left_itr, *right_itr)) /// TODO [1, +inf), [2, +inf)
-                    left_itr++;
-                else
-                    right_itr++;
-            }
-        }
-        return new_range;
-    };
-
-    /// Union two plain ranges together and return a new plain ranges.
-    auto union_two_ranges = [&](Ranges & left_ranges, Ranges & right_ranges) -> Ranges
-    {
-        auto left_itr = left_ranges.begin();
-        auto right_itr = right_ranges.begin();
-
-        Ranges new_range;
-        for (; left_itr != left_ranges.end() && right_itr != right_ranges.end();)
-        {
-            if(left_itr->leftThan(*right_itr))
-            {
-                new_range.push_back(*left_itr);
-                left_itr++;
-            }
-            else if (left_itr->rightThan(*right_itr))
-            {
-                new_range.push_back(*right_itr);
-                right_itr++;
-            }
-            else /// union
-            {
-                new_range.emplace_back(*(left_itr->unionWith(*right_itr)));
-                if (right_bound_comparison(*left_itr, *right_itr))
-                    left_itr++;
-                else
-                    right_itr++;
-            }
-        }
-
-        while (left_itr != left_ranges.end())
-        {
-            new_range.push_back(*left_itr);
-            left_itr++;
-        }
-
-        while (right_itr != right_ranges.end())
-        {
-            new_range.push_back(*right_itr);
-            right_itr++;
-        }
-
-        /// After 'or' operations, new ranges may like: [1, 4], [2, 5]
-        /// We must combine(union) them.
-
-        return union_ranges(new_range);
-    };
-
-    auto revert_ranges = [](Ranges & to_invert_ranges) -> std::vector<Ranges>
-    {
-        /// invert a blank ranges
-        if (to_invert_ranges.empty())
-        {
-            Ranges universe = {Range::createWholeUniverseWithoutNull()};
-            return {universe};
-        }
-
-        std::vector<Ranges> reverted_ranges;
-        for (auto & range : to_invert_ranges)
-        {
-            if (range.isInfinite())
-                /// return a blank ranges
-                return {{}};
-            reverted_ranges.push_back(range.invertToRanges());
-        }
-        return reverted_ranges;
-    };
-
     /// All Ranges in rpn_stack is plain.
-    std::stack<Ranges> rpn_stack;
+    std::stack<PlainRanges> rpn_stack;
 
     for (const auto & element : rpn)
     {
@@ -2478,7 +2495,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto left_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            Ranges new_range = intersect_two_ranges(left_ranges, right_ranges);
+            auto new_range = left_ranges.intersectWith(right_ranges);
             rpn_stack.emplace(std::move(new_range));
         }
         else if (element.function == RPNElement::FUNCTION_OR)
@@ -2490,7 +2507,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto left_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            Ranges new_range = union_two_ranges(left_ranges, right_ranges);
+            auto new_range = left_ranges.unionWith(right_ranges);
             rpn_stack.emplace(std::move(new_range));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
@@ -2498,31 +2515,30 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto to_invert_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            std::vector<Ranges> reverted_ranges = revert_ranges(to_invert_ranges);
+            std::vector<Ranges> reverted_ranges = PlainRanges::revertRanges(to_invert_ranges.ranges);
 
             if (reverted_ranges.size() == 1)
                 rpn_stack.emplace(std::move(reverted_ranges[0]));
             else
             {
                 /// intersect reverted ranges
-                Ranges intersected_ranges = reverted_ranges[0];
-                for (size_t i=1; i<reverted_ranges.size(); i++)
+                PlainRanges intersected_ranges(reverted_ranges[0]);
+                for (size_t i = 1; i < reverted_ranges.size(); i++)
                 {
-                    intersected_ranges = intersect_two_ranges(intersected_ranges, reverted_ranges[i]);
+                    intersected_ranges = intersected_ranges.intersectWith({reverted_ranges[i]});
                 }
                 rpn_stack.emplace(std::move(intersected_ranges));
             }
         }
         else /// atom relational expression or constants
         {
-            if (element.function == RPNElement::ALWAYS_FALSE)
+            if (element.function == RPNElement::FUNCTION_IN_RANGE)
             {
-                /// skip blank range
-                rpn_stack.push({});
+                rpn_stack.push(PlainRanges({element.range}));
             }
-            else if (element.function == RPNElement::ALWAYS_TRUE)
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
             {
-                rpn_stack.push({Range::createWholeUniverseWithoutNull()});
+                rpn_stack.push(PlainRanges(element.range.invertToRanges()));
             }
             else if (element.function == RPNElement::FUNCTION_IN_SET) /// TODO duplicated value?
             {
@@ -2530,7 +2546,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                     return false;
 
                 if (element.set_index->size() == 0)
-                    rpn_stack.push({}); /// skip blank range
+                    rpn_stack.push(PlainRanges::makeBlank()); /// skip blank range
 
                 const auto & values = element.set_index->getOrderedSet();
                 Ranges points_range;
@@ -2543,7 +2559,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                         return false;
                     points_range.push_back({f});
                 }
-                rpn_stack.push(std::move(points_range));
+                rpn_stack.push(PlainRanges(std::move(points_range)));
             }
             else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
             {
@@ -2551,7 +2567,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                     return false;
 
                 if (element.set_index->size() == 0)
-                    rpn_stack.push({Range::createWholeUniverseWithoutNull()});
+                    rpn_stack.push(PlainRanges::makeUniverse());
 
                 const auto & values = element.set_index->getOrderedSet();
                 Ranges points_range;
@@ -2579,24 +2595,25 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                 }
 
                 points_range.push_back(Range::createLeftBounded(*pre, false));
-                rpn_stack.push(std::move(points_range));
+                rpn_stack.push(PlainRanges(std::move(points_range)));
             }
-            else if (element.function == RPNElement::FUNCTION_IN_RANGE)
+            else if (element.function == RPNElement::ALWAYS_FALSE)
             {
-                rpn_stack.push({element.range});
+                /// skip blank range
+                rpn_stack.push(PlainRanges::makeBlank());
             }
-            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+            else if (element.function == RPNElement::ALWAYS_TRUE)
             {
-                rpn_stack.push(element.range.invertToRanges());
+                rpn_stack.push(PlainRanges::makeUniverse());
             }
             else if (element.function == RPNElement::FUNCTION_IS_NULL)
             {
                 /// key values can not be null, so isNull will get blank range.
-                rpn_stack.push({});
+                rpn_stack.push(PlainRanges::makeBlank());
             }
             else if (element.function == RPNElement::FUNCTION_IS_NOT_NULL)
             {
-                rpn_stack.push({Range::createWholeUniverseWithoutNull()});
+                rpn_stack.push(PlainRanges::makeUniverse());
             }
             else /// FUNCTION_UNKNOWN
             {
@@ -2608,7 +2625,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
-    for (auto & r : union_ranges(rpn_stack.top()))
+    for (auto & r : rpn_stack.top().ranges)
     {
         ranges.push_back(std::move(r));
     }

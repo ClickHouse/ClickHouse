@@ -228,7 +228,7 @@ public:
     std::optional<Range> unionWith(const Range & r) const
     {
         if (!intersectsRange(r) && !nearByWith(r))
-            return {};/// TODO logical error
+            return {};
 
         bool left_bound_use_mine = false;
         bool right_bound_use_mine = false;
@@ -288,9 +288,9 @@ public:
             ranges.push_back({NEGATIVE_INFINITY, !right_included, left, !left_included});
             ranges.push_back({right, !right_included, POSITIVE_INFINITY, !left_included});
         }
-        else if(isInfinite())
+        else if (isInfinite())
         {
-            /// blank ranges
+            /// skip blank ranges
         }
         else /// case: (-inf, 1] or [1, +inf)
         {
@@ -309,7 +309,38 @@ public:
     String toString() const;
 };
 
+
 using Ranges = std::vector<Range>;
+
+/// A plain ranges is a serious of ranges who are not blank, ordered and have no overlapping.
+struct PlainRanges
+{
+    /// How to handle ranges when make it plain.
+    enum class Relation
+    {
+        UNION,
+        INTERSECT
+    };
+
+    Ranges ranges;
+
+    PlainRanges(const Ranges & ranges_, Relation relation = Relation::INTERSECT, bool ordered = true);
+
+    PlainRanges unionWith(const PlainRanges & other);
+    PlainRanges intersectWith(const PlainRanges & other);
+
+    /// Union ranges and return a new plain(ordered and no intersection) ranges.
+    static Ranges makePlainByUnion(const Ranges & ranges_, bool ordered);
+    static Ranges makePlainByIntersect(const Ranges & ranges_, bool ordered);
+
+    static bool compareByLeftBound(const Range & lhs, const Range & rhs);
+    static bool compareByRightBound(const Range & lhs, const Range & rhs);
+
+    static std::vector<Ranges> revertRanges(const Ranges & to_invert_ranges);
+
+    static PlainRanges makeBlank() { return PlainRanges({}); }
+    static PlainRanges makeUniverse() { return PlainRanges({Range::createWholeUniverseWithoutNull()}); }
+};
 
 /** Condition on the index.
   *

@@ -165,8 +165,8 @@ private:
 }
 
 
-StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
-    : IStorage(table_id), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
+StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_)
+    : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
@@ -198,28 +198,16 @@ Pipe StorageSystemNumbers::read(
     Ranges ranges;
     if (condition.extractPlainRanges(ranges))
     {
-        std::cout << "Ranges:\n";
-        for (auto & r : ranges) // TODO delete
-        {
-            std::cout << r.toString() << std::endl;
-        }
-
         /// Intersect ranges with table range
         Range table_range(
             FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : POSITIVE_INFINITY, limit.has_value());
-        Ranges intersected_ranges;
 
+        Ranges intersected_ranges;
         for (auto & r : ranges)
         {
             auto intersected_range = table_range.intersectWith(r);
             if (intersected_range)
                 intersected_ranges.push_back(*intersected_range);
-        }
-
-        std::cout << "Intersected Ranges:\n";
-        for (auto & r : intersected_ranges) // TODO delete
-        {
-            std::cout << r.toString() << std::endl;
         }
 
         /// ranges is blank, return a source who has no data
@@ -233,7 +221,7 @@ Pipe StorageSystemNumbers::read(
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);/// TODO subquery
         size_t query_limit = limit_length + limit_offset;
 
-        /// If intersected ranges is limited, use NumbersRangedSource
+        /// If intersected ranges is unlimited, use NumbersRangedSource
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_limit > 0)
         {
             auto size_of_range = [] (const Range & r) -> size_t
