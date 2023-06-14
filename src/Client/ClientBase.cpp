@@ -596,14 +596,13 @@ try
                             range.second);
                 }
 
-                std::error_code ec;
-                if (std::filesystem::is_regular_file(out_file, ec))
+                if (fs::exists(out_file))
                 {
                     if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
                     {
                         throw Exception(
                             ErrorCodes::CANNOT_OPEN_FILE,
-                            "File {} exists, consider using 'INTO OUTFILE ... APPEND' or 'INTO OUTFILE ... TRUNCATE' if appropriate.",
+                            "File {} exists, consider using APPEND or TRUNCATE if appropriate.",
                             out_file);
                     }
                 }
