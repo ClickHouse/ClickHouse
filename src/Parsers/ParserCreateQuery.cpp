@@ -147,9 +147,9 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
     {
         if (index->type->name == "annoy")
-            index->granularity = 100'000'000;
+            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
         else
-            index->granularity = 1;
+            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
 
     node = index;

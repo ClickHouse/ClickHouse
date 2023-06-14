@@ -1358,7 +1358,7 @@ size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
     size_t count = 0;
     for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
     {
-        auto status = getIncompleteMutationsStatusUnlocked(version, lock);
+        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, true);
         if (!status)
             continue;
 
