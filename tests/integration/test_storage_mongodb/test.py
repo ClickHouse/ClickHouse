@@ -73,6 +73,40 @@ def test_simple_select(started_cluster):
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_simple_select_from_view(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    simple_mongo_table = db["simple_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    simple_mongo_table.insert_many(data)
+    simple_mongo_table_view = db.create_collection(
+        "simple_table_view", viewOn="simple_table"
+    )
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table_view', 'root', 'clickhouse')"
+    )
+
+    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
+    assert (
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
+    )
+
+    assert (
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
+    )
+    node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table_view.drop()
+    simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_arrays(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -412,13 +446,16 @@ def test_simple_insert_select(started_cluster):
     node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
     )
-    node.query("INSERT INTO simple_mongo_table SELECT 1, 'kek'")
+    node.query(
+        "INSERT INTO simple_mongo_table SELECT number, 'kek' || toString(number) FROM numbers(10)"
+    )
 
     assert (
-        node.query("SELECT data from simple_mongo_table where key = 1").strip() == "kek"
+        node.query("SELECT data from simple_mongo_table where key = 7").strip()
+        == "kek7"
     )
     node.query("INSERT INTO simple_mongo_table(key) SELECT 12")
-    assert int(node.query("SELECT count() from simple_mongo_table")) == 2
+    assert int(node.query("SELECT count() from simple_mongo_table")) == 11
     assert (
         node.query("SELECT data from simple_mongo_table where key = 12").strip() == ""
     )
