@@ -228,9 +228,6 @@ clickhouse://[2001:db8::1234]
 
 URI allows multiple hosts to be connected to. Connection strings can contain multiple hosts. ClickHouse-client will try to connect to these hosts in order (i.e. from left to right). After the connection is established, no attempt to connect to the remaining hosts is made.
 
-
-
-
 The connection string must be specified as the first argument of clickhouse-client. The connection string can be combined with arbitrary other [command-line-options](#command-line-options) except `--host/-h` and `--port`.
 
 The following keys are allowed for component `query_parameter`:
