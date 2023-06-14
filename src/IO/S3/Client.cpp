@@ -754,15 +754,10 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     if (!credentials_configuration.role_arn.empty())
     {
-        DB::S3::PocoHTTPClientConfiguration new_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-            client_configuration.region,
-            client_configuration.remote_host_filter,
-            client_configuration.s3_max_redirects,
-            client_configuration.enable_s3_requests_logging,
-            client_configuration.for_disk_s3,
-            client_configuration.get_request_throttler,
-            client_configuration.put_request_throttler);
-        const auto x = std::make_shared<Aws::STS::STSClient>(credentials_provider, new_client_configuration);
+        // why set to empty? because client_configuration's endpointOverride is pointed to a s3 endpoint, whereas we
+        // expect are going to visit a sts endpoint.
+        client_configuration.endpointOverride = "";
+        const auto x = std::make_shared<Aws::STS::STSClient>(credentials_provider, client_configuration);
         credentials_provider = std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
             credentials_configuration.role_arn,
             credentials_configuration.session_name,
