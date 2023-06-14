@@ -38,15 +38,9 @@ def run_query(instance, query, data=None, settings=None):
 
     return result
 
-    # reg_url="http://localhost:{}".format(started_cluster.schema_registry_port)
-    # arg={'url':reg_url}
-    # schema_registry_client = CachedSchemaRegistryClient(arg)
-
 
 def test_select(started_cluster):
     # type: (ClickHouseCluster) -> None
-
-    # input("Top of test_select, press any key")
 
     reg_url = "http://localhost:{}".format(started_cluster.schema_registry_port)
     arg = {"url": reg_url}
