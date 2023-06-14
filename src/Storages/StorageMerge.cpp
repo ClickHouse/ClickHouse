@@ -297,7 +297,6 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     }
 
     return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
-    // return QueryProcessingStage::Complete;
 }
 
 void StorageMerge::read(
@@ -314,7 +313,6 @@ void StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    // modified_context->setSetting("optimize_move_to_prewhere", false);
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
@@ -328,9 +326,7 @@ void StorageMerge::read(
         else if (column_name == "_table" && isVirtualColumn(column_name, storage_snapshot->metadata))
             has_table_virtual_column = true;
         else
-        {
             real_column_names.push_back(column_name);
-        }
     }
 
     StorageListWithLocks selected_tables
@@ -359,7 +355,6 @@ void StorageMerge::read(
     query_plan.addInterpreterContext(modified_context);
 
     /// What will be result structure depending on query processed stage in source tables?
-    // Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, QueryProcessingStage::Complete /* processed_stage */);
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
     auto step = std::make_unique<ReadFromMerge>(
@@ -664,7 +659,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
-
         if (!view || allow_experimental_analyzer)
         {
             storage->read(plan,
@@ -1046,7 +1040,6 @@ void ReadFromMerge::convertingSourceStream(
     if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
-
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
                                                                 convert_actions_match_columns_mode);
@@ -1060,47 +1053,40 @@ void ReadFromMerge::convertingSourceStream(
     });
 
 
-    bool explicit_row_policy_filter_needed = true;
+    auto row_policy_filter = local_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
 
-    if (explicit_row_policy_filter_needed)
+    if (row_policy_filter)
     {
+        ASTPtr expr = row_policy_filter->expression;
 
-        auto row_policy_filter = local_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
+        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+        auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, local_context};
 
-        if (row_policy_filter)
+        auto actions_dag = expression_analyzer.getActionsDAG(true, false);
+        auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+        auto required_columns = filter_actions->getRequiredColumns();
+
+        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
+            filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
+
+
+        auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
+        std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
+
+        Names required_columns_sorted = required_columns;
+        std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
+
+        Names filter_columns;
+
+
+        std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
+            required_columns.begin(), required_columns.end(),
+            std::inserter(filter_columns, filter_columns.begin()));
+
+        builder.addSimpleTransform([&](const Block & stream_header)
         {
-
-            ASTPtr expr = row_policy_filter->expression;
-
-            auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
-            auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, local_context};
-
-            auto actions_dag = expression_analyzer.getActionsDAG(true, false);
-            auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-            auto required_columns = filter_actions->getRequiredColumns();
-
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
-                filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
-
-
-            auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
-            std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
-
-            Names required_columns_sorted = required_columns;
-            std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
-
-            Names filter_columns;
-
-
-            std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
-                required_columns.begin(), required_columns.end(),
-                std::inserter(filter_columns, filter_columns.begin()));
-
-            builder.addSimpleTransform([&](const Block & stream_header)
-            {
-                return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_columns.front(), true /* remove fake column */);
-            });
-        }
+            return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_columns.front(), true /* remove fake column */);
+        });
     }
 }
 
