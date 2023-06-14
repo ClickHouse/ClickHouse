@@ -89,6 +89,8 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
+        std::lock_guard lock(storage_kafka_ptr->mutex);
+
         for (auto consumer : storage_kafka_ptr->consumers)
         {
             auto & cpp_consumer = consumer->consumer;
@@ -125,29 +127,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             assigments_topics_offsets.push_back(last_assignment_num);
             assigments_partition_id_offsets.push_back(last_assignment_num);
             assigments_current_offset_offsets.push_back(last_assignment_num);
-
-
-
-            // std::string fake_assigments_topic_1 = "fake_assigments_topic_1";
-            // std::string fake_assigments_topic_2 = "fake_assigments_topic_2";
-            // assigments_topics.insertData(fake_assigments_topic_1.data(), fake_assigments_topic_1.size());
-            // assigments_topics.insertData(fake_assigments_topic_2.data(), fake_assigments_topic_2.size());
-            // assigments_topics_last_offset += 2;
-            // assigments_topics_offsets.push_back(assigments_topics_last_offset);
-
-            // std::string fake_partition_id_1 = "fake_partition_id_1";
-            // std::string fake_partition_id_2 = "fake_partition_id_2";
-            // assigments_partition_id.insertData(fake_partition_id_1.data(), fake_partition_id_1.size());
-            // assigments_partition_id.insertData(fake_partition_id_2.data(), fake_partition_id_2.size());
-            // assigments_partition_id_last_offset += 2;
-            // assigments_partition_id_offsets.push_back(assigments_partition_id_last_offset);
-
-            // std::string fake_current_offset_1 = "fake_current_offset_1";
-            // std::string fake_current_offset_2 = "fake_current_offset_2";
-            // assigments_current_offset.insertData(fake_current_offset_1.data(), fake_current_offset_1.size());
-            // assigments_current_offset.insertData(fake_current_offset_2.data(), fake_current_offset_2.size());
-            // assigments_current_offset_last_offset += 2;
-            // assigments_current_offset_offsets.push_back(assigments_current_offset_last_offset);
 
             auto exception_info = consumer->getExceptionInfo();
 

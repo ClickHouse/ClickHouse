@@ -4582,11 +4582,39 @@ def test_system_kafka_consumers(kafka_cluster):
     result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
 
-    result_system_kafka_consumers = instance.query("SELECT * FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical")
+    result_system_kafka_consumers = instance.query("""
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 20, 'now', toString(d));
 
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
+          if(length(last_exception)>0, last_exception, 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
+        """
+    )
     logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
-    assert result_system_kafka_consumers == 'empty'
-
+    assert result_system_kafka_consumers == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons']
+assignments.partition_id:   [0]
+assignments.current_offset: [-1001]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          1
+"""
 
     kafka_delete_topic(admin_client, topic)
 
@@ -4598,13 +4626,6 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
 
     topic = "system_kafka_cons2"
     kafka_create_topic(admin_client, topic)
-
-    # # Check that format_csv_delimiter parameter works now - as part of all available format settings.
-    # kafka_produce(
-    #     kafka_cluster,
-    #     topic,
-    #     ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
-    # )
 
     instance.query(
         f"""
@@ -4638,31 +4659,66 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
 
 
     instance.query("SELECT * FROM test.kafka")
-
-    # second consumer do the same leading to rebalance in the first
-    # consumer, try to poll some data
     instance.query("SELECT * FROM test.kafka2")
-
     instance.query("SELECT * FROM test.kafka")
-
-    # second consumer do the same leading to rebalance in the first
-    # consumer, try to poll some data
     instance.query("SELECT * FROM test.kafka2")
 
 
-    result_system_kafka_consumers = instance.query("SELECT * FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical")
-
+    result_system_kafka_consumers = instance.query(
+        """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 20, 'now', toString(d));
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
+          if(length(last_exception)>0, last_exception, 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
+        """
+    )
     logging.debug(f"result_system_kafka_consumers (1): {result_system_kafka_consumers}")
-    # assert result_system_kafka_consumers == 'empty'
+    assert result_system_kafka_consumers == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [0]
+assignments.current_offset: [-1001]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          0
+last_commit_time_:          never
+num_commits:                0
+last_rebalance_time_:       now
+num_rebalance_revocations:  1
+num_rebalance_assignments:  2
+is_currently_used:          1
 
-
-
+Row 2:
+──────
+database:                   test
+table:                      kafka2
+length(consumer_id):        68
+assignments.topic:          ['no assigned topic']
+assignments.partition_id:   [0]
+assignments.current_offset: [0]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          0
+last_commit_time_:          never
+num_commits:                0
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
 
     instance.query("DROP TABLE test.kafka")
     instance.query("DROP TABLE test.kafka2")
-
-
-
 
     kafka_delete_topic(admin_client, topic)
 
