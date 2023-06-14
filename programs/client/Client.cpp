@@ -1394,7 +1394,9 @@ void Client::readArguments(
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);
-                // Add implicit value to the password. '\n' means client should ask user for password.
+                /// No password was provided by user. Add '\n' as implicit password,
+                /// which encodes that client should ask user for the password.
+                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
                 common_arguments.emplace_back("\n");
             }
             else
