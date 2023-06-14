@@ -15,7 +15,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/named_collections.xml"],
-    user_configs=["configs/settings.xml"],
+    user_configs=["configs/settings.xml", "configs/users.xml"],
     with_postgres_cluster=True,
 )
 
