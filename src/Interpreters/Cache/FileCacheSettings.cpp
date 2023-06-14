@@ -47,7 +47,9 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     else
          bypass_cache_threashold = FILECACHE_BYPASS_THRESHOLD;
 
-    do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", false);
+    do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", true);
+
+    boundary_alignment = config.getUInt64(config_prefix + ".boundary_alignment", DBMS_DEFAULT_BUFFER_SIZE);
 
     delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
 }

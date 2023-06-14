@@ -125,6 +125,8 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback);
@@ -201,6 +203,7 @@ public:
 
 private:
     ACLs default_acls;
+    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
 

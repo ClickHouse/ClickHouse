@@ -5,13 +5,13 @@
 #include <iostream>
 #include <iomanip>
 #include <optional>
-#include <string_view>
 #include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
@@ -862,7 +862,8 @@ bool Client::processWithFuzzing(const String & full_query)
                 const auto * tmp_pos = text_2.c_str();
                 const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
                     false /* allow_multi_statements */);
-                const auto text_3 = ast_3->formatForErrorMessage();
+                const auto text_3 = ast_3 ? ast_3->formatForErrorMessage() : "";
+
                 if (text_3 != text_2)
                 {
                     fmt::print(stderr, "Found error: The query formatting is broken.\n");
@@ -877,7 +878,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
                     fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
                     fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
-                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3->dumpTree());
+                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3 ? ast_3->dumpTree() : "");
                     fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
                     fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
 
@@ -1179,8 +1180,11 @@ void Client::processOptions(const OptionsDescription & options_description,
 
 void Client::processConfig()
 {
+    if (config().has("query") && config().has("queries-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
     /// Batch mode is enabled if one of the following is true:
-    /// - -e (--query) command line option is present.
+    /// - -q (--query) command line option is present.
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
@@ -1244,6 +1248,9 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
+    bool has_connection_string = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = has_connection_string ? 2 : 1;
+
     /** We allow different groups of arguments:
         * - common arguments;
         * - arguments for any number of external tables each in form "--external args...",
@@ -1256,9 +1263,12 @@ void Client::readArguments(
     std::string prev_host_arg;
     std::string prev_port_arg;
 
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
+        if (has_connection_string)
+            checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")
         {
@@ -1380,6 +1390,13 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
+            else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+            {
+                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+                ++arg_num;
+                arg = argv[arg_num];
+                addMultiquery(arg, common_arguments);
+            }
             else
                 common_arguments.emplace_back(arg);
         }
