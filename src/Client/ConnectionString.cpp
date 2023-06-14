@@ -45,7 +45,7 @@ std::string uriDecode(const std::string & uri_encoded_string, bool plus_as_space
 void getHostAndPort(const Poco::URI & uri, std::vector<std::vector<std::string>> & hosts_and_ports_arguments)
 {
     std::vector<std::string> host_and_port;
-    const auto& host = uri.getHost();
+    const std::string & host = uri.getHost();
     if (!host.empty())
     {
         host_and_port.push_back("--host=" + uriDecode(host, false));
