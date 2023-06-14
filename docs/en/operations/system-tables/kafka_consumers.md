@@ -10,9 +10,9 @@ Columns:
 
 - `database` (String) - database of the table with Kafka Engine.
 - `table` (String) - name of the table with Kafka Engine.
-- `consumer_id` (String) - Kafka consumer identificator. Note, that a table can have many consumers. Specified by `kafka_num_consumers` parameter.
+- `consumer_id` (String) - Kafka consumer identifier. Note, that a table can have many consumers. Specified by `kafka_num_consumers` parameter.
 - `assignments.topic` (Array(String)) - Kafka topic.
-- `assignments.partition_id` (Array(Int32)) - Kafka partiton id. Note, that only one consumer can be assigned to a partition.
+- `assignments.partition_id` (Array(Int32)) - Kafka partition id. Note, that only one consumer can be assigned to a partition.
 - `assignments.current_offset` (Array(Int64)) - current offset.
 - `last_exception_time`, (DateTime) - timestamp when the most recent exception was generated.
 - `last_exception`, (String) - text of the most recent exception.

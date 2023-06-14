@@ -42,8 +42,6 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
     return names_and_types;
 }
 
-
-
 void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();

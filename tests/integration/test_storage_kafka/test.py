@@ -4581,8 +4581,8 @@ def test_system_kafka_consumers(kafka_cluster):
 
     result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
-
-    result_system_kafka_consumers = instance.query("""
+    result_system_kafka_consumers = instance.query(
+        """
         create or replace function stable_timestamp as
           (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 20, 'now', toString(d));
 
@@ -4596,7 +4596,9 @@ def test_system_kafka_consumers(kafka_cluster):
         """
     )
     logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
-    assert result_system_kafka_consumers == """Row 1:
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
 ──────
 database:                   test
 table:                      kafka
@@ -4615,8 +4617,10 @@ num_rebalance_revocations:  0
 num_rebalance_assignments:  1
 is_currently_used:          1
 """
+    )
 
     kafka_delete_topic(admin_client, topic)
+
 
 def test_system_kafka_consumers_rebalance(kafka_cluster):
     # based on test_kafka_consumer_hang2
@@ -4657,12 +4661,10 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
     # consumer, try to poll some data
     instance.query("SELECT * FROM test.kafka2")
 
-
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
-
 
     result_system_kafka_consumers = instance.query(
         """
@@ -4678,7 +4680,9 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
         """
     )
     logging.debug(f"result_system_kafka_consumers (1): {result_system_kafka_consumers}")
-    assert result_system_kafka_consumers == """Row 1:
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
 ──────
 database:                   test
 table:                      kafka
@@ -4716,11 +4720,13 @@ num_rebalance_revocations:  0
 num_rebalance_assignments:  1
 is_currently_used:          0
 """
+    )
 
     instance.query("DROP TABLE test.kafka")
     instance.query("DROP TABLE test.kafka2")
 
     kafka_delete_topic(admin_client, topic)
+
 
 if __name__ == "__main__":
     cluster.start()
