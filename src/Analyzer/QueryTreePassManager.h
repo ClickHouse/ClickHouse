@@ -3,7 +3,6 @@
 #include <Analyzer/IQueryTreePass.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -45,6 +44,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-void addQueryTreePasses(QueryTreePassManager & manager, const StoragePtr & storage = nullptr);
+void addQueryTreePasses(QueryTreePassManager & manager);
 
 }

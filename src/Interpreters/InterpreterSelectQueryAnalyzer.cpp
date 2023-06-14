@@ -136,7 +136,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, storage);
+    addQueryTreePasses(query_tree_pass_manager);
 
     if (select_query_options.ignore_ast_optimizations)
         query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
