@@ -152,7 +152,7 @@ This type of ANN index implements [the Annoy algorithm](https://github.com/spoti
 space in random linear surfaces (lines in 2D, planes in 3D etc.).
 
 <div class='vimeo-container'>
-  <iframe src="//www.youtube.com/watch?v=QkCCyLW0ehU"
+  <iframe src="//www.youtube.com/embed/QkCCyLW0ehU"
     width="640"
     height="360"
     frameborder="0"
