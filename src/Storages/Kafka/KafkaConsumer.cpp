@@ -551,7 +551,4 @@ std::pair<String, Int64> KafkaConsumer::getExceptionInfo() const
     return std::make_pair(last_exception_text, last_exception_timestamp_usec);
 }
 
-
-
-
 }
