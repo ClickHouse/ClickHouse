@@ -1916,7 +1916,10 @@ try
 
             ++num_loaded_parts;
             if (res.is_broken)
+            {
+                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(part->name);
                 res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            }
             else if (res.part->is_duplicate)
                 res.part->remove();
             else
