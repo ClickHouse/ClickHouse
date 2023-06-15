@@ -196,7 +196,7 @@ Pipe StorageSystemNumbers::read(
     KeyCondition condition(query_info, context, column_names, col_desc.expression, {});
 
     Ranges ranges;
-    if (condition.extractPlainRanges(ranges))
+    if (condition.extractPlainRanges(ranges, true))
     {
         /// Intersect ranges with table range
         Range table_range(
@@ -218,8 +218,8 @@ Pipe StorageSystemNumbers::read(
         }
 
         auto & query = query_info.query->as<ASTSelectQuery &>();
-
         auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
+
         size_t query_limit = limit_length + limit_offset;
 
         /// If intersected ranges is unlimited, use NumbersRangedSource
@@ -228,9 +228,11 @@ Pipe StorageSystemNumbers::read(
             auto size_of_range = [] (const Range & r) -> size_t
             {
                 size_t size;
-                uint64_t right = r.right.isPositiveInfinity() ? std::numeric_limits<uint64_t>::max() : r.right.get<UInt64>();
+                if (r.right.isPositiveInfinity())
+                    return std::numeric_limits<uint64_t>::max() - r.left.get<UInt64>();
 
-                size = right - r.left.get<UInt64>() + 1;
+                size = r.right.get<UInt64>() - r.left.get<UInt64>() + 1;
+
                 if (!r.left_included)
                     size--;
                 assert (size > 0);

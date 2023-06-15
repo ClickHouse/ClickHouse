@@ -44,7 +44,7 @@
 
 	"statistics":
 	{
-		"rows_read": 131011,
-		"bytes_read": 1048081
+		"rows_read": 100000,
+		"bytes_read": 799993
 	}
 }

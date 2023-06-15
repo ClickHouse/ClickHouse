@@ -65,10 +65,10 @@ std::optional<Range> Range::intersectWith(const Range & r) const
     bool left_bound_use_mine = true;
     bool right_bound_use_mine = true;
 
-    if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
         left_bound_use_mine = false;
 
-    if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
         right_bound_use_mine = false;
 
     return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
@@ -78,11 +78,11 @@ std::optional<Range> Range::intersectWith(const Range & r) const
 bool Range::nearByWith(const Range & r) const
 {
     /// me locates at left
-    if (equals(right, r.left) && ((right_included && !r.left_included) || (!right_included && r.left_included)))
+    if (((right_included && !r.left_included) || (!right_included && r.left_included)) && equals(right, r.left))
         return true;
 
     /// r locate left
-    if (equals(r.right, left) && ((r.right_included && !left_included) || (r.right_included && !left_included)))
+    if (((r.right_included && !left_included) || (r.right_included && !left_included)) && equals(r.right, left))
         return true;
 
     return false;
@@ -96,10 +96,10 @@ std::optional<Range> Range::unionWith(const Range & r) const
     bool left_bound_use_mine = false;
     bool right_bound_use_mine = false;
 
-    if (less(left, r.left) || (equals(left, r.left) && (!left_included && r.left_included)))
+    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
         left_bound_use_mine = true;
 
-    if (less(r.right, right) || (equals(r.right, right) && (!r.right_included && right_included)))
+    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
         right_bound_use_mine = true;
 
     return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
@@ -211,12 +211,12 @@ bool Range::leftThan(const FieldRef & x) const
 
 bool Range::rightThan(const Range & x) const
 {
-    return less(x.right, left) || (equals(left, x.right) && !(left_included && x.right_included));
+    return less(x.right, left) || (!(left_included && x.right_included) && equals(left, x.right));
 }
 
 bool Range::leftThan(const Range & x) const
 {
-    return less(right, x.left) || (equals(right, x.left) && !(x.left_included && right_included));
+    return less(right, x.left) || (!(x.left_included && right_included) && equals(right, x.left));
 }
 
 bool Range::empty() const
@@ -423,7 +423,7 @@ PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
             if (intersected) /// skip blank range
                 new_range.emplace_back(*intersected);
 
-            if (compareByRightBound(*left_itr, *right_itr)) /// TODO [1, +inf), [2, +inf)
+            if (compareByRightBound(*left_itr, *right_itr))
                 left_itr++;
             else
                 right_itr++;
@@ -435,15 +435,17 @@ PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
 bool PlainRanges::compareByLeftBound(const Range & lhs, const Range & rhs)
 {
     if (lhs.left == NEGATIVE_INFINITY && rhs.left == NEGATIVE_INFINITY)
-        return 0;
-    return lhs.left < rhs.left || (lhs.left == rhs.left && !lhs.left_included && rhs.left_included);
+        return false;
+    return Range::less(lhs.left, rhs.left) ||
+        ((!lhs.left_included && rhs.left_included) && Range::equals(lhs.left, rhs.left));
 };
 
 bool PlainRanges::compareByRightBound(const Range & lhs, const Range & rhs)
 {
     if (lhs.right == POSITIVE_INFINITY && rhs.right == POSITIVE_INFINITY)
-        return 0;
-    return lhs.right < rhs.right || (lhs.right == rhs.right && !lhs.right_included && rhs.right_included);
+        return false;
+    return Range::less(lhs.right, rhs.right) ||
+        ((!lhs.right_included && rhs.right_included) && Range::equals(lhs.right, rhs.right));
 };
 
 
@@ -2675,12 +2677,10 @@ bool KeyCondition::matchesExactContinuousRange() const
     return true;
 }
 
-bool KeyCondition::extractPlainRanges(Ranges & ranges) const
+bool KeyCondition::extractPlainRanges(Ranges & ranges, bool unknown_any) const
 {
     if (key_indices.empty() || key_indices.size() > 1)
         return false;
-
-    // TODO only integer
 
     if (hasMonotonicFunctionsChain())
         return false;
@@ -2703,7 +2703,6 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
-
             auto right_ranges = rpn_stack.top();
             rpn_stack.pop();
 
@@ -2743,17 +2742,21 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges(element.range.invertToRanges()));
             }
-            else if (element.function == RPNElement::FUNCTION_IN_SET) /// TODO duplicated value?
+            else if (element.function == RPNElement::FUNCTION_IN_SET)
             {
                 if (element.set_index->hasMonotonicFunctionsChain())
                     return false;
 
                 if (element.set_index->size() == 0)
+                {
                     rpn_stack.push(PlainRanges::makeBlank()); /// skip blank range
+                    continue;
+                }
 
                 const auto & values = element.set_index->getOrderedSet();
                 Ranges points_range;
 
+                /// values in set_index are ordered and no duplication
                 for (size_t i=0; i<element.set_index->size(); i++)
                 {
                     FieldRef f;
@@ -2762,7 +2765,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                         return false;
                     points_range.push_back({f});
                 }
-                rpn_stack.push(PlainRanges(std::move(points_range)));
+                rpn_stack.push(PlainRanges(points_range));
             }
             else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
             {
@@ -2770,13 +2773,16 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                     return false;
 
                 if (element.set_index->size() == 0)
+                {
                     rpn_stack.push(PlainRanges::makeUniverse());
+                    continue;
+                }
 
                 const auto & values = element.set_index->getOrderedSet();
                 Ranges points_range;
 
                 std::optional<FieldRef> pre;
-                for (size_t i=0; i<element.set_index->size(); i++) /// TODO values ordered ?
+                for (size_t i=0; i<element.set_index->size(); i++)
                 {
                     FieldRef cur;
                     values[0]->get(i, cur);
@@ -2798,7 +2804,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
                 }
 
                 points_range.push_back(Range::createLeftBounded(*pre, false));
-                rpn_stack.push(PlainRanges(std::move(points_range)));
+                rpn_stack.push(PlainRanges(points_range));
             }
             else if (element.function == RPNElement::ALWAYS_FALSE)
             {
@@ -2820,13 +2826,16 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             }
             else /// FUNCTION_UNKNOWN
             {
-                return false;
+                if (unknown_any)
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                else
+                    return false;
             }
         }
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
 
     for (auto & r : rpn_stack.top().ranges)
     {

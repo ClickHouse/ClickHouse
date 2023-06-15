@@ -55,11 +55,10 @@ struct FieldRef : public Field
   */
 struct Range
 {
-private:
+public:
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
 
-public:
     FieldRef left;        /// the left border
     FieldRef right;       /// the right border
     bool left_included;   /// includes the left border
@@ -318,7 +317,16 @@ public:
 
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
-    bool extractPlainRanges(Ranges & ranges) const;
+    ///
+    /// If unknown_any is false, we will return false with unknown function,
+    /// or treat it as (-inf, +inf)
+    ///
+    /// Now some cases are parsed to unknown function:
+    ///     1. where 1=1
+    ///     2. where true
+    ///     3. no where
+    /// TODO handle the cases when generate RPN.
+    bool extractPlainRanges(Ranges & ranges, bool unknown_any) const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
