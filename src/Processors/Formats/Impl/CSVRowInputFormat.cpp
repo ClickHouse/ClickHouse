@@ -149,15 +149,17 @@ void CSVFormatReader::skipFieldDelimiter()
     skipWhitespacesAndTabs(*buf);
 
     bool res = checkChar(format_settings.csv.delimiter, *buf);
-    if (!res && !format_settings.csv.missing_as_default)
+    if (!res)
     {
-        char err[2] = {format_settings.csv.delimiter, '\0'};
-        throwAtAssertionFailed(err, *buf);
-    }
-
-    if (!res && format_settings.csv.missing_as_default)
-    {
-        current_row_has_missing_fields = true;
+        if (!format_settings.csv.missing_as_default)
+        {
+            char err[2] = {format_settings.csv.delimiter, '\0'};
+            throwAtAssertionFailed(err, *buf);
+        }
+        else
+        {
+            current_row_has_missing_fields = true;
+        }
     }
 }
 
@@ -332,6 +334,7 @@ bool CSVFormatReader::readField(
 
     if (is_last_file_column && format_settings.csv.ignore_extra_columns)
     {
+        // Skip all fields to next line.
         while (checkChar(format_settings.csv.delimiter, *buf))
         {
             skipField();
