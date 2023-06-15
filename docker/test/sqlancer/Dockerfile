@@ -12,9 +12,9 @@ RUN apt-get update --yes && \
 # We need to get the repository's HEAD each time despite, so we invalidate layers' cache
 ARG CACHE_INVALIDATOR=0
 RUN mkdir /sqlancer && \
-	wget -q -O- https://github.com/sqlancer/sqlancer/archive/master.tar.gz | \
+	wget -q -O- https://github.com/sqlancer/sqlancer/archive/main.tar.gz | \
 		tar zx -C /sqlancer && \
-	cd /sqlancer/sqlancer-master && \
+	cd /sqlancer/sqlancer-main && \
 	mvn package -DskipTests && \
 	rm -r /root/.m2
 
