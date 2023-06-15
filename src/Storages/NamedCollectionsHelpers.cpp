@@ -76,7 +76,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (!collection_name.has_value())
         return nullptr;
 
-    context->checkAccess(AccessType::USE_NAMED_COLLECTION, *collection_name);
+    context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
 
     NamedCollectionPtr collection;
     if (throw_unknown_collection)
@@ -121,7 +121,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (collection_name.empty())
         return nullptr;
 
-    context->checkAccess(AccessType::USE_NAMED_COLLECTION, collection_name);
+    context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
 
     const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     auto collection_copy = collection->duplicate();
