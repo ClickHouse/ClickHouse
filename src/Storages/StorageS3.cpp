@@ -941,6 +941,7 @@ StorageS3::StorageS3(
 
     FormatFactory::instance().checkFormatName(configuration.format);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration.url.uri);
+    context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration.headers_from_ast);
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())

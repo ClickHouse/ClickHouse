@@ -1006,6 +1006,14 @@
         -->
     <!--</remote_url_allow_hosts>-->
 
+    <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.
+        If this section is not present in configuration, all headers are allowed.
+    -->
+    <!-- <http_forbid_headers>
+        <header>exact_header</header>
+        <header_regexp>(?i)(case_insensitive_header)</header_regexp>
+    </http_forbid_headers> -->
+
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
          Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.

@@ -44,6 +44,8 @@ StorageS3Cluster::StorageS3Cluster(
     , s3_configuration{configuration_}
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
+    context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration_.headers_from_ast);
+
     StorageInMemoryMetadata storage_metadata;
     updateConfigurationIfChanged(context_);
 
