@@ -40,6 +40,9 @@ namespace MongoDB
         Cursor(const std::string & fullCollectionName, QueryRequest::Flags flags = QueryRequest::QUERY_DEFAULT);
         /// Creates a Cursor for the given database and collection ("database.collection"), using the specified flags.
 
+        Cursor(const Document & aggregationResponse);
+        /// Creates a Cursor for the given aggregation query response.
+
         virtual ~Cursor();
         /// Destroys the Cursor.
 

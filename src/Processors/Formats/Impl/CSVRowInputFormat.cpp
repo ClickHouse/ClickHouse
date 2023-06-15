@@ -333,6 +333,20 @@ void CSVFormatReader::setReadBuffer(ReadBuffer & in_)
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
 }
 
+bool CSVFormatReader::checkForSuffix()
+{
+    if (!format_settings.csv.skip_trailing_empty_lines)
+        return buf->eof();
+
+    PeekableReadBufferCheckpoint checkpoint(*buf);
+    while (checkChar('\n', *buf) || checkChar('\r', *buf));
+    if (buf->eof())
+        return true;
+
+    buf->rollbackToCheckpoint();
+    return false;
+}
+
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
         buf,
