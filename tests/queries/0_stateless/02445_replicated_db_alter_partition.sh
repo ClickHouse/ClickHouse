@@ -10,8 +10,8 @@ db3="${db}_3"
 
 $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 -q "create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1')"
 
-$CLICKHOUSE_CLIENT -q "create table $db.mt (n int) engine=MergeTree order by tuple()"
-$CLICKHOUSE_CLIENT -q "create table $db.rmt (n int) engine=ReplicatedMergeTree order by tuple()"
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.mt (n int) engine=MergeTree order by tuple()"
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.rmt (n int) engine=ReplicatedMergeTree order by tuple()"
 
 $CLICKHOUSE_CLIENT -q "insert into $db.rmt values (0), (1)"
 $CLICKHOUSE_CLIENT -q "insert into $db.mt values (0), (1)"
