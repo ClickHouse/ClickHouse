@@ -10,7 +10,7 @@ RUN mkdir /sqlancer && \
 	wget -q -O- https://github.com/sqlancer/sqlancer/archive/main.tar.gz | \
 		tar zx -C /sqlancer && \
 	cd /sqlancer/sqlancer-main && \
-	mvn package -DskipTests && \
+	mvn --no-transfer-progress package -DskipTests && \
 	rm -r /root/.m2
 
 COPY run.sh /
