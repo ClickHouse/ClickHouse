@@ -161,6 +161,7 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
