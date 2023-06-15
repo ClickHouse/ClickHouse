@@ -3,8 +3,9 @@
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
-#include "Server/HTTP/HTTPContext.h"
+#include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPProtocolStackFactory.h>
+#include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
 
 /** Server provides three interfaces:
@@ -107,13 +108,21 @@ private:
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
-        bool start_servers = false);
+        bool start_servers = false,
+        ServerType server_type = ServerType::QUERIES,
+        const std::string & custom_protocol_name = "");
 
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers);
+
+    void stopServers(
+        std::vector<ProtocolServerAdapter> & servers,
+        ServerType server_type,
+        const std::string & custom_protocol_name
+    );
 };
 
 }

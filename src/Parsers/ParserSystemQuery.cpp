@@ -442,6 +442,41 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            bool listen_found = false;
+
+            for (const auto & type : magic_enum::enum_values<ServerType>())
+            {
+
+                if (ParserKeyword{serverTypeToString(type)}.ignore(pos, expected))
+                {
+                    res->server_type = type;
+                    listen_found = true;
+                    break;
+                }
+            }
+
+            if (!listen_found)
+                return false;
+
+            if (res->server_type == ServerType::CUSTOM)
+            {
+                ASTPtr ast;
+
+                if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    return false;
+
+                res->custom_server_type = ast->as<ASTLiteral &>().value.get<const String &>();
+            }
+
+            break;
+        }
+
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

@@ -3,6 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <Server/ServerType.h>
 
 #include "config.h"
 
@@ -35,8 +36,8 @@ public:
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
-        STOP_LISTEN_QUERIES,
-        START_LISTEN_QUERIES,
+        STOP_LISTEN,
+        START_LISTEN,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
@@ -115,6 +116,9 @@ public:
     String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
+
+    ServerType server_type = ServerType::UNKNOWN;
+    std::string custom_server_type;
 
     String getID(char) const override { return "SYSTEM query"; }
 
