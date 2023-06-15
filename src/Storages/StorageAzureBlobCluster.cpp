@@ -82,9 +82,9 @@ void StorageAzureBlobCluster::addColumnsStructureToQuery(ASTPtr & query, const S
 RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
-        object_storage.get(), configuration.container, configuration.blobs_paths,
-        std::nullopt, query, virtual_block, context, nullptr);
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String {return iterator->next().relative_path;});
+        object_storage.get(), configuration.container, std::nullopt,
+        configuration.blob_path, query, virtual_block, context, nullptr);
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
