@@ -98,6 +98,7 @@
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -318,9 +319,10 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr fetch_executor;
     OrdinaryBackgroundExecutorPtr common_executor;
 
-    RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
+    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
-    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+    std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -2937,6 +2939,16 @@ void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & conf
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
     return shared->remote_host_filter;
+}
+
+void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->http_header_filter.setValuesFromConfig(config);
+}
+
+const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
+{
+    return shared->http_header_filter;
 }
 
 UInt16 Context::getTCPPort() const

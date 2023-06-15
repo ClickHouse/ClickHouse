@@ -887,6 +887,7 @@ try
 #endif
 
     global_context->setRemoteHostFilter(config());
+    global_context->setHTTPHeaderFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
@@ -1184,6 +1185,7 @@ try
             }
 
             global_context->setRemoteHostFilter(*config);
+            global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);

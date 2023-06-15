@@ -4,6 +4,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Core/NamesAndTypes.h>
@@ -762,6 +763,10 @@ public:
     /// Storage of allowed hosts from config.xml
     void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
     const RemoteHostFilter & getRemoteHostFilter() const;
+
+    /// Storage of forbidden HTTP headers from config.xml
+    void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
+    const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
