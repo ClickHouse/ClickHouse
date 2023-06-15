@@ -55,30 +55,34 @@ INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5]), (3, [0.0, 0
 
 -- See (*) why commented out
 -- SELECT 'WHERE type, L2Distance';
--- SELECT *
+-- WITH [0.0, 0.0, 10.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- WHERE L2Distance(vector, [0.0, 0.0, 10.0]) < 1.0
+-- WHERE L2Distance(vector, reference_point) < 1.0
 -- LIMIT 3;
 
 SELECT 'WHERE type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [0.0, 0.0, 10.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-WHERE L2Distance(vector, [0.0, 0.0, 10.0]) < 1.0
+WHERE L2Distance(vector, reference_point) < 1.0
 LIMIT 3;
 
 -- See (*) why commented out
 -- SELECT 'ORDER BY type, L2Distance';
--- SELECT *
+-- WITH [0.0, 0.0, 10.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- ORDER BY L2Distance(vector, [0.0, 0.0, 10.0])
+-- ORDER BY L2Distance(vector, reference_point)
 -- LIMIT 3;
 
 SELECT 'ORDER BY type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [0.0, 0.0, 10.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-ORDER BY L2Distance(vector, [0.0, 0.0, 10.0])
+ORDER BY L2Distance(vector, reference_point)
 LIMIT 3;
 
 -- Test special cases. Corresponding special case tests are omitted from later tests.
@@ -123,30 +127,34 @@ INSERT INTO tab VALUES (1, (0.0, 0.0, 10.0)), (2, (0.0, 0.0, 10.5)), (3, (0.0, 0
 
 -- See (*) why commented out
 -- SELECT 'WHERE type, L2Distance';
--- SELECT *
+-- WITH (0.0, 0.0, 10.0) AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- WHERE L2Distance(vector, (0.0, 0.0, 10.0)) < 1.0
+-- WHERE L2Distance(vector, reference_point) < 1.0
 -- LIMIT 3;
 
 SELECT 'WHERE type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH (0.0, 0.0, 10.0) AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-WHERE L2Distance(vector, (0.0, 0.0, 10.0)) < 1.0
+WHERE L2Distance(vector, reference_point) < 1.0
 LIMIT 3;
 
 -- See (*) why commented out
 -- SELECT 'ORDER BY type, L2Distance';
--- SELECT *
+-- WITH (0.0, 0.0, 10.0) AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- ORDER BY L2Distance(vector, (0.0, 0.0, 10.0))
+-- ORDER BY L2Distance(vector, reference_point)
 -- LIMIT 3;
 
 SELECT 'ORDER BY type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH (0.0, 0.0, 10.0) AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-ORDER BY L2Distance(vector, (0.0, 0.0, 10.0))
+ORDER BY L2Distance(vector, reference_point)
 LIMIT 3;
 
 DROP TABLE tab;
@@ -159,16 +167,18 @@ INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5]), (3, [0.0, 0
 
 -- See (*) why commented out
 -- SELECT 'WHERE type, L2Distance';
--- SELECT *
+-- WITH [0.0, 0.0, 10.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- WHERE L2Distance(vector, [0.0, 0.0, 10.0]) < 1.0
+-- WHERE L2Distance(vector, reference_point) < 1.0
 -- LIMIT 3;
 
 -- See (*) why commented out
 -- SELECT 'ORDER BY type, L2Distance';
--- SELECT *
+-- SELECT 'WHERE type, L2Distance';
+-- WITH [0.0, 0.0, 10.0] AS reference_point
 -- FROM tab
--- ORDER BY L2Distance(vector, [0.0, 0.0, 10.0])
+-- ORDER BY L2Distance(vector, reference_point)
 -- LIMIT 3;
 
 DROP TABLE tab;
@@ -183,30 +193,34 @@ INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0, 0.0]), (2, [0.0, 0.0, 10.5, 0.0]), (
 
 -- See (*) why commented out
 -- SELECT 'WHERE type, L2Distance';
--- SELECT *
+-- WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- WHERE L2Distance(vector, [10.0, 0.0, 10.0, 0.0]) < 5.0
+-- WHERE L2Distance(vector, reference_point) < 5.0
 -- LIMIT 3;
 
 SELECT 'WHERE type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [10.0, 0.0, 10.0, 10.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-WHERE L2Distance(vector, [10.0, 0.0, 10.0, 0.0]) < 5.0
+WHERE L2Distance(vector, reference_point) < 5.0
 LIMIT 3;
 
 -- See (*) why commented out
 -- SELECT 'ORDER BY type, L2Distance';
--- SELECT *
+-- WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- ORDER BY L2Distance(vector, [10.0, 0.0, 10.0, 0.0])
+-- ORDER BY L2Distance(vector, reference_point)
 -- LIMIT 3;
 
 SELECT 'ORDER BY type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [10.0, 0.0, 10.0, 10.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-ORDER BY L2Distance(vector, [10.0, 0.0, 10.0, 0.0])
+ORDER BY L2Distance(vector, reference_point)
 LIMIT 3;
 
 DROP TABLE tab;
@@ -221,30 +235,34 @@ INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0, 0.0]), (2, [0.0, 0.0, 10.5, 0.0]), (
 
 -- See (*) why commented out
 -- SELECT 'WHERE type, L2Distance';
--- SELECT *
+-- WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- WHERE L2Distance(vector, [10.0, 0.0, 10.0, 0.0]) < 5.0
+-- WHERE L2Distance(vector, reference_point) < 5.0
 -- LIMIT 3;
 
 SELECT 'WHERE type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-WHERE L2Distance(vector, [10.0, 0.0, 10.0, 0.0]) < 5.0
+WHERE L2Distance(vector, reference_point) < 5.0
 LIMIT 3;
 
 -- See (*) why commented out
 -- SELECT 'ORDER BY type, L2Distance';
--- SELECT *
+-- WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+-- SELECT id, vector, L2Distance(vector, reference_point)
 -- FROM tab
--- ORDER BY L2Distance(vector, [10.0, 0.0, 10.0, 0.0])
+-- ORDER BY L2Distance(vector, reference_point)
 -- LIMIT 3;
 
 SELECT 'ORDER BY type, L2Distance, check that index is used';
 EXPLAIN indexes=1
-SELECT *
+WITH [10.0, 0.0, 10.0, 0.0] AS reference_point
+SELECT id, vector, L2Distance(vector, reference_point)
 FROM tab
-ORDER BY L2Distance(vector, [10.0, 0.0, 10.0, 0.0])
+ORDER BY L2Distance(vector, reference_point)
 LIMIT 3;
 
 DROP TABLE tab;
