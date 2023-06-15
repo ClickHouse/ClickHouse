@@ -89,7 +89,7 @@ def get_env_for_runner(check_name, build_path, repo_path, result_path, work_path
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
 
     if "analyzer" in check_name.lower():
-        my_env["USE_NEW_ANALYZER"] = "1"
+        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
 
     return my_env
 
