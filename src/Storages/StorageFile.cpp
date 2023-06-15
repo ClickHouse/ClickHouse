@@ -100,7 +100,14 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     bool recursive = false);
 
-/// When `{...}` has any `/`s, it must be processed in a different way
+/*
+ * When `{...}` has any `/`s, it must be processed in a different way:
+ * Basically, a path with globs is processed by listFilesWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
+ * listFilesWithFoldedRegexpMatching is in charge from now on.
+ * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+ * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+ * StorageHDFS.cpp has the same logic.
+*/
 void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
                                            const std::string & processed_suffix,
                                            const std::string & suffix_with_globs,
@@ -111,14 +118,6 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
                                            const size_t next_slash_after_glob_pos,
                                            std::vector<std::string> & result)
 {
-    /*
-     * When `{...}` has any `/`s, it must be processed in a different way:
-     * Basically, a path with globs is processed by LSWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
-     * LSWithFoldedRegexpMatching is in charge from now on.
-     * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
-     * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
-     * StorageHDFS.cpp has the same logic.
-    */
     if (!max_depth)
         return;
 
