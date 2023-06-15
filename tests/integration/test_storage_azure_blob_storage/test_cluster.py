@@ -150,13 +150,13 @@ def test_union_all(cluster):
     SELECT * FROM
     (
         SELECT * from azureBlobStorage(
-            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
-            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
         UNION ALL
         SELECT * from azureBlobStorage(
-            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
-            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
     )
     ORDER BY (a)
@@ -168,14 +168,14 @@ def test_union_all(cluster):
     (
         SELECT * from azureBlobStorageCluster(
             'simple_cluster',
-            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
-            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
         UNION ALL
         SELECT * from azureBlobStorageCluster(
             'simple_cluster',
-            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', 
-            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 
+            'http://azurite1:10000/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
     )
     ORDER BY (a)
@@ -256,3 +256,29 @@ def test_cluster_with_named_collection(cluster):
     )
 
     assert TSV(pure_azure) == TSV(azure_cluster)
+
+def test_partition_parallel_readig_withcluster(cluster):
+    node = cluster.instances["node_0"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    partition_by = "column3"
+    values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
+    filename = "test_tf_{_partition_id}.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+    )
+
+    assert "1,2,3\n" == get_azure_file_content("test_tf_3.csv")
+    assert "3,2,1\n" == get_azure_file_content("test_tf_1.csv")
+    assert "78,43,45\n" == get_azure_file_content("test_tf_45.csv")
+
+    azure_cluster = node.query(
+        """
+    SELECT count(*) from azureBlobStorageCluster(
+        'simple_cluster',
+        azure_conf2, container='cont', blob_path='test_tf_*.csv', format='CSV', compression='auto', structure='column1 UInt32, column2 UInt32, column3 UInt32')
+    """
+    )
+
+    assert azure_cluster == "3\n"
