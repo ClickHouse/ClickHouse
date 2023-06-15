@@ -7,11 +7,11 @@ ExpressionTransform
       (Limit)
       Limit
         (ReadFromStorage)
-        Numbers 0 → 1
+        NumbersRange 0 → 1
     (Expression)
     FillingRightJoinSide
       ExpressionTransform
         (Limit)
         Limit
           (ReadFromStorage)
-          Numbers 0 → 1
+          NumbersRange 0 → 1

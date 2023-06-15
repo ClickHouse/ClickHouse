@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 
 
@@ -20,6 +21,7 @@ class Context;
   *
   * 1. First try a smart fashion:
   *
+  * In this fashion we try to push filters and limit down to scanning.
   * Firstly extract plain ranges(no overlapping and ordered) by filter expressions.
   *
   * For example:
@@ -62,11 +64,11 @@ public:
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
-        const ASTPtr & /* left_in_operand */,
+        const ASTPtr & left_in_operand,
         ContextPtr /* query_context */,
         const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return true;
+        return left_in_operand->as<ASTIdentifier>() && left_in_operand->getColumnName() == "number";
     }
 
 private:

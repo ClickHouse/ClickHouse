@@ -318,15 +318,12 @@ public:
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
     ///
-    /// If unknown_any is false, we will return false with unknown function,
-    /// or treat it as (-inf, +inf)
-    ///
     /// Now some cases are parsed to unknown function:
     ///     1. where 1=1
     ///     2. where true
     ///     3. no where
     /// TODO handle the cases when generate RPN.
-    bool extractPlainRanges(Ranges & ranges, bool unknown_any) const;
+    bool extractPlainRanges(Ranges & ranges) const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -465,6 +462,10 @@ private:
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
     RPN rpn;
+
+    /// If query has no filter, rpn will has one element with unknown function.
+    /// This flag identify whether there are filters.
+    bool has_filter;
 
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;

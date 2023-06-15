@@ -14,4 +14,4 @@ WHERE number IN (
     SELECT v1 AS v
     UNION ALL
     SELECT v2 AS v
-);
+) SETTINGS use_index_for_in_with_subqueries = 0;

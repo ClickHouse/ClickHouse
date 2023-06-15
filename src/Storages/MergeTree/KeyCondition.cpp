@@ -1170,9 +1170,12 @@ KeyCondition::KeyCondition(
 
     if (!filter_node)
     {
+        has_filter = false;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
+
+    has_filter = true;
 
     /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
       * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
@@ -1240,9 +1243,12 @@ KeyCondition::KeyCondition(
 
     if (!filter_dag)
     {
+        has_filter = false;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
+
+    has_filter = true;
 
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
@@ -2677,7 +2683,7 @@ bool KeyCondition::matchesExactContinuousRange() const
     return true;
 }
 
-bool KeyCondition::extractPlainRanges(Ranges & ranges, bool unknown_any) const
+bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 {
     if (key_indices.empty() || key_indices.size() > 1)
         return false;
@@ -2826,7 +2832,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges, bool unknown_any) const
             }
             else /// FUNCTION_UNKNOWN
             {
-                if (unknown_any)
+                if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
                 else
                     return false;

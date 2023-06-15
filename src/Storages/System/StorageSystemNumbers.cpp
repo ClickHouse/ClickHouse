@@ -57,7 +57,9 @@ private:
     UInt64 step;
 };
 
-
+/// Generate numbers according to ranges.
+/// Numbers generated is ordered in one stream.
+/// And we will not generate additional numbers out of ranges.
 class NumbersRangedSource : public ISource
 {
 public:
@@ -96,6 +98,7 @@ protected:
             return r.right.get<UInt64>() - (r.right_included ? 0 : 1);
         };
 
+        /// If we have little datas, shrink block size.
         auto block_size = std::min(base_block_size, size);
 
         if (!block_size)
@@ -103,7 +106,9 @@ protected:
 
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
-        UInt64 * pos = vec.data(); /// This will accelerates the code.
+
+        /// This will accelerates the code.
+        UInt64 * pos = vec.data();
 
         size_t provided = 0;
         for (; size != 0 && block_size - provided != 0;)
@@ -187,16 +192,16 @@ Pipe StorageSystemNumbers::read(
     if (!multithreaded)
         num_streams = 1;
 
-    Pipe pipe;
-
     assert(column_names.size() == 1);
 
-    /// build query filter rpn
+    /// Build rpn of query filters
     auto col_desc = KeyDescription::parse(column_names[0], storage_snapshot->getMetadataForQuery()->columns, context);
     KeyCondition condition(query_info, context, column_names, col_desc.expression, {});
 
+    Pipe pipe;
     Ranges ranges;
-    if (condition.extractPlainRanges(ranges, true))
+
+    if (condition.extractPlainRanges(ranges))
     {
         /// Intersect ranges with table range
         Range table_range(
@@ -221,9 +226,20 @@ Pipe StorageSystemNumbers::read(
         auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
 
         size_t query_limit = limit_length + limit_offset;
+        auto should_pushdown_limit = [query_limit, &query]()
+        {
+            /// Just ignore some minor cases, such as:
+            ///     select * from system.numbers order by number asc limit 10
+            return !query.distinct
+                && !query.window()
+                && !query.orderBy()
+                && !query.groupBy()
+                && !query.limitBy()
+                && (query_limit > 0 && !query.limit_with_ties);
+        };
 
-        /// If intersected ranges is unlimited, use NumbersRangedSource
-        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || query_limit > 0)
+        /// If intersected ranges is unlimited or we can not pushdown limit.
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit())
         {
             auto size_of_range = [] (const Range & r) -> size_t
             {
@@ -257,7 +273,7 @@ Pipe StorageSystemNumbers::read(
             size_t total_size = size_of_ranges(intersected_ranges);
 
             /// limit total_size by query_limit
-            if (query_limit > 0 && query_limit < total_size)
+            if (should_pushdown_limit() && query_limit < total_size)
                 total_size = query_limit;
 
             num_streams = std::min(num_streams, total_size / max_block_size);
