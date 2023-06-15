@@ -1453,12 +1453,9 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
-        StorageS3Source::KeyWithInfo key_with_info;
-        std::unique_ptr<ReadBuffer> buf;
-
         while (true)
         {
-            key_with_info = (*file_iterator)();
+            auto key_with_info = (*file_iterator)();
 
             if (key_with_info.key.empty())
             {
@@ -1488,16 +1485,11 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
                 continue;
 
             int zstd_window_log_max = static_cast<int>(ctx->getSettingsRef().zstd_window_log_max);
-            buf = wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadBufferFromS3>(
-                    configuration.client, configuration.url.bucket, key_with_info.key, configuration.url.version_id, configuration.request_settings, ctx->getReadSettings()),
-                chooseCompressionMethod(key_with_info.key, configuration.compression_method),
-                zstd_window_log_max);
-
-            if (!ctx->getSettingsRef().s3_skip_empty_files || !buf->eof())
+            auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, key_with_info.key, configuration.url.version_id, configuration.request_settings, ctx->getReadSettings());
+            if (!ctx->getSettingsRef().s3_skip_empty_files || !impl->eof())
             {
                 first = false;
-                return buf;
+                return wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(key_with_info.key, configuration.compression_method), zstd_window_log_max);
             }
         }
     };

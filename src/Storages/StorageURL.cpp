@@ -368,6 +368,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     ReadSettings read_settings = context->getReadSettings();
 
     size_t options = std::distance(option, end);
+    std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
         bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
@@ -397,6 +398,12 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 /* use_external_buffer */ false,
                 /* skip_url_not_found_error */ skip_url_not_found_error);
 
+            if (context->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
+            {
+                last_skipped_empty_res = {request_uri, std::move(res)};
+                continue;
+            }
+
             return std::make_tuple(request_uri, std::move(res));
         }
         catch (...)
@@ -412,6 +419,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             continue;
         }
     }
+
+    /// If all options are unreachable except empty ones that we skipped,
+    /// return last empty result. It will be skipped later.
+    if (last_skipped_empty_res.second)
+        return last_skipped_empty_res;
 
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
 }

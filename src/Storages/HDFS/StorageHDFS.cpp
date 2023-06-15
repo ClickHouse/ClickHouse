@@ -213,7 +213,6 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
               ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         PathWithInfo path_with_info;
-        std::unique_ptr<ReadBuffer> buf;
         while (true)
         {
             if (it == paths_with_info.end())
@@ -231,13 +230,11 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
             auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
             auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, path_with_info.path, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-            const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-            buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
-
-            if (!ctx->getSettingsRef().hdfs_skip_empty_files || !buf->eof())
+            if (!ctx->getSettingsRef().hdfs_skip_empty_files || !impl->eof())
             {
+                const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
                 first = false;
-                return buf;
+                return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
             }
         }
     };
@@ -364,11 +361,10 @@ HDFSSource::HDFSSource(
 
 bool HDFSSource::initialize()
 {
-    StorageHDFS::PathWithInfo path_with_info;
     bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;
     while (true)
     {
-        path_with_info = (*file_iterator)();
+        auto path_with_info = (*file_iterator)();
         if (path_with_info.path.empty())
             return false;
 
@@ -381,10 +377,12 @@ bool HDFSSource::initialize()
         auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(
             uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-        const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-        read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
-        if (!skip_empty_files || !read_buf->eof())
+        if (!skip_empty_files || !impl->eof())
+        {
+            const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+            read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
             break;
+        }
     }
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);

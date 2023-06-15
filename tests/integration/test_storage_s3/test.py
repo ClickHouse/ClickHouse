@@ -1768,3 +1768,15 @@ def test_skip_empty_files(started_cluster):
 
     test("s3", "s3_skip_empty_files")
     test("url", "engine_url_skip_empty_files")
+
+    res = instance.query(
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1|2}}.parquet') settings engine_url_skip_empty_files=1"
+    )
+
+    assert int(res) == 0
+
+    res = instance.query(
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{11|1|22}}.parquet') settings engine_url_skip_empty_files=1"
+    )
+
+    assert len(res.strip()) == 0
