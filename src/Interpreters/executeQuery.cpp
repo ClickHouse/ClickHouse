@@ -1294,7 +1294,7 @@ void executeQuery(
                 if (!allow_into_outfile)
                     throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                const auto out_file = checkAndGetLiteralArgument<String>(query_with_output->out_file, "out_file");
 
                 std::string compression_method;
                 if (ast_query_with_output->compression)

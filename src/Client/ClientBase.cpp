@@ -66,6 +66,7 @@
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -554,8 +555,14 @@ try
             {
                 select_into_file = true;
 
-                const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                out_file = out_file_node.value.safeGet<std::string>();
+                if (!query_parameters.empty())
+                {
+                    /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+                    ReplaceQueryParameterVisitor visitor(query_parameters);
+                    visitor.visit(query_with_output->out_file);
+                }
+
+                out_file = checkAndGetLiteralArgument<String>(query_with_output->out_file, "out_file");
 
                 std::string compression_method_string;
 
@@ -612,6 +619,7 @@ try
                 if (is_interactive && is_default_format)
                     current_format = "TabSeparated";
             }
+
             if (query_with_output->format != nullptr)
             {
                 if (has_vertical_output_suffix)
@@ -1338,9 +1346,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
+        if (!query_parameters.empty())
+        {
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            ReplaceQueryParameterVisitor visitor(query_parameters);
+            visitor.visit(parsed_insert_query->infile);
+        }
+
         /// Get name of this file (path to file)
-        const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
-        const auto in_file = in_file_node.value.safeGet<std::string>();
+        const auto in_file = checkAndGetLiteralArgument<String>(query_with_output->out_file, "in_file");
 
         std::string compression_method;
         /// Compression method can be specified in query
