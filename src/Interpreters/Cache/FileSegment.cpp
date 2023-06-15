@@ -635,13 +635,23 @@ void FileSegment::complete()
         }
         case State::PARTIALLY_DOWNLOADED:
         {
+            chassert(current_downloaded_size > 0);
+
             if (is_last_holder)
             {
-                LOG_TEST(
-                    log, "Submitted file segment for background download "
-                    "(having {}/{})", downloaded_size, range().size());
+                if (remote_file_reader)
+                {
+                    LOG_TEST(
+                        log, "Submitting file segment for background download "
+                        "(having {}/{})", downloaded_size, range().size());
 
-                locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+                    locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+                }
+                else
+                {
+                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
+                    setDetachedState(segment_lock); /// See comment below.
+                }
             }
             break;
         }

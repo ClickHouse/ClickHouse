@@ -403,6 +403,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
         return;
 
+    if (file_segment.getDownloadedSize(false) == file_segment.range().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
         file_segment.range().size() - file_segment.getDownloadedSize(false), file_segment.getInfoForLog());
