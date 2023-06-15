@@ -16,7 +16,7 @@ dpkg -i package_folder/clickhouse-client_*.deb
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/attach_gdb.lib
+source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -88,7 +88,7 @@ fi
 
 sleep 5
 
-attach_gdb_to_clickhouse
+attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 function run_tests()
 {
