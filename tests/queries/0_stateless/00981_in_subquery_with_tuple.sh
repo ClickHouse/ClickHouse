@@ -14,9 +14,8 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d) IN (SELECT (s, max(d)
 $CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d, s) IN (SELECT s, max(d) FROM bug GROUP BY s)" 2>&1 | grep "Number of columns in section IN doesn't match" > /dev/null && echo "OK2";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d) IN (SELECT s, max(d), s FROM bug GROUP BY s)" 2>&1 | grep "Number of columns in section IN doesn't match" > /dev/null && echo "OK3";
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, toDateTime(d)) IN (SELECT s, max(d) FROM bug GROUP BY s)" 2>&1 | grep "Types of column 2 in section IN don't match" > /dev/null && echo "OK4";
-$CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d) IN (SELECT s, toDateTime(max(d)) FROM bug GROUP BY s)" 2>&1 | grep "Types of column 2 in section IN don't match" > /dev/null && echo "OK5";
-
+$CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, toDateTime(d)) IN (SELECT s, max(d) FROM bug GROUP BY s) ORDER BY d";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d) IN (SELECT s, toDateTime(max(d)) FROM bug GROUP BY s) ORDER BY d";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM bug WHERE (s, d) IN (SELECT s, max(d) FROM bug GROUP BY s) ORDER BY d";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE bug";

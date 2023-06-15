@@ -434,7 +434,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns &
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::forward_as_tuple(l.key_index, l.transform_functions.size(), l.functions.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.transform_functions.size(), r.functions.size(), r.tuple_index);
+            return std::forward_as_tuple(l.key_index, l.rhs_chain.size(), l.lhs_chain.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.rhs_chain.size(), r.lhs_chain.size(), r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
@@ -453,58 +453,14 @@ MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns &
     {
         auto column = set_elements[indexes_mapping[i].tuple_index];
         auto column_type = set_types[indexes_mapping[i].tuple_index];
-        bool transformed = false;
-        for (const auto & func : indexes_mapping[i].transform_functions)
+
+        std::tie(column, column_type) = KeyCondition::applyMonotonicFunctionsChainToColumn(indexes_mapping[i].rhs_chain, column, column_type, context);
+
+        if (column)
         {
-            if (func->type != ActionsDAG::ActionType::FUNCTION)
-                continue;
-
-            if (func->children.size() == 1)
-            {
-                std::tie(column, column_type)
-                    = KeyCondition::applyFunctionForColumnOfUnknownType(func->function_base, column_type, column);
-            }
-            else if (func->children.size() == 2)
-            {
-                const auto * left = func->children[0];
-                const auto * right = func->children[1];
-                if (left->column && isColumnConst(*left->column))
-                {
-                    auto left_arg_type = left->result_type;
-                    std::tie(column, column_type) = KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
-                        FunctionFactory::instance().get(func->function_base->getName(), context),
-                        left_arg_type, left->column, column_type, column);
-                }
-                else
-                {
-                    auto right_arg_type = right->result_type;
-                    std::tie(column, column_type) = KeyCondition::applyBinaryFunctionForColumnOfUnknownType(
-                        FunctionFactory::instance().get(func->function_base->getName(), context),
-                        column_type, column, right_arg_type, right->column);
-                }
-            }
-            transformed = true;
+            new_indexes_mapping.emplace_back(std::move(indexes_mapping[i]));
+            ordered_set.emplace_back(std::move(column));
         }
-
-        if (transformed)
-        {
-            auto key_expr_type = recursiveRemoveLowCardinality(indexes_mapping[i].key_type);
-            DataTypePtr key_expr_type_not_null;
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
-                key_expr_type_not_null = nullable_type->getNestedType();
-            else
-                key_expr_type_not_null = key_expr_type;
-            bool cast_not_needed = ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                    && (isNativeInteger(column_type) || isDateTime(column_type))); /// Native integers and DateTime are accurately compared without cast.
-
-            if (!cast_not_needed && !key_expr_type_not_null->equals(*column_type))
-            {
-                /// TODO: try CAST column to correct type?
-                continue;
-            }
-        }
-        new_indexes_mapping.emplace_back(std::move(indexes_mapping[i]));
-        ordered_set.emplace_back(std::move(column));
     }
     indexes_mapping.swap(new_indexes_mapping);
     tuple_size = ordered_set.size();
@@ -551,7 +507,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     {
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
-            indexes_mapping[i].functions,
+            indexes_mapping[i].lhs_chain,
             data_types[indexes_mapping[i].key_index],
             single_point);
 
@@ -679,7 +635,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
 {
     for (const auto & mapping : indexes_mapping)
-        if (!mapping.functions.empty())
+        if (!mapping.lhs_chain.empty())
             return true;
     return false;
 }

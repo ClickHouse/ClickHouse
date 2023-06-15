@@ -337,17 +337,13 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    static std::pair<ColumnPtr, DataTypePtr> applyFunctionForColumnOfUnknownType(
-        const FunctionBasePtr & func,
-        const DataTypePtr & arg_type,
-        const ColumnPtr arg_column);
+    static std::pair<ColumnPtr, DataTypePtr> applyMonotonicFunctionsChainToColumn(
+        const std::vector<const ActionsDAG::Node *> functions,
+        ColumnPtr in_column,
+        DataTypePtr in_type,
+        ContextPtr context
+    );
 
-    static std::pair<ColumnPtr, DataTypePtr> applyBinaryFunctionForColumnOfUnknownType(
-        const FunctionOverloadResolverPtr & func,
-        const DataTypePtr & arg_type,
-        const ColumnPtr & arg_column,
-        const DataTypePtr & arg_type2,
-        const ColumnPtr & arg_column2);
 
     bool matchesExactContinuousRange() const;
 
@@ -432,20 +428,34 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool collectTransform(
-        const String & expr_name,
-        const ActionsDAG::Node * & cur_node,
-        std::vector<const ActionsDAG::Node *> & chain,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
-    bool tryCollectBestTransformForExpr(
+    /** expr_name is not key column, and neither can it's an expression in which column of key is wrapped
+      * by chain of monotonic functions. However, if it's a sub-expression of a key column, we can derive
+      * an key expression predicate from current predicate by applying necessary functions to the right
+      * hand side. For example, the key is `toDate(at)` and predicate is `at > now() - 1`, we can derive
+      * a key expression predicate `toDate(at) >= toDate(today() - 1)`. Work for both comparison and IN.
+      */
+    bool canConstantColumnPossiblyBeTransformedWithMonotonicFunctions(
         const String & expr_name,
         std::vector<const ActionsDAG::Node *> & chain,
         size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+        DataTypePtr & out_key_column_type) const;
 
-    bool transformConstColumnWithValidFunctions(
+    bool canConstantBeTransformedWithMonotonicFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
+    bool canConstantBeTransformedWithFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
+    bool transformConstantColumnWithValidFunctions(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
@@ -455,19 +465,6 @@ private:
         DataTypePtr & out_type,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
-    bool canConstantBeWrappedByMonotonicFunctions(
-        const RPNBuilderTreeNode & node,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
-
-    bool canConstantBeWrappedByFunctions(
-        const RPNBuilderTreeNode & node,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',

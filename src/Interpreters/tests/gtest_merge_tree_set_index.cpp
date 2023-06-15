@@ -19,7 +19,7 @@ TEST(MergeTreeSetIndex, checkInRangeOne)
 
     Columns columns = {std::move(mut)};
 
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}, nullptr}};
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}}};
     auto set = std::make_unique<MergeTreeSetIndex>(getContext().context, columns, types, std::move(mapping));
 
     // Left and right bounded
@@ -77,7 +77,7 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
         columns.push_back(std::move(mut));
     }
 
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}, nullptr}, {1, 1, {}, {}, nullptr}};
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}, {}}, {1, 1, {}, {}}};
     auto set = std::make_unique<MergeTreeSetIndex>(getContext().context, columns, types, std::move(mapping));
 
     std::vector<Range> ranges = {Range(1), Range("a", true, "c", true)};
