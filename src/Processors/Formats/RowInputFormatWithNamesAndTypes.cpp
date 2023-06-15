@@ -212,12 +212,8 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
     format_reader->skipRowStartDelimiter();
 
     ext.read_columns.resize(data_types.size());
-    //std::cout << "col size " << column_mapping->column_indexes_for_input_fields.size() << std::endl;
     for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
-       // std::cout << "  file_column " << file_column << column_mapping->names_of_columns[file_column] << std::endl;
-
-
         const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
         if (column_index)

@@ -933,7 +933,13 @@ Result
 ```
 ### input_format_csv_ignore_extra_columns {#input_format_csv_ignore_extra_columns}
 
-Ignore extra colums in CSV input.
+Ignore extra columns in CSV input (if your file has more columns than expected).
+
+Disabled by default.
+
+### input_format_csv_missing_as_default {#input_format_csv_missing_as_default}
+
+Treat missing fields in CSV input as default values.
 
 Disabled by default.
 
