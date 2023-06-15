@@ -1511,10 +1511,10 @@ parseDateTimeBestEffort(time_string [, time_zone])
 - A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
 - A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `MM` is substituted by `01`.
 - A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
-- A string that includes the date and time in the [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164) format. For example, `Jun  9 14:20:32`.
+- A [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2): `Mmm dd hh:mm:ss`. For example, `Jun  9 14:20:32`.
 
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
-If the year is not specified, it is considered to be equal to the current year. If the resulting date and time happens to be ahead of the current moment even by a second, the current year is substituted by the previous one.
+If the year is not specified, it is considered to be equal to the current year. If the resulting DateTime happen to be in the future (even by a second after the current moment), then the current year is substituted by the previous year.
 
 **Returned value**
 
@@ -1613,8 +1613,8 @@ Result:
 
 ```response
 ┌──────────────ts_now─┬─syslog_arg──────┬─parseDateTimeBestEffort(syslog_arg)─┐
-│ 2023-06-09 16:04:30 │ Jun  9 16:04:00 │                 2023-06-09 16:04:00 │
-│ 2023-06-09 16:04:30 │ Jun  9 16:05:00 │                 2022-06-09 16:05:00 │
+│ 2023-06-30 23:59:30 │ Jun 30 23:59:00 │                 2023-06-30 23:59:00 │
+│ 2023-06-30 23:59:30 │ Jul  1 00:00:00 │                 2022-07-01 00:00:00 │
 └─────────────────────┴─────────────────┴─────────────────────────────────────┘
 ```
 
@@ -1624,7 +1624,7 @@ Result:
 - [toDate](#todate)
 - [toDateTime](#todatetime)
 - [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
-- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164)
+- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
 
 ## parseDateTimeBestEffortUS
 
