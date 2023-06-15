@@ -1,7 +1,7 @@
 The reference time point is 2023-06-30 23:59:30
-───────────────────────────────
-Before the reference time point
-───────────────────────────────
+───────────────────────────────────────────────
+The argument is before the reference time point
+───────────────────────────────────────────────
 Row 1:
 ──────
 syslog_arg:        Jun 30 23:58:30
@@ -41,9 +41,9 @@ res64_us_null_auc: 2023-06-30 23:58:30.000
 res64_us_zero:     2023-06-30 23:58:30.000
 res64_us_zero_sam: 2022-06-30 23:58:30.000
 res64_us_zero_auc: 2023-06-30 23:58:30.000
-──────────────────────────────
-After the reference time point
-──────────────────────────────
+──────────────────────────────────────────────
+The argument is after the reference time point
+──────────────────────────────────────────────
 Row 1:
 ──────
 syslog_arg:        Jul  1 00:00:30

@@ -1,7 +1,7 @@
 SELECT 'The reference time point is 2023-06-30 23:59:30';
-SELECT '───────────────────────────────';
-SELECT 'Before the reference time point';
-SELECT '───────────────────────────────';
+SELECT '───────────────────────────────────────────────';
+SELECT 'The argument is before the reference time point';
+SELECT '───────────────────────────────────────────────';
 
 WITH
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
@@ -49,9 +49,9 @@ SELECT
     parseDateTime64BestEffortUSOrZero(syslog_before, 3, 'Pacific/Auckland') - time_shift AS res64_us_zero_auc
 FORMAT Vertical;
 
-SELECT '──────────────────────────────';
-SELECT 'After the reference time point';
-SELECT '──────────────────────────────';
+SELECT '──────────────────────────────────────────────';
+SELECT 'The argument is after the reference time point';
+SELECT '──────────────────────────────────────────────';
 
 WITH
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
