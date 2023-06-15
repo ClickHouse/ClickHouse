@@ -147,7 +147,18 @@ CSVFormatReader::CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings
 void CSVFormatReader::skipFieldDelimiter()
 {
     skipWhitespacesAndTabs(*buf);
-    assertChar(format_settings.csv.delimiter, *buf);
+
+    bool res = checkChar(format_settings.csv.delimiter, *buf);
+    if (!res && !format_settings.csv.missing_as_default)
+    {
+        char err[2] = {format_settings.csv.delimiter, '\0'};
+        throwAtAssertionFailed(err, *buf);
+    }
+
+    if (!res && format_settings.csv.missing_as_default)
+    {
+        current_row_has_missing_fields = true;
+    }
 }
 
 template <bool read_string>
@@ -187,6 +198,7 @@ void CSVFormatReader::skipRowEndDelimiter()
         return;
 
     skipEndOfLine(*buf);
+    current_row_has_missing_fields = false;
 }
 
 void CSVFormatReader::skipHeaderRow()
@@ -300,6 +312,10 @@ bool CSVFormatReader::readField(
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
+        column.insertDefault();
+    }
+    else if (current_row_has_missing_fields)
+    {
         column.insertDefault();
     }
     else if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))

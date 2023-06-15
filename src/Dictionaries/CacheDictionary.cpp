@@ -138,7 +138,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Columns & default_values_columns) const
 {
     /**
-    * Flow of getColumsImpl
+    * Flow of getColumnsImpl
     * 1. Get fetch result from storage
     * 2. If all keys are found in storage and not expired
     *   2.1. If storage returns fetched columns in order of keys then result is returned to client.

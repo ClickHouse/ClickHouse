@@ -1729,7 +1729,13 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 
 ## input_format_csv_ignore_extra_columns {#input_format_csv_ignore_extra_columns}
 
-Игнорировать дополнительные столбцы.
+Игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается).
+
+Выключено по умолчанию.
+
+## input_format_csv_missing_as_default {#input_format_csv_missing_as_default}
+
+Рассматривать отсутствующие поля в CSV в качестве значений по умолчанию.
 
 Выключено по умолчанию.
 

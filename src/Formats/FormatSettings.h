@@ -140,6 +140,7 @@ struct FormatSettings
         bool skip_trailing_empty_lines = false;
         bool trim_whitespaces = true;
         bool ignore_extra_columns = false;
+        bool missing_as_default = false;
     } csv;
 
     struct HiveText

@@ -89,6 +89,7 @@ public:
 
 protected:
     PeekableReadBuffer * buf;
+    bool current_row_has_missing_fields = false;
 };
 
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader

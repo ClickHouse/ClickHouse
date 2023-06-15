@@ -470,7 +470,8 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_csv_detect_header) - automatically detect header with names and types in CSV format. Default value - `true`.
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
-- [input_format_csv_ignore_extra_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_ignore_extra_columns) - ignore extra colums in CSV input. Default value - `false`.
+- [input_format_csv_ignore_extra_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_ignore_extra_columns) - ignore extra columns in CSV input (if your file has more columns than expected). Default value - `false`.
+- [input_format_csv_missing_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_csv_missing_as_default) - treat missing fields in CSV input as default values. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
