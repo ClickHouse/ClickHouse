@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /** Given a monotonic non-decreasing function f(x), which satisfies f(x) = c for any value x within [b, e).
  *  We could convert it into its equivalent form, x >= b AND x < e, which is free from the invocation of the function.
  *  And we could apply the similar transformation to other comparisons. The suggested transformations list:
@@ -87,12 +92,18 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
                     std::make_shared<ASTLiteral>(end_date_or_date_time)
                     );
     }
-    else // comparator == "less" || comparator == "greaterOrEquals"
+    else if (comparator == "less" || comparator == "greaterOrEquals")
     {
         return makeASTFunction(comparator,
                     std::make_shared<ASTIdentifier>(column_name),
                     std::make_shared<ASTLiteral>(start_date_or_date_time)
                     );
+    }
+    else [[unlikely]]
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",
+            comparator);
     }
 }
 
