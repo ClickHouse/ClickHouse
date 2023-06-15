@@ -92,6 +92,7 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
+#if USE_SSL
     /// Encrypt text value
     std::string encryptValue(const std::string & codec_name, const std::string & value);
 
@@ -100,6 +101,7 @@ public:
 
     /// Decrypt nodes in config with specified encryption attributes
     void decryptConfig(LoadedConfig & loaded_config);
+#endif
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
@@ -133,7 +135,9 @@ private:
 
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
+#if USE_SSL
     void decryptRecursive(Poco::XML::Node * config_root);
+#endif
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 

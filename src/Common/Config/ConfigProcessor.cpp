@@ -26,10 +26,13 @@
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#if USE_SSL
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <boost/algorithm/hex.hpp>
+#endif
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -44,9 +47,12 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_LOAD_CONFIG;
+#if USE_SSL
     extern const int BAD_ARGUMENTS;
+#endif
 }
 
+#if USE_SSL
 namespace
 {
 
@@ -62,6 +68,8 @@ EncryptionMethod getEncryptionMethod(const std::string & name)
 }
 
 }
+
+#endif
 
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
@@ -192,6 +200,8 @@ static void mergeAttributes(Element & config_element, Element & with_element)
     with_element_attributes->release();
 }
 
+#if USE_SSL
+
 std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
 {
     auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
@@ -251,6 +261,8 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
         }
     }
 }
+
+#endif
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
@@ -781,6 +793,8 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
+#if USE_SSL
+
 void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
 {
     DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
@@ -788,6 +802,8 @@ void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
     decryptRecursive(config_root);
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
 }
+
+#endif
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
