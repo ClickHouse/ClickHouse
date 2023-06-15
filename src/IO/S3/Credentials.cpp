@@ -1,4 +1,6 @@
 #include <atomic>
+#include <aws/sts/STSClient.h>
+#include <aws/identity-management/auth/STSAssumeRoleCredentialsProvider.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
@@ -1166,7 +1168,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 }
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
-    const DB::S3::PocoHTTPClientConfiguration & configuration,
+    DB::S3::PocoHTTPClientConfiguration & configuration,
     const Aws::Auth::AWSCredentials & credentials,
     const CredentialsConfiguration & credentials_configuration)
 {
@@ -1183,13 +1185,29 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 
     if (!credentials_configuration.role_arn.empty())
     {
-        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
-            credentials_configuration.role_arn,
-            credentials_configuration.role_session_name,
-            credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider),
-            configuration,
-            credentials_configuration.sts_endpoint_override);
+        if (!credentials_configuration.external_id.empty())
+        {
+            credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
+                credentials_configuration.role_arn,
+                credentials_configuration.role_session_name,
+                credentials_configuration.expiration_window_seconds,
+                std::move(credentials_provider),
+                configuration,
+                credentials_configuration.sts_endpoint_override);
+        }
+        else
+        {
+            // why set to empty? because client_configuration's endpointOverride is pointed to a s3 endpoint, whereas we
+            // expect are going to visit a sts endpoint.
+            configuration.endpointOverride = "";
+            const auto client = std::make_shared<Aws::STS::STSClient>(credentials_provider, configuration);
+            credentials_provider = std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+                credentials_configuration.role_arn,
+                credentials_configuration.role_session_name,
+                credentials_configuration.external_id,
+                Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
+                client);
+        }
     }
 
     return credentials_provider;

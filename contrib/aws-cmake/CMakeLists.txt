@@ -59,6 +59,9 @@ endif()
 # Directories.
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
+SET(AWS_SDK_IM_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-identity-management")
+SET(AWS_SDK_STS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-sts")
+SET(AWS_SDK_COGNITO_IDENTITY_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-cognito-identity")
 SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
 SET(AWS_SDK_KMS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-kms")
 SET(AWS_SDK_GLUE_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-glue")
@@ -117,6 +120,9 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/xml/*.cpp"
 )
 
+file(GLOB AWS_SDK_IM_SRC
+        "${AWS_SDK_IM_DIR}/source/auth/*.cpp")
+
 if(OS_LINUX OR OS_DARWIN)
     file(GLOB AWS_SDK_CORE_NET_SRC "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp")
     file(GLOB AWS_SDK_CORE_PLATFORM_SRC "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp")
@@ -133,12 +139,23 @@ aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_
 set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
 configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
-list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
+list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_IM_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
 
 list(APPEND AWS_PUBLIC_INCLUDES
     "${AWS_SDK_CORE_DIR}/include/"
+    "${AWS_SDK_IM_DIR}/include/"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
+
+# aws-cpp-sdk-sts
+file(GLOB AWS_SDK_STS_SRC
+        "${AWS_SDK_STS_DIR}/source/*.cpp"
+        "${AWS_SDK_STS_DIR}/source/model/*.cpp"
+        )
+
+list(APPEND AWS_SOURCES ${AWS_SDK_STS_SRC})
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_STS_DIR}/include/")
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_COGNITO_IDENTITY_DIR}/include/")
 
 # aws-cpp-sdk-s3
 file(GLOB AWS_SDK_S3_SRC
