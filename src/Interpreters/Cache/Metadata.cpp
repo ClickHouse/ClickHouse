@@ -412,6 +412,14 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 
     auto reader = file_segment.getRemoteFileReader();
 
+    if (!reader)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "No reader. "
+            "File segment should not have been submitted for background download ({})",
+            file_segment.getInfoForLog());
+    }
+
     /// If remote_fs_read_method == 'threadpool',
     /// reader itself never owns/allocates the buffer.
     if (reader->internalBuffer().empty())
