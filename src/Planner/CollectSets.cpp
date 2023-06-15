@@ -93,7 +93,6 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            // std::cerr << "======2======= " << in_second_argument->dumpTree() << std::endl;
             auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
             if (sets.getFuture(set_key))
                 return;

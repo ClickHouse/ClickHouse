@@ -3,8 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Analyzer/QueryNode.h>
-#include <Parsers/queryToString.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -56,10 +54,12 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <Analyzer/QueryNode.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -1396,6 +1396,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         if (no_subqueries)
             return {};
         //std::cerr << queryToString(right_in_operand) << std::endl;
+
         PreparedSetKey set_key;
         if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
@@ -1404,7 +1405,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
             // std::cerr << "============== " << interpreter.getQueryTree()->dumpTree() << std::endl;
-            set_key = PreparedSetKey::forSubquery(interpreter.getQueryTree()->getTreeHash());
+            set_key = PreparedSetKey::forSubquery(query_tree->getTreeHash());
         }
         else
             set_key = PreparedSetKey::forSubquery(right_in_operand->getTreeHash());
@@ -1459,16 +1460,8 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         {
-            if (data.getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth);
-                subquery_for_set.source = std::make_unique<QueryPlan>(std::move(*interpreter).extractQueryPlan());
-            }
-            else
-            {
-                auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-                subquery_for_set.createSource(*interpreter);
-            }
+            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
+            subquery_for_set.createSource(*interpreter);
         }
 
         return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), data.getContext()->getSettingsRef(), std::move(external_table_set));
