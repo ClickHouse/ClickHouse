@@ -460,7 +460,10 @@ public:
         for (auto && key : all_keys)
         {
             std::optional<S3::ObjectInfo> info;
-            if (need_total_size)
+            /// In case all_keys.size() > 1, avoid getting object info now
+            /// (it will be done anyway eventually, but with delay and in parallel).
+            /// But progress bar will not work in this case.
+            if (need_total_size && all_keys.size() == 1)
             {
                 info = S3::getObjectInfo(client_, bucket, key, version_id_, request_settings_);
                 total_size += info->size;
@@ -657,7 +660,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, object_size}},
         read_settings,
-        /* cache_log */nullptr);
+        /* cache_log */nullptr, /* use_external_buffer */true);
 
     auto modified_settings{read_settings};
     /// FIXME: Changing this setting to default value breaks something around parquet reading
