@@ -8,9 +8,8 @@ from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 import docker_images_check as di
 
-with patch("git_helper.Git"):
-    from version_helper import get_version_from_string
-    import docker_server as ds
+from version_helper import get_version_from_string
+import docker_server as ds
 
 # di.logging.basicConfig(level=di.logging.INFO)
 
@@ -309,7 +308,3 @@ class TestDockerServer(unittest.TestCase):
         for case in cases_equal:
             release = ds.auto_release_type(case[0], "auto")
             self.assertEqual(case[1], release)
-
-
-if __name__ == "__main__":
-    unittest.main()
