@@ -4,11 +4,11 @@ SELECT 'Before the reference time point';
 SELECT '───────────────────────────────';
 
 WITH
-    3600 AS delta,
+    60 AS delta,
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
     now() AS dt_now, 
     dt_now - delta as dt_before,
-    dateDiff('second', dt_ref, dt_now) AS time_shift,
+    dateDiff(SECOND, dt_ref, dt_now) AS time_shift,
     formatDateTime(dt_before, '%b %e %T') AS syslog_before
 SELECT
     formatDateTime(dt_before - time_shift, '%b %e %T') AS syslog_arg,
@@ -55,11 +55,11 @@ SELECT 'After the reference time point';
 SELECT '──────────────────────────────';
 
 WITH
-    3600 AS delta,
+    60 AS delta,
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
     now() AS dt_now, 
     dt_now + delta as dt_after,
-    dateDiff('second', dt_ref, dt_now) AS time_shift,
+    dateDiff(SECOND, dt_ref, dt_now) AS time_shift,
     formatDateTime(dt_after, '%b %e %T') AS syslog_after
 SELECT
     formatDateTime(dt_after - time_shift, '%b %e %T') AS syslog_arg,
