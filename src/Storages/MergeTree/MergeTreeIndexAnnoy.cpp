@@ -123,6 +123,11 @@ MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
+    /// Seed random generator used for building the trees in Annoy. All other parameters being equal (granularity trees, search_k), this
+    /// theoretically makes search results deterministic as well. In practice, it is hard to achieve that on SQL level because the index
+    /// structure is also affected by implicit things like the row order or how the column data is splitted into parts.
+    index->set_seed(42);
+
     // NOLINTNEXTLINE(*)
     index->build(static_cast<int>(trees), /*number_of_threads=*/1);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
