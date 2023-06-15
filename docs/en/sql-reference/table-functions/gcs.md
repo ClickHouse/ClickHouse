@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/gcs
 sidebar_position: 45
-sidebar_label: s3
+sidebar_label: gcs
 keywords: [gcs, bucket]
 ---
 
