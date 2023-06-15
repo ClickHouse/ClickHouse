@@ -171,7 +171,16 @@ class Git:
         if not self.latest_tag.endswith("-testing"):
             # When we are on the tag, we still need to have tweak=1 to not
             # break cmake with versions like 12.13.14.0
-            return self.commits_since_tag or TWEAK
+            if not self.commits_since_tag:
+                # We are in a tagged commit. The tweak should match the
+                # current version's value
+                version = self.latest_tag.split("-", maxsplit=1)[0]
+                try:
+                    return int(version.split(".")[-1])
+                except ValueError:
+                    # There are no tags, or a wrong tag. Return default
+                    return TWEAK
+            return self.commits_since_tag
 
         version = self.latest_tag.split("-", maxsplit=1)[0]
         return int(version.split(".")[-1]) + self.commits_since_tag
