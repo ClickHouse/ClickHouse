@@ -126,15 +126,16 @@ class Git:
         # Format should match TAG_REGEXP
         if self._ignore_no_tags and is_shallow():
             try:
-                self._update_tags()
+                self._update_tags(True)
             except subprocess.CalledProcessError:
                 pass
 
             return
         self._update_tags()
 
-    def _update_tags(self):
-        self.latest_tag = self.run("git describe --tags --abbrev=0")
+    def _update_tags(self, suppress_stderr: bool = False) -> None:
+        stderr = subprocess.DEVNULL if suppress_stderr else None
+        self.latest_tag = self.run("git describe --tags --abbrev=0", stderr=stderr)
         # Format should be: {latest_tag}-{commits_since_tag}-g{sha_short}
         self.description = self.run("git describe --tags --long")
         self.commits_since_tag = int(
