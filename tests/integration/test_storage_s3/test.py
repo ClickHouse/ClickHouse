@@ -1011,7 +1011,7 @@ def test_seekable_formats(started_cluster):
     )
 
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M', max_download_threads=1"
     )
     assert int(result) == 1500000
 
