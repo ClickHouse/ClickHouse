@@ -1324,8 +1324,16 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
+    struct PartBackupEntries
+    {
+        String part_name;
+        UInt128 part_checksum; /// same as MinimalisticDataPartChecksums::hash_of_all_files
+        BackupEntries backup_entries;
+    };
+    using PartsBackupEntries = std::vector<PartBackupEntries>;
+
     /// Makes backup entries to backup the parts of this table.
-    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 

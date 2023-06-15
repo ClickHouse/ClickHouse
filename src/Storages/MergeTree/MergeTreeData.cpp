@@ -5118,14 +5118,13 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
-
-BackupEntries MergeTreeData::backupParts(
+MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
     const ContextPtr & local_context)
 {
-    BackupEntries backup_entries;
+    MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
     ReadSettings read_settings = local_context->getBackupReadSettings();
@@ -5190,10 +5189,13 @@ BackupEntries MergeTreeData::backupParts(
                 wrapBackupEntriesWith(backup_entries_from_part, storage_and_part);
         }
 
-        insertAtEnd(backup_entries, std::move(backup_entries_from_part));
+        auto & part_backup_entries = res.emplace_back();
+        part_backup_entries.part_name = part->name;
+        part_backup_entries.part_checksum = part->checksums.getTotalChecksumUInt128();
+        part_backup_entries.backup_entries = std::move(backup_entries_from_part);
     }
 
-    return backup_entries;
+    return res;
 }
 
 void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
