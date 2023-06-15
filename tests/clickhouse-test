@@ -340,9 +340,28 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+def kill_gdb_if_any():
+    # Check if we have running gdb.
+    code = subprocess.call("pidof gdb", shell=True)
+    if code != 0:
+        return
+
+    for i in range(5):
+        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
+        if code != 0:
+            sleep(i)
+        else:
+            break
+
+
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
+        # We could attach gdb to clickhouse-server before running some tests
+        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
+        # We should kill existing gdb if any before starting new one.
+        kill_gdb_if_any()
+
         cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:

@@ -52,18 +52,20 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
     FileSegment * file_segment;
 
-    if (file_segments.empty() || file_segments.back().isDownloaded())
+    if (!file_segments || file_segments->empty() || file_segments->front().isDownloaded())
     {
         file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
     }
     else
     {
-        file_segment = &file_segments.back();
+        file_segment = &file_segments->front();
     }
 
     SCOPE_EXIT({
-        if (file_segments.back().isDownloader())
-            file_segments.back().completePartAndResetDownloader();
+        if (!file_segments || file_segments->empty())
+            return;
+        if (file_segments->front().isDownloader())
+            file_segments->front().completePartAndResetDownloader();
     });
 
     while (size > 0)
@@ -71,7 +73,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize(false);
         if (available_size == 0)
         {
-            completeFileSegment(*file_segment);
+            completeFileSegment();
             file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
             continue;
         }
@@ -114,10 +116,7 @@ void FileSegmentRangeWriter::finalize()
     if (finalized)
         return;
 
-    if (file_segments.empty())
-        return;
-
-    completeFileSegment(file_segments.back());
+    completeFileSegment();
     finalized = true;
 }
 
@@ -145,10 +144,9 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    auto holder = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings);
-    chassert(holder->size() == 1);
-    holder->moveTo(file_segments);
-    return file_segments.back();
+    file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings);
+    chassert(file_segments->size() == 1);
+    return file_segments->front();
 }
 
 void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_segment)
@@ -176,8 +174,12 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
     cache_log->add(elem);
 }
 
-void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
+void FileSegmentRangeWriter::completeFileSegment()
 {
+    if (!file_segments || file_segments->empty())
+        return;
+
+    auto & file_segment = file_segments->front();
     /// File segment can be detached if space reservation failed.
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
