@@ -40,8 +40,8 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         {
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
                             "Checksum of extra info doesn't match: corrupted data. Reference: {}{}. Actual: {}{}.",
-                            getHexUIntLowercase(expected_checksum.first), getHexUIntLowercase(expected_checksum.second),
-                            getHexUIntLowercase(calculated_checksum.first), getHexUIntLowercase(calculated_checksum.second));
+                            getHexUIntLowercase(expected_checksum.low64), getHexUIntLowercase(expected_checksum.high64),
+                            getHexUIntLowercase(calculated_checksum.low64), getHexUIntLowercase(calculated_checksum.high64));
         }
 
         /// Read the parts of the header.
