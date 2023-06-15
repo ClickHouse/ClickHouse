@@ -53,6 +53,9 @@ endif()
 # Directories.
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
+SET(AWS_SDK_IM_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-identity-management")
+SET(AWS_SDK_STS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-sts")
+SET(AWS_SDK_COGNITO_IDENTITY_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-cognito-identity")
 SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
 
 SET(AWS_AUTH_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-auth")
@@ -103,6 +106,9 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/xml/*.cpp"
 )
 
+file(GLOB AWS_SDK_IM_SRC
+        "${AWS_SDK_IM_DIR}/source/auth/*.cpp")
+
 if(OS_LINUX OR OS_DARWIN)
     file(GLOB AWS_SDK_CORE_NET_SRC "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp")
     file(GLOB AWS_SDK_CORE_PLATFORM_SRC "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp")
@@ -119,13 +125,23 @@ list(APPEND AWS_PUBLIC_COMPILE_DEFS "-DAWS_SDK_VERSION_MAJOR=1")
 list(APPEND AWS_PUBLIC_COMPILE_DEFS "-DAWS_SDK_VERSION_MINOR=10")
 list(APPEND AWS_PUBLIC_COMPILE_DEFS "-DAWS_SDK_VERSION_PATCH=36")
 
-list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
+list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_IM_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
 
 list(APPEND AWS_PUBLIC_INCLUDES
     "${AWS_SDK_CORE_DIR}/include/"
+    "${AWS_SDK_IM_DIR}/include/"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
 
+# aws-cpp-sdk-sts
+file(GLOB AWS_SDK_STS_SRC
+        "${AWS_SDK_STS_DIR}/source/*.cpp"
+        "${AWS_SDK_STS_DIR}/source/model/*.cpp"
+        )
+
+list(APPEND AWS_SOURCES ${AWS_SDK_STS_SRC})
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_STS_DIR}/include/")
+list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_COGNITO_IDENTITY_DIR}/include/")
 
 # aws-cpp-sdk-s3
 file(GLOB AWS_SDK_S3_SRC
