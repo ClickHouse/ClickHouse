@@ -1,11 +1,11 @@
-SELECT 'The reference time point is 2023-05-31 23:30:00';
+SELECT 'The reference time point is 2023-06-30 23:59:30';
 SELECT '───────────────────────────────';
 SELECT 'Before the reference time point';
 SELECT '───────────────────────────────';
 
 WITH
     3600 AS delta,
-    toDateTime('2023-05-31 23:30:00') AS dt_ref,
+    toDateTime('2023-06-30 23:59:30') AS dt_ref,
     now() AS dt_now, 
     dt_now - delta as dt_before,
     dateDiff('second', dt_ref, dt_now) AS time_shift,
@@ -56,7 +56,7 @@ SELECT '────────────────────────
 
 WITH
     3600 AS delta,
-    toDateTime('2023-05-31 23:30:00') AS dt_ref,
+    toDateTime('2023-06-30 23:59:30') AS dt_ref,
     now() AS dt_now, 
     dt_now + delta as dt_after,
     dateDiff('second', dt_ref, dt_now) AS time_shift,
