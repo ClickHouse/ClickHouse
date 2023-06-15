@@ -1397,7 +1397,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
         //std::cerr << queryToString(right_in_operand) << std::endl;
         PreparedSetKey set_key;
-        if (data.getContext()->getSettingsRef().allow_experimental_analyzer)
+        if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
             InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
             auto query_tree = interpreter.getQueryTree();
