@@ -12,7 +12,7 @@ Columns:
 -   `port` ([String](../../sql-reference/data-types/string.md)) — The port of the ZooKeeper node that ClickHouse connected to.
 -   `index` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config.
 -   `connected_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — When the connection was established
--   `session_uptime_elapsed_seconds` ([UInt64](../../sql-reference/data-types/int-uint.md)) — When the connection was elapsed seconds
+-   `session_uptime_elapsed_seconds` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Seconds elapsed since the connection was established
 -   `is_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the current connection expired.
 -   `keeper_api_version` ([String](../../sql-reference/data-types/string.md)) — Keeper API version.
 -   `client_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Session id of the connection.
