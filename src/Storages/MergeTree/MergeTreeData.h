@@ -679,6 +679,7 @@ public:
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
+    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
 
     size_t clearEmptyParts();
 
@@ -1063,6 +1064,9 @@ public:
 
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
+
+    /// TODO: make enabled by default in the next release if no problems found.
+    bool allowRemoveStaleMovingParts() const;
 
 protected:
     friend class IMergeTreeDataPart;
