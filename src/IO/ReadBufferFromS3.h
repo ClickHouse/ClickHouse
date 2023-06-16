@@ -95,6 +95,8 @@ private:
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
 
+    bool readAllRangeSuccessfully() const;
+
     ReadSettings read_settings;
 
     bool use_external_buffer;
