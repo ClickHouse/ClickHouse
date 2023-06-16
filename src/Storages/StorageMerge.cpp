@@ -34,6 +34,7 @@
 #include "Analyzer/IQueryTreeNode.h"
 #include "Analyzer/Identifier.h"
 #include "Analyzer/IdentifierNode.h"
+#include "Analyzer/InDepthQueryTreeVisitor.h"
 #include "Analyzer/Passes/QueryAnalysisPass.h"
 #include "Analyzer/QueryTreeBuilder.h"
 #include "Core/NamesAndTypes.h"
@@ -564,6 +565,26 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(std::move(resources));
 }
 
+namespace
+{
+
+class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
+{
+public:
+    ApplyAliasColumnExpressionsVisitor() = default;
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * column = node->as<ColumnNode>();
+            column != nullptr && column->hasExpression())
+        {
+            node = column->getExpressionOrThrow();
+        }
+    }
+};
+
+}
+
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot,
@@ -611,23 +632,28 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
 
                 QueryTreeNodePtr column_node;
 
+
                 if (is_alias)
                 {
                     // column_node = buildQueryTree(column_default->expression, modified_context);
-                    column_node = std::make_shared<IdentifierNode>(Identifier{column});
+                    QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column});
 
-                    LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT before: {}\n{}", column_node->dumpTree(), modified_query_info.table_expression->dumpTree());
+                    LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT before: {}\n{}", fake_node->dumpTree(), modified_query_info.table_expression->dumpTree());
 
                     QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-                    query_analysis_pass.run(column_node, modified_context);
+                    query_analysis_pass.run(fake_node, modified_context);
+
+                    auto * resolved_column = fake_node->as<ColumnNode>();
+
+                    column_node = fake_node;
+                    ApplyAliasColumnExpressionsVisitor visitor;
+                    visitor.visit(column_node);
 
                     LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "QT after: {}", column_node->dumpTree());
 
-                    auto * resolved_column = column_node->as<ColumnNode>();
                     if (!resolved_column || !resolved_column->getExpression())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias column is not resolved");
 
-                    column_node = resolved_column->getExpression();
                     column_name_to_node.emplace(column, column_node);
                     aliases.push_back({ .name = column, .type = resolved_column->getResultType(), .expression = column_node->toAST() });
                 }
@@ -1094,6 +1120,8 @@ void ReadFromMerge::convertingSourceStream(
     auto actions = std::make_shared<ExpressionActions>(
         std::move(convert_actions_dag),
         ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+    LOG_DEBUG(&Poco::Logger::get("convertingSourceStream"), "The header: {}", builder.getHeader().dumpStructure());
 
     builder.addSimpleTransform([&](const Block & stream_header)
     {

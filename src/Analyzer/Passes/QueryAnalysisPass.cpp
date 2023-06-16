@@ -1099,7 +1099,6 @@ public:
             {
                 if (table_expression)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("resolve"), "Table expression: {}", table_expression->dumpTree());
                     scope.expression_join_tree_node = table_expression;
                     validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                     initializeTableExpressionData(scope.expression_join_tree_node, scope);
@@ -1109,7 +1108,6 @@ public:
                     resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
                 else
                     resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-                LOG_DEBUG(&Poco::Logger::get("resolve"), "Result: {}", node->dumpTree());
 
                 break;
             }
@@ -2681,7 +2679,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifierFromTableColumns"), "{} {}", scope.column_name_to_column_node.size(), !identifier_lookup.isExpressionLookup());
     if (scope.column_name_to_column_node.empty() || !identifier_lookup.isExpressionLookup())
         return {};
 
@@ -2841,14 +2838,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
         QueryTreeNodePtr result_expression;
         bool match_full_identifier = false;
 
-        LOG_DEBUG(&Poco::Logger::get("resolve_identifier_from_storage_or_throw"), "Looking for id: {}", identifier_without_column_qualifier.getFullName());
-
         auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.getFullName());
         if (it != table_expression_data.column_name_to_column_node.end())
         {
             match_full_identifier = true;
             result_expression = it->second;
-            LOG_DEBUG(&Poco::Logger::get("resolve_identifier_from_storage_or_throw"), "Found: {}", result_expression->dumpTree());
         }
         else
         {
@@ -5397,7 +5391,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             auto unresolved_identifier = identifier_node.getIdentifier();
             auto resolve_identifier_expression_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
             auto resolved_identifier_node = resolve_identifier_expression_result.resolved_identifier;
-            LOG_DEBUG(&Poco::Logger::get("resolveExpressionNode"), "Resolved: {}", resolved_identifier_node ? resolved_identifier_node->dumpTree() : "Not resolved");
 
             if (resolved_identifier_node && result_projection_names.empty() &&
                 (resolve_identifier_expression_result.isResolvedFromJoinTree() || resolve_identifier_expression_result.isResolvedFromExpressionArguments()))
@@ -5479,7 +5472,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             }
 
             node = std::move(resolved_identifier_node);
-            LOG_DEBUG(&Poco::Logger::get("resolveExpressionNode"), "Result node: {}", node ? node->dumpTree() : "Not resolved");
 
             if (node->getNodeType() == QueryTreeNodeType::LIST)
             {
@@ -6183,7 +6175,6 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             table_expression_data.should_qualify_columns = false;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("Analyzer"), "Table data: {}", table_expression_data.dump());
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
