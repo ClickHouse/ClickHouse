@@ -4212,7 +4212,7 @@ The implicit time zone is the time zone applied to values of type DateTime/DateT
 The setting takes precedence over the globally configured (server-level) implicit time zone.
 A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server default time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
-You can use functions `timeZone()` and `serverTimezone()` to get the session time zone and server time zone.
+You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
 Possible values:
 
@@ -4223,13 +4223,13 @@ Default value: `''`.
 Examples:
 
 ```sql
-SELECT timeZone(), serverTimezone() FORMAT TSV
+SELECT timeZone(), serverTimeZone() FORMAT TSV
 
 Europe/Berlin	Europe/Berlin
 ```
 
 ```sql
-SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
 
 Asia/Novosibirsk	Europe/Berlin
 ```
@@ -4250,10 +4250,10 @@ See the following example and explanation.
 ```sql
 CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
 
-SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+SELECT *, timeZone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
 0 rows in set.
 
-SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
 ┌───────────────────d─┬─timezone()───────┐
 │ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
 └─────────────────────┴──────────────────┘
