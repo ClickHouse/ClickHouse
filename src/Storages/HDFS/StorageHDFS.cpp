@@ -64,10 +64,9 @@ namespace ErrorCodes
 namespace
 {
     /// Forward-declared to use in LSWithFoldedRegexpMatching w/o circular dependency.
-    Strings LSWithRegexpMatching(const String & path_for_ls,
-                                 const HDFSFSPtr & fs,
-                                 const String & for_match,
-                                 std::unordered_map<String, time_t> * last_mod_times);
+    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
+                                                                const HDFSFSPtr & fs,
+                                                                const String & for_match);
 
     /*
      * When `{...}` has any `/`s, it must be processed in a different way:
@@ -77,15 +76,14 @@ namespace
      * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
      * StorageFile.cpp has the same logic.
     */
-    Strings LSWithFoldedRegexpMatching(const String & path_for_ls,
-                                       const HDFSFSPtr & fs,
-                                       std::unordered_map<String, time_t> * last_mod_times,
-                                       const String & processed_suffix,
-                                       const String & suffix_with_globs,
-                                       const String & current_glob,
-                                       re2::RE2 & matcher,
-                                       const size_t max_depth,
-                                       const size_t next_slash_after_glob_pos)
+    std::vector<StorageHDFS::PathWithInfo> LSWithFoldedRegexpMatching(const String & path_for_ls,
+        const HDFSFSPtr & fs,
+        const String & processed_suffix,
+        const String & suffix_with_globs,
+        const String & current_glob,
+        re2::RE2 & matcher,
+        const size_t max_depth,
+        const size_t next_slash_after_glob_pos)
     {
         /// We don't need to go all the way in every directory if max_depth is reached
         /// as it is upper limit of depth by simply counting `/`s in curly braces
@@ -101,7 +99,8 @@ namespace
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
         }
 
-        Strings result;
+        std::vector<StorageHDFS::PathWithInfo> result;
+
         if (!ls.file_info && ls.length > 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
 
@@ -116,22 +115,25 @@ namespace
             {
                 if (next_slash_after_glob_pos == std::string::npos)
                 {
-                    result.push_back(String(ls.file_info[i].mName));
-                    if (last_mod_times)
-                        (*last_mod_times)[result.back()] = ls.file_info[i].mLastMod;
+//                    result.push_back(String(ls.file_info[i].mName));
+//                    if (last_mod_times)
+//                        (*last_mod_times)[result.back()] = ls.file_info[i].mLastMod;
+                    result.emplace_back(
+                        String(ls.file_info[i].mName),
+                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
                 }
                 else
                 {
-                    Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "" , fs,
-                                                suffix_with_globs.substr(next_slash_after_glob_pos), last_mod_times);
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(
+                        fs::path(full_path) / "" , fs, suffix_with_globs.substr(next_slash_after_glob_pos));
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
             }
             else if (is_directory)
             {
-                Strings result_part = LSWithFoldedRegexpMatching(fs::path(full_path),
-                                           fs, last_mod_times, processed_suffix + dir_or_file_name, suffix_with_globs, current_glob, matcher,
-                                                      max_depth - 1, next_slash_after_glob_pos);
+                std::vector<StorageHDFS::PathWithInfo> result_part = LSWithFoldedRegexpMatching(
+                    fs::path(full_path), fs, processed_suffix + dir_or_file_name,
+                    suffix_with_globs, current_glob, matcher, max_depth - 1, next_slash_after_glob_pos);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -141,10 +143,17 @@ namespace
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
-    Strings LSWithRegexpMatching(const String & path_for_ls,
-                                 const HDFSFSPtr & fs,
-                                 const String & for_match,
-                                 std::unordered_map<String, time_t> * last_mod_times)
+//<<<<<<< HEAD
+//    Strings LSWithRegexpMatching(const String & path_for_ls,
+//                                 const HDFSFSPtr & fs,
+//                                 const String & for_match,
+//                                 std::unordered_map<String, time_t> * last_mod_times)
+//=======
+    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(
+        const String & path_for_ls,
+        const HDFSFSPtr & fs,
+        const String & for_match)
+//>>>>>>> 10d597676c81cb25da8e0b4bea2f4ed9a0c650d8
     {
         const size_t first_glob_pos = for_match.find_first_of("*?{");
         const bool has_glob = first_glob_pos != std::string::npos;
@@ -186,9 +195,8 @@ namespace
 
         if (slashes_in_glob)
         {
-            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, last_mod_times,
-                                              "", suffix_with_globs, current_glob, matcher,
-                                              slashes_in_glob, next_slash_after_glob_pos);
+            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs, current_glob,
+                                              matcher, slashes_in_glob, next_slash_after_glob_pos);
         }
 
         HDFSFileInfo ls;
@@ -199,7 +207,7 @@ namespace
             throw Exception(
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
-        Strings result;
+        std::vector<StorageHDFS::PathWithInfo> result;
         if (!ls.file_info && ls.length > 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
@@ -213,17 +221,19 @@ namespace
             if (!is_directory && !looking_for_directory)
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
-                {
-                    result.push_back(String(ls.file_info[i].mName));
-                    if (last_mod_times)
-                        (*last_mod_times)[result.back()] = ls.file_info[i].mLastMod;
-                }
+                    result.emplace_back(
+                        String(ls.file_info[i].mName),
+                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
             }
             else if (is_directory && looking_for_directory)
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
-                    Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos), last_mod_times);
+//<<<<<<< HEAD
+//                    Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos), last_mod_times);
+//=======
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos));
+//>>>>>>> 10d597676c81cb25da8e0b4bea2f4ed9a0c650d8
                     /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
@@ -246,12 +256,12 @@ namespace
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage HDFS requires valid URL to be set");
     }
 
-    std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
+    std::vector<StorageHDFS::PathWithInfo> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context)
     {
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        return LSWithRegexpMatching("/", fs, path_from_uri, last_mod_times);
+        return LSWithRegexpMatching("/", fs, path_from_uri);
     }
 }
 
@@ -310,9 +320,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     ContextPtr ctx)
 {
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-    std::unordered_map<String, time_t> last_mod_time;
-    auto paths = getPathsList(path_from_uri, uri, ctx, &last_mod_time);
-    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+    auto paths_with_info = getPathsList(path_from_uri, uri, ctx);
+    if (paths_with_info.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
             "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
@@ -320,26 +329,47 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
-        columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
+        columns_from_cache = tryGetColumnsFromCache(paths_with_info, path_from_uri, format, ctx);
 
-    ReadBufferIterator read_buffer_iterator = [&, my_uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator
+        = [&, my_uri_without_path = uri_without_path, it = paths_with_info.begin(), first = true](
+              ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths.end())
-            return nullptr;
-        auto compression = chooseCompressionMethod(*it, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+        PathWithInfo path_with_info;
+        while (true)
+        {
+            if (it == paths_with_info.end())
+            {
+                if (first)
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                    "Cannot extract table structure from {} format file, because all files are empty. "
+                                    "You must specify table structure manually", format);
+                return nullptr;
+            }
+
+            path_with_info = *it++;
+            if (ctx->getSettingsRef().hdfs_skip_empty_files && path_with_info.info && path_with_info.info->size == 0)
+                continue;
+
+            auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
+            auto impl = std::make_unique<ReadBufferFromHDFS>(my_uri_without_path, path_with_info.path, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+            if (!ctx->getSettingsRef().hdfs_skip_empty_files || !impl->eof())
+            {
+                const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+                first = false;
+                return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+            }
+        }
     };
 
     ColumnsDescription columns;
     if (columns_from_cache)
         columns = *columns_from_cache;
     else
-        columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
+        columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths_with_info.size() > 1, ctx);
 
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
-        addColumnsToCache(paths, path_from_uri, columns, format, ctx);
+        addColumnsToCache(paths_with_info, path_from_uri, columns, format, ctx);
 
     return columns;
 }
@@ -352,11 +382,11 @@ public:
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
         uris = getPathsList(path_from_uri, uri_without_path, context_);
         for (auto & elem : uris)
-            elem = uri_without_path + elem;
+            elem.path = uri_without_path + elem.path;
         uris_iter = uris.begin();
     }
 
-    String next()
+    StorageHDFS::PathWithInfo next()
     {
         std::lock_guard lock(mutex);
         if (uris_iter != uris.end())
@@ -369,8 +399,8 @@ public:
     }
 private:
     std::mutex mutex;
-    Strings uris;
-    Strings::iterator uris_iter;
+    std::vector<StorageHDFS::PathWithInfo> uris;
+    std::vector<StorageHDFS::PathWithInfo>::iterator uris_iter;
 };
 
 class HDFSSource::URISIterator::Impl
@@ -390,14 +420,14 @@ public:
         uris_iter = uris.begin();
     }
 
-    String next()
+    StorageHDFS::PathWithInfo next()
     {
         std::lock_guard lock(mutex);
         if (uris_iter == uris.end())
-            return "";
+            return {"", {}};
         auto key = *uris_iter;
         ++uris_iter;
-        return key;
+        return {key, {}};
     }
 
 private:
@@ -409,7 +439,7 @@ private:
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
     : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(context_, uri)) {}
 
-String HDFSSource::DisclosedGlobIterator::next()
+StorageHDFS::PathWithInfo HDFSSource::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
@@ -419,7 +449,7 @@ HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, Contex
 {
 }
 
-String HDFSSource::URISIterator::next()
+StorageHDFS::PathWithInfo HDFSSource::URISIterator::next()
 {
     return pimpl->next();
 }
@@ -454,17 +484,29 @@ HDFSSource::HDFSSource(
 
 bool HDFSSource::initialize()
 {
-    current_path = (*file_iterator)();
-    if (current_path.empty())
-        return false;
+    bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;
+    while (true)
+    {
+        auto path_with_info = (*file_iterator)();
+        if (path_with_info.path.empty())
+            return false;
 
-    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
+        if (path_with_info.info && skip_empty_files && path_with_info.info->size == 0)
+            continue;
 
-    auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    auto impl = std::make_unique<ReadBufferFromHDFS>(
-        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+        current_path = path_with_info.path;
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
+
+        auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
+        auto impl = std::make_unique<ReadBufferFromHDFS>(
+            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+        if (!skip_empty_files || !impl->eof())
+        {
+            const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+            read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+            break;
+        }
+    }
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -665,8 +707,8 @@ Pipe StorageHDFS::read(
     if (distributed_processing)
     {
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>(
-            [callback = context_->getReadTaskCallback()]() -> String {
-                return callback();
+            [callback = context_->getReadTaskCallback()]() -> StorageHDFS::PathWithInfo {
+                return StorageHDFS::PathWithInfo{callback(), std::nullopt};
         });
     }
     else if (is_path_with_globs)
@@ -873,24 +915,22 @@ SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
 }
 
 std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
-    const Strings & paths,
+    const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
     const String & uri_without_path,
-    std::unordered_map<String, time_t> & last_mod_time,
     const String & format_name,
     const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache(ctx);
-    for (const auto & path : paths)
+    for (const auto & path_with_info : paths_with_info)
     {
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            auto it = last_mod_time.find(path);
-            if (it == last_mod_time.end())
-                return std::nullopt;
-            return it->second;
+            if (path_with_info.info)
+                return path_with_info.info->last_mod_time;
+            return std::nullopt;
         };
 
-        String url = fs::path(uri_without_path) / path;
+        String url = fs::path(uri_without_path) / path_with_info.path;
         auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
@@ -901,7 +941,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 }
 
 void StorageHDFS::addColumnsToCache(
-    const Strings & paths,
+    const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
     const String & uri_without_path,
     const ColumnsDescription & columns,
     const String & format_name,
@@ -909,8 +949,8 @@ void StorageHDFS::addColumnsToCache(
 {
     auto & schema_cache = getSchemaCache(ctx);
     Strings sources;
-    sources.reserve(paths.size());
-    std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
+    sources.reserve(paths_with_info.size());
+    std::transform(paths_with_info.begin(), paths_with_info.end(), std::back_inserter(sources), [&](const PathWithInfo & path_with_info){ return fs::path(uri_without_path) / path_with_info.path; });
     auto cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
     schema_cache.addMany(cache_keys, columns);
 }
