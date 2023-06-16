@@ -192,11 +192,6 @@ list (APPEND dbms_headers
     Dictionaries/DictionaryStructure.h
     Dictionaries/getDictionaryConfigurationFromAST.h)
 
-# Required for validation of Timezone in session_timezone setting.
-# This way we don't need to create timezone via cctz each time, but check against pregenerated char**
-list (APPEND dbms_sources
-        Storages/System/StorageSystemTimeZones.generated.cpp)
-
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
     list (REMOVE_ITEM clickhouse_common_io_headers Common/OpenSSLHelpers.h)
