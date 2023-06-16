@@ -9343,45 +9343,17 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
+    auto parts_backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
     coordination->addReplicatedDataPath(shared_id, data_path_in_backup);
 
-    std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
-    for (auto & [relative_path, backup_entry] : backup_entries)
-    {
-        size_t slash_pos = relative_path.find('/');
-        if (slash_pos != String::npos)
-        {
-            String part_name = relative_path.substr(0, slash_pos);
-            if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
-            {
-                auto & hash = part_names_with_hashes_calculating[part_name];
-                if (relative_path.ends_with(".bin"))
-                {
-                    hash.update(relative_path);
-                    hash.update(backup_entry->getSize());
-                    hash.update(backup_entry->getChecksum());
-                }
-                continue;
-            }
-        }
-        /// Not a part name, probably error.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't follow the format <part_name>/<path>", quoteString(relative_path));
-    }
-
-    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_with_hashes;
-    part_names_with_hashes.reserve(part_names_with_hashes_calculating.size());
-    for (auto & [part_name, hash] : part_names_with_hashes_calculating)
-    {
-        UInt128 checksum;
-        hash.get128(checksum);
-        auto & part_name_with_hash = part_names_with_hashes.emplace_back();
-        part_name_with_hash.part_name = part_name;
-        part_name_with_hash.checksum = checksum;
-    }
+    using PartNameAndChecksum = IBackupCoordination::PartNameAndChecksum;
+    std::vector<PartNameAndChecksum> part_names_with_hashes;
+    part_names_with_hashes.reserve(parts_backup_entries.size());
+    for (const auto & part_backup_entries : parts_backup_entries)
+        part_names_with_hashes.emplace_back(PartNameAndChecksum{part_backup_entries.part_name, part_backup_entries.part_checksum});
 
     /// Send our list of part names to the coordination (to compare with other replicas).
     coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
@@ -9409,7 +9381,7 @@ void StorageReplicatedMergeTree::backupData(
     auto post_collecting_task = [shared_id,
                                  my_replica_name = getReplicaName(),
                                  coordination,
-                                 my_backup_entries = std::move(backup_entries),
+                                 parts_backup_entries = std::move(parts_backup_entries),
                                  &backup_entries_collector]()
     {
         Strings data_paths = coordination->getReplicatedDataPaths(shared_id);
@@ -9421,14 +9393,14 @@ void StorageReplicatedMergeTree::backupData(
         Strings part_names = coordination->getReplicatedPartNames(shared_id, my_replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
 
-        for (const auto & [relative_path, backup_entry] : my_backup_entries)
+        for (const auto & part_backup_entries : parts_backup_entries)
         {
-            size_t slash_pos = relative_path.find('/');
-            String part_name = relative_path.substr(0, slash_pos);
-            if (!part_names_set.contains(part_name))
-                continue;
-            for (const auto & data_path : data_paths_fs)
-                backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
+            if (part_names_set.contains(part_backup_entries.part_name))
+            {
+                for (const auto & [relative_path, backup_entry] : part_backup_entries.backup_entries)
+                    for (const auto & data_path : data_paths_fs)
+                        backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
+            }
         }
 
         auto mutation_infos = coordination->getReplicatedMutations(shared_id, my_replica_name);
