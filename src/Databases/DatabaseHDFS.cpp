@@ -49,7 +49,9 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     if (!source.empty())
     {
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs host: {}. It should have structure 'hdfs://<host_name>:<port>'", source);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs host: {}. "
+                            "It should have structure 'hdfs://<host_name>:<port>'", source);
+
         context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
     }
 }
@@ -62,18 +64,19 @@ void DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_sto
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name,
-            getDatabaseName(),
-            getEngineName());
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
 {
     if (table_name.starts_with("hdfs://"))
         return table_name;
+
     if (source.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/path'", table_name);
-    return (fs::path(source) / table_name).string();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. "
+                        "It should have structure 'hdfs://<host_name>:<port>/path'", table_name);
+
+    return fs::path(source) / table_name;
 }
 
 bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const
@@ -104,7 +107,7 @@ bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) const
 {
-    // Check if the table exists in the loaded tables map
+    /// Check if the table exists in the loaded tables map.
     {
         std::lock_guard lock(mutex);
         auto it = loaded_tables.find(name);
@@ -116,14 +119,13 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    // call TableFunctionHDFS
     auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
         return nullptr;
 
-    // TableFunctionHDFS throws exceptions, if table cannot be created
+    /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
         addTable(name, table_storage);
@@ -133,10 +135,12 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseHDFS::getTable(const String & name, ContextPtr context_) const
 {
-    // rethrow all exceptions from TableFunctionHDFS to show correct error to user
+    /// Rethrow all exceptions from TableFunctionHDFS to show correct error to user.
     if (auto storage = getTableImpl(name, context_))
         return storage;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
+
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                    backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
 StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) const
@@ -148,20 +152,16 @@ StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) c
     catch (const Exception & e)
     {
         // Ignore exceptions thrown by TableFunctionHDFS, which indicate that there is no table
-        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS
+            || e.code() == ErrorCodes::ACCESS_DENIED
+            || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED
+            || e.code() == ErrorCodes::FILE_DOESNT_EXIST
+            || e.code() == ErrorCodes::UNACCEPTABLE_URL
+            || e.code() == ErrorCodes::HDFS_ERROR
+            || e.code() == ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE)
+        {
             return nullptr;
-        if (e.code() == ErrorCodes::ACCESS_DENIED)
-            return nullptr;
-        if (e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
-            return nullptr;
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            return nullptr;
-        if (e.code() == ErrorCodes::UNACCEPTABLE_URL)
-            return nullptr;
-        if (e.code() == ErrorCodes::HDFS_ERROR)
-            return nullptr;
-        if (e.code() == ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE)
-            return nullptr;
+        }
         throw;
     }
     catch (const Poco::URISyntaxException &)
@@ -178,7 +178,7 @@ bool DatabaseHDFS::empty() const
 
 ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
 {
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);

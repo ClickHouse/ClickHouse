@@ -12,11 +12,13 @@ namespace DB
 class Context;
 
 /**
-  * DatabaseFilesystem allows to interact with files stored on the file system
-  * Uses TableFunctionFile to implicitly load file when a user requests the table, and provides read-only access to the data in the file
+  * DatabaseFilesystem allows to interact with files stored on the local filesystem.
+  * Uses TableFunctionFile to implicitly load file when a user requests the table,
+  * and provides a read-only access to the data in the file.
   * Tables are cached inside the database for quick access
   *
-  * Used in clickhouse-local to access local files
+  * Used in clickhouse-local to access local files.
+  * For clickhouse-server requires allows to access file only fron user_files directory.
   */
 class DatabaseFilesystem : public IDatabase, protected WithContext
 {
@@ -31,8 +33,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    // Contains only temporary tables
-    bool shouldBeEmptyOnDetach() const override { return false; }
+    bool shouldBeEmptyOnDetach() const override { return false; } /// Contains only temporary tables.
 
     bool empty() const override;
 
@@ -43,6 +44,7 @@ public:
     void shutdown() override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
+
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
 
 protected:
@@ -62,4 +64,4 @@ private:
     Poco::Logger * log;
 };
 
-} // DB
+}
