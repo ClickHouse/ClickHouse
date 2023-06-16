@@ -98,7 +98,7 @@ protected:
             return r.right.get<UInt64>() - (r.right_included ? 0 : 1);
         };
 
-        /// If we have little datas, shrink block size.
+        /// If data left is small, shrink block size.
         auto block_size = std::min(base_block_size, size);
 
         if (!block_size)
