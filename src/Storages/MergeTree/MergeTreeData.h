@@ -646,6 +646,9 @@ public:
     /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
     void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// This method should not be here, but async loading of Outdated parts is implemented in MergeTreeData
+    virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
+
     /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
     void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
 
