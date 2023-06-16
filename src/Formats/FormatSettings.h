@@ -36,7 +36,8 @@ struct FormatSettings
     bool defaults_for_omitted_fields = true;
 
     bool seekable_read = true;
-    UInt64 max_rows_to_read_for_schema_inference = 100;
+    UInt64 max_rows_to_read_for_schema_inference = 25000;
+    UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
     String column_names_for_schema_inference;
     String schema_inference_hints;
@@ -138,6 +139,7 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool trim_whitespaces = true;
+        bool allow_whitespace_or_tab_as_delimiter = false;
     } csv;
 
     struct HiveText
@@ -327,16 +329,16 @@ struct FormatSettings
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class EnumComparingMode
+    enum class CapnProtoEnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
         BY_VALUES, // Values should be the same, names can be different.
     };
 
-    struct
+    struct CapnProto
     {
-        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        CapnProtoEnumComparingMode enum_comparing_mode = CapnProtoEnumComparingMode::BY_VALUES;
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
