@@ -115,11 +115,11 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
     const size_t arguments_count = arguments.size();
     assert(arguments_count > 2);
     ColumnPtr column_offset;
-    const ColumnArray * column_first_array = nullptr;
+    ColumnPtr column_first_array;
     ColumnsWithTypeAndName arrays;
     arrays.reserve(arguments_count - 1);
 
-    for (size_t i = 1; i < arguments_count - 1; ++i) 
+    for (size_t i = 1; i < arguments_count - 1; ++i)
     {
         const auto & array_with_type_and_name = arguments[i];
         ColumnPtr column_array_ptr = array_with_type_and_name.column;
@@ -153,7 +153,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         }
         if (i == 1)
         {
-            column_first_array = column_array;
+            column_first_array = column_array_ptr;
         }
         arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
                                                   recursiveRemoveLowCardinality(type_array->getNestedType()),
@@ -166,7 +166,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
 
     ColumnWithTypeAndName column_accumulator = arguments.back();
     std::vector<size_t> array_size_vec(rows_count);
-    const ColumnArray::Offsets& array_offsets = column_first_array->getOffsets();
+    const ColumnArray::Offsets & array_offsets = checkAndGetColumn<ColumnArray>(column_first_array.get())->getOffsets();
     size_t max_array_size = rows_count ? array_offsets[0] : 0;
     std::map<size_t, ColumnPtr> row_res;
 
