@@ -4132,6 +4132,8 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан параметр timezone, будут интерпретированы как относящиеся к указанной зоне.
 При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
 
+Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
+
 Примеры:
 ```sql
 SELECT timeZone(), serverTimezone() FORMAT TSV
