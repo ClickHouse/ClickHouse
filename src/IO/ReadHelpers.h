@@ -16,6 +16,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>
@@ -1106,30 +1107,11 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-
 template <std::endian endian, typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
-    if constexpr (std::endian::native != endian)
-        x = std::byteswap(x);
-}
-
-template <std::endian endian, typename T>
-requires is_big_int_v<T>
-inline void readBinaryEndian(T & x, ReadBuffer & buf)
-{
-    if constexpr (std::endian::native == endian)
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            readBinaryEndian<endian>(x.items[i], buf);
-    }
-    else
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            readBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
-    }
+    transformEndianness<endian>(x);
 }
 
 template <typename T>
