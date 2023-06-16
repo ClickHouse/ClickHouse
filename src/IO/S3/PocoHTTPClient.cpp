@@ -261,6 +261,7 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter ,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
+    /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration(request);
     if (http_connection_pool_size && request_configuration.proxy_host.empty())
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);

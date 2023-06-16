@@ -1,5 +1,7 @@
-#include "config.h"
 #include <IO/S3Common.h>
+#include <aws/core/Aws.h>
+#include <aws/s3/model/GetObjectResult.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -24,6 +26,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3ResetSessions;
+    extern const Event ReadBufferFromS3PreservedSessions;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -45,6 +49,19 @@ void resetSession(Aws::S3::Model::GetObjectResult & read_result)
     {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session of unexpected type encountered");
     }
+}
+
+void resetSessionIfNeeded(bool read_all_range_successfully, std::optional<Aws::S3::Model::GetObjectResult> & read_result)
+{
+    if (!read_all_range_successfully && read_result)
+    {
+        /// When we abandon a session with an ongoing GetObject request and there is another one trying to delete the same object this delete
+        /// operation will hang until GetObject's session idle timeouts. So we have to call `reset()` on GetObject's session session immediately.
+        resetSession(*read_result);
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromS3ResetSessions);
+    }
+    else
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromS3PreservedSessions);
 }
 }
 
@@ -91,10 +108,7 @@ bool ReadBufferFromS3::nextImpl()
     if (read_until_position)
     {
         if (read_until_position == offset)
-        {
-            read_all_range_successfully = true;
             return false;
-        }
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
@@ -384,10 +398,7 @@ ReadBufferFromS3::~ReadBufferFromS3()
 {
     try
     {
-        if (!read_all_range_successfully && read_result)
-            /// When we abandon a session with an ongoing GetObject request and there is another one trying to delete the same object this delete
-            /// operation will hang until GetObject's session idle timeouts. So we have to call `reset()` on GetObject's session session immediately.
-            resetSession(*read_result);
+        resetSessionIfNeeded(readAllRangeSuccessfully(), read_result);
     }
     catch (...)
     {
@@ -397,8 +408,7 @@ ReadBufferFromS3::~ReadBufferFromS3()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    if (!read_all_range_successfully && read_result)
-        resetSession(*read_result);
+    resetSessionIfNeeded(readAllRangeSuccessfully(), read_result);
     read_all_range_successfully = false;
 
     /**
@@ -463,6 +473,10 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t range_begin
     }
 }
 
+bool ReadBufferFromS3::readAllRangeSuccessfully() const
+{
+    return read_until_position ? offset == read_until_position : read_all_range_successfully;
+}
 }
 
 #endif
