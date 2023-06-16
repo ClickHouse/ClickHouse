@@ -13,6 +13,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Planner/Planner.h>
 
 namespace DB

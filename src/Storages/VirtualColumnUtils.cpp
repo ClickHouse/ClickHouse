@@ -20,6 +20,13 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
@@ -215,15 +222,18 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
             if (column_set)
             {
                 auto future_set = column_set->getData();
-                if (!future_set->isFilled())
+                if (!future_set->isReady())
                 {
-                    auto plan = future_set->build(context);
-                    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                    pipeline.complete(std::make_shared<EmptySink>(Block()));
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        auto plan = set_from_subquery->build(context);
+                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                        pipeline.complete(std::make_shared<EmptySink>(Block()));
 
-                    CompletedPipelineExecutor executor(pipeline);
-                    executor.execute();
+                        CompletedPipelineExecutor executor(pipeline);
+                        executor.execute();
+                    }
                 }
             }
         }

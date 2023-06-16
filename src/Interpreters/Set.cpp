@@ -265,7 +265,10 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 
 void Set::appendSetElements(SetKeyColumns & holder)
 {
-    //std::cerr << "========= " << keys_size << ' ' << holder.key_columns.size() << std::endl;
+    if (holder.key_columns.size() != keys_size || set_elements.size() != keys_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of key columns for set. Expected {} got {} and {}",
+                        keys_size, holder.key_columns.size(), set_elements.size());
+
     size_t rows = holder.key_columns.at(0)->size();
     for (size_t i = 0; i < keys_size; ++i)
     {

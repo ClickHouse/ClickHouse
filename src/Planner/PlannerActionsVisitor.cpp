@@ -17,6 +17,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -663,7 +664,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     column.name = planner_context->createSetKey(in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
-    bool set_is_created = set->isFilled();
+    bool set_is_created = set->isReady();
     auto column_set = ColumnSet::create(1, std::move(set));
 
     if (set_is_created)
