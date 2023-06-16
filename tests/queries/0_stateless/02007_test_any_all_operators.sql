@@ -12,7 +12,7 @@ select 1 != any (select 1 from numbers(10));
 select 1 != any (select number from numbers(10));
 
 select number as a from numbers(10) where a == any (select number from numbers(3, 3));
-select number as a from numbers(10) where a != any (select 5 from numbers(3, 3));
+select number as a from numbers(10) where a != any (select 5 from numbers(3, 3)) settings use_index_for_in_with_subqueries=0;
 
 select 1 < any (select 1 from numbers(10));
 select 1 <= any (select 1 from numbers(10));
