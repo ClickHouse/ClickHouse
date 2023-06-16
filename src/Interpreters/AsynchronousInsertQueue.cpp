@@ -395,6 +395,8 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
+    /// query_start_time context + settings query_for_logging
+
     const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto insert_context = Context::createCopy(global_context);
