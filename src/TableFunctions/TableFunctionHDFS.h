@@ -12,16 +12,26 @@ namespace DB
 
 class Context;
 
-/* hdfs(URI, format[, structure, compression]) - creates a temporary storage from hdfs files
+/* hdfs(URI, [format, structure, compression]) - creates a temporary storage from hdfs files
  *
  */
 class TableFunctionHDFS : public ITableFunctionFileLike
 {
 public:
     static constexpr auto name = "hdfs";
-    std::string getName() const override
+    static constexpr auto signature = " - uri\n"
+                                      " - uri, format\n"
+                                      " - uri, format, structure\n"
+                                      " - uri, format, structure, compression_method\n";
+
+    String getName() const override
     {
         return name;
+    }
+
+    String getSignature() const override
+    {
+        return signature;
     }
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;

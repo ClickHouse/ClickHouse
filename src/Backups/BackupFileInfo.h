@@ -35,6 +35,9 @@ struct BackupFileInfo
     /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
 
+    /// Whether this file is encrypted by an encrypted disk.
+    bool encrypted_by_disk = false;
+
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }

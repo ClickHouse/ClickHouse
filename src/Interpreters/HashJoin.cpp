@@ -541,13 +541,17 @@ namespace
     template <typename Map, typename KeyGetter>
     struct Inserter
     {
-        static ALWAYS_INLINE void insertOne(const HashJoin & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i,
+        static ALWAYS_INLINE bool insertOne(const HashJoin & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i,
                                             Arena & pool)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
             if (emplace_result.isInserted() || join.anyTakeLastRow())
+            {
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
+                return true;
+            }
+            return false;
         }
 
         static ALWAYS_INLINE void insertAll(const HashJoin &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
@@ -580,7 +584,7 @@ namespace
     template <JoinStrictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     size_t NO_INLINE insertFromBlockImplTypeCase(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted)
     {
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, RowRef>;
         constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
@@ -591,10 +595,18 @@ namespace
 
         auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
+        /// For ALL and ASOF join always insert values
+        is_inserted = !mapped_one || is_asof_join;
+
         for (size_t i = 0; i < rows; ++i)
         {
             if (has_null_map && (*null_map)[i])
+            {
+                /// nulls are not inserted into hash table,
+                /// keep them for RIGHT and FULL joins
+                is_inserted = true;
                 continue;
+            }
 
             /// Check condition for right table from ON section
             if (join_mask && !(*join_mask)[i])
@@ -603,7 +615,7 @@ namespace
             if constexpr (is_asof_join)
                 Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
             else if constexpr (mapped_one)
-                Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
+                is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
             else
                 Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
         }
@@ -614,32 +626,37 @@ namespace
     template <JoinStrictness STRICTNESS, typename KeyGetter, typename Map>
     size_t insertFromBlockImplType(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted)
     {
         if (null_map)
             return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(
-                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool);
+                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted);
         else
             return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(
-                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool);
+                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted);
     }
 
 
     template <JoinStrictness STRICTNESS, typename Maps>
     size_t insertFromBlockImpl(
         HashJoin & join, HashJoin::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted)
     {
         switch (type)
         {
-            case HashJoin::Type::EMPTY: return 0;
-            case HashJoin::Type::CROSS: return 0; /// Do nothing. We have already saved block, and it is enough.
+            case HashJoin::Type::EMPTY:
+                [[fallthrough]];
+            case HashJoin::Type::CROSS:
+                /// Do nothing. We will only save block, and it is enough
+                is_inserted = true;
+                return 0;
 
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
                 return insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
-                    join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool); \
+                    join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted); \
                     break;
+
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
@@ -688,8 +705,9 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
     for (const auto & sample_column : saved_block_sample_.getColumnsWithTypeAndName())
     {
         ColumnWithTypeAndName column = block.getByName(sample_column.name);
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
+
+        /// There's no optimization for right side const columns. Remove constness if any.
+        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
 
         if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
         {
@@ -697,8 +715,9 @@ Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block
             column.type = removeLowCardinality(column.type);
         }
 
-        /// There's no optimization for right side const columns. Remove constness if any.
-        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+        if (sample_column.column->isNullable())
+            JoinCommon::convertColumnToNullable(column);
+
         structured_block.insert(std::move(column));
     }
 
@@ -710,15 +729,48 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
+bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
+    if (unlikely(source_block_.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block_.rows());
+
+    Block source_block = source_block_;
+    if (strictness == JoinStrictness::Asof)
+    {
+        chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
+        /// Filter out rows with NULLs in ASOF key, nulls are not joined with anything since they are not comparable
+        /// We support only INNER/LEFT ASOF join, so rows with NULLs never return from the right joined table.
+        /// So filter them out here not to handle in implementation.
+        const auto & asof_key_name = table_join->getOnlyClause().key_names_right.back();
+        auto & asof_column = source_block.getByName(asof_key_name);
+
+        if (asof_column.type->isNullable())
+        {
+            /// filter rows with nulls in asof key
+            if (const auto * asof_const_column = typeid_cast<const ColumnConst *>(asof_column.column.get()))
+            {
+                if (asof_const_column->isNullAt(0))
+                    return false;
+            }
+            else
+            {
+                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
+
+                NullMap negative_null_map(asof_column_nullable.size());
+                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
+                    negative_null_map[i] = !asof_column_nullable[i];
+
+                for (auto & column : source_block)
+                    column.column = column.column->filter(negative_null_map, -1);
+            }
+        }
+    }
 
     size_t rows = source_block.rows();
 
@@ -781,6 +833,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                 }
             }
 
+            bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
                 joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
@@ -789,26 +842,33 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                         *this, data->type, map, rows, key_columns, key_sizes[onexpr_idx], stored_block, null_map,
                         /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
                         join_mask_col.getData(),
-                        data->pool);
+                        data->pool, is_inserted);
 
                     if (multiple_disjuncts)
                         used_flags.reinit<kind_, strictness_>(stored_block);
-                    else
+                    else if (is_inserted)
                         /// Number of buckets + 1 value from zero storage
                         used_flags.reinit<kind_, strictness_>(size + 1);
                 });
             }
 
-            if (!multiple_disjuncts && save_nullmap)
+            if (!multiple_disjuncts && save_nullmap && is_inserted)
             {
                 data->blocks_nullmaps_allocated_size += null_map_holder->allocatedBytes();
                 data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
             }
 
-            if (!multiple_disjuncts && not_joined_map)
+            if (!multiple_disjuncts && not_joined_map && is_inserted)
             {
                 data->blocks_nullmaps_allocated_size += not_joined_map->allocatedBytes();
                 data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
+            }
+
+            if (!multiple_disjuncts && !is_inserted)
+            {
+                LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
+                data->blocks_allocated_size -= stored_block->allocatedBytes();
+                data->blocks.pop_back();
             }
 
             if (!check_limits)

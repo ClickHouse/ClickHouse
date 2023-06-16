@@ -313,6 +313,11 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
     auto res = cloneFinalized();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
     assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
     return res;
 }
