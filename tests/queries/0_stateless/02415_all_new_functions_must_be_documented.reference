@@ -655,6 +655,7 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
+space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -783,6 +784,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

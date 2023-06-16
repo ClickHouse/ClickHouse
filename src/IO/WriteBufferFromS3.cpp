@@ -92,8 +92,11 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(request_settings_.getUploadSettings()))
-    , task_tracker(std::make_unique<WriteBufferFromS3::TaskTracker>(std::move(schedule_)))
+    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , task_tracker(
+          std::make_unique<WriteBufferFromS3::TaskTracker>(
+              std::move(schedule_),
+              upload_settings.max_inflight_parts_for_one_file))
 {
     LOG_TRACE(log, "Create WriteBufferFromS3, {}", getLogDetails());
 
@@ -106,11 +109,14 @@ void WriteBufferFromS3::nextImpl()
 
     if (is_prefinalized)
         throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot write to prefinalized buffer for S3, the file could have been created with PutObjectRequest");
 
-    /// Make sense to call to before adding new async task to check if there is an exception
-    task_tracker->waitReady();
+    /// Make sense to call waitIfAny before adding new async task to check if there is an exception
+    /// The faster the exception is propagated the lesser time is spent for cancellation
+    /// Despite the fact that `task_tracker->add()` collects tasks statuses and propagates their exceptions
+    /// that call is necessary for the case when the is no in-flight limitation and therefore `task_tracker->add()` doesn't wait anything
+    task_tracker->waitIfAny();
 
     hidePartialData();
 
@@ -134,7 +140,8 @@ void WriteBufferFromS3::preFinalize()
 
     LOG_TRACE(log, "preFinalize WriteBufferFromS3. {}", getLogDetails());
 
-    task_tracker->waitReady();
+    /// This function should not be run again if an exception has occurred
+    is_prefinalized = true;
 
     hidePartialData();
 
@@ -166,8 +173,6 @@ void WriteBufferFromS3::preFinalize()
     {
         writeMultipartUpload();
     }
-
-    is_prefinalized = true;
 }
 
 void WriteBufferFromS3::finalizeImpl()
@@ -190,18 +195,14 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings.check_objects_after_upload)
     {
-        LOG_TRACE(log, "Checking object {} exists after upload", key);
         S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
 
-        LOG_TRACE(log, "Checking object {} has size as expected {}", key, total_size);
         size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage);
         if (actual_size != total_size)
             throw Exception(
                     ErrorCodes::S3_ERROR,
                     "Object {} from bucket {} has unexpected size {} after upload, expected size {}, it's a bug in S3 or S3 API.",
                     key, bucket, actual_size, total_size);
-
-        LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 
@@ -212,8 +213,8 @@ String WriteBufferFromS3::getLogDetails() const
         multipart_upload_details = fmt::format(", upload id {}, upload has finished {}"
                                        , multipart_upload_id, multipart_upload_finished);
 
-    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, finalized {}{}",
-                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), finalized, multipart_upload_details);
+    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}{}",
+                       bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), is_prefinalized, finalized, multipart_upload_details);
 }
 
 void WriteBufferFromS3::tryToAbortMultipartUpload()
@@ -234,10 +235,14 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(log, "Close WriteBufferFromS3. {}.", getLogDetails());
 
-    // That descructor could be call with finalized=false in case of exceptions
+    // That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
     {
-        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It could be if an exception occurs. File is not written to S3. {}.", getLogDetails());
+        LOG_INFO(log,
+                 "WriteBufferFromS3 is not finalized in destructor. "
+                 "It could be if an exception occurs. File is not written to S3. "
+                 "{}.",
+                 getLogDetails());
     }
 
     task_tracker->safeWaitAll();
@@ -281,8 +286,6 @@ void WriteBufferFromS3::reallocateFirstBuffer()
     WriteBuffer::set(memory.data() + hidden_size, memory.size() - hidden_size);
 
     chassert(offset() == 0);
-
-    LOG_TRACE(log, "Reallocated first buffer with size {}. {}", memory.size(), getLogDetails());
 }
 
 void WriteBufferFromS3::detachBuffer()
@@ -305,8 +308,6 @@ void WriteBufferFromS3::allocateFirstBuffer()
     const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
-
-    LOG_TRACE(log, "Allocated first buffer with size {}. {}", memory.size(), getLogDetails());
 }
 
 void WriteBufferFromS3::allocateBuffer()

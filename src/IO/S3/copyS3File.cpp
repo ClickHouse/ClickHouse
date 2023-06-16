@@ -361,7 +361,7 @@ namespace
                             task->exception = std::current_exception();
                         }
                         task_finish_notify();
-                    }, 0);
+                    }, Priority{});
                 }
                 catch (...)
                 {

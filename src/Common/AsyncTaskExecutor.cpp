@@ -3,16 +3,9 @@
 namespace DB
 {
 
-thread_local FiberInfo current_fiber_info;
-
 AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_) : task(std::move(task_))
 {
     createFiber();
-}
-
-FiberInfo AsyncTaskExecutor::getCurrentFiberInfo()
-{
-    return current_fiber_info;
 }
 
 void AsyncTaskExecutor::resume()
@@ -38,10 +31,7 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
-    auto parent_fiber_info = current_fiber_info;
-    current_fiber_info = FiberInfo{&fiber, &parent_fiber_info};
-    fiber = std::move(fiber).resume();
-    current_fiber_info = parent_fiber_info;
+    fiber.resume();
 }
 
 void AsyncTaskExecutor::cancel()
@@ -69,30 +59,19 @@ struct AsyncTaskExecutor::Routine
     struct AsyncCallback
     {
         AsyncTaskExecutor & executor;
-        Fiber & fiber;
+        SuspendCallback suspend_callback;
 
         void operator()(int fd, Poco::Timespan timeout, AsyncEventTimeoutType type, const std::string & desc, uint32_t events)
         {
             executor.processAsyncEvent(fd, timeout, type, desc, events);
-            fiber = std::move(fiber).resume();
+            suspend_callback();
             executor.clearAsyncEvent();
         }
     };
 
-    struct ResumeCallback
+    void operator()(SuspendCallback suspend_callback)
     {
-        Fiber & fiber;
-
-        void operator()()
-        {
-            fiber = std::move(fiber).resume();
-        }
-    };
-
-    Fiber operator()(Fiber && sink)
-    {
-        auto async_callback = AsyncCallback{executor, sink};
-        auto suspend_callback = ResumeCallback{sink};
+        auto async_callback = AsyncCallback{executor, suspend_callback};
         try
         {
             executor.task->run(async_callback, suspend_callback);
@@ -110,18 +89,17 @@ struct AsyncTaskExecutor::Routine
         }
 
         executor.routine_is_finished = true;
-        return std::move(sink);
     }
 };
 
 void AsyncTaskExecutor::createFiber()
 {
-    fiber = boost::context::fiber(std::allocator_arg_t(), fiber_stack, Routine{*this});
+    fiber = Fiber(fiber_stack, Routine{*this});
 }
 
 void AsyncTaskExecutor::destroyFiber()
 {
-    boost::context::fiber to_destroy = std::move(fiber);
+    Fiber to_destroy = std::move(fiber);
 }
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description)

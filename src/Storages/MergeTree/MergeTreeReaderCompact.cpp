@@ -314,7 +314,7 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-void MergeTreeReaderCompact::prefetchBeginOfRange(int64_t priority)
+void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
 {
     if (!initialized)
     {

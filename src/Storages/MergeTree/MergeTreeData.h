@@ -443,12 +443,13 @@ public:
     struct SnapshotData : public StorageSnapshot::Data
     {
         DataPartsVector parts;
+        std::vector<AlterConversionsPtr> alter_conversions;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// The same as above but does not hold vector of data parts.
-    StorageSnapshotPtr getStorageSnapshotWithoutParts(const StorageMetadataPtr & metadata_snapshot) const;
+    StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -645,6 +646,9 @@ public:
     /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
     void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// This method should not be here, but async loading of Outdated parts is implemented in MergeTreeData
+    virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
+
     /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
     void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
 
@@ -675,6 +679,7 @@ public:
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
+    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
 
     size_t clearEmptyParts();
 
@@ -864,7 +869,7 @@ public:
     DiskPtr tryGetDiskForDetachedPart(const String & part_name) const;
     DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return !isStaticStorage(); }
     Strings getDataPaths() const override;
 
     /// Reserves space at least 1MB.
@@ -914,7 +919,7 @@ public:
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
     /// Return alter conversions for part which must be applied on fly.
-    AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
+    AlterConversionsPtr getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -955,8 +960,10 @@ public:
     /// Get column types required for partition key
     static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
 
-    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
-    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
+    ExpressionActionsPtr
+    getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    ExpressionActionsPtr
+    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
     /// Get compression codec for part according to TTL rules and <compression>
     /// section from config.xml.
@@ -1057,6 +1064,9 @@ public:
 
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
+
+    /// TODO: make enabled by default in the next release if no problems found.
+    bool allowRemoveStaleMovingParts() const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1321,8 +1331,16 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
+    struct PartBackupEntries
+    {
+        String part_name;
+        UInt128 part_checksum; /// same as MinimalisticDataPartChecksums::hash_of_all_files
+        BackupEntries backup_entries;
+    };
+    using PartsBackupEntries = std::vector<PartBackupEntries>;
+
     /// Makes backup entries to backup the parts of this table.
-    BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1518,11 +1536,7 @@ private:
         size_t max_backoff_ms,
         size_t max_tries);
 
-    std::vector<LoadPartResult> loadDataPartsFromDisk(
-        ThreadPool & pool,
-        size_t num_parts,
-        std::queue<PartLoadingTreeNodes> & parts_queue,
-        const MergeTreeSettingsPtr & settings);
+    std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
 
     void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
 
@@ -1539,6 +1553,13 @@ private:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     mutable TemporaryParts temporary_parts;
+
+    /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
+    /// Note: it could be very rough.
+    bool canUseParallelReplicasBasedOnPKAnalysis(
+        ContextPtr query_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
