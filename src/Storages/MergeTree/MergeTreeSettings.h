@@ -67,8 +67,8 @@ struct Settings;
     M(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
     M(CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never, "Is the Replicated Merge cleanup has to be done automatically at each merge or manually (possible values are 'Always'/'Never' (default))", 0) \
     M(UInt64, replicated_max_mutations_in_one_entry, 10000, "Max number of mutation commands that can be merged together and executed in one MUTATE_PART entry (0 means unlimited)", 0) \
-    M(UInt64, number_of_mutations_to_delay, 0, "If table has at least that many unfinished mutations, artificially slow down mutations of table. Disabled if set to 0", 0) \
-    M(UInt64, number_of_mutations_to_throw, 0, "If table has at least that many unfinished mutations, throw 'Too many mutations' exception. Disabled if set to 0", 0) \
+    M(UInt64, number_of_mutations_to_delay, 500, "If table has at least that many unfinished mutations, artificially slow down mutations of table. Disabled if set to 0", 0) \
+    M(UInt64, number_of_mutations_to_throw, 1000, "If table has at least that many unfinished mutations, throw 'Too many mutations' exception. Disabled if set to 0", 0) \
     M(UInt64, min_delay_to_mutate_ms, 10, "Min delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
     M(UInt64, max_delay_to_mutate_ms, 1000, "Max delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
     \
@@ -143,9 +143,9 @@ struct Settings;
     M(Bool, ttl_only_drop_parts, false, "Only drop altogether the expired parts and not partially prune them.", 0) \
     M(Bool, materialize_ttl_recalculate_only, false, "Only recalculate ttl info when MATERIALIZE TTL", 0) \
     M(Bool, enable_mixed_granularity_parts, true, "Enable parts with adaptive and non adaptive granularity", 0) \
-    M(MaxThreads, max_part_loading_threads, 0, "The number of threads to load data parts at startup.", 0) \
-    M(MaxThreads, max_part_removal_threads, 0, "The number of threads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
     M(UInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.", 0) \
+    M(UInt64, zero_copy_concurrent_part_removal_max_split_times, 5, "Max recursion depth for splitting independent Outdated parts ranges into smaller subranges (highly not recommended to change)", 0) \
+    M(Float, zero_copy_concurrent_part_removal_max_postpone_ratio, static_cast<Float32>(0.05), "Max percentage of top level parts to postpone removal in order to get smaller independent ranges (highly not recommended to change)", 0) \
     M(String, storage_policy, "default", "Name of storage disk policy", 0) \
     M(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     M(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
@@ -157,6 +157,7 @@ struct Settings;
     M(UInt64, min_bytes_to_rebalance_partition_over_jbod, 0, "Minimal amount of bytes to enable part rebalance over JBOD array (0 - disabled).", 0) \
     M(Bool, check_sample_column_is_correct, true, "Check columns or columns by hash for sampling are unsigned integer.", 0) \
     M(Bool, allow_vertical_merges_from_compact_to_wide_parts, false, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
+    M(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, "Enable the endpoint id with zookeeper name prefix for the replicated merge tree table", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
@@ -189,6 +190,9 @@ struct Settings;
     M(UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024, "Obsolete setting, does nothing.", 0) \
     M(UInt64, write_ahead_log_interval_ms_to_fsync, 100, "Obsolete setting, does nothing.", 0) \
     M(Bool, in_memory_parts_insert_sync, false, "Obsolete setting, does nothing.", 0) \
+    M(MaxThreads, max_part_loading_threads, 0, "Obsolete setting, does nothing.", 0) \
+    M(MaxThreads, max_part_removal_threads, 0, "Obsolete setting, does nothing.", 0) \
+
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \

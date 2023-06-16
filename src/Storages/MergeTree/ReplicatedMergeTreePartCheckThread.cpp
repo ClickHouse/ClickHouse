@@ -344,6 +344,22 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
     LOG_TRACE(log, "Part {} in zookeeper: {}, locally: {}", part_name, exists_in_zookeeper, part != nullptr);
 
+    if (exists_in_zookeeper && !part)
+    {
+        auto outdated = storage.getPartIfExists(part_name, {MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting});
+        if (outdated)
+        {
+            /// We cannot rely on exists_in_zookeeper, because the cleanup thread is probably going to remove it from ZooKeeper
+            /// Also, it will avoid "Cannot commit empty part: Part ... (state Outdated) already exists, but it will be deleted soon"
+            LOG_WARNING(log, "Part {} is Outdated, will wait for cleanup thread to handle it and check again later", part_name);
+            time_t lifetime = time(nullptr) - outdated->remove_time;
+            time_t max_lifetime = storage.getSettings()->old_parts_lifetime.totalSeconds();
+            time_t delay = lifetime >= max_lifetime ? 0 : max_lifetime - lifetime;
+            enqueuePart(part_name, delay + 30);
+            return {part_name, true, "Part is Outdated, will recheck later"};
+        }
+    }
+
     /// We do not have this or a covering part.
     if (!part)
     {
