@@ -3380,7 +3380,7 @@ Default value: `0`.
 
 ## s3_skip_empty_files {#s3_skip_empty_files}
 
-Enables or disables skipping empty files in [S3](../../engines/table-engines/special/s3.md) engine tables.
+Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3412,7 +3412,7 @@ Default value: `0`.
 
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
-Enables or disables skipping empty files in [HDFS](../../engines/table-engines/special/hdfs.md) engine tables.
+Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
