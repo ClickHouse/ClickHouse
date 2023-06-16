@@ -21,6 +21,17 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class Chunk;
 
+/// Prepared key columns for set which can be added to fill set elements.
+/// Used only to upgrade set from tuple.
+struct SetKeyColumns
+{
+    /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
+    ColumnRawPtrs key_columns;
+    Columns materialized_columns;
+    ColumnPtr null_map_holder;
+    ColumnUInt8::MutablePtr filter;
+};
+
 /** Data structure for implementation of IN expression.
   */
 class Set
@@ -47,17 +58,6 @@ public:
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
-
-
-    struct SetKeyColumns
-    {
-        //ColumnRawPtrs key_columns;
-        /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
-        ColumnRawPtrs key_columns;
-        Columns materialized_columns;
-        ColumnPtr null_map_holder;
-        ColumnUInt8::MutablePtr filter;
-    };
 
     void initSetElements();
     bool insertFromColumns(const Columns & columns, SetKeyColumns & holder);

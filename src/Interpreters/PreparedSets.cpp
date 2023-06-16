@@ -1,12 +1,23 @@
 #include <chrono>
 #include <variant>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
 #include <IO/Operators.h>
 #include "Common/logger_useful.h"
 #include "Processors/QueryPlan/CreatingSetsStep.h"
+#include "Processors/Executors/CompletedPipelineExecutor.h"
+#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include "Processors/Sinks/EmptySink.h"
+#include "Processors/Sinks/NullSink.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include "Core/Block.h"
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
@@ -15,6 +26,35 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class FutureSetFromTuple final : public FutureSet
+{
+public:
+    FutureSetFromTuple(Block block, const Settings & settings);
+
+    bool isReady() const override { return true; }
+    SetPtr get() const override { return set; }
+
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+
+    DataTypes getTypes() const override { return set->getElementsTypes(); }
+
+private:
+    SetPtr set;
+    SetKeyColumns set_key_columns;
+};
+
+
+FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
+bool FutureSetFromStorage::isReady() const { return set != nullptr; }
+SetPtr FutureSetFromStorage::get() const { return set; }
+DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
+
+SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
+{
+    return set->hasExplicitSetElements() ? set : nullptr;
+}
+
 
 PreparedSetKey PreparedSetKey::forLiteral(Hash hash, DataTypes types_)
 {
@@ -240,8 +280,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
     }
 
-    // std::cerr << "... external_table_set " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
-
     if (external_table_set)
         return subquery.set = external_table_set->buildOrderedSetInplace(context);
 
@@ -261,6 +299,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     return subquery.set;
 }
 
+bool FutureSetFromSubquery::isReady() const { return subquery.set != nullptr && subquery.set->isCreated(); }
+
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & context)
+{
+    return buildPlan(context, false);
+}
+
 static SizeLimits getSizeLimitsForSet(const Settings & settings)
 {
     return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
@@ -271,25 +316,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     if (subquery.set)
         return nullptr;
 
-    // std::cerr << StackTrace().toString() << std::endl;
-
-    // auto set_cache = context->getPreparedSetsCache();
-    // if (set_cache)
-    // {
-    //     auto from_cache = set_cache->findOrPromiseToBuild(subquery.key);
-    //     if (from_cache.index() == 0)
-    //     {
-    //         subquery.promise_to_fill_set = std::move(std::get<0>(from_cache));
-    //     }
-    //     else
-    //     {
-    //         LOG_TRACE(&Poco::Logger::get("FutureSetFromSubquery"), "Waiting for set, key: {}", subquery.key);
-    //         set = std::get<1>(from_cache).get();
-    //         return nullptr;
-    //     }
-    // }
-
-
     const auto & settings = context->getSettingsRef();
     auto size_limits = getSizeLimitsForSet(settings);
 
@@ -297,10 +323,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
 
     auto plan = subquery.detachSource();
     auto description = subquery.key;
-
-    // WriteBufferFromOwnString buf;
-    // plan->explainPlan(buf, {.header=true});
-    // std::cerr << buf.str() << std::endl;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),
@@ -313,20 +335,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     plan->addStep(std::move(creating_set));
     return plan;
 }
-
-// static SizeLimits getSizeLimitsForOrderedSet(const Settings & settings)
-// {
-//     if (settings.use_index_for_in_with_subqueries_max_values &&
-//         settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
-//         return getSizeLimitsForUnorderedSet(settings);
-
-//     return SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
-// }
-
-// SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordered_set)
-// {
-//     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
-// }
 
 FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 {
@@ -342,10 +350,8 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 
     set_key_columns.filter = ColumnUInt8::create(block.rows());
 
-    //set->initSetElements();
     set->insertFromColumns(columns, set_key_columns);
     set->finishInsert();
-    //block(std::move(block_))
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, bool transform_null_in_)
@@ -358,8 +364,6 @@ DataTypes FutureSetFromSubquery::getTypes() const
 
     return Set::getElementTypes(subquery.source->getCurrentDataStream().header.getColumnsWithTypeAndName(), transform_null_in);
 }
-
-FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
@@ -377,31 +381,5 @@ SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 
     return set;
 }
-
-std::unique_ptr<QueryPlan> FutureSetFromTuple::build(const ContextPtr &)
-{
-    // const auto & settings = context->getSettingsRef();
-    // auto size_limits = getSizeLimitsForSet(settings, false);
-    // fill(size_limits, settings.transform_null_in, false);
-    return nullptr;
-}
-
-// void FutureSetFromTuple::buildForTuple(SizeLimits size_limits, bool transform_null_in)
-// {
-//     fill(size_limits, transform_null_in, false);
-// }
-
-// void FutureSetFromTuple::fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set)
-// {
-//     //std::cerr << StackTrace().toString() << std::endl;
-
-//     if (set)
-//         return;
-
-//     set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
-//     set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-//     set->insertFromBlock(block.getColumnsWithTypeAndName());
-//     set->finishInsert();
-// }
 
 };

@@ -16,6 +16,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
