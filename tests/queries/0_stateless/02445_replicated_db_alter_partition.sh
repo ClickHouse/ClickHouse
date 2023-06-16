@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT -q "alter table $db.mt drop partition id 'all', update n = 2 
 $CLICKHOUSE_CLIENT -q "alter table $db.rmt drop partition id 'all', update n = 2 where 1" 2>&1| grep -Eo "not allowed to execute ALTERs of different types" | head -1
 
 $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=3 -q "alter table $db.mt update n=2 where n=1" 2>&1| grep -Eo "TIMEOUT_EXCEEDED" | head -1
-$CLICKHOUSE_CLIENT -q "alter table $db.rmt update n=2 where n=1"
+$CLICKHOUSE_CLIENT -q "alter table $db.rmt update n=2 where n=1 settings mutations_sync=1"
 
 $CLICKHOUSE_CLIENT -q "select 1, * from $db.rmt order by n"
 
