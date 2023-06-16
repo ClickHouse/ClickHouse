@@ -460,7 +460,7 @@ private:
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        ColumnPtr const_column,
+        ColumnPtr constant_column,
         ColumnPtr & out_column,
         DataTypePtr & out_type,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;

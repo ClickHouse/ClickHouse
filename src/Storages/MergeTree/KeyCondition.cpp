@@ -985,7 +985,7 @@ static bool collectFunctions(const String & expr_name, const ActionsDAG::Node * 
 
 
 std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyMonotonicFunctionsChainToColumn(
-    const std::vector<const ActionsDAG::Node *> functions, ColumnPtr column, DataTypePtr data_type, ContextPtr context)
+    const std::vector<const ActionsDAG::Node *> functions, ColumnPtr in_column, DataTypePtr in_type, ContextPtr context)
 {
     /** When table's key has expression with these functions from a column,
     * and when a column in a query is compared with a constant, such as:
@@ -1007,10 +1007,8 @@ std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyMonotonicFunctionsChainToCo
         "parseDateTimeInJodaSyntax",
     };
 
-    for (auto it = functions.begin(); it != functions.end(); ++it)
+    for (const auto & func : functions)
     {
-        const auto * func = *it;
-
         if (func->type != ActionsDAG::ActionType::FUNCTION)
             continue;
 
@@ -1030,8 +1028,8 @@ std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyMonotonicFunctionsChainToCo
 
         if (func->children.size() == 1)
         {
-            std::tie(column, data_type)
-                = applyFunctionForColumnOfUnknownType(func_base, data_type, column);
+            std::tie(in_column, in_type)
+                = applyFunctionForColumnOfUnknownType(func_base, in_type, in_column);
         }
         else if (func->children.size() == 2)
         {
@@ -1040,27 +1038,27 @@ std::pair<ColumnPtr, DataTypePtr> KeyCondition::applyMonotonicFunctionsChainToCo
             if (left->column && isColumnConst(*left->column))
             {
                 auto left_arg_type = left->result_type;
-                std::tie(column, data_type) = applyBinaryFunctionForColumnOfUnknownType(
+                std::tie(in_column, in_type) = applyBinaryFunctionForColumnOfUnknownType(
                     FunctionFactory::instance().get(func_base->getName(), context),
-                    left_arg_type, left->column, data_type, column);
+                    left_arg_type, left->column, in_type, in_column);
             }
             else
             {
                 auto right_arg_type = right->result_type;
-                std::tie(column, data_type) = applyBinaryFunctionForColumnOfUnknownType(
+                std::tie(in_column, in_type) = applyBinaryFunctionForColumnOfUnknownType(
                     FunctionFactory::instance().get(func_base->getName(), context),
-                    data_type, column, right_arg_type, right->column);
+                    in_type, in_column, right_arg_type, right->column);
             }
         }
 
-        for (size_t i = 0; i < column->size(); ++i)
+        for (size_t i = 0; i < in_column->size(); ++i)
         {
-            if (column->isNullAt(i)) /// Apply function fail
+            if (in_column->isNullAt(i)) /// Apply function fail
                 return {nullptr, nullptr};
         }
     }
 
-    return {column, data_type};
+    return {in_column, in_type};
 }
 
 /** The key functional expression constraint may be inferred from a plain column in the expression.
