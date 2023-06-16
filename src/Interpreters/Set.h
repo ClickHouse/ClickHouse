@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -7,7 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -17,9 +18,8 @@ struct Range;
 
 class Context;
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-class Chunk;
 
 /** Data structure for implementation of IN expression.
   */
@@ -45,16 +45,11 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
-
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
-    /// finishInsert and isCreated are thread-safe
-    bool isCreated() const { return is_created.load(); }
-
-    void checkIsCreated() const;
+    bool isCreated() const { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -69,7 +64,7 @@ public:
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
-    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
+    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -116,7 +111,7 @@ private:
     bool transform_null_in;
 
     /// Check if set contains all the data.
-    std::atomic<bool> is_created = false;
+    bool is_created = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
@@ -132,7 +127,7 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable SharedMutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     template <typename Method>
     void insertFromBlockImpl(

@@ -18,19 +18,19 @@ namespace ErrorCodes
 inline void assertNoParameters(const std::string & name, const Array & parameters)
 {
     if (!parameters.empty())
-        throw Exception(ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS, "Aggregate function {} cannot have parameters", name);
+        throw Exception("Aggregate function " + name + " cannot have parameters", ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);
 }
 
 inline void assertUnary(const std::string & name, const DataTypes & argument_types)
 {
     if (argument_types.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires single argument", name);
+        throw Exception("Aggregate function " + name + " requires single argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 inline void assertBinary(const std::string & name, const DataTypes & argument_types)
 {
     if (argument_types.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two arguments", name);
+        throw Exception("Aggregate function " + name + " requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 template<std::size_t maximal_arity>
@@ -40,14 +40,15 @@ inline void assertArityAtMost(const std::string & name, const DataTypes & argume
         return;
 
     if constexpr (maximal_arity == 0)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} cannot have arguments", name);
+        throw Exception("Aggregate function " + name + " cannot have arguments",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if constexpr (maximal_arity == 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one argument",
-                        name);
+        throw Exception("Aggregate function " + name + " requires zero or one argument",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at most {} arguments",
-                    name, maximal_arity);
+    throw Exception("Aggregate function " + name + " requires at most " + toString(maximal_arity) + " arguments",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 }

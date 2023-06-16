@@ -119,7 +119,7 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
         if (values[i].isNull())
             continue;
 
-        UInt128 hash = PathInData::getPartsHash(paths[i].begin(), paths[i].end());
+        UInt128 hash = PathInData::getPartsHash(paths[i]);
         if (auto * found = ctx.arrays_by_path.find(hash))
         {
             auto & path_array = found->getMapped().second;
@@ -128,11 +128,11 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
             /// If current element of array is part of Nested,
             /// collect its size or check it if the size of
             /// the Nested has been already collected.
-            auto nested_hash = getHashOfNestedPath(paths[i], values[i]);
-            if (nested_hash)
+            auto nested_key = getNameOfNested(paths[i], values[i]);
+            if (!nested_key.empty())
             {
-                size_t array_size = values[i].template get<const Array &>().size();
-                auto & current_nested_sizes = ctx.nested_sizes_by_path[*nested_hash];
+                size_t array_size = get<const Array &>(values[i]).size();
+                auto & current_nested_sizes = ctx.nested_sizes_by_key[nested_key];
 
                 if (current_nested_sizes.size() == ctx.current_size)
                     current_nested_sizes.push_back(array_size);
@@ -151,11 +151,11 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
             path_array.reserve(ctx.total_size);
             path_array.resize(ctx.current_size);
 
-            auto nested_hash = getHashOfNestedPath(paths[i], values[i]);
-            if (nested_hash)
+            auto nested_key = getNameOfNested(paths[i], values[i]);
+            if (!nested_key.empty())
             {
-                size_t array_size = values[i].template get<const Array &>().size();
-                auto & current_nested_sizes = ctx.nested_sizes_by_path[*nested_hash];
+                size_t array_size = get<const Array &>(values[i]).size();
+                auto & current_nested_sizes = ctx.nested_sizes_by_key[nested_key];
 
                 if (current_nested_sizes.empty())
                 {
@@ -217,11 +217,11 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
         return false;
 
     /// Last element is not Null, because otherwise this path wouldn't exist.
-    auto hash = getHashOfNestedPath(path, array.back());
-    if (!hash)
+    auto nested_key = getNameOfNested(path, array.back());
+    if (nested_key.empty())
         return false;
 
-    auto * mapped = ctx.nested_sizes_by_path.find(*hash);
+    auto * mapped = ctx.nested_sizes_by_key.find(nested_key);
     if (!mapped)
         return false;
 
@@ -251,21 +251,21 @@ Field JSONDataParser<ParserImpl>::getValueAsField(const Element & element)
 }
 
 template <typename ParserImpl>
-std::optional<UInt128> JSONDataParser<ParserImpl>::getHashOfNestedPath(const PathInData::Parts & path, const Field & value)
+StringRef JSONDataParser<ParserImpl>::getNameOfNested(const PathInData::Parts & path, const Field & value)
 {
     if (value.getType() != Field::Types::Array || path.empty())
         return {};
 
-    /// Find first key that is marked as nested and return hash of its path.
-    /// It's needed because we may have tuple of Nested and there could be
+    /// Find first key that is marked as nested,
+    /// because we may have tuple of Nested and there could be
     /// several arrays with the same prefix, but with independent sizes.
     /// Consider we have array element with type `k2 Tuple(k3 Nested(...), k5 Nested(...))`
     /// Then subcolumns `k2.k3` and `k2.k5` may have indepented sizes and we should extract
     /// `k3` and `k5` keys instead of `k2`.
 
-    for (size_t i = 0; i != path.size(); ++i)
-        if (path[i].is_nested)
-            return PathInData::getPartsHash(path.begin(), std::next(path.begin(), i + 1));
+    for (const auto & part : path)
+        if (part.is_nested)
+            return StringRef{part.key};
 
     return {};
 }

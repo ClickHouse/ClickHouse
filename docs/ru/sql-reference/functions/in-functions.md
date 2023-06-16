@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/in-functions
 sidebar_position: 60
 sidebar_label: "Функции для реализации оператора IN"
 ---
@@ -9,3 +8,4 @@ sidebar_label: "Функции для реализации оператора IN
 ## in, notIn, globalIn, globalNotIn {#in-functions}
 
 Смотрите раздел [Операторы IN](../operators/in.md#select-in-operators).
+

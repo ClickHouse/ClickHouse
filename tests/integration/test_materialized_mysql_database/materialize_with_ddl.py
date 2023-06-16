@@ -379,46 +379,6 @@ def drop_table_with_materialized_mysql_database(
         "",
     )
 
-    mysql_node.query(
-        "CREATE TABLE test_database_drop.test_table_3 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
-    )
-    mysql_node.query("INSERT INTO test_database_drop.test_table_3 VALUES(1), (2)")
-    check_query(
-        clickhouse_node,
-        "SHOW TABLES FROM test_database_drop FORMAT TSV",
-        "test_table_2\ntest_table_3\n",
-    )
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
-        "1\n2\n",
-    )
-    mysql_node.query("TRUNCATE test_database_drop.test_table_3")
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
-        "",
-    )
-
-    mysql_node.query(
-        "CREATE TABLE test_database_drop.test_table_4 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
-    )
-    mysql_node.query("INSERT INTO test_database_drop.test_table_4 VALUES(1), (2)")
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
-        "1\n2\n",
-    )
-    with mysql_node.alloc_connection() as mysql:
-        mysql.query("USE test_database_drop")
-        mysql.query("TRUNCATE test_table_4")
-
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
-        "",
-    )
-
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
 
@@ -915,22 +875,6 @@ def alter_rename_table_with_materialized_mysql_database(
         "1\n2\n3\n4\n5\n",
     )
 
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_4 RENAME test_database_rename_table.test_table_5"
-    )
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_5 RENAME TO test_database_rename_table.test_table_6"
-    )
-    mysql_node.query(
-        "ALTER TABLE test_database_rename_table.test_table_6 RENAME AS test_database_rename_table.test_table_7"
-    )
-
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_database_rename_table.test_table_7 ORDER BY id FORMAT TSV",
-        "1\n2\n3\n4\n5\n",
-    )
-
     clickhouse_node.query("DROP DATABASE test_database_rename_table")
     mysql_node.query("DROP DATABASE test_database_rename_table")
 
@@ -1050,8 +994,6 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
 
 
 def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name):
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_checksum")
-    mysql_node.query("DROP DATABASE IF EXISTS test_checksum")
     mysql_node.query("CREATE DATABASE test_checksum")
     mysql_node.query("CREATE TABLE test_checksum.t (a INT PRIMARY KEY, b varchar(200))")
     clickhouse_node.query(
@@ -1081,21 +1023,6 @@ def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name
         clickhouse_node,
         "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
         "1\t1111\n2\t2222\n3\t3333\n",
-    )
-
-    clickhouse_node.query("DROP DATABASE test_checksum")
-    mysql_node.query("SET GLOBAL binlog_checksum=NONE")
-    clickhouse_node.query(
-        "CREATE DATABASE test_checksum ENGINE = MaterializeMySQL('{}:3306', 'test_checksum', 'root', 'clickhouse')".format(
-            service_name
-        )
-    )
-    check_query(clickhouse_node, "SHOW TABLES FROM test_checksum FORMAT TSV", "t\n")
-    mysql_node.query("INSERT INTO test_checksum.t VALUES(4, '4444')")
-    check_query(
-        clickhouse_node,
-        "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
-        "1\t1111\n2\t2222\n3\t3333\n4\t4444\n",
     )
 
     clickhouse_node.query("DROP DATABASE test_checksum")
@@ -1493,9 +1420,6 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
         "1\t\U0001F984\n2\t\u2601\n",
     )
 
-    clickhouse_node.query("DROP DATABASE utf8mb4_test")
-    mysql_node.query("DROP DATABASE utf8mb4_test")
-
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS system_parts_test")
@@ -1524,9 +1448,6 @@ def system_parts_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("OPTIMIZE TABLE system_parts_test.test")
     check_active_parts(1)
 
-    clickhouse_node.query("DROP DATABASE system_parts_test")
-    mysql_node.query("DROP DATABASE system_parts_test")
-
 
 def multi_table_update_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS multi_table_update")
@@ -1552,8 +1473,6 @@ def multi_table_update_test(clickhouse_node, mysql_node, service_name):
 
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
-    clickhouse_node.query("DROP DATABASE multi_table_update")
-    mysql_node.query("DROP DATABASE multi_table_update")
 
 
 def system_tables_test(clickhouse_node, mysql_node, service_name):
@@ -1573,9 +1492,6 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
         "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'",
         "intDiv(id, 4294967)\tid\tid\n",
     )
-
-    clickhouse_node.query("DROP DATABASE system_tables_test")
-    mysql_node.query("DROP DATABASE system_tables_test")
 
 
 def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_name):
@@ -2043,18 +1959,6 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
         )
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
-    # Check empty table overrides
-    clickhouse_node.query(
-        f"""
-        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
-        TABLE OVERRIDE t1 ()
-    """
-    )
-    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
-    show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
-    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
-
-    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
 
 
@@ -2143,7 +2047,7 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
     # increment synchronization check
     check_query(
         clickhouse_node,
-        "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 ORDER BY v1 FORMAT TSV",
+        "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
         "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786"
         + "\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n"
         + "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786"
@@ -2247,92 +2151,3 @@ def materialized_database_mysql_date_type_to_date32(
         "SELECT b from test_database.a order by a FORMAT TSV",
         "1970-01-01\n1971-02-16\n2101-05-16\n2022-02-16\n" + "2104-06-06\n",
     )
-
-
-def savepoint(clickhouse_node, mysql_node, mysql_host):
-    db = "savepoint"
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY)")
-    clickhouse_node.query(
-        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
-    )
-    mysql_node.query("BEGIN")
-    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
-    mysql_node.query("SAVEPOINT savepoint_1")
-    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
-    mysql_node.query("ROLLBACK TO savepoint_1")
-    mysql_node.query("COMMIT")
-
-
-def dropddl(clickhouse_node, mysql_node, mysql_host):
-    db = "dropddl"
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    mysql_node.query(f"CREATE TABLE {db}.t1 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t2 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t3 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE TABLE {db}.t4 (a INT PRIMARY KEY, b INT)")
-    mysql_node.query(f"CREATE VIEW {db}.v1 AS SELECT * FROM {db}.t1")
-    mysql_node.query(f"INSERT INTO {db}.t1(a, b) VALUES(1, 1)")
-
-    clickhouse_node.query(
-        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
-    )
-    check_query(
-        clickhouse_node,
-        f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
-        "4\n",
-    )
-    check_query(clickhouse_node, f"SELECT * FROM {db}.t1 FORMAT TSV", "1\t1\n")
-    mysql_node.query(f"DROP EVENT IF EXISTS {db}.event_name")
-    mysql_node.query(f"DROP VIEW IF EXISTS {db}.view_name")
-    mysql_node.query(f"DROP FUNCTION IF EXISTS {db}.function_name")
-    mysql_node.query(f"DROP TRIGGER IF EXISTS {db}.trigger_name")
-    mysql_node.query(f"DROP INDEX `PRIMARY` ON {db}.t2")
-    mysql_node.query(f"DROP TABLE {db}.t3")
-    mysql_node.query(f"DROP TABLE if EXISTS {db}.t3,{db}.t4")
-    mysql_node.query(f"TRUNCATE TABLE {db}.t1")
-    mysql_node.query(f"INSERT INTO {db}.t2(a, b) VALUES(1, 1)")
-    check_query(clickhouse_node, f"SELECT * FROM {db}.t2 FORMAT TSV", "1\t1\n")
-    check_query(clickhouse_node, f"SELECT count() FROM {db}.t1 FORMAT TSV", "0\n")
-    check_query(
-        clickhouse_node,
-        f"SELECT name FROM system.tables where database = '{db}' FORMAT TSV",
-        "t1\nt2\n",
-    )
-    mysql_node.query(f"DROP DATABASE {db}")
-    clickhouse_node.query(f"DROP DATABASE {db}")
-
-
-def named_collections(clickhouse_node, mysql_node, service_name):
-    db = "named_collections"
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    mysql_node.query(
-        f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, name VARCHAR(64), val INT)"
-    )
-    mysql_node.query(
-        f"INSERT INTO {db}.t1 (id, name, val) VALUES (1, 'a', 1), (2, 'b', 2)"
-    )
-
-    clickhouse_node.query(
-        f"""CREATE NAMED COLLECTION {db} AS
-            user = 'root',
-            password = 'clickhouse',
-            host = '{service_name}',
-            port = 3306,
-            database = '{db}'
-            """
-    )
-    clickhouse_node.query(f"CREATE DATABASE {db} ENGINE = MaterializedMySQL({db})")
-    check_query(
-        clickhouse_node,
-        f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
-        "1\ta\t1\n2\tb\t2\n",
-    )
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")

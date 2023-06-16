@@ -4,11 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-opts=(
-    "--allow_experimental_analyzer=0"
-)
-
-$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+$CLICKHOUSE_CLIENT --multiquery <<EOF
 SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
@@ -19,15 +15,14 @@ CREATE TABLE mt(a Int32) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO mt VALUES (1);
 
-CREATE WINDOW VIEW wv TO dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '5' SECOND, 'US/Samoa') AS wid;
+CREATE WINDOW VIEW wv TO dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '1' SECOND, 'US/Samoa') AS wid;
 EOF
 
-for _ in {1..100}; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
-	sleep .5
+while true; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count FROM dst"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE dst"
+$CLICKHOUSE_CLIENT --query="SELECT count FROM dst"
+$CLICKHOUSE_CLIENT --query="DROP TABLE wv"
+$CLICKHOUSE_CLIENT --query="DROP TABLE mt"
+$CLICKHOUSE_CLIENT --query="DROP TABLE dst"

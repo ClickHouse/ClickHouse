@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/ttl
 sidebar_position: 44
 sidebar_label: TTL
 ---
@@ -11,7 +10,7 @@ sidebar_label: TTL
 Вы можете изменить [TTL для таблицы](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl) запросом следующего вида:
 
 ``` sql
-ALTER TABLE [db.]table-name [ON CLUSTER cluster] MODIFY TTL ttl-expression
+ALTER TABLE table-name MODIFY TTL ttl-expression
 ```
 
 ## REMOVE TTL {#remove-ttl}
@@ -19,7 +18,7 @@ ALTER TABLE [db.]table-name [ON CLUSTER cluster] MODIFY TTL ttl-expression
 Удалить табличный TTL можно запросом следующего вида:
 
 ```sql
-ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
+ALTER TABLE table_name REMOVE TTL
 ```
 
 **Пример**

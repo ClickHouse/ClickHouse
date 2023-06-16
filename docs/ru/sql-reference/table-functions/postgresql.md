@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/postgresql
 sidebar_position: 42
 sidebar_label: postgresql
 ---
@@ -131,3 +130,5 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 -   [Движок таблиц PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
 -   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->

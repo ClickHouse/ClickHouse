@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:20.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
@@ -9,29 +9,31 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
-    && apt-get upgrade -yq \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \
         dirmngr \
-        gnupg2 \
-        wget \
+        gnupg \
         locales \
+        wget \
         tzdata \
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="23.5.2.7"
+ARG VERSION="22.8.5.29"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
-# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://..." -t ...
+# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://clickhouse-builds.s3.yandex.net/21852/069cfbff388b3d478d1a16dc7060b48073f5d522/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/" -t filimonovq/clickhouse-server:pr21852
 ARG deb_location_url=""
 
 # set non-empty single_binary_location_url to create docker image
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
+# for example (run on aarch64 server):
+# docker build . --network host --build-arg single_binary_location_url="https://builds.clickhouse.com/master/aarch64/clickhouse" -t altinity/clickhouse-server:master-testing-arm
+# note: clickhouse-odbc-bridge is not supported there.
 ARG single_binary_location_url=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
@@ -80,9 +82,6 @@ RUN arch=${TARGETARCH:-amd64} \
         /tmp/* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
-
-RUN apt-get autoremove --purge -yq libksba8 && \
-    apt-get autoremove -yq
 
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)

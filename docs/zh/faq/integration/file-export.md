@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/integration/file-export
 title: 如何从 ClickHouse 导出数据到一个文件?
 toc_hidden: true
 sidebar_position: 10

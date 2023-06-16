@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <string>
@@ -12,6 +12,7 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Interpreters/Context.h>
@@ -19,13 +20,11 @@
 namespace DB
 {
 
-class IAsynchronousReader;
-
 class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     AsynchronousReadBufferFromHDFS(
-        IAsynchronousReader & reader_,
+        AsynchronousReaderPtr reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromHDFS> impl_);
 
@@ -33,7 +32,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    void prefetch(Priority priority) override;
+    void prefetch() override;
 
     size_t getFileSize() override;
 
@@ -50,10 +49,10 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    IAsynchronousReader & reader;
-    Priority base_priority;
+    AsynchronousReaderPtr reader;
+    Int32 priority;
     std::shared_ptr<ReadBufferFromHDFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
     Memory<> prefetch_buffer;

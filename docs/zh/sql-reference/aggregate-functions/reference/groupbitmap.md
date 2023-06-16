@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/groupbitmap
 sidebar_position: 128
 ---
 

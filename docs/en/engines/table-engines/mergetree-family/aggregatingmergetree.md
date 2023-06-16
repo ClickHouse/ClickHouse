@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/aggregatingmergetree
 sidebar_position: 60
 sidebar_label:  AggregatingMergeTree
 ---
@@ -43,7 +42,7 @@ When creating an `AggregatingMergeTree` table the same [clauses](../../../engine
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+:::warning
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
@@ -68,61 +67,38 @@ In the results of `SELECT` query, the values of `AggregateFunction` type have im
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
-We will create the table `test.visits` that contain the raw data:
+`AggregatingMergeTree` materialized view that watches the `test.visits` table:
 
 ``` sql
-CREATE TABLE test.visits
- (
-    StartDate DateTime64 NOT NULL,
-    CounterID UInt64,
-    Sign Nullable(Int32),
-    UserID Nullable(Int32)
-) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
-```
-
-`AggregatingMergeTree` materialized view that watches the `test.visits` table, and use the `AggregateFunction` type:
-
-``` sql
-CREATE MATERIALIZED VIEW test.mv_visits
-(
-    StartDate DateTime64 NOT NULL,
-    CounterID UInt64,
-    Visits AggregateFunction(sum, Nullable(Int32)),
-    Users AggregateFunction(uniq, Nullable(Int32))
-)
-ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID)
+CREATE MATERIALIZED VIEW test.basic
+ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
-    StartDate,
     CounterID,
-    sumState(Sign) AS Visits,
+    StartDate,
+    sumState(Sign)    AS Visits,
     uniqState(UserID) AS Users
 FROM test.visits
-GROUP BY StartDate, CounterID;
+GROUP BY CounterID, StartDate;
 ```
 
 Inserting data into the `test.visits` table.
 
 ``` sql
-INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1667446031, 1, 3, 4)
-INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1667446031, 1, 6, 3)
+INSERT INTO test.visits ...
 ```
 
-The data is inserted in both the table and the materialized view `test.mv_visits`.
+The data are inserted in both the table and view `test.basic` that will perform the aggregation.
 
-To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
+To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the view `test.basic`:
 
 ``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
     uniqMerge(Users) AS Users
-FROM test.mv_visits
+FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-## Related Content
-
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

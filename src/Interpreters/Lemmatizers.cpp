@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NLP
 
@@ -57,17 +57,17 @@ Lemmatizers::Lemmatizers(const Poco::Util::AbstractConfiguration & config)
             const auto & lemm_path = config.getString(prefix + "." + key + ".path", "");
 
             if (lemm_name.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Lemmatizer language in config is not specified here: "
-                    "{}.{}.lang", prefix, key);
+                throw Exception("Lemmatizer language in config is not specified here: " + prefix + "." + key + ".lang",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
             if (lemm_path.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Path to lemmatizer in config is not specified here: {}.{}.path",
-                    prefix, key);
+                throw Exception("Path to lemmatizer in config is not specified here: " + prefix + "." + key + ".path",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
 
             paths[lemm_name] = lemm_path;
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'lemmatizer'",
-                prefix, key);
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'lemmatizer'",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 }
 
@@ -81,13 +81,15 @@ Lemmatizers::LemmPtr Lemmatizers::getLemmatizer(const String & name)
     if (paths.find(name) != paths.end())
     {
         if (!std::filesystem::exists(paths[name]))
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect path to lemmatizer: {}", paths[name]);
+            throw Exception("Incorrect path to lemmatizer: " + paths[name],
+                ErrorCodes::INVALID_CONFIG_PARAMETER);
 
         lemmatizers[name] = std::make_shared<Lemmatizer>(paths[name]);
         return lemmatizers[name];
     }
 
-    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Lemmatizer named: '{}' is not found", name);
+    throw Exception("Lemmatizer named: '" + name + "' is not found",
+        ErrorCodes::INVALID_CONFIG_PARAMETER);
 }
 
 }

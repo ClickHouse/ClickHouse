@@ -24,23 +24,22 @@ public:
     static DeflateQplJobHWPool & instance();
 
     qpl_job * acquireJob(UInt32 & job_id);
-    void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    static void releaseJob(UInt32 job_id);
+    static const bool & isJobPoolReady() { return job_pool_ready; }
 
 private:
-    bool tryLockJob(UInt32 index);
-    void unLockJob(UInt32 index);
+    static bool tryLockJob(UInt32 index);
+    static void unLockJob(UInt32 index);
 
-    /// size of each job objects
-    UInt32 per_job_size;
     /// Maximum jobs running in parallel supported by IAA hardware
-    UInt32 max_hw_jobs;
+    static constexpr auto MAX_HW_JOB_NUMBER = 1024;
     /// Entire buffer for storing all job objects
-    std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    /// Job pool for storing all job object pointers
+    static std::array<qpl_job *, MAX_HW_JOB_NUMBER> hw_job_ptr_pool;
     /// Locks for accessing each job object pointers
-    std::unique_ptr<std::atomic_bool[]> hw_job_ptr_locks;
-
-    bool job_pool_ready;
+    static std::array<std::atomic_bool, MAX_HW_JOB_NUMBER> hw_job_ptr_locks;
+    static bool job_pool_ready;
     std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
 };
@@ -88,7 +87,7 @@ private:
     Poco::Logger * log;
 };
 
-class CompressionCodecDeflateQpl final : public ICompressionCodec
+class CompressionCodecDeflateQpl : public ICompressionCodec
 {
 public:
     CompressionCodecDeflateQpl();

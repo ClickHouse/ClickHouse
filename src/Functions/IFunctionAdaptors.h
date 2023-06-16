@@ -51,8 +51,6 @@ public:
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
 
-    const FunctionPtr & getFunction() const { return function; }
-
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override { return function->isCompilable(getArgumentTypes()); }
@@ -90,16 +88,9 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
-    bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }
-
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return function->getMonotonicityForRange(type, left, right);
-    }
-
-    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
-    {
-        return function->getPreimage(type, point);
     }
 private:
     std::shared_ptr<IFunction> function;

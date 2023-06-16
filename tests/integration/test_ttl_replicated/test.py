@@ -4,8 +4,6 @@ import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, exec_query_with_retry
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -55,7 +53,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
 
 
 # Column TTL works only with wide parts, because it's very expensive to apply it for compact parts
@@ -247,17 +245,17 @@ def test_modify_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "2\n3\n"
 
     node2.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2"
     )
     assert node1.query("SELECT id FROM test_ttl") == "3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == ""
 
@@ -281,17 +279,17 @@ def test_modify_column_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "42\n2\n3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2"
     )
     assert node1.query("SELECT id FROM test_ttl") == "42\n42\n3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
 
@@ -344,6 +342,16 @@ def optimize_with_retry(node, table_name, retry=20):
     ],
 )
 def test_ttl_alter_delete(started_cluster, name, engine):
+    """Copyright 2019, Altinity LTD
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+        http://www.apache.org/licenses/LICENSE-2.0
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License."""
     """Check compatibility with old TTL delete expressions to make sure
     that:
     * alter modify of column's TTL delete expression works
@@ -422,8 +430,7 @@ def test_ttl_empty_parts(started_cluster):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1
-
+                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
         """.format(
                 replica=node.name
             )
@@ -448,10 +455,7 @@ def test_ttl_empty_parts(started_cluster):
 
     assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
-    # Wait for cleanup thread
-    wait_for_delete_empty_parts(node1, "test_ttl_empty_parts")
-    wait_for_delete_inactive_parts(node1, "test_ttl_empty_parts")
-
+    time.sleep(3)  # Wait for cleanup thread
     assert (
         node1.query(
             "SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name"
@@ -517,7 +521,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_delete_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -529,7 +533,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_group_by_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -541,7 +545,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_where_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )

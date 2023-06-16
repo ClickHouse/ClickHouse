@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_BROTLI
 #    include <IO/BrotliWriteBuffer.h>
@@ -78,7 +78,7 @@ void BrotliWriteBuffer::nextImpl()
 
             if (result == 0)
             {
-                throw Exception(ErrorCodes::BROTLI_WRITE_FAILED, "brotli compress failed");
+                throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
             }
         }
         while (in_available > 0);
@@ -119,7 +119,7 @@ void BrotliWriteBuffer::finalizeBefore()
 
         if (result == 0)
         {
-            throw Exception(ErrorCodes::BROTLI_WRITE_FAILED, "brotli compress failed");
+            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
 }

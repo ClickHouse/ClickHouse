@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #include "OpenSSLHelpers.h"
@@ -8,6 +8,7 @@
 
 namespace DB
 {
+#pragma GCC diagnostic warning "-Wold-style-cast"
 
 std::string encodeSHA256(std::string_view text)
 {

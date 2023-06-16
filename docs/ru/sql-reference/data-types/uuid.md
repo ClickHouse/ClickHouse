@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/uuid
 sidebar_position: 46
 sidebar_label: UUID
 ---
@@ -75,3 +74,5 @@ SELECT * FROM t_uuid
 Тип данных UUID можно использовать только с функциями, которые поддерживаются типом данных [String](string.md) (например, [min](../../sql-reference/data-types/uuid.md#agg_function-min), [max](../../sql-reference/data-types/uuid.md#agg_function-max), и [count](../../sql-reference/data-types/uuid.md#agg_function-count)).
 
 Тип данных UUID не поддерживается арифметическими операциями (например, [abs](../../sql-reference/data-types/uuid.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../../sql-reference/data-types/uuid.md#agg_function-sum) и [avg](../../sql-reference/data-types/uuid.md#agg_function-avg).
+
+[Original article](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

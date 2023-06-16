@@ -42,8 +42,12 @@
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
+#include <DataTypes/Native.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
 #endif
 
 
@@ -81,7 +85,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -108,25 +112,12 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            vectorVectorImplAVX512BW(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorVectorImplAVX512F(a, b, c);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorVectorImplAVX2(a, b, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             vectorVectorImplSSE42(a, b, c);
             return;
@@ -137,7 +128,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -157,25 +148,12 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            vectorConstantImplAVX512BW(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorConstantImplAVX512F(a, b, c);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorConstantImplAVX2(a, b, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             vectorConstantImplSSE42(a, b, c);
             return;
@@ -409,38 +387,15 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         ColumnString::Offset prev_a_offset = 0;
 
-        if (b_size == 0)
+        for (size_t i = 0; i < size; ++i)
         {
-            /*
-             * Add the fast path of string comparison if the string constant is empty
-             * and b_size is 0. If a_size is also 0, both of string a and b are empty
-             * string. There is no need to call memequalSmallAllowOverflow15() for
-             * string comparison.
-             */
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset - 1;
 
-                if (a_size == 0)
-                    c[i] = positive;
-                else
-                    c[i] = !positive;
+            c[i] = positive == memequalSmallAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_size);
 
-                prev_a_offset = a_offsets[i];
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
-
-                c[i] = positive == memequalSmallAllowOverflow15(
-                    a_data.data() + prev_a_offset, a_size,
-                    b_data.data(), b_size);
-
-                prev_a_offset = a_offsets[i];
-            }
+            prev_a_offset = a_offsets[i];
         }
     }
 
@@ -725,8 +680,9 @@ private:
                 || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
                 return res;
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
-                    col_right_untyped->getName(), getName());
+                throw Exception("Illegal column " + col_right_untyped->getName()
+                    + " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
@@ -746,8 +702,9 @@ private:
                 || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
                 return res;
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
-                    col_right_untyped->getName(), getName());
+                throw Exception("Illegal column " + col_right_untyped->getName()
+                    + " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
         }
 
         return nullptr;
@@ -772,8 +729,8 @@ private:
         };
 
         if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}",
-                            getName(), col_left.type->getName(), col_right.type->getName());
+            throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
 
         return res;
     }
@@ -812,7 +769,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
         }
 
         if (c1_const)
@@ -831,7 +788,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -891,8 +848,10 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
-                    c0->getName(), c1->getName(), getName());
+                throw Exception("Illegal columns "
+                    + c0->getName() + " and " + c1->getName()
+                    + " of arguments of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
 
             return c_res;
         }
@@ -958,10 +917,10 @@ private:
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented.");
+            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot compare tuples of different sizes.");
+            throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -1010,7 +969,7 @@ private:
             size_t input_rows_count) const
     {
         if (0 == tuple_size)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented.");
+            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
         ColumnsWithTypeAndName convolution_columns(tuple_size);
         ColumnsWithTypeAndName tmp_columns(2);
@@ -1172,8 +1131,6 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isIPv4() && right.isIPv4())
-            || (left.isIPv6() && right.isIPv6())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
@@ -1184,8 +1141,8 @@ public:
             }
             catch (const Exception &)
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
+                throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
+                    " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
         }
 
@@ -1230,11 +1187,8 @@ public:
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
-        if (left_type->equals(*right_type) &&
-            !left_type->isNullable() &&
-            !isTuple(left_type) &&
-            !WhichDataType(left_type).isFloat() &&
-            col_left_untyped == col_right_untyped)
+        /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
+        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
             ColumnPtr result_column;
 
@@ -1268,15 +1222,6 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
-        const bool left_is_ipv6 = which_left.isIPv6();
-        const bool right_is_ipv6 = which_right.isIPv6();
-        const bool left_is_fixed_string = which_left.isFixedString();
-        const bool right_is_fixed_string = which_right.isFixedString();
-        size_t fixed_string_size =
-            left_is_fixed_string ?
-                assert_cast<const DataTypeFixedString &>(*left_type).getN() :
-                (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
-
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1297,8 +1242,9 @@ public:
                 || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    col_left_untyped->getName(), getName());
+                throw Exception("Illegal column " + col_left_untyped->getName()
+                    + " of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
 
             return res;
         }
@@ -1318,17 +1264,6 @@ public:
         {
             return res;
         }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
-        {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
-            ColumnPtr left_column = left_is_ipv6 ?
-                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
-            ColumnPtr right_column = right_is_ipv6 ?
-                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
-
-            return executeGenericIdenticalTypes(left_column.get(), right_column.get());
-        }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
@@ -1343,8 +1278,9 @@ public:
             {
                 /// Check does another data type is comparable to Decimal, includes Int and Float.
                 if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
-                        getName(), left_type->getName(), right_type->getName());
+                    throw Exception(
+                        "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 /// When Decimal comparing to Float32/64, we convert both of them into Float64.
                 /// Other systems like MySQL and Spark also do as this.
                 if (left_is_float || right_is_float)
@@ -1370,7 +1306,7 @@ public:
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}))))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
+                throw Exception("Date related common types can only be UInt32/UInt64/Int32/Decimal", ErrorCodes::LOGICAL_ERROR);
             return res;
         }
         else if (left_type->equals(*right_type))

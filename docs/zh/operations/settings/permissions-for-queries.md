@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: "\u67E5\u8BE2\u6743\u9650"
 ---
@@ -55,3 +54,5 @@ ClickHouse中的查询可以分为几种类型:
 如果对当前会话 `allow_ddl = 0` ，你就不能执行 `SET allow_ddl = 1` 。
 
 默认值：1
+
+[原始文章](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

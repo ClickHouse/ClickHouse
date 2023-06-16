@@ -44,9 +44,9 @@ void MySQLPacketPayloadWriteBuffer::setWorkingBuffer()
 
 void MySQLPacketPayloadWriteBuffer::nextImpl()
 {
-    size_t written = pos - working_buffer.begin();
+    const int written = pos - working_buffer.begin();
     if (eof)
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
+        throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
     out.position() += written;
     bytes_written += written;

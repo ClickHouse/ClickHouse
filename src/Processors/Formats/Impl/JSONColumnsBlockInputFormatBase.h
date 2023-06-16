@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -61,7 +60,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    Block::NameMap name_to_index;
+    std::unordered_map<String, size_t> name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
@@ -77,36 +76,18 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
-
-    bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & ctx) override;
-
-    void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
-    {
-        max_rows_to_read = max_rows;
-        max_bytes_to_read = max_bytes;
-    }
-
-    size_t getNumRowsRead() const override { return total_rows_read; }
-
 private:
     NamesAndTypesList readSchema() override;
 
-    /// Read whole column in the block (up to max_rows rows) and extract the data type.
-    DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows);
+    /// Read whole column in the block (up to max_rows_to_read rows) and extract the data type.
+    DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
+
+    /// Choose result type for column from two inferred types from different rows.
+    void chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const;
 
     const FormatSettings format_settings;
-    String hints_str;
-    std::unordered_map<String, DataTypePtr> hints;
-    String hints_parsing_error;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;
-    JSONInferenceInfo inference_info;
-
-    size_t total_rows_read = 0;
-    size_t max_rows_to_read;
-    size_t max_bytes_to_read;
 };
 
 }

@@ -1,4 +1,0 @@
-SELECT (1, 2, 3)
-SELECT (1, 2, 3) AS x
-SELECT (1, 2, 3).1
-SELECT (tuple(1, 2, 3) AS x).1

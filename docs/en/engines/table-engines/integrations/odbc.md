@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/integrations/odbc
 sidebar_position: 2
 sidebar_label: ODBC
 ---
@@ -28,15 +27,15 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the source table structure:
 
-- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+-   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+-   `external_database` — Name of a database in an external DBMS.
+-   `external_table` — Name of a table in the `external_database`.
 
 ## Usage Example {#usage-example}
 
@@ -126,5 +125,7 @@ SELECT * FROM odbc_t
 
 ## See Also {#see-also}
 
-- [ODBC dictionaries](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table function](../../../sql-reference/table-functions/odbc.md)
+-   [ODBC external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC table function](../../../sql-reference/table-functions/odbc.md)
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/odbc/) <!--hide-->

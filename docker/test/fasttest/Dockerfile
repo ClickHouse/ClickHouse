@@ -17,7 +17,6 @@ RUN apt-get update \
         python3-termcolor \
         unixodbc \
         pv \
-        zstd \
     --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2

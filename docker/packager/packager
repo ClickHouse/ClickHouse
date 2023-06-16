@@ -112,8 +112,15 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type: str, package_type: str, sanitizer: str) -> bool:
-    return build_type == "" and package_type == "deb" and sanitizer == ""
+def is_release_build(
+    build_type: str, package_type: str, sanitizer: str, shared_libraries: bool
+) -> bool:
+    return (
+        build_type == ""
+        and package_type == "deb"
+        and sanitizer == ""
+        and not shared_libraries
+    )
 
 
 def parse_env_variables(
@@ -122,6 +129,7 @@ def parse_env_variables(
     sanitizer: str,
     package_type: str,
     cache: str,
+    shared_libraries: bool,
     s3_bucket: str,
     s3_directory: str,
     s3_rw_access: bool,
@@ -135,10 +143,8 @@ def parse_env_variables(
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
-    ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
-    AMD64_COMPAT_SUFFIX = "-amd64-compat"
 
     result = []
     result.append("OUTPUT_DIR=/output")
@@ -148,10 +154,8 @@ def parse_env_variables(
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
-    is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
@@ -167,7 +171,6 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
-        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -182,19 +185,11 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
         )
-        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_arm:
         cc = compiler[: -len(ARM_SUFFIX)]
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
         )
-        result.append("DEB_ARCH=arm64")
-    elif is_cross_arm_v80compat:
-        cc = compiler[: -len(ARM_V80COMPAT_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
-        )
-        cmake_flags.append("-DNO_ARMV81_OR_HIGHER=1")
         result.append("DEB_ARCH=arm64")
     elif is_cross_freebsd:
         cc = compiler[: -len(FREEBSD_SUFFIX)]
@@ -206,10 +201,6 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
         )
-    elif is_amd64_compat:
-        cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
-        result.append("DEB_ARCH=amd64")
-        cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
     else:
         cc = compiler
         result.append("DEB_ARCH=amd64")
@@ -217,7 +208,6 @@ def parse_env_variables(
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if package_type == "deb":
-        # NOTE: This are the env for packages/build script
         result.append("MAKE_DEB=true")
         cmake_flags.append("-DENABLE_TESTS=0")
         cmake_flags.append("-DENABLE_UTILS=0")
@@ -233,7 +223,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(build_type, package_type, sanitizer):
+        if is_release_build(build_type, package_type, sanitizer, shared_libraries):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -246,10 +236,12 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for performance tests.
+    # Create combined output archive for shared library build and for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
+    elif shared_libraries:
+        result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
@@ -297,7 +289,6 @@ def parse_env_variables(
                 result.append("CTCACHE_S3_NO_CREDENTIALS=true")
 
     if additional_pkgs:
-        # NOTE: This are the env for packages/build script
         result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
@@ -308,6 +299,15 @@ def parse_env_variables(
         result.append("ENABLE_TESTS=1")
         result.append("BINARY_OUTPUT=tests")
         cmake_flags.append("-DENABLE_TESTS=1")
+
+    if shared_libraries:
+        cmake_flags.append("-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1")
+        # We can't always build utils because it requires too much space, but
+        # we have to build them at least in some way in CI. The shared library
+        # build is probably the least heavy disk-wise.
+        cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
@@ -364,16 +364,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-16",
-            "clang-16-darwin",
-            "clang-16-darwin-aarch64",
-            "clang-16-aarch64",
-            "clang-16-aarch64-v80compat",
-            "clang-16-ppc64le",
-            "clang-16-amd64-compat",
-            "clang-16-freebsd",
+            "clang-15",  # For TSAN builds, see #39450
+            "clang-14",
+            "clang-14-darwin",
+            "clang-14-darwin-aarch64",
+            "clang-14-aarch64",
+            "clang-14-ppc64le",
+            "clang-14-freebsd",
+            "gcc-11",
         ),
-        default="clang-16",
+        default="clang-14",
         help="a compiler to use",
     )
     parser.add_argument(
@@ -382,6 +382,7 @@ def parse_args() -> argparse.Namespace:
         default="",
     )
 
+    parser.add_argument("--shared-libraries", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument(
         "--cache",
@@ -469,6 +470,7 @@ def main():
         args.sanitizer,
         args.package_type,
         args.cache,
+        args.shared_libraries,
         args.s3_bucket,
         args.s3_directory,
         args.s3_rw_access,

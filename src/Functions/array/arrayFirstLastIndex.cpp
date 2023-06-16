@@ -21,6 +21,9 @@ enum class ArrayFirstLastIndexStrategy
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -39,7 +42,7 @@ struct ArrayFirstLastIndexImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
+                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
             {
@@ -58,7 +61,7 @@ struct ArrayFirstLastIndexImpl
                         if constexpr (strategy == ArrayFirstLastIndexStrategy::First)
                             out_index[offset_index] = 1;
                         else
-                            out_index[offset_index] = static_cast<UInt32>(end_offset - start_offset);
+                            out_index[offset_index] = end_offset - start_offset;
                     }
                     else
                     {
@@ -110,7 +113,7 @@ struct ArrayFirstLastIndexImpl
                 }
             }
 
-            out_index[offset_index] = static_cast<UInt32>(result_index);
+            out_index[offset_index] = result_index;
         }
 
         return out_column;
