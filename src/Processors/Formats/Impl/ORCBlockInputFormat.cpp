@@ -71,6 +71,7 @@ Chunk ORCBlockInputFormat::generate()
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows, block_missing_values_ptr);
+    approx_bytes_read_for_chunk = file_reader->GetRawORCReader()->getStripe(stripe_current)->getDataLength();
     return res;
 }
 
