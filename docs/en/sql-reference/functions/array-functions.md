@@ -1094,7 +1094,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## arrayFold(func, arr1, …, init) {#array-fold}
+## arrayFold
 
 Returns an result of [folding](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) arrays and value `init` using function `func`.
 I.e. result of calculation `func(arr1[n], …, func(arr1[n - 1], …, func(…, func(arr1[2], …,  func(arr1[1], …, init)))))`.

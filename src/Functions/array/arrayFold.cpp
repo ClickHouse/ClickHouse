@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
 }
 
@@ -80,12 +80,12 @@ void FunctionArrayFold::getLambdaArgumentTypes(DataTypes & arguments) const
 
 DataTypePtr FunctionArrayFold::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (arguments.size() < 3) 
+    if (arguments.size() < 3)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Function {} needs at least 3 arguments; passed {}.", getName(), toString(arguments.size()));
     }
-        
+
     const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
     if (!data_type_function)
         throw Exception(
@@ -175,7 +175,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         auto size = array_offsets[i] - array_offsets[i - 1];
         array_size_vec[i] = size;
         max_array_size = std::max(max_array_size, array_size_vec[i]);
-        if (size == 0) 
+        if (size == 0)
         {
             // use accumulator as its final result, cause lambda should not be executed on empty array
             row_res[i] = arguments.back().column;
@@ -184,20 +184,20 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
 
     ColumnsWithTypeAndName columns_lambda_input;
     columns_lambda_input.reserve(arguments_count - 1);
-    
+
     for (size_t array_size = 1; array_size <= max_array_size; ++array_size)
     {
-        columns_lambda_input.clear();    
+        columns_lambda_input.clear();
 
         for (size_t column_idx = 0; column_idx < arguments_count - 2; ++column_idx)
         {
             const auto & array_element_with_type_and_name = arrays[column_idx];
             const ColumnPtr& column_array_element_ptr = array_element_with_type_and_name.column;
             MutableColumnPtr column_lambda_input = array_element_with_type_and_name.column->cloneEmpty();
-            
+
             for (size_t irow = 0; irow < rows_count; ++irow)
             {
-                if (array_size_vec[irow] >= array_size) 
+                if (array_size_vec[irow] >= array_size)
                 {
                     const size_t array_begin = array_offsets[irow - 1];
                     const size_t array_element_idx = array_begin + array_size - 1;
@@ -205,9 +205,9 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
                 }
                 else
                 {
-                    // When current array is smaller than array_size, we insert dummy data 
+                    // When current array is smaller than array_size, we insert dummy data
                     // to avoid heavy operation on array, otherwise we need to do scattor like operation.
-                    // Dummy data has no effect on result of current row, cause result 
+                    // Dummy data has no effect on result of current row, cause result
                     // of dummy data will not be added to final result.
                     column_lambda_input->insertDefault();
                 }
@@ -222,7 +222,7 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
         auto * mutable_column_function = typeid_cast<ColumnFunction *>(mutable_column_function_ptr.get());
         mutable_column_function->appendArguments(columns_lambda_input);
         auto lambda_result = mutable_column_function->reduce().column;
-        
+
         if (lambda_result->lowCardinality())
             lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
 
@@ -237,11 +237,10 @@ ColumnPtr FunctionArrayFold::executeImpl(const ColumnsWithTypeAndName & argument
             }
         }
     }
-    
+
     MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-    for (auto & row_re : row_res) {
+    for (auto & row_re : row_res)
         result->insert((*row_re.second)[0]);
-    }
     return result;
 }
 

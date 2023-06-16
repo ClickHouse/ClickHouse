@@ -1031,6 +1031,7 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
+arrayFold
 arrayIntersect
 arrayJoin
 arrayLast
