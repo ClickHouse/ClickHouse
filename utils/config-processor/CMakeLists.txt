@@ -1,2 +1,6 @@
 clickhouse_add_executable (config-processor config-processor.cpp)
-target_link_libraries(config-processor PRIVATE dbms)
+if (ENABLE_SSL)
+    target_link_libraries(config-processor PRIVATE dbms)
+else ()
+    target_link_libraries(config-processor PRIVATE clickhouse_common_config_no_zookeeper_log)
+endif ()
