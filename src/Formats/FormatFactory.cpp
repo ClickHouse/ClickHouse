@@ -71,6 +71,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
     format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
     format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
+    format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -186,6 +187,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
