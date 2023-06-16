@@ -873,10 +873,7 @@ Pipe StorageFile::read(
     auto progress_callback = context->getFileProgressCallback();
 
     if (progress_callback)
-    {
-        LOG_DEBUG(&Poco::Logger::get("StorageFile"), "Set total_bytes_to_read {}", total_bytes_to_read);
         progress_callback(FileProgress(0, total_bytes_to_read));
-    }
 
     for (size_t i = 0; i < num_streams; ++i)
     {
