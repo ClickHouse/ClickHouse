@@ -418,6 +418,7 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
+        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
