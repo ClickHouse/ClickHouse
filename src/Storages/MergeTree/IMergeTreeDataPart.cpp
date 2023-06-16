@@ -492,13 +492,17 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         if (is_temp)
         {
-            String file_name = fileName(getDataPartStorage().getPartDirectory());
+            const auto & part_directory = getDataPartStorage().getPartDirectory();
+
+            String file_name = fileName(part_directory);
 
             if (file_name.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
+            const auto part_parent_directory = directoryPath(part_directory);
+            bool is_moving_part = part_parent_directory.ends_with("moving/");
+            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
                     storage.log,
@@ -506,6 +510,11 @@ void IMergeTreeDataPart::removeIfNeeded()
                     "suspicious, keeping the part.",
                     path);
                 return;
+            }
+
+            if (is_moving_part)
+            {
+                LOG_TRACE(storage.log, "Removing unneeded moved part from {}", path);
             }
         }
 
@@ -632,7 +641,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!parent_part)
         {
             loadTTLInfos();
-            loadProjections(require_columns_checksums, check_consistency);
+            loadProjections(require_columns_checksums, check_consistency, false /* if_not_loaded */);
         }
 
         if (check_consistency)
@@ -690,13 +699,13 @@ void IMergeTreeDataPart::addProjectionPart(
     const String & projection_name,
     std::shared_ptr<IMergeTreeDataPart> && projection_part)
 {
-    /// Here should be a check that projection we are trying to add
-    /// does not exist, but unfortunately this check fails in tests.
-    /// TODO: fix.
+    if (hasProjection(projection_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection_name, name);
+
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency)
+void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -704,9 +713,18 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
         auto path = projection.name + ".proj";
         if (getDataPartStorage().exists(path))
         {
-            auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
-            part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
-            addProjectionPart(projection.name, std::move(part));
+            if (hasProjection(projection.name))
+            {
+                if (!if_not_loaded)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection.name, name);
+            }
+            else
+            {
+                auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
+                part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                addProjectionPart(projection.name, std::move(part));
+            }
         }
     }
 }
