@@ -30,6 +30,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -362,9 +363,10 @@ HDFSSource::HDFSSource(
 bool HDFSSource::initialize()
 {
     bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;
+    StorageHDFS::PathWithInfo path_with_info;
     while (true)
     {
-        auto path_with_info = (*file_iterator)();
+        path_with_info = (*file_iterator)();
         if (path_with_info.path.empty())
             return false;
 
@@ -385,7 +387,17 @@ bool HDFSSource::initialize()
         }
     }
 
-    auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    current_path = path_with_info.path;
+
+    if (path_with_info.info && path_with_info.info->size)
+    {
+        /// Adjust total_rows_approx_accumulated with new total size.
+        if (total_files_size)
+            total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + path_with_info.info->size) / total_files_size * total_rows_approx_accumulated));
+        total_files_size += path_with_info.info->size;
+    }
+
+    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -422,6 +434,14 @@ Chunk HDFSSource::generate()
         {
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
+
+            if (num_rows && total_files_size)
+            {
+                size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                if (!chunk_size)
+                    chunk_size = chunk.bytes();
+                updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+            }
 
             for (const auto & virtual_column : requested_virtual_columns)
             {
