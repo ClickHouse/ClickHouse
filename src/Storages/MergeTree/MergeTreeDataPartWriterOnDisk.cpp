@@ -347,7 +347,10 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
 
         if (compress_primary_key)
+        {
             index_source_hashing_stream->finalize();
+            index_compressor_stream->finalize();
+        }
 
         index_file_hashing_stream->finalize();
 
