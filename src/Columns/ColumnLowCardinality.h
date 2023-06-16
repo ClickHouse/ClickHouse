@@ -338,7 +338,7 @@ private:
         explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
-        const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
+        const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
         WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
         const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
