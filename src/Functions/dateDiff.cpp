@@ -373,6 +373,10 @@ public:
             impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "second" || unit == "ss" || unit == "s")
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "millisecond" || unit == "ms")
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<1000>>(x, y, timezone_x, timezone_y, res->getData());
+         else if (unit == "microsecond" || unit == "us" || unit == "u")
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<1000000>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);

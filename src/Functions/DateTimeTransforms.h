@@ -1377,6 +1377,35 @@ struct ToRelativeSecondNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+template <Int64 second_divider>
+struct ToRelativeSubsecondNumImpl
+{
+    static constexpr auto name = "toRelativeSubsecondNumImpl";
+
+    static inline UInt64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
+    {
+        if (scale == second_divider)
+            return t.value;
+        if (scale > second_divider)
+            return t.value / (scale / second_divider);
+        return t.value * (second_divider / scale);
+    }
+    static inline UInt64 execute(UInt32 t, const DateLUTImpl &)
+    {
+        return t * second_divider;
+    }
+    static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) * second_divider;
+    }
+    static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt64>(time_zone.fromDayNum(DayNum(d)) * second_divider);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToYYYYMMImpl
 {
     static constexpr auto name = "toYYYYMM";
