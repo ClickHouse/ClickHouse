@@ -14,9 +14,9 @@ INSERT INTO cell_towers_TEST (id, name) VALUES(2, 'Tower B'),
 INSERT INTO CELL_TOWERS_TEST (id, name) VALUES(3, 'Tower C');
 
 -- Test SELECTs with different case
-SELECT * FROM cell_towers_test;
-SELECT * FROM CELL_TOWERS_TEST;
-SELECT * FROM Cell_Towers_Test;
+SELECT * FROM cell_towers_test ORDER BY id;
+SELECT * FROM CELL_TOWERS_TEST ORDER BY id;
+SELECT * FROM Cell_Towers_Test ORDER BY id;
 
 -- Test ALTERs with different case
 ALTER TABLE CELL_TOWERS_TEST ADD COLUMN location String;
@@ -24,10 +24,10 @@ INSERT INTO CELL_TOWERS_TEST (id, name, location) VALUES(3, 'Tower D', 'Location
 
 SHOW TABLES;
 
-SELECT * FROM Cell_Towers_Test;
+SELECT * FROM Cell_Towers_Test ORDER BY id;
 
 -- Test subquery with different case
-SELECT * FROM cell_towers_test WHERE id IN (SELECT id FROM CELL_TOWERS_TEST WHERE name = 'Tower D');
+SELECT * FROM cell_towers_test WHERE id IN (SELECT id FROM CELL_TOWERS_TEST WHERE name = 'Tower D') ORDER BY id;
 
 -- Test SHOW CREATE TABLE with different case
 SHOW CREATE TABLE Cell_Towers_Test;

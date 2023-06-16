@@ -1,18 +1,17 @@
-3	Tower C
-2	Tower B
 1	Tower A
 2	Tower B
 3	Tower C
 1	Tower A
-3	Tower C
 2	Tower B
+3	Tower C
 1	Tower A
-cell_towers
+2	Tower B
+3	Tower C
 cell_towers_test
 1	Tower A	
 2	Tower B	
-3	Tower C	
 3	Tower D	Location D
 3	Tower C	
 3	Tower D	Location D
+3	Tower C	
 CREATE TABLE default.Cell_Towers_Test\n(\n    `id` UInt64,\n    `name` String,\n    `location` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
