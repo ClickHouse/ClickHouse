@@ -59,6 +59,9 @@ def main():
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(IMAGES_PATH, "clickhouse/codebrowser")
+    # FIXME: the codebrowser is broken with clang-16, workaround with clang-15
+    # See https://github.com/ClickHouse/ClickHouse/issues/50077
+    docker_image.version = "49701-4dcdcf4c11b5604f1c5d3121c9c6fea3e957b605"
     s3_helper = S3Helper()
 
     result_path = temp_path / "result_path"
