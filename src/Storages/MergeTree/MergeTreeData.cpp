@@ -19,6 +19,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -99,6 +100,7 @@
 
 #include <fmt/format.h>
 #include <Poco/Logger.h>
+#include <Poco/Net/NetException.h>
 
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
@@ -601,14 +603,14 @@ namespace
 
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
-    const IndicesDescription & indices,
+    const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
     ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
     for (const auto & index : indices)
-        for (const auto & index_expr : index.expression_list_ast->children)
+        for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
@@ -640,14 +642,16 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
     return {};
 }
 
-ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
+ExpressionActionsPtr
+MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->getColumns(), getContext());
 }
 
-ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
+ExpressionActionsPtr
+MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->getColumns(), getContext());
 }
 
 
@@ -1251,6 +1255,14 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         mark_broken();
         return res;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        throw;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        throw;
     }
     catch (...)
     {
@@ -1905,7 +1917,10 @@ try
 
             ++num_loaded_parts;
             if (res.is_broken)
+            {
+                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
                 res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            }
             else if (res.part->is_duplicate)
                 res.part->remove();
             else
@@ -2001,6 +2016,21 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 
 size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
 {
+    size_t cleared_count = 0;
+
+    cleared_count += clearOldTemporaryDirectories(relative_data_path, custom_directories_lifetime_seconds, valid_prefixes);
+
+    if (allowRemoveStaleMovingParts())
+    {
+        /// Clear _all_ parts from the `moving` directory
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+    }
+
+    return cleared_count;
+}
+
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+{
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
     if (!lock.try_lock())
@@ -2018,7 +2048,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
         if (disk->isBroken())
             continue;
 
-        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(root_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
             bool start_with_valid_prefix = false;
@@ -5107,14 +5137,13 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
-
-BackupEntries MergeTreeData::backupParts(
+MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
     const ContextPtr & local_context)
 {
-    BackupEntries backup_entries;
+    MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
     ReadSettings read_settings = local_context->getBackupReadSettings();
@@ -5179,10 +5208,13 @@ BackupEntries MergeTreeData::backupParts(
                 wrapBackupEntriesWith(backup_entries_from_part, storage_and_part);
         }
 
-        insertAtEnd(backup_entries, std::move(backup_entries_from_part));
+        auto & part_backup_entries = res.emplace_back();
+        part_backup_entries.part_name = part->name;
+        part_backup_entries.part_checksum = part->checksums.getTotalChecksumUInt128();
+        part_backup_entries.backup_entries = std::move(backup_entries_from_part);
     }
 
-    return backup_entries;
+    return res;
 }
 
 void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -7841,7 +7873,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
     for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
-        MutableDataPartPtr cloned_part;
+        MergeTreePartsMover::TemporaryClonedPart cloned_part;
         ProfileEventsScope profile_events_scope;
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
@@ -7851,7 +7883,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 execution_status,
                 stopwatch.elapsed(),
                 moving_part.part->name,
-                cloned_part,
+                cloned_part.part,
                 {moving_part.part},
                 nullptr,
                 profile_events_scope.getSnapshot());
@@ -7927,9 +7959,6 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
         catch (...)
         {
             write_part_log(ExecutionStatus::fromCurrentException("", true));
-            if (cloned_part)
-                cloned_part->remove();
-
             throw;
         }
     }
@@ -8442,6 +8471,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     new_data_part_storage->precommitTransaction();
     return new_data_part;
+}
+
+bool MergeTreeData::allowRemoveStaleMovingParts() const
+{
+    return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts");
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
