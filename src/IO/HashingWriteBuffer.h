@@ -85,7 +85,6 @@ public:
     uint128 getHash()
     {
         next();
-        chassert(finalized);
         return IHashingBuffer<WriteBuffer>::getHash();
     }
 };
