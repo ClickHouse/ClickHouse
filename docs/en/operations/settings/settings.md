@@ -4205,9 +4205,18 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## session_timezone {#session_timezone}
 
-If specified, sets an implicit timezone (instead of [server default](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
-All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
-A value of `''` (empty string) configures the session timezone to the server default timezone.
+Sets the implicit time zone of the current session or query.
+The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone. 
+The setting takes precedence over the globally configured (server-level) implicit time zone.
+A value of '' (empty string) means that the implicit time zone of session or query is equal to the [server default time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+
+You can use functions `timeZone()` and `serverTimezone()` to get the session default and server time zones respectively.
+
+Possible values:
+
+-    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+
+Default value: `''`.
 
 Examples:
 
@@ -4223,6 +4232,7 @@ SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirs
 Asia/Novosibirsk	Europe/Berlin
 ```
 
+Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
 ```sql
 SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
 
@@ -4230,7 +4240,8 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 ```
 
 :::warning
-The way this setting affects parsing of Date or DateTime types may seem non-obvious, see example and explanation below:
+Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors. 
+See the following example and explanation.
 :::
 
 ```sql
@@ -4246,14 +4257,9 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 ```
 
 This happens due to different parsing pipelines:
-  - `toDateTime('2000-01-01 00:00:00')` creates a new DateTime in a usual way, and thus `session_timezone` setting from query context is applied.
-  - `2000-01-01 00:00:00` is parsed to a DateTime inheriting type of `d` column, including its time zone, and `session_timezone` has no impact on this value.
 
-Possible values:
-
--    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
-
-Default value: `''`.
+- `toDateTime()` without explicitly given timezone used in the first `SELECT` query honors setting `session_timezone` and the global timezone.
+- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global timezone are not honored.
 
 **See also**
 
