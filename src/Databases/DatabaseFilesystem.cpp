@@ -31,21 +31,22 @@ namespace ErrorCodes
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
-    fs::path user_files_path;
-    const auto & application_type = context_->getApplicationType();
-
-    if (application_type != Context::ApplicationType::LOCAL)
-        user_files_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
+    bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
+    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
 
     if (fs::path(path).is_relative())
+    {
         path = user_files_path / path;
-    else if (application_type != Context::ApplicationType::LOCAL && !pathStartsWith(fs::path(path), user_files_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path ({})", user_files_path.string());
+    }
+    else if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Path must be inside user-files path: {}", user_files_path.string());
+    }
 
-    path = fs::absolute(path).lexically_normal().string();
-
+    path = fs::absolute(path).lexically_normal();
     if (!fs::exists(path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist ({})", path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
@@ -62,19 +63,17 @@ void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr tab
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name,
-            getDatabaseName(),
-            getEngineName());
+            table_name, getDatabaseName(), getEngineName());
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
 {
-    // If run in Local mode, no need for path checking.
-    bool need_check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    std::string user_files_path = fs::canonical(fs::path(context_->getUserFilesPath())).string();
+    /// If run in Local mode, no need for path checking.
+    bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
+    const auto & user_files_path = context_->getUserFilesPath();
 
-    // Check access for file before checking its existence
-    if (need_check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
+    /// Check access for file before checking its existence.
+    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_path);
@@ -82,11 +81,20 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
             return false;
     }
 
-    // Check if the corresponding file exists
-    if (!fs::exists(table_path) || !fs::is_regular_file(table_path))
+    /// Check if the corresponding file exists.
+    if (!fs::exists(table_path))
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist ({})", table_path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
+        else
+            return false;
+    }
+
+    if (!fs::is_regular_file(table_path))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
+                            "File is directory, but expected a file: {}", table_path);
         else
             return false;
     }
@@ -104,7 +112,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
             table = it->second;
     }
 
-    // invalidate cache if file no longer exists
+    /// Invalidate cache if file no longer exists.
     if (table && !fs::exists(getTablePath(name)))
     {
         std::lock_guard lock(mutex);
@@ -120,29 +128,26 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
     if (tryGetTableFromCache(name))
         return true;
 
-    fs::path table_file_path(getTablePath(name));
-
-    return checkTableFilePath(table_file_path, context_, false);
+    return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */false);
 }
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_) const
 {
-    // Check if table exists in loaded tables map
+    /// Check if table exists in loaded tables map.
     if (auto table = tryGetTableFromCache(name))
         return table;
 
     auto table_path = getTablePath(name);
+    checkTableFilePath(table_path, context_, /* throw_on_error */true);
 
-    checkTableFilePath(table_path, context_, true);
-
-    // If the file exists, create a new table using TableFunctionFile and return it.
+    /// If the file exists, create a new table using TableFunctionFile and return it.
     auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
         return nullptr;
 
-    // TableFunctionFile throws exceptions, if table cannot be created
+    /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
         addTable(name, table_storage);
@@ -152,10 +157,12 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
 
 StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_) const
 {
-    // rethrow all exceptions from TableFunctionFile to show correct error to user
+    /// getTableImpl can throw exceptions, do not catch them to show correct error to user.
     if (auto storage = getTableImpl(name, context_))
         return storage;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
+
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                    backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
 StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
@@ -166,15 +173,14 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
     }
     catch (const Exception & e)
     {
-        // Ignore exceptions thrown by TableFunctionFile, which indicate that there is no table
-        // see tests/02722_database_filesystem.sh for more details
-        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+        /// Ignore exceptions thrown by TableFunctionFile, which indicate that there is no table
+        /// see tests/02722_database_filesystem.sh for more details.
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS
+            || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED
+            || e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        {
             return nullptr;
-        if (e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
-            return nullptr;
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            return nullptr;
-
+        }
         throw;
     }
 }
@@ -187,10 +193,10 @@ bool DatabaseFilesystem::empty() const
 
 ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
 {
-    auto settings = getContext()->getSettingsRef();
-    ParserCreateQuery parser;
-
+    const auto & settings = getContext()->getSettingsRef();
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
+
+    ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -238,4 +244,4 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-} // DB
+}

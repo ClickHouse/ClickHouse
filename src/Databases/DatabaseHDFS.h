@@ -16,9 +16,10 @@ namespace DB
 class Context;
 
 /**
-  * DatabaseHDFS allows to interact with files stored on the file system
-  * Uses TableFunctionHDFS to implicitly load file when a user requests the table, and provides read-only access to the data in the file
-  * Tables are cached inside the database for quick access
+  * DatabaseHDFS allows to interact with files stored on the file system.
+  * Uses TableFunctionHDFS to implicitly load file when a user requests the table,
+  * and provides read-only access to the data in the file.
+  * Tables are cached inside the database for quick access.
   */
 class DatabaseHDFS : public IDatabase, protected WithContext
 {
@@ -33,8 +34,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    // Contains only temporary tables
-    bool shouldBeEmptyOnDetach() const override { return false; }
+    bool shouldBeEmptyOnDetach() const override { return false; } /// Contains only temporary tables.
 
     bool empty() const override;
 
@@ -63,6 +63,6 @@ private:
     Poco::Logger * log;
 };
 
-} // DB
+}
 
 #endif

@@ -60,15 +60,13 @@ void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_stora
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name,
-            getDatabaseName(),
-            getEngineName());
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseS3::getFullUrl(const std::string & name) const
 {
     if (!config.url_prefix.empty())
-        return (fs::path(config.url_prefix) / name).string();
+        return fs::path(config.url_prefix) / name;
 
     return name;
 }
@@ -100,7 +98,7 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    // Check if the table exists in the loaded tables map
+    /// Check if the table exists in the loaded tables map.
     {
         std::lock_guard lock(mutex);
         auto it = loaded_tables.find(name);
@@ -109,12 +107,9 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     }
 
     auto url = getFullUrl(name);
+    checkUrl(url, context_, /* throw_on_error */true);
 
-    checkUrl(url, context_, true);
-
-    // call TableFunctionS3
     auto function = std::make_shared<ASTFunction>();
-
     function->name = "s3";
     function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
@@ -134,7 +129,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     if (!table_function)
         return nullptr;
 
-    // TableFunctionS3 throws exceptions, if table cannot be created
+    /// TableFunctionS3 throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(function, context_, name);
     if (table_storage)
         addTable(name, table_storage);
@@ -144,10 +139,12 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
 
 StoragePtr DatabaseS3::getTable(const String & name, ContextPtr context_) const
 {
-    // rethrow all exceptions from TableFunctionS3 to show correct error to user
+    /// Rethrow all exceptions from TableFunctionS3 to show correct error to user.
     if (auto storage = getTableImpl(name, context_))
         return storage;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
+
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                    backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
 StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) const
@@ -158,15 +155,14 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
     }
     catch (const Exception & e)
     {
-        // Ignore exceptions thrown by TableFunctionS3, which indicate that there is no table
-        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+        /// Ignore exceptions thrown by TableFunctionS3, which indicate that there is no table.
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS
+            || e.code() == ErrorCodes::S3_ERROR
+            || e.code() == ErrorCodes::FILE_DOESNT_EXIST
+            || e.code() == ErrorCodes::UNACCEPTABLE_URL)
+        {
             return nullptr;
-        if (e.code() == ErrorCodes::S3_ERROR)
-            return nullptr;
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            return nullptr;
-        if (e.code() == ErrorCodes::UNACCEPTABLE_URL)
-            return nullptr;
+        }
         throw;
     }
     catch (const Poco::URISyntaxException &)
@@ -183,7 +179,7 @@ bool DatabaseS3::empty() const
 
 ASTPtr DatabaseS3::getCreateDatabaseQuery() const
 {
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
     std::string creation_args;
@@ -236,8 +232,8 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         result.url_prefix = collection.getOrDefault<String>("url", "");
         result.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
 
-        auto key_id = collection.getOrDefault<std::string>("access_key_id", "");
-        auto secret_key = collection.getOrDefault<std::string>("secret_access_key", "");
+        auto key_id = collection.getOrDefault<String>("access_key_id", "");
+        auto secret_key = collection.getOrDefault<String>("secret_access_key", "");
 
         if (!key_id.empty())
             result.access_key_id = key_id;
@@ -311,6 +307,6 @@ DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const Filter
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-} // DB
+}
 
 #endif

@@ -16,9 +16,10 @@ namespace DB
 class Context;
 
 /**
-  * DatabaseS3 provides access to data stored in S3
-  * Uses TableFunctionS3 to implicitly load file when a user requests the table, and provides read-only access to the data in the file
-  * Tables are cached inside the database for quick access
+  * DatabaseS3 provides access to data stored in S3.
+  * Uses TableFunctionS3 to implicitly load file when a user requests the table,
+  * and provides read-only access to the data in the file.
+  * Tables are cached inside the database for quick access.
   */
 class DatabaseS3 : public IDatabase, protected WithContext
 {
@@ -75,6 +76,6 @@ private:
     Poco::Logger * log;
 };
 
-} // DB
+}
 
 #endif
