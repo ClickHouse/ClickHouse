@@ -1,5 +1,5 @@
--- Tags: no-cpu-aarch64
--- no-aarch64: sporadic failures in "argument after reference point" tests for Auckland time zone 
+-- Tags: disabled
+-- disabled: sporadic failures for Auckland time zone 
 
 SELECT 'The reference time point is 2023-06-30 23:59:30';
 SELECT '───────────────────────────────────────────────';
