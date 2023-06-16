@@ -26,15 +26,15 @@ public:
 
         if (DB::CurrentThread::isInitialized())
         {
-            std::string context_timezone;
+            std::string timezone_from_context;
             const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
             {
-                context_timezone = extractTimezoneFromContext(query_context);
+                timezone_from_context = extractTimezoneFromContext(query_context);
 
-                if (!context_timezone.empty())
-                    return date_lut.getImplementation(context_timezone);
+                if (!timezone_from_context.empty())
+                    return date_lut.getImplementation(timezone_from_context);
             }
 
             /// Timezone is passed in query_context, but on CH-Client we have no query context,
@@ -42,14 +42,14 @@ public:
             const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
             if (global_context)
             {
-                context_timezone = extractTimezoneFromContext(global_context);
+                timezone_from_context = extractTimezoneFromContext(global_context);
 
-                if (!context_timezone.empty())
-                    return date_lut.getImplementation(context_timezone);
+                if (!timezone_from_context.empty())
+                    return date_lut.getImplementation(timezone_from_context);
             }
 
         }
-        return *date_lut.default_impl.load(std::memory_order_acquire);
+        return serverTimezoneInstance();
     }
 
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)

@@ -59,7 +59,7 @@ timeZone()
 serverTimeZone()
 ```
 
-Синонимы: `servertimezone`, `serverTimezone`.
+Синонимы: `serverTimezone`.
 
 **Возвращаемое значение**
 

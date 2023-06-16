@@ -71,8 +71,7 @@ public:
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
-    /// Cannot make it const -- we need to modify it in ch-client to process timezone from server
-    ContextWeakPtr global_context;
+    const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
 
