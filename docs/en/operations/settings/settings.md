@@ -4210,13 +4210,13 @@ Use this setting only for backward compatibility if your use cases depend on old
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone. 
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of session or query is equal to the [server default time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server default time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
-You can use functions `timeZone()` and `serverTimezone()` to get the session default and server time zones respectively.
+You can use functions `timeZone()` and `serverTimezone()` to get the session time zone and server time zone.
 
 Possible values:
 
--    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+-    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
 
 Default value: `''`.
 
@@ -4235,6 +4235,7 @@ Asia/Novosibirsk	Europe/Berlin
 ```
 
 Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
+
 ```sql
 SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
 
@@ -4260,8 +4261,8 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 This happens due to different parsing pipelines:
 
-- `toDateTime()` without explicitly given timezone used in the first `SELECT` query honors setting `session_timezone` and the global timezone.
-- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global timezone are not honored.
+- `toDateTime()` without explicitly given time zone used in the first `SELECT` query honors setting `session_timezone` and the global time zone.
+- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global time zone are not honored.
 
 **See also**
 
