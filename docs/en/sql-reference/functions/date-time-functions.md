@@ -782,6 +782,8 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
     - `second` (possible abbreviations: `ss`, `s`)
     - `minute` (possible abbreviations: `mi`, `n`)
     - `hour` (possible abbreviations: `hh`, `h`)

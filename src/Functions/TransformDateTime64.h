@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/** Tansform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
+/** Transform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
  *
  * Depending on what overloads of Transform::execute() are available, when called with DateTime64 value,
  * invokes Transform::execute() with either:
