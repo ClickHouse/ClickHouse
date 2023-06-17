@@ -125,9 +125,10 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
             if (w->bytes_produced > diff)
             {
                 working_buffer = internal_buffer = Buffer(
-                    w->segment.data() + diff, w->segment.data() + w->bytes_produced);
+                    w->segment.data(), w->segment.data() + w->bytes_produced);
+                pos = working_buffer.begin() + diff;
                 w->bytes_consumed = w->bytes_produced;
-                current_position += w->start_offset + w->bytes_consumed;
+                current_position = w->start_offset + w->bytes_consumed;
                 addReaders();
                 return offset;
             }
