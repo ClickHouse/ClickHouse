@@ -58,11 +58,15 @@ public:
         /// (we could theoretically apply compression also to the totals and extremes but it's an obscure use case)
         const bool is_compressed;
 
+        /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             Block header_,
             const String & user_name_, bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
+
+        /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
+        Key(ASTPtr ast_, const String & user_name_);
 
         bool operator==(const Key & other) const;
         String queryStringFromAst() const;

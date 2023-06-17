@@ -733,11 +733,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     && (can_use_query_cache && settings.enable_reads_from_query_cache)
                     && res.pipeline.pulling())
                 {
-                    QueryCache::Key key(
-                        ast, /*dummy for header*/ {},
-                        context->getUserName(), /*dummy for is_shared*/ false,
-                        /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
-                        /*dummy value for is_compressed*/ false);
+                    QueryCache::Key key(ast, context->getUserName());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {

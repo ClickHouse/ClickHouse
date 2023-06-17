@@ -132,6 +132,11 @@ QueryCache::Key::Key(
 {
 }
 
+QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
+    : QueryCache::Key(ast_, {}, user_name_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+{
+}
+
 bool QueryCache::Key::operator==(const Key & other) const
 {
     return ast->getTreeHash() == other.ast->getTreeHash();
