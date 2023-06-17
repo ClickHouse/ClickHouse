@@ -734,7 +734,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     && res.pipeline.pulling())
                 {
                     QueryCache::Key key(
-                        ast, res.pipeline.getHeader(),
+                        ast, /*dummy for header*/ {},
                         context->getUserName(), /*dummy for is_shared*/ false,
                         /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
                         /*dummy value for is_compressed*/ false);
