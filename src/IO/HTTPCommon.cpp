@@ -63,7 +63,8 @@ namespace
         ~HTTPSessionAdapter() override = default;
 
     protected:
-       void reconnect() override {
+       void reconnect() override
+       {
             // First of all will try to establish connection with previous addr.
             if (!Session::getResolvedHost().empty())
             {
@@ -71,7 +72,9 @@ namespace
                 {
                     Session::reconnect();
                     return;
-                } catch(...) {
+                }
+                catch (...)
+                {
                     LOG_TRACE((&Poco::Logger::get("HTTPSessionAdapter")), "Last ip ({})  is unreachable for {}:{}. Will try another resolved address.",
                                                                            Session::getResolvedHost(), Session::getHost(), Session::getPort());
                 }
@@ -79,14 +82,17 @@ namespace
 
             const auto& endpoinds = DNSResolver::instance().resolveHostAll(Session::getHost());
 
-            for (auto it = endpoinds.begin(); ;) {
+            for (auto it = endpoinds.begin();;)
+            {
                 try {
                     Session::setResolvedHost(it->toString());
                     Session::reconnect();
                     LOG_TRACE((&Poco::Logger::get("HTTPSessionAdapter")), "Created HTTP(S) session with {}:{} ({}:{})", Session::getHost(), Session::getPort(),
                                                                            it->toString(), Session::getPort());
                     break;
-                } catch (...) {
+                }
+                catch (...)
+                {
                     Session::close();
                     if (++it == endpoinds.end())
                     {
