@@ -16,14 +16,14 @@ All available clusters are listed in the [system.clusters](../../operations/syst
 **Syntax**
 
 ``` sql
-cluster('cluster_name', db.table[, sharding_key])
-cluster('cluster_name', db, table[, sharding_key])
-clusterAllReplicas('cluster_name', db.table[, sharding_key])
-clusterAllReplicas('cluster_name', db, table[, sharding_key])
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
 **Arguments**
 
-- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers. 
+- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers, set `default` if not specify. 
 - `db.table` or `db`, `table` - Name of a database and a table.  
 - `sharding_key` - A sharding key. Optional. Needs to be specified if the cluster has more than one shard. 
 
