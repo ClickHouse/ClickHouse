@@ -338,9 +338,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(table_id.table_name, context_);
-    if (!table && exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+    StoragePtr table = nullptr;
+    try
+    {
+        table = database->getTable(table_id.table_name, context_);
+    }
+    catch (const Exception & e)
+    {
+        if (exception)
+            exception->emplace(e);
+    }
+
     if (!table)
         database = nullptr;
 
