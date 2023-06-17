@@ -84,6 +84,31 @@ class GetCommand : public IKeeperClientCommand
     String getHelpMessage() const override { return "get <path> -- Returns the node's value"; }
 };
 
+class GetStatCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "getstat"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "getstat [path] -- Returns the node's stat (default `.`)"; }
+};
+
+class FindSupperNodes : public IKeeperClientCommand
+{
+    String getName() const override { return "findsupernodes"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "findsupernodes <threshold> [path] -- Finds nodes with number of children larger than some threshold for the given path (default `.`)";
+    }
+};
+
 class RMCommand : public IKeeperClientCommand
 {
     String getName() const override { return "rm"; }

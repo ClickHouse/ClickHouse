@@ -24,8 +24,11 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
     else
         path = client->cwd;
 
-    for (const auto & child : client->zookeeper->getChildren(path))
+    auto children = client->zookeeper->getChildren(path);
+    std::sort(children.begin(), children.end());
+    for (const auto & child : children)
         std::cout << child << " ";
+
     std::cout << "\n";
 }
 
@@ -128,6 +131,80 @@ bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
 void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     std::cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+}
+
+bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String arg;
+    if (!parseKeeperPath(pos, expected, arg))
+        return true;
+
+    node->args.push_back(std::move(arg));
+    return true;
+}
+
+void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    Coordination::Stat stat;
+    String path;
+    if (!query->args.empty())
+        path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    else
+        path = client->cwd;
+
+    client->zookeeper->get(path, &stat);
+
+    std::cout << "cZxid = " << stat.czxid << "\n";
+    std::cout << "mZxid = " << stat.mzxid << "\n";
+    std::cout << "ctime = " << stat.ctime << "\n";
+    std::cout << "mtime = " << stat.mtime << "\n";
+    std::cout << "version = " << stat.version << "\n";
+    std::cout << "cversion = " << stat.cversion << "\n";
+    std::cout << "aversion = " << stat.aversion << "\n";
+    std::cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
+    std::cout << "dataLength = " << stat.dataLength << "\n";
+    std::cout << "numChildren = " << stat.numChildren << "\n";
+    std::cout << "pzxid = " << stat.pzxid << "\n";
+}
+
+bool FindSupperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    ASTPtr threshold;
+    if (!ParserUnsignedInteger{}.parse(pos, threshold, expected))
+        return false;
+
+    node->args.push_back(threshold->as<ASTLiteral &>().value);
+
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+    return true;
+}
+
+void FindSupperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto threshold = query->args[0].safeGet<UInt64>();
+    auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    if (stat.numChildren >= static_cast<Int32>(threshold))
+    {
+        std::cout << path << "\t" << stat.numChildren << "\n";
+        return;
+    }
+
+    auto children = client->zookeeper->getChildren(path);
+    std::sort(children.begin(), children.end());
+    for (auto & child : children)
+    {
+        auto next_query = *query;
+        next_query.args[1] = DB::Field(path / child);
+        FindSupperNodes{}.execute(&next_query, client);
+    }
 }
 
 bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const

@@ -177,6 +177,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
         std::make_shared<GetCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSupperNodes>(),
         std::make_shared<RMCommand>(),
         std::make_shared<RMRCommand>(),
         std::make_shared<HelpCommand>(),
