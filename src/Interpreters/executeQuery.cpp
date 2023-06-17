@@ -646,91 +646,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && !ast->as<ASTExplainQuery>();
+        const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+        bool write_into_query_cache = false;
 
         if (!async_insert)
         {
-            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
+            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
+            /// a pipeline with a source populated by the query cache.
+            auto get_result_from_query_cache = [&]()
             {
-                try
-                {
-                    if (context->isGlobalContext())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                    execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage("while starting a transaction with 'implicit_transaction'");
-                    throw;
-                }
-            }
-
-            interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
-
-            const auto & query_settings = context->getSettingsRef();
-            if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
-            {
-                if (!interpreter->supportsTransactions())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
-            }
-
-            if (!interpreter->ignoreQuota() && !quota_checked)
-            {
-                quota = context->getQuota();
-                if (quota)
-                {
-                    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-                    {
-                        quota->used(QuotaType::QUERY_SELECTS, 1);
-                    }
-                    else if (ast->as<ASTInsertQuery>())
-                    {
-                        quota->used(QuotaType::QUERY_INSERTS, 1);
-                    }
-                    quota->used(QuotaType::QUERIES, 1);
-                    quota->checkExceeded(QuotaType::ERRORS);
-                }
-            }
-
-            if (!interpreter->ignoreLimits())
-            {
-                limits.mode = LimitsMode::LIMITS_CURRENT;
-                limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-            }
-
-            if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
-            {
-                /// Save insertion table (not table function). TODO: support remote() table function.
-                auto table_id = insert_interpreter->getDatabaseTable();
-                if (!table_id.empty())
-                    context->setInsertionTable(std::move(table_id));
-
-                if (insert_data_buffer_holder)
-                    insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
-            }
-
-            {
-                std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                if (OpenTelemetry::CurrentContext().isTraceEnabled())
-                {
-                    auto * raw_interpreter_ptr = interpreter.get();
-                    String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                    span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
-                }
-
-                res = interpreter->execute();
-
-                /// If
-                /// - it is a SELECT query,
-                /// - passive (read) use of the query cache is enabled, and
-                /// - the query cache knows the query result
-                /// then replace the pipeline by a new pipeline with a single source that is populated from the query cache
-                bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
-                if (can_use_query_cache && settings.enable_reads_from_query_cache
-                    && res.pipeline.pulling())
+                if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
                     QueryCache::Key key(ast, context->getUserName());
                     QueryCache::Reader reader = query_cache->createReader(key);
@@ -739,39 +664,114 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        read_result_from_query_cache = true;
+                        return true;
                     }
                 }
+                return false;
+            };
 
-                /// If
-                /// - it is a SELECT query, and
-                /// - active (write) use of the query cache is enabled
-                /// then add a processor on top of the pipeline which stores the result in the query cache.
-                if (!read_result_from_query_cache
-                    && can_use_query_cache && settings.enable_writes_to_query_cache
-                    && res.pipeline.pulling()
-                    && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+            if (!get_result_from_query_cache())
+            {
+                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+                if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
                 {
-                    QueryCache::Key key(
-                        ast, res.pipeline.getHeader(),
-                        context->getUserName(), settings.query_cache_share_between_users,
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
-                        settings.query_cache_compress_entries);
-
-                    const size_t num_query_runs = query_cache->recordQueryRun(key);
-                    if (num_query_runs > settings.query_cache_min_query_runs)
+                    try
                     {
-                        auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
-                                         key,
-                                         std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
-                                         settings.query_cache_squash_partial_results,
-                                         settings.max_block_size,
-                                         settings.query_cache_max_size_in_bytes,
-                                         settings.query_cache_max_entries));
-                        res.pipeline.writeResultIntoQueryCache(query_cache_writer);
+                        if (context->isGlobalContext())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                        execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("while starting a transaction with 'implicit_transaction'");
+                        throw;
                     }
                 }
 
+                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+                const auto & query_settings = context->getSettingsRef();
+                if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+                {
+                    if (!interpreter->supportsTransactions())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+                }
+
+                if (!interpreter->ignoreQuota() && !quota_checked)
+                {
+                    quota = context->getQuota();
+                    if (quota)
+                    {
+                        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                        {
+                            quota->used(QuotaType::QUERY_SELECTS, 1);
+                        }
+                        else if (ast->as<ASTInsertQuery>())
+                        {
+                            quota->used(QuotaType::QUERY_INSERTS, 1);
+                        }
+                        quota->used(QuotaType::QUERIES, 1);
+                        quota->checkExceeded(QuotaType::ERRORS);
+                    }
+                }
+
+                if (!interpreter->ignoreLimits())
+                {
+                    limits.mode = LimitsMode::LIMITS_CURRENT;
+                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+                }
+
+                if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
+                {
+                    /// Save insertion table (not table function). TODO: support remote() table function.
+                    auto table_id = insert_interpreter->getDatabaseTable();
+                    if (!table_id.empty())
+                        context->setInsertionTable(std::move(table_id));
+
+                    if (insert_data_buffer_holder)
+                        insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
+                }
+
+                {
+                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    {
+                        auto * raw_interpreter_ptr = interpreter.get();
+                        String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                        span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
+                    }
+
+                    res = interpreter->execute();
+
+                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
+                    /// top of the pipeline which stores the result in the query cache.
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache
+                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+                    {
+                        QueryCache::Key key(
+                            ast, res.pipeline.getHeader(),
+                            context->getUserName(), settings.query_cache_share_between_users,
+                            std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                            settings.query_cache_compress_entries);
+
+                        const size_t num_query_runs = query_cache->recordQueryRun(key);
+                        if (num_query_runs > settings.query_cache_min_query_runs)
+                        {
+                            auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                             key,
+                                             std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                                             settings.query_cache_squash_partial_results,
+                                             settings.max_block_size,
+                                             settings.query_cache_max_size_in_bytes,
+                                             settings.query_cache_max_entries));
+                            res.pipeline.writeResultIntoQueryCache(query_cache_writer);
+                            write_into_query_cache = true;
+                        }
+                    }
+
+                }
             }
         }
 
@@ -924,10 +924,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    my_can_use_query_cache = can_use_query_cache,
-                                    query_cache = query_cache,
-                                    enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
-                                    query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
+                                    write_into_query_cache,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
                                     log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
@@ -938,14 +935,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                /// If active (write) use of the query cache is enabled and the query is eligible for result caching, then store the query
-                /// result buffered in the special-purpose cache processor (added on top of the pipeline) into the cache.
-                if (pulling_pipeline
-                    && my_can_use_query_cache && enable_writes_to_query_cache
-                    && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
-                {
+                if (write_into_query_cache)
+                    /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
+                    /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
-                }
 
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
 
