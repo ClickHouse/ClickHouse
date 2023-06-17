@@ -6,6 +6,7 @@
 #include <Common/SensitiveDataMasker.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -14,7 +15,6 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/Transforms/StreamInQueryCacheTransform.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
