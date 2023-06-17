@@ -99,7 +99,7 @@ protected:
         };
 
         /// If data left is small, shrink block size.
-        auto block_size = std::min(base_block_size, size);
+        auto block_size = std::min(base_block_size, static_cast<UInt64>(size));
 
         if (!block_size)
             return {};
@@ -225,8 +225,8 @@ Pipe StorageSystemNumbers::read(
         auto & query = query_info.query->as<ASTSelectQuery &>();
         auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
 
-        size_t query_limit = limit_length + limit_offset;
-        auto should_pushdown_limit = [query_limit, &query]()
+        auto limit_length_copy = limit_length;
+        auto should_pushdown_limit = [limit_length_copy, &query]()
         {
             /// Just ignore some minor cases, such as:
             ///     select * from system.numbers order by number asc limit 10
@@ -235,7 +235,7 @@ Pipe StorageSystemNumbers::read(
                 && !query.orderBy()
                 && !query.groupBy()
                 && !query.limitBy()
-                && (query_limit > 0 && !query.limit_with_ties);
+                && (limit_length_copy > 0 && !query.limit_with_ties);
         };
 
         /// If intersected ranges is unlimited or we can not pushdown limit.
@@ -271,6 +271,7 @@ Pipe StorageSystemNumbers::read(
             };
 
             size_t total_size = size_of_ranges(intersected_ranges);
+            size_t query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit
             if (should_pushdown_limit() && query_limit < total_size)

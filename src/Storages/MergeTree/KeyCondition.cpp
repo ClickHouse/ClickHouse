@@ -459,7 +459,7 @@ std::vector<Ranges> PlainRanges::revertRanges(const Ranges & to_invert_ranges)
     }
 
     std::vector<Ranges> reverted_ranges;
-    for (auto & range : to_invert_ranges)
+    for (const auto & range : to_invert_ranges)
     {
         if (range.isInfinite())
             /// return a blank ranges
