@@ -18,6 +18,7 @@ SELECT MIN(t2.c0)
 FROM t2
 GROUP BY log(-(t2.c0 / (t2.c0 - t2.c0)))
 HAVING (NOT (NOT (-(NOT MIN(t2.c0))))) IS NULL
+ORDER BY 1
 SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0, min_count_to_compile_expression = 0;
 
 DROP TABLE t2;
