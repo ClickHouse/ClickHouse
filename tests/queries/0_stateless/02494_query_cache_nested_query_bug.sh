@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: Messes with internal cache
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
