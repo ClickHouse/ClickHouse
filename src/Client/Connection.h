@@ -128,8 +128,6 @@ public:
         UInt64 stage,
         const Settings * settings,
         const ClientInfo * client_info,
-        bool with_pending_data,
-        std::function<void(const Progress &)>,
         const FragmentsRequest & fragment);
 
     void sendExecuteQueryPipelines(const String & query_id_);

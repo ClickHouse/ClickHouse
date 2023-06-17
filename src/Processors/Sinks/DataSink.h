@@ -23,13 +23,14 @@ public:
         Block header,
         std::vector<Channel> & channels_,
         DataPartition & partition,
+        String local_host,
         String query_id,
         Int32 fragment_id,
         Int32 exchange_id)
         : ISink(std::move(header))
         , channels(channels_)
         , output_partition(partition)
-        , request(ExchangeDataRequest{.query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
+        , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
     {
     }
 
@@ -39,6 +40,8 @@ public:
 
 protected:
     void consume(Chunk chunk) override;
+
+    void onFinish() override;
 
 private:
     std::vector<Channel> channels;

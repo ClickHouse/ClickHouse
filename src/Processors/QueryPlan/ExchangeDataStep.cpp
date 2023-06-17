@@ -11,15 +11,19 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
 {
     Pipes pipes;
 
-    auto receiver = std::make_shared<ExchangeDataReceiver>(output_stream.value(), plan_id);
-
-    pipes.emplace_back(receiver);
+    for (const auto & source : sources)
+    {
+        auto receiver = std::make_shared<ExchangeDataReceiver>(output_stream.value(), plan_id, source);
+        pipes.emplace_back(receiver);
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(storage_limits);
 
+    /// TODO if has merge sort info, add MergeSortingTransform
+    pipe.resize(1);
     pipeline.init(std::move(pipe));
 }
 

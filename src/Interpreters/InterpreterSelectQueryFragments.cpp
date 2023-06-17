@@ -854,13 +854,27 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
     sanitizeBlock(result_header, true);
 }
 
-void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
+static String formattedAST(const ASTPtr & ast)
 {
+    if (!ast)
+        return {};
+
+    WriteBufferFromOwnString buf;
+    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+    ast_format_settings.hilite = false;
+    ast_format_settings.always_quote_identifiers = true;
+    ast->format(ast_format_settings);
+    return buf.str();
+}
+
+PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
+{
+    QueryPlan query_plan;
     executeSinglePlan(query_plan, std::move(input_pipe));
 
-    const auto & fragments = executeDistributedPlan(query_plan);
+    const auto & res_fragments = executeDistributedPlan(query_plan);
 
-    Node * root = fragments.back()->getRootNode();
+    Node * root = res_fragments.back()->getRootNode();
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
     /// But if it's a projection query, plan header does not match result_header.
@@ -874,56 +888,44 @@ void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
             true);
 
         auto converting = std::make_shared<ExpressionStep>(root->step->getOutputStream(), convert_actions_dag);
-        fragments.back()->addStep(std::move(converting));
+        res_fragments.back()->addStep(std::move(converting));
     }
 
     /// Extend lifetime of context, table lock, storage.
     /// TODO every fragment need context, table lock, storage ?
-    for (auto fragment : fragments)
+    for (const auto & fragment : res_fragments)
     {
-        fragment->getQueryPlan().addInterpreterContext(context);
+        fragment->addInterpreterContext(context);
         if (table_lock)
-            fragment->getQueryPlan().addTableLock(table_lock);
+            fragment->addTableLock(table_lock);
         if (storage)
-            fragment->getQueryPlan().addStorageHolder(storage);
+            fragment->addStorageHolder(storage);
     }
 
-    /// schedule fragments
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        Coordinator coord(fragments, context);
-        coord.scheduleExecuteDistributedPlan();
-    }
-    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        for (auto fragment : fragments)
-        {
-            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
-        }
-    }
+    return res_fragments;
+}
+
+
+void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & /*query_plan*/)
+{
+    throw; // not support
 }
 
 PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPlan & query_plan)
 {
-    const PlanFragmentPtrs & fragments = createPlanFragments(*query_plan.getRootNode());
-
-    WriteBufferFromOwnString buffer;
-    fragments.back()->dump(buffer);
-    LOG_INFO(log, "Fragment dump: {}", buffer.str());
-
-    return fragments;
+    return createPlanFragments(*query_plan.getRootNode());
 }
 
 PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(Node & single_node_plan)
 {
-    PlanFragmentPtrs fragments;
-    createPlanFragments(single_node_plan, fragments);
+    PlanFragmentPtrs res_fragments;
+    createPlanFragments(single_node_plan, res_fragments);
 
-    for (UInt32 i = 0; i < fragments.size(); ++i)
+    for (UInt32 i = 0; i < res_fragments.size(); ++i)
     {
-        fragments[i]->setFragmentId(i);
+        res_fragments[i]->setFragmentId(i);
     }
-    return fragments;
+    return res_fragments;
 }
 
 /* all extends IQueryPlanStep
@@ -968,11 +970,12 @@ UnionStep (DB)
  *
  * */
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root_node, PlanFragmentPtrs & fragments)
+PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root_node, PlanFragmentPtrs & tmp_fragments)
 {
     PlanFragmentPtrs childFragments;
-    for (Node * child : root_node.children) {
-        childFragments.emplace_back(createPlanFragments(*child, fragments));
+    for (Node * child : root_node.children)
+    {
+        childFragments.emplace_back(createPlanFragments(*child, tmp_fragments));
     }
 
     PlanFragmentPtr result;
@@ -980,7 +983,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     if (dynamic_cast<ReadFromMergeTree *>(root_node.step.get()))
     {
         result = createScanFragment(root_node.step);
-        fragments.emplace_back(result);
+        tmp_fragments.emplace_back(result);
         //    } else if (root instanceof TableFunctionNode) {
         //        result = createTableFunctionFragment(root, childFragments.get(0));
         //    } else if (root instanceof HashJoinNode) {
@@ -999,7 +1002,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
         result = createAggregationFragment(childFragments[0]);
-        fragments.emplace_back(result);
+        tmp_fragments.emplace_back(result);
     }
     else if (dynamic_cast<ExpressionStep *>(root_node.step.get()) && root_node.step->getStepDescription() != "Projection")
     {
@@ -1019,7 +1022,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
 
             result = createParentFragment(childFragments[0], partition);
             result->addStep(root_node.step);
-            fragments.emplace_back(result);
+            tmp_fragments.emplace_back(result);
         }
     }
         //    } else if (root instanceof SortNode) {
@@ -1059,9 +1062,10 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
     DataPartition partition;
     partition.type = PartitionType::RANDOM;
 
-    auto fragment = std::make_shared<PlanFragment>(context, std::move(step), partition);
+    auto fragment = std::make_shared<PlanFragment>(context, partition);
+    fragment->addStep(std::move(step));
     fragment->setFragmentInPlanTree(fragment->getRootNode());
-    fragment->setCluster(context->getCluster("test_shard_localhost"));
+    fragment->setCluster(context->getCluster("test_two_shards"));
     return fragment;
 }
 
@@ -1091,11 +1095,12 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     DataPartition partition;
     if (expressions.group_by_elements_actions.empty())
     {
-        partition.type = PartitionType::RANDOM;
+        partition.type = PartitionType::UNPARTITIONED;
     }
     else
     {
-        partition.type = PartitionType::HASH_PARTITIONED;
+//        partition.type = PartitionType::HASH_PARTITIONED; TODO DataSink impl HASH_PARTITIONED
+        partition.type = PartitionType::UNPARTITIONED;
         partition.expressions = expressions.group_by_elements_actions;
     }
 
@@ -1115,34 +1120,50 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
 
 PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragmentPtr child_fragment, DataPartition & partition)
 {
-
-    std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), query_info.storage_limits);
+    std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), storage_limits);
 
 //    exchangeNode.setNumInstances(childFragment.getPlanRoot().getNumInstances());
 //    exchangeNode.init(ctx.getRootAnalyzer());
-    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, exchange_step, partition);
-
+    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
+    parent_fragment->addStep(exchange_step);
     auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
+    parent_fragment->setFragmentInPlanTree(exchange_node);
+    parent_fragment->setCluster(context->getCluster("test_two_shards"));
 
     exchange_step->setPlanID(exchange_node->plan_id);
-
-    parent_fragment->setFragmentInPlanTree(exchange_node);
-    parent_fragment->setCluster(context->getCluster("test_shard_localhost"));
-
     exchange_node->children.emplace_back(child_fragment->getRootNode());
 
     child_fragment->setDestination(exchange_node);
+    child_fragment->setOutputPartition(partition);
     return parent_fragment;
 }
 
 BlockIO InterpreterSelectQueryFragments::execute()
 {
     BlockIO res;
-    QueryPlan query_plan;
 
-    buildQueryPlan(query_plan);
+    fragments = buildFragments();
 
-    res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
+    WriteBufferFromOwnString buffer;
+    fragments.back()->dump(buffer);
+    LOG_INFO(log, "Fragment dump: {}", buffer.str());
+
+    /// schedule fragments
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        Coordinator coord(fragments, context, formattedAST(query_ptr));
+        coord.scheduleExecuteDistributedPlan();
+
+        res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
+        setQuota(res.pipeline);
+    }
+    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        for (const auto & fragment : fragments)
+        {
+            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
+        }
+    }
 
     return res;
 }

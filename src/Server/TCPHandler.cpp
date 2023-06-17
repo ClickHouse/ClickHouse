@@ -1499,7 +1499,11 @@ void TCPHandler::receiveFragments()
 {
     receiveQuery();
 
+    // read with_pending_data empty block
+//    readData();
+
     FragmentsRequest fragments_request;
+    fragments_request.query = state.query;
     fragments_request.read(*in);
     state.fragments_request.emplace(fragments_request);
 }

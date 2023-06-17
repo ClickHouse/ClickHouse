@@ -10,12 +10,14 @@ namespace DB
 
 struct ExchangeDataRequest
 {
+    String from_host;
     String query_id;
     Int32 fragment_id;
     Int32 exchange_id;
 
     void write(WriteBuffer & out) const
     {
+        writeStringBinary(from_host, out);
         writeStringBinary(query_id, out);
         writeVarInt(fragment_id, out);
         writeVarInt(exchange_id, out);
@@ -23,6 +25,7 @@ struct ExchangeDataRequest
 
     void read(ReadBuffer & in)
     {
+        readStringBinary(from_host, in);
         readStringBinary(query_id, in);
         readVarInt(fragment_id, in);
         readVarInt(exchange_id, in);

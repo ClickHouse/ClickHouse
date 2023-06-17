@@ -11,6 +11,8 @@
 namespace DB
 {
 
+using onFinishCallBack = std::function<void()>;
+
 class PipelineExecutors
 {
 public:
@@ -19,7 +21,7 @@ public:
         cleaner = std::make_unique<ThreadFromGlobalPool>(&PipelineExecutors::cleanerThread, this);
     }
 
-    void execute(QueryPipeline & pipeline);
+    void execute(QueryPipeline & pipeline, onFinishCallBack call_back);
     void cleanerThread();
 
     struct Data
@@ -29,7 +31,7 @@ public:
         std::atomic_bool is_finished = false;
         std::atomic_bool has_exception = false;
         ThreadFromGlobalPool thread;
-        Poco::Event finish_event;
+        onFinishCallBack finish_call_back;
 
         ~Data()
         {

@@ -17,7 +17,9 @@ public:
     {
         /// query has been sent
 
-        writeVarInt(fragments_request.size(), out);
+        size_t size = fragments_request.size();
+        writeVarUInt(size, out);
+
         for (const FragmentRequest & fragment_request : fragments_request)
         {
             fragment_request.write(out);
@@ -28,10 +30,11 @@ public:
     {
         /// query has been read
 
-        Int64 fragment_size;
-        readVarInt(fragment_size, in);
+        size_t fragment_size = 0;
+        readVarUInt(fragment_size, in);
+//        fragments_request.reserve(fragment_size);
 
-        for (Int64 i = 0; i < fragment_size; ++i)
+        for (size_t i = 0; i < fragment_size; ++i)
         {
             FragmentRequest request;
             request.read(in);

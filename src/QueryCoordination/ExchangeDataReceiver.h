@@ -1,9 +1,14 @@
 #pragma once
 
 #include <list>
+#include <mutex>
+#include <condition_variable>
+
 #include <Core/Block.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
@@ -11,14 +16,24 @@ namespace DB
 class ExchangeDataReceiver final : public ISource, public std::enable_shared_from_this<ExchangeDataReceiver>
 {
 public:
-    ExchangeDataReceiver(const DataStream & data_stream, UInt32 plan_id_) : ISource(data_stream.header), plan_id(plan_id_) { }
+    ExchangeDataReceiver(const DataStream & data_stream, UInt32 plan_id_, const String & source_)
+        : ISource(data_stream.header), plan_id(plan_id_), source(source_)
+    {
+        const auto & sample = getPort().getHeader();
+        for (auto & type : sample.getDataTypes())
+            if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+                add_aggregation_info = true;
+    }
 
     ~ExchangeDataReceiver() override = default;
 
-    void receive(Block & block)
+    void receive(Block block)
     {
-        // TODO lock
-        block_list.push_back(block);
+        {
+            std::unique_lock lk(mutex);
+            block_list.push_back(std::move(block));
+        }
+        cv.notify_one();
     }
 
     Status prepare() override;
@@ -38,14 +53,28 @@ public:
         return plan_id;
     }
 
+    String getSource() const
+    {
+        return source;
+    }
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() override;
 
 private:
-    std::list<Block> block_list;
+    std::condition_variable cv;
+    std::mutex mutex;
+
+    BlocksList block_list;
 
     Int32 plan_id;
+
+    String source;
+
+    bool add_aggregation_info = false;
+
+    size_t num_rows = 0;
 };
 
 }

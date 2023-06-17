@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryCoordination/PlanFragment.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/ActionsDAG.h>
@@ -130,6 +131,23 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
         plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");
     plan.addStep(std::move(filter_step));
+}
+
+void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(PlanFragment & fragment) const
+{
+    if (options.subquery_depth != 0)
+        return;
+
+    auto ast = parseAdditionalPostFilter(*context);
+    if (!ast)
+        return;
+
+    auto dag = makeAdditionalPostFilter(ast, context, fragment.getCurrentDataStream().header);
+    std::string filter_name = dag->getOutputs().back()->result_name;
+    auto filter_step = std::make_unique<FilterStep>(
+        fragment.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
+    filter_step->setStepDescription("Additional result filter");
+    fragment.addStep(std::move(filter_step));
 }
 
 void IInterpreterUnionOrSelectQuery::addStorageLimits(const StorageLimitsList & limits)

@@ -27,16 +27,17 @@ static void threadFunction(PipelineExecutors::Data & data, ThreadGroupPtr thread
     }
 
     data.is_finished = true;
-    data.finish_event.set();
 }
 
 
-void PipelineExecutors::execute(QueryPipeline & pipeline)
+void PipelineExecutors::execute(QueryPipeline & pipeline, onFinishCallBack call_back)
 {
     std::unique_ptr<Data> data = std::make_unique<Data>();
 
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+
+    data->finish_call_back = call_back;
 
     auto func = [&, data_ptr = data.get(), thread_group = CurrentThread::getGroup()]()
     {
@@ -59,6 +60,7 @@ void PipelineExecutors::cleanerThread()
             {
                 if ((*it)->is_finished)
                 {
+                    (*it)->finish_call_back();
                     it = executors.erase(it);
                 }
                 else

@@ -40,4 +40,26 @@ void DataSink::consume(Chunk chunk)
     }
 }
 
+void DataSink::onFinish()
+{
+    if (output_partition.type == PartitionType::UNPARTITIONED)
+    {
+        for (auto channel : channels)
+        {
+            if (channel.is_local)
+            {
+                FragmentMgr::getInstance().receiveData(request, Block());
+            }
+            else
+            {
+                channel.connection->sendData(Block(), "", false);
+            }
+        }
+    }
+    else if (output_partition.type == PartitionType::HASH_PARTITIONED)
+    {
+        // TODO split by key
+    }
+}
+
 }

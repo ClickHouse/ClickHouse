@@ -13,13 +13,23 @@
 namespace DB
 {
 
-using ExchangeDataReceivers = std::vector<std::shared_ptr<ExchangeDataReceiver>>;
+using ExchangeDataReceivers = std::unordered_map<String, std::shared_ptr<ExchangeDataReceiver>>;
 
 struct FragmentDistributed
 {
     PlanFragmentPtr fragment;
-    Destinations dests;
+    Destinations data_to;
+    Sources data_from;
+
+    bool is_finished = false;
+
     ExchangeDataReceivers receivers;
+
+    static String receiverKey(PlanID exchange_id, const String & source)
+    {
+        return source + "_" + toString(exchange_id);
+    }
+
 };
 
 class FragmentMgr
@@ -29,11 +39,11 @@ public:
     void addFragment(String query_id, PlanFragmentPtr fragment, ContextMutablePtr context_);
 
     // Keep fragments that need to be executed by themselves
-    void fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & self_fragment);
+    void fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & need_execute_fragments);
 
     void executeQueryPipelines(String query_id);
 
-    void receiveData(const ExchangeDataRequest & exchange_data_request, Block & block);
+    void receiveData(const ExchangeDataRequest & exchange_data_request, Block block);
 
     QueryPipeline findRootQueryPipeline(String query_id);
 
@@ -42,6 +52,8 @@ public:
         static FragmentMgr fragment_mgr;
         return fragment_mgr;
     }
+
+    void onFinish(const String & query_id, FragmentID fragment_id);
 
 private:
     FragmentMgr() = default;

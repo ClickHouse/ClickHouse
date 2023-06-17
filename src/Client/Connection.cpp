@@ -698,6 +698,7 @@ void Connection::sendExchangeData(const ExchangeDataRequest & request) const
 {
     writeVarUInt(Protocol::Client::ExchangeData, *out);
     request.write(*out);
+    out->next();
 }
 
 void Connection::sendFragments(
@@ -708,18 +709,20 @@ void Connection::sendFragments(
     UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
-    bool with_pending_data,
-    std::function<void(const Progress &)> func,
     const FragmentsRequest & fragment)
 {
-    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, with_pending_data, func, false);
+    writeVarUInt(Protocol::Client::PlanFragments, *out);
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
     fragment.write(*out);
+    sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
+    out->next();
 }
 
 void Connection::sendExecuteQueryPipelines(const String & query_id_)
 {
     writeVarUInt(Protocol::Client::PlanFragmentsBeginProcess, *out);
     writeStringBinary(query_id_, *out);
+    out->next();
 }
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)

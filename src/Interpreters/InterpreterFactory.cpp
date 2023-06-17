@@ -77,6 +77,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowEngineQuery.h>
@@ -150,6 +151,9 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
 
         if (context->getSettingsRef().allow_experimental_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
+        if (context->getSettingsRef().allow_experimental_fragment) /// not support union query yet
+            return std::make_unique<InterpreterSelectWithUnionQueryFragments>(query, context, options);
 
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
