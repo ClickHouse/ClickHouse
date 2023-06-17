@@ -598,6 +598,8 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     ColumnsWithTypeAndName result_columns;
+
+
     result_columns.reserve(outputs.size());
 
     struct Frame

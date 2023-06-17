@@ -75,6 +75,8 @@ ColumnsDescription readSchemaFromFormat(
         SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
                                                   : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
+        size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
+                                                                             : context->getSettingsRef().input_format_max_bytes_to_read_for_schema_inference;
         size_t iterations = 0;
         ColumnsDescription cached_columns;
         while (true)
@@ -120,7 +122,7 @@ ColumnsDescription readSchemaFromFormat(
             try
             {
                 schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
-                schema_reader->setMaxRowsToRead(max_rows_to_read);
+                schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                 names_and_types = schema_reader->readSchema();
                 break;
             }
@@ -132,10 +134,14 @@ ColumnsDescription readSchemaFromFormat(
                     size_t rows_read = schema_reader->getNumRowsRead();
                     assert(rows_read <= max_rows_to_read);
                     max_rows_to_read -= schema_reader->getNumRowsRead();
-                    if (rows_read != 0 && max_rows_to_read == 0)
+                    size_t bytes_read = buf->count();
+                    /// We could exceed max_bytes_to_read a bit to complete row parsing.
+                    max_bytes_to_read -= std::min(bytes_read, max_bytes_to_read);
+                    if (rows_read != 0 && (max_rows_to_read == 0 || max_bytes_to_read == 0))
                     {
-                        exception_message += "\nTo increase the maximum number of rows to read for structure determination, use setting "
-                                             "input_format_max_rows_to_read_for_schema_inference";
+                        exception_message += "\nTo increase the maximum number of rows/bytes to read for structure determination, use setting "
+                                             "input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference";
+
                         if (iterations > 1)
                         {
                             exception_messages += "\n" + exception_message;
