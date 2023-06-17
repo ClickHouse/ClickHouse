@@ -18,7 +18,7 @@ class Context;
   * Tables are cached inside the database for quick access
   *
   * Used in clickhouse-local to access local files.
-  * For clickhouse-server requires allows to access file only fron user_files directory.
+  * For clickhouse-server requires allows to access file only from user_files directory.
   */
 class DatabaseFilesystem : public IDatabase, protected WithContext
 {
