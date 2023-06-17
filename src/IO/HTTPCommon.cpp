@@ -64,6 +64,19 @@ namespace
 
     protected:
        void reconnect() override {
+            // First of all will try to establish connection with previous addr.
+            if (!Session::getResolvedHost().empty())
+            {
+                try
+                {
+                    Session::reconnect();
+                    return;
+                } catch(...) {
+                    LOG_TRACE((&Poco::Logger::get("HTTPSessionAdapter")), "Last ip ({})  is unreachable for {}:{}. Will try another resolved address.",
+                                                                           Session::getResolvedHost(), Session::getHost(), Session::getPort());
+                }
+            }
+
             const auto& endpoinds = DNSResolver::instance().resolveHostAll(Session::getHost());
 
             for (auto it = endpoinds.begin(); ;) {
@@ -77,7 +90,7 @@ namespace
                     Session::close();
                     if (++it == endpoinds.end())
                     {
-                        throw Poco::TimeoutException("Can't connect to the host. All resolved endpoints are unreachable.", Session::getHost(), Session::getPort());
+                        throw Poco::TimeoutException("Can't create HTTP(S) session with the host. All resolved endpoints are unreachable.");
                     }
                 }
             }
