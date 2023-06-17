@@ -238,7 +238,7 @@ Pipe StorageSystemNumbers::read(
                 && (limit_length_copy > 0 && !query.limit_with_ties);
         };
 
-        /// If intersected ranges is unlimited or we can not pushdown limit.
+        /// If intersected ranges is limited or we can pushdown limit.
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit())
         {
             auto size_of_range = [] (const Range & r) -> size_t

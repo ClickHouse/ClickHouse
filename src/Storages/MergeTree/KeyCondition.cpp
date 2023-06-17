@@ -165,6 +165,9 @@ void Range::shrinkToIncludedIfPossible()
 
 bool Range::intersectsRange(const Range & r) const
 {
+    if (this->isBlank() || r.isBlank())
+        return false;
+
     /// r to the left of me.
     if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
         return false;
@@ -232,7 +235,14 @@ bool Range::fullBounded() const
 /// (-inf, +inf)
 bool Range::isInfinite() const
 {
-    return left.getType() == Field::Types::Null && right.getType() == Field::Types::Null;
+    return left.isNegativeInfinity() && right.isPositiveInfinity();
+}
+
+bool Range::isBlank() const
+{
+    return !(isInfinite() ||
+            less(left, right) ||
+            (equals(left, right) && left_included && right_included));
 }
 
 Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)

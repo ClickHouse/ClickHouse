@@ -120,6 +120,8 @@ public:
     /// (-inf, +inf)
     bool isInfinite() const;
 
+    bool isBlank() const;
+
     bool intersectsRange(const Range & r) const;
     bool containsRange(const Range & r) const;
 
