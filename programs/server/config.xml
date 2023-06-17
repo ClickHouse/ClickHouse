@@ -793,6 +793,20 @@
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
+        <test_two_shards>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9100</port>
+                </replica>
+            </shard>
+        </test_two_shards>
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries

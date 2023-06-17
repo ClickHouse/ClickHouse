@@ -121,7 +121,7 @@
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
          and by most of web interfaces (embedded UI, Grafana, Redash, ...).
       -->
-    <http_port>8123</http_port>
+    <http_port>8223</http_port>
 
     <!-- Port for interaction by native protocol with:
          - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
@@ -130,17 +130,17 @@
          (this protocol is also informally called as "the TCP protocol");
          See also 'tcp_port_secure' for secure connections.
     -->
-    <tcp_port>9000</tcp_port>
+    <tcp_port>9100</tcp_port>
 
     <!-- Compatibility with MySQL protocol.
          ClickHouse will pretend to be MySQL for applications connecting to this port.
     -->
-    <mysql_port>9004</mysql_port>
+    <mysql_port>9104</mysql_port>
 
     <!-- Compatibility with PostgreSQL protocol.
          ClickHouse will pretend to be PostgreSQL for applications connecting to this port.
     -->
-    <postgresql_port>9005</postgresql_port>
+    <postgresql_port>9105</postgresql_port>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
@@ -167,7 +167,7 @@
          Data transferred over connections to this port should not go through untrusted networks.
          See also 'interserver_https_port'.
       -->
-    <interserver_http_port>9009</interserver_http_port>
+    <interserver_http_port>9109</interserver_http_port>
 
     <!-- Port for communication between replicas with TLS.
          You have to configure certificate to enable this interface.
@@ -413,7 +413,7 @@
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
     <!-- Path to data directory, with trailing slash. -->
-    <path>/var/lib/clickhouse/</path>
+    <path>/var/lib/clickhouse1/</path>
 
     <!-- Multi-disk configuration example: -->
     <!--
@@ -469,7 +469,7 @@
 
 
     <!-- Path to temporary data for processing hard queries. -->
-    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <tmp_path>/var/lib/clickhouse1/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <allow_plaintext_password>1</allow_plaintext_password>
@@ -520,7 +520,7 @@
     <!-- <tmp_policy>tmp</tmp_policy> -->
 
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
-    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <user_files_path>/var/lib/clickhouse1/user_files/</user_files_path>
 
     <!-- LDAP server definitions. -->
     <ldap_servers>
@@ -620,7 +620,7 @@
         </users_xml>
         <local_directory>
             <!-- Path to folder where users created by SQL commands are stored. -->
-            <path>/var/lib/clickhouse/access/</path>
+            <path>/var/lib/clickhouse1/access/</path>
         </local_directory>
 
         <!-- To add an LDAP server as a remote user directory of users that are not defined locally, define a single 'ldap' section
@@ -793,6 +793,20 @@
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
+        <test_two_shards>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9100</port>
+                </replica>
+            </shard>
+        </test_two_shards>
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries
@@ -1426,7 +1440,7 @@
     <!-- Directory in <clickhouse-path> containing schema files for various input formats.
          The directory will be created if it doesn't exist.
       -->
-    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <format_schema_path>/var/lib/clickhouse1/format_schemas/</format_schema_path>
 
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).
