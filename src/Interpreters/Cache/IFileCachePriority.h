@@ -85,6 +85,7 @@ public:
 
     virtual void removeAll(const CacheGuard::Lock &) = 0;
 
+    /// From lowest to highest priority.
     virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
 
 private:

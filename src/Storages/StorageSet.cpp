@@ -10,6 +10,7 @@
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -105,7 +106,7 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(

@@ -90,7 +90,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
+    Strings mutation_ids;
+    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
+    LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString());
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -181,7 +184,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
-        priority += item->getBytesOnDisk();
+        priority.value += item->getBytesOnDisk();
 
     return {true, true, [this] (const ExecutionStatus & execution_status)
     {

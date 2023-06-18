@@ -58,7 +58,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
+void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
@@ -90,7 +90,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
 }
 
 void MergeTreeReaderWide::prefetchForAllColumns(
-    int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+    Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
@@ -137,7 +137,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchForAllColumns(/* priority */0, num_columns, from_mark, current_task_last_mark, continue_reading);
+        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -188,10 +188,11 @@ size_t MergeTreeReaderWide::readRows(
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
         e.addMessage(
             fmt::format(
-                "(while reading from part {} from mark {} with max_rows_to_read = {})",
-                data_part_info_for_read->getDataPartStorage()->getFullPath(),
+                "(while reading from part {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+                part_storage->getFullPath(), part_storage->getDiskName(), part_storage->getDiskType(),
                 toString(from_mark), toString(max_rows_to_read)));
         throw;
     }
@@ -305,7 +306,7 @@ void MergeTreeReaderWide::deserializePrefix(
 }
 
 void MergeTreeReaderWide::prefetchForColumn(
-    int64_t priority,
+    Priority priority,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,

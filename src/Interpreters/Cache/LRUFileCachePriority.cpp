@@ -44,7 +44,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add {}:{} with size {}: current size: {}/{}",
-            key, offset, size, current_size, getSizeLimit());
+            key, offset, size, current_size, size_limit);
     }
 
     auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
@@ -161,6 +161,11 @@ void LRUFileCachePriority::LRUFileCacheIterator::annul()
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 {
+    LOG_TEST(
+        cache_priority->log,
+        "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
+        size, queue_iter->key, queue_iter->offset, queue_iter->size);
+
     cache_priority->current_size += size;
     queue_iter->size += size;
 

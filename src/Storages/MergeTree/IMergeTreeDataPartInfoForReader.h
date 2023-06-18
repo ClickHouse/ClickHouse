@@ -21,7 +21,7 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
  * in order to use MergeTreeDataPartReader's.
  * It is a separate interface and not a simple struct because
  * otherwise it will need to copy all the information which might not
- * be even used (for example, an IndexGranulary class object is quite heavy).
+ * be even used (for example, an IndexGranularity class object is quite heavy).
  */
 class IMergeTreeDataPartInfoForReader : public WithContext
 {
@@ -52,7 +52,7 @@ public:
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
 
-    virtual AlterConversions getAlterConversions() const = 0;
+    virtual AlterConversionsPtr getAlterConversions() const = 0;
 
     virtual size_t getMarksCount() const = 0;
 
