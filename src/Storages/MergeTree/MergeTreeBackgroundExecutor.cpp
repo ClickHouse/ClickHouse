@@ -290,7 +290,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             catch (...)
             {
                 print_task_exception();
-                return on_task_done();
+                on_task_done();
+                return;
             }
         }
 

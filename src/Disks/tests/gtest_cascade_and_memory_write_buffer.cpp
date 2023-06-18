@@ -166,6 +166,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
             });
 
         cascade.write(src.data(), src.size());
+        cascade.finalize();
         EXPECT_EQ(cascade.count(), src.size());
     }
 
