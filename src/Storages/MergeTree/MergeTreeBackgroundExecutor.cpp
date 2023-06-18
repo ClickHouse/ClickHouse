@@ -295,7 +295,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 /// An exception context is needed to proper delete write buffers without finalization
-                throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done task as if it was aborted.");
+                throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done active task as if it was aborted.");
             }
             catch (...)
             {
