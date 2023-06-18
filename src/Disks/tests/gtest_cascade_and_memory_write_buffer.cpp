@@ -223,6 +223,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         {
             MemoryWriteBuffer buf(s - 1);
             EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
+            buf.finalize();
         }
     }
 
