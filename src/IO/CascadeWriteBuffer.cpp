@@ -56,6 +56,8 @@ void CascadeWriteBuffer::nextImpl()
 
 void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
+    finalize();
+
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
