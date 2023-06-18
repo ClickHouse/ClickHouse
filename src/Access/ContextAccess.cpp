@@ -333,7 +333,7 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
+        LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
