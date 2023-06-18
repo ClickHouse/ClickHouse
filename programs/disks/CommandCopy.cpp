@@ -59,7 +59,7 @@ public:
         String relative_path_from = validatePathAndGetAsRelative(path_from);
         String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk_from->copy(relative_path_from, disk_to, relative_path_to);
+        disk_from->copyDirectoryContent(relative_path_from, disk_to, relative_path_to);
     }
 };
 }

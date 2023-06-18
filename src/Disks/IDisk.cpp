@@ -85,9 +85,16 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
     if (from_disk.isFile(from_path))
     {
         auto result = exec.execute(
-            [&from_disk, from_path, &to_disk, to_path, &settings]()
+            [&from_disk, from_path, &to_disk, to_path, &settings, thread_group = CurrentThread::getGroup()]()
             {
-                setThreadName("DiskCopier");
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachFromGroupIfNotDetached();
+                );
+
+                if (thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
                 from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
             });
 
@@ -126,18 +133,13 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
         result.get();
 }
 
-void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    copyThroughBuffers(from_path, to_disk, to_path, true);
-}
-
 
 void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
     if (!to_disk->exists(to_dir))
         to_disk->createDirectories(to_dir);
 
-    copyThroughBuffers(from_dir, to_disk, to_dir, false);
+    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false);
 }
 
 void IDisk::truncateFile(const String &, size_t)

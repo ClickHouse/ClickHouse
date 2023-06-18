@@ -110,8 +110,6 @@ public:
         delegate->listFiles(wrapped_path, file_names);
     }
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(

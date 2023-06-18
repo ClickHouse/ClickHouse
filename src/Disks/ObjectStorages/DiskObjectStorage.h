@@ -152,7 +152,11 @@ public:
     Strings getBlobPath(const String & path) const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+    void copyFile( /// NOLINT
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const WriteSettings & settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
