@@ -1,0 +1,13 @@
+-----backwards-compatible function calls-----
+toWeek	2016-12-27	52	52	1
+toYearWeek	2016-12-27	201652	201652	201701
+toDayOfWeek	2016-12-27	2	2	1	2	3
+toStartOfWeek	2016-12-27	2016-12-25	2016-12-26	2016-12-26
+toLastDayOfWeek	2016-12-27	2016-12-31	2017-01-01	2017-01-01
+toStartOfInterval	2016-12-27	2016-12-26
+toRelativeWeekNum	2016-12-27	2023-06-19 02:25:16	2452	2451	2789	2788
+dateDiff	0	1
+formatDateTimeInJodaSyntax	2016-12-27	2016-12-27 00:00:00	2016	52	2	Tue
+parseDateTimeInJodaSyntax	2016-12-27 00:00:00
+parseDateTimeInJodaSyntax	2016-12-27 00:00:00
+-----new functionality-----
