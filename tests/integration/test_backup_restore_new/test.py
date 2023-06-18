@@ -1391,31 +1391,53 @@ def test_system_backups():
 
 
 def test_mutation():
-    create_and_fill_table(engine="MergeTree ORDER BY tuple()", n=5)
-
+    instance.query("CREATE DATABASE test")
     instance.query(
-        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(5, 5)"
+        "CREATE TABLE test.table(a Int64, b String) ENGINE=MergeTree ORDER BY tuple() PARTITION BY a%3"
     )
 
-    instance.query(
-        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(10, 5)"
-    )
-
-    instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
+    for i in range(1, 12):
+        letter = chr(ord("A") + i - 1)
+        instance.query(
+            f"ALTER TABLE test.table UPDATE b = concat(b, '{letter}', space(sleep(2))) WHERE 1"
+        )
+        instance.query(f"INSERT INTO test.table VALUES ({i}, '{letter}')")
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert not has_mutation_in_backup("0000000004", backup_name, "test", "table")
-    assert has_mutation_in_backup("0000000005", backup_name, "test", "table")
-    assert has_mutation_in_backup("0000000006", backup_name, "test", "table")
-    assert not has_mutation_in_backup("0000000007", backup_name, "test", "table")
+    mutation_name_in_backup = "0000000021"
+    assert has_mutation_in_backup(mutation_name_in_backup, backup_name, "test", "table")
 
     instance.query("DROP TABLE test.table")
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+    instance.query(
+        f"ALTER TABLE test.table UPDATE b = concat(b, toString(length(b))) WHERE 1"
+    )
+
+    select_query = "SELECT * FROM test.table ORDER BY a"
+    first_res = instance.query(select_query)
+
+    final_res = [
+        [1, "ABCDEFGHIJK11"],
+        [2, "BCDEFGHIJK10"],
+        [3, "CDEFGHIJK9"],
+        [4, "DEFGHIJK8"],
+        [5, "EFGHIJK7"],
+        [6, "FGHIJK6"],
+        [7, "GHIJK5"],
+        [8, "HIJK4"],
+        [9, "IJK3"],
+        [10, "JK2"],
+        [11, "K1"],
+    ]
+
+    assert_eq_with_retry(
+        instance, select_query, TSV(final_res), sleep_time=5, retry_count=20
+    )
+    assert first_res != TSV(final_res)
 
 
 def test_tables_dependency():

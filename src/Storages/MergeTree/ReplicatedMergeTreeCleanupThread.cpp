@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCurrentlyRestoringFromBackup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
@@ -8,6 +9,7 @@
 #include <unordered_set>
 
 #include <base/sort.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -600,6 +602,10 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldMutations()
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
+
+    /// Entries starting with "mutation-placeholder-" are not mutations, they're just placeholders. We don't remove them here.
+    boost::range::remove_erase_if(entries, [&](const String & entry) { return entry.starts_with(kMutationPlaceholderPrefix); });
+
     ::sort(entries.begin(), entries.end());
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).

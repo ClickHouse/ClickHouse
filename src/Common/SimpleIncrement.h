@@ -19,4 +19,9 @@ struct SimpleIncrement
     {
         return ++value;
     }
+
+    UInt64 getMany(size_t count = 1)
+    {
+        return (value += count) - count + 1;
+    }
 };

@@ -914,6 +914,12 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
         os.path.exists(
             os.path.join(
                 get_path_to_backup(backup_name),
+                f"data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
                 f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
             )
         )
@@ -932,35 +938,76 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
     )
 
 
-def test_mutation():
+@pytest.mark.parametrize("src_engine", ["ReplicatedMergeTree", "MergeTree"])
+def test_mutation(src_engine):
+    replicated_engine = "ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+
+    src_engine_with_params = src_engine
+    src_on_cluster = ""
+    if src_engine == "ReplicatedMergeTree":
+        src_engine_with_params = replicated_engine
+        src_on_cluster = "ON CLUSTER 'cluster'"
+
     node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt8, y String"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY tuple()"
+        f"""
+        CREATE TABLE tbl {src_on_cluster} (a Int64, b String)
+        ENGINE = {src_engine_with_params} ORDER BY tuple() PARTITION BY a%3
+        """
     )
 
-    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5)")
-
-    node2.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5, 5)")
-
-    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(10, 5)")
-
-    node1.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
-    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
-    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+    for i in range(1, 12):
+        letter = chr(ord("A") + i - 1)
+        node1.query(
+            f"ALTER TABLE tbl UPDATE b = concat(b, '{letter}', space(sleep(2))) WHERE 1"
+        )
+        node1.query(f"INSERT INTO tbl VALUES ({i}, '{letter}')")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    node1.query(f"BACKUP TABLE tbl {src_on_cluster} TO {backup_name}")
 
-    assert not has_mutation_in_backup("0000000000", backup_name, "default", "tbl")
-    assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
-    assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
-    assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
+    mutation_name_in_backup = (
+        "0000000010" if src_engine == "ReplicatedMergeTree" else "0000000021"
+    )
+    assert has_mutation_in_backup(
+        mutation_name_in_backup, backup_name, "default", "tbl"
+    )
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"DROP TABLE tbl {src_on_cluster} SYNC")
 
-    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query(
+        f"""
+        CREATE TABLE tbl ON CLUSTER 'cluster' (a Int64, b String)
+        ENGINE = {replicated_engine} ORDER BY tuple() PARTITION BY a%3
+        """
+    )
+
+    node1.query(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS allow_different_table_def = true"
+    )
+
+    node1.query(f"ALTER TABLE tbl UPDATE b = concat(b, toString(length(b))) WHERE 1")
+
+    select_query = "SELECT * FROM tbl ORDER BY a"
+    first_res = node1.query(select_query)
+
+    final_res = [
+        [1, "ABCDEFGHIJK11"],
+        [2, "BCDEFGHIJK10"],
+        [3, "CDEFGHIJK9"],
+        [4, "DEFGHIJK8"],
+        [5, "EFGHIJK7"],
+        [6, "FGHIJK6"],
+        [7, "GHIJK5"],
+        [8, "HIJK4"],
+        [9, "IJK3"],
+        [10, "JK2"],
+        [11, "K1"],
+    ]
+
+    assert_eq_with_retry(
+        node1, select_query, TSV(final_res), sleep_time=5, retry_count=20
+    )
+    assert first_res != TSV(final_res)
 
 
 def test_tables_dependency():

@@ -160,6 +160,7 @@ namespace
     M(UInt64, replica_num_in_backup) \
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
+    M(Bool, mutations) \
     M(Bool, allow_unresolved_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \

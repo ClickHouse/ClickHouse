@@ -38,7 +38,8 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
         zookeeper = get_zookeeper();
         my_faulty_zookeeper->setKeeper(zookeeper);
 
-        callback(my_faulty_zookeeper);
+        if (callback)
+            callback(my_faulty_zookeeper);
     }
 }
 
@@ -55,6 +56,19 @@ WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const
         log);
 
     return faulty_zookeeper;
+}
+
+
+WithRetries::KeeperSettings::KeeperSettings(const ContextPtr & context)
+{
+    const auto & context_settings = context->getSettingsRef();
+    keeper_max_retries = context_settings.backup_restore_keeper_max_retries;
+    keeper_retry_initial_backoff_ms = context_settings.backup_restore_keeper_retry_initial_backoff_ms;
+    keeper_retry_max_backoff_ms = context_settings.backup_restore_keeper_retry_max_backoff_ms;
+    batch_size_for_keeper_multiread = context_settings.backup_restore_batch_size_for_keeper_multiread;
+    keeper_fault_injection_probability = context_settings.backup_restore_keeper_fault_injection_probability;
+    keeper_fault_injection_seed = context_settings.backup_restore_keeper_fault_injection_seed;
+    keeper_value_max_size = context_settings.backup_restore_keeper_value_max_size;
 }
 
 

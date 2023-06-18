@@ -20,6 +20,7 @@
 #include <Common/TransformEndianness.hpp>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
+#include <base/find_symbols.h>
 #include <base/sort.h>
 #include <base/unit.h>
 
@@ -599,6 +600,36 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf);
+
+template <typename T>
+void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end);
+
+template <char... chars, typename Vector>
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            return;
+    }
+}
+
+template <char... chars>
+void ignoreCharsWhile(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_not_symbols<chars...>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+        if (buf.hasPendingData())
+            return;
+    }
+}
 
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);

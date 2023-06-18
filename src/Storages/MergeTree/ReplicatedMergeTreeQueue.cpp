@@ -2,12 +2,14 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCurrentlyRestoringFromBackup.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include "Storages/MutationCommands.h"
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
@@ -25,9 +27,12 @@ namespace ErrorCodes
 }
 
 
-ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_)
+ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_,
+                                                   ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_,
+                                                   ReplicatedMergeTreeCurrentlyRestoringFromBackup * currently_restoring_from_backup_)
     : storage(storage_)
     , merge_strategy_picker(merge_strategy_picker_)
+    , currently_restoring_from_backup(currently_restoring_from_backup_)
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
@@ -560,6 +565,11 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
 
 std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
+    return pullLogsToQueue(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), watch_callback, reason);
+}
+
+std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(const ZooKeeperWithFaultInjectionPtr & zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
+{
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
     if (reason != LOAD)
@@ -860,6 +870,11 @@ ActiveDataPartSet getPartNamesToMutate(
 
 int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
+    return updateMutations(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), watch_callback);
+}
+
+int32_t ReplicatedMergeTreeQueue::updateMutations(const ZooKeeperWithFaultInjectionPtr & zookeeper, Coordination::WatchCallbackPtr watch_callback)
+{
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
@@ -907,7 +922,11 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
         for (const String & znode : entries_in_zk_set)
         {
             if (!mutations_by_znode.contains(znode))
-                entries_to_load.push_back(znode);
+            {
+                /// Entries starting with "mutation-placeholder-" are not mutations, they're just placeholders. We don't need to load them.
+                if (!znode.starts_with(kMutationPlaceholderPrefix))
+                    entries_to_load.push_back(znode);
+            }
         }
     }
 
@@ -962,7 +981,12 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 mutation.parts_to_do = getPartNamesToMutate(*entry, current_parts, queue_representation, format_version);
 
                 if (mutation.parts_to_do.size() == 0)
-                    some_mutations_are_probably_done = true;
+                {
+                    /// Restored mutations must not be considered as finished until the RESTORE process is done
+                    /// (even if related to-do parts have not been attached yet).
+                    if (!currently_restoring_from_backup || !currently_restoring_from_backup->containsMutation(entry->znode_name))
+                        some_mutations_are_probably_done = true;
+                }
 
                 /// otherwise it's already done
                 if (entry->isAlterMutation() && entry->znode_name > mutation_pointer)
@@ -2215,6 +2239,11 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
+    /// Update information about currently restored parts. This information is required to choose merges and mutations.
+    /// Should be called after `queue_.pullLogsToQueue()` because we this information must not be older than `queue_.virtual_parts`.
+    if (queue.currently_restoring_from_backup)
+        queue.currently_restoring_from_backup->update(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
+
     {
         /// We avoid returning here a version to be used in a lightweight transaction.
         ///
@@ -2242,6 +2271,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     pinned_part_uuids_ = pinned_part_uuids.get();
     inprogress_quorum_part_ = inprogress_quorum_part.get();
     mutations_state_ = &queue;
+    currently_restoring_from_backup = queue.currently_restoring_from_backup;
     virtual_parts_mutex = &queue.state_mutex;
 }
 
@@ -2319,6 +2349,14 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
         if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
         {
             out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+            return false;
+        }
+
+        /// Restored parts must not participate in merges until the RESTORE process is done
+        /// because there can be other parts to merge which are not attached yet.
+        if (currently_restoring_from_backup && currently_restoring_from_backup->containsPart(part->info))
+        {
+            out_reason = fmt::format("Part {} is currently being restored from backup", part->name);
             return false;
         }
     }
@@ -2431,6 +2469,14 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
         return false;
     }
 
+    /// Restored parts must not participate in merges until the RESTORE process is done
+    /// because there can be other parts to merge which are not attached yet.
+    if (currently_restoring_from_backup && currently_restoring_from_backup->containsPart(part->info))
+    {
+        out_reason = fmt::format("Part {} is currently being restored from backup", part->name);
+        return false;
+    }
+
     std::unique_lock<std::mutex> lock;
     if (virtual_parts_mutex)
         lock = std::unique_lock(*virtual_parts_mutex);
@@ -2485,6 +2531,14 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     /// already reached.
     if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
         return {};
+
+    /// Restored parts must not participate in mutations until the RESTORE process is done
+    /// because there can be other parts to merge which are not attached yet.
+    if (currently_restoring_from_backup && currently_restoring_from_backup->containsPart(part->info))
+    {
+        LOG_DEBUG(queue.log, "Part {} is being restored from backup. Will not mutate it yet", part->name);
+        return {};
+    }
 
     std::lock_guard lock(queue.state_mutex);
 
@@ -2587,6 +2641,14 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         /// There are no committing blocks less than block_num in that partition and there's no way they can appear
         /// TODO Why not to get committing blocks when pulling a mutation? We could get rid of finalization task or simplify it
         checked_partitions_cache.insert(partition_id);
+    }
+
+    /// Restored mutations must not be considered as finished until the RESTORE process is done
+    /// (even if related to-do parts have not been attached yet).
+    if (currently_restoring_from_backup && currently_restoring_from_backup->containsMutation(znode_name))
+    {
+        LOG_TRACE(queue.log, "Mutation {} is being restored from backup", znode_name);
+        return false;
     }
 
     std::lock_guard lock(queue.state_mutex);

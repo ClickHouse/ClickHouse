@@ -100,6 +100,9 @@ struct RestoreSettings
     /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
     RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
 
+    /// Should the RESTORE command restore mutations too.
+    bool mutations = true;
+
     /// Skip dependencies of access entities which can't be resolved.
     /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.
     bool allow_unresolved_access_dependencies = false;

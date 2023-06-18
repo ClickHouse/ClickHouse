@@ -26,6 +26,8 @@ public:
         Float64 keeper_fault_injection_probability{0};
         UInt64 keeper_fault_injection_seed{42};
         UInt64 keeper_value_max_size{1048576};
+
+        explicit KeeperSettings(const ContextPtr & context);
     };
 
     /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
@@ -49,7 +51,7 @@ public:
     };
 
     RetriesControlHolder createRetriesControlHolder(const String & name);
-    WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, RenewerCallback callback);
+    WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, RenewerCallback callback = {});
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;

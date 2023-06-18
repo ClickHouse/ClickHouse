@@ -32,6 +32,9 @@ struct BackupSettings
     /// without the data of tables.
     bool structure_only = false;
 
+    /// Should the BACKUP command backup mutations too.
+    bool mutations = true;
+
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
 

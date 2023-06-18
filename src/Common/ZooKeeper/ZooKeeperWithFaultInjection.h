@@ -153,6 +153,22 @@ public:
         return access("tryGetChildren", path, [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); });
     }
 
+    Strings getChildrenWatch(const std::string & path,
+                             Coordination::Stat * stat,
+                             Coordination::WatchCallbackPtr watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access("getChildrenWatch", path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
+    }
+
+    Strings getChildrenWatch(const std::string & path,
+                             Coordination::Stat * stat,
+                             Coordination::WatchCallback watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access("getChildrenWatch", path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
+    }
+
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
         return access("asyncExists", path, [&]() { return keeper->asyncExists(path, watch_callback); });
@@ -163,6 +179,32 @@ public:
         return access("asyncTryGet", path, [&]() { return keeper->asyncTryGet(path); });
     }
 
+    zk::FutureRemove asyncRemove(const std::string & path, int32_t version = -1)
+    {
+        return access("asyncRemove", path, [&]() { return keeper->asyncRemove(path, version); });
+    }
+
+    zk::FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1)
+    {
+        return access("asyncTryRemoveNoThrow", path, [&]() { return keeper->asyncTryRemoveNoThrow(path, version); });
+    }
+
+    zk::FutureMulti asyncMulti(const Coordination::Requests & requests)
+    {
+        return access(
+            "asyncMulti",
+            !requests.empty() ? requests.front()->getPath() : "",
+            [&]() { return keeper->asyncMulti(requests); });
+    }
+
+    zk::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & requests)
+    {
+        return access(
+            "asyncTryMultiNoThrow",
+            !requests.empty() ? requests.front()->getPath() : "",
+            [&]() { return keeper->asyncTryMultiNoThrow(requests); });
+    }
+
     bool tryGet(
         const std::string & path,
         std::string & res,
@@ -171,6 +213,19 @@ public:
         Coordination::Error * code = nullptr)
     {
         return access("tryGet", path, [&]() { return keeper->tryGet(path, res, stat, watch, code); });
+    }
+
+    zk::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
+    {
+        return access(
+            "tryGet",
+            !paths.empty() ? paths.front() : "",
+            [&]() { return keeper->tryGet(paths); });
+    }
+
+    void set(const std::string & path, const std::string & data, int32_t version = -1, Coordination::Stat * stat = nullptr)
+    {
+        return access("set", path, [&]() { return keeper->set(path, data, version, stat); });
     }
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
