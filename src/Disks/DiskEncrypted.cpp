@@ -310,32 +310,6 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
-void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    /// Check if we can copy the file without deciphering.
-    if (isSameDiskType(*this, *to_disk))
-    {
-        /// Disk type is the same, check if the key is the same too.
-        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(to_disk.get()))
-        {
-            auto from_settings = current_settings.get();
-            auto to_settings = to_disk_enc->current_settings.get();
-            if (from_settings->all_keys == to_settings->all_keys)
-            {
-                /// Keys are the same so we can simply copy the encrypted file.
-                auto wrapped_from_path = wrappedPath(from_path);
-                auto to_delegate = to_disk_enc->delegate;
-                auto wrapped_to_path = to_disk_enc->wrappedPath(to_path);
-                delegate->copy(wrapped_from_path, to_delegate, wrapped_to_path);
-                return;
-            }
-        }
-    }
-
-    /// Copy the file through buffers with deciphering.
-    copyThroughBuffers(from_path, to_disk, to_path);
-}
-
 
 void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
@@ -359,11 +333,8 @@ void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::sha
         }
     }
 
-    if (!to_disk->exists(to_dir))
-        to_disk->createDirectories(to_dir);
-
     /// Copy the file through buffers with deciphering.
-    copyThroughBuffers(from_dir, to_disk, to_dir);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(

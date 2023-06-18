@@ -456,18 +456,18 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
     const DiskPtr & disk,
-    Poco::Logger * log) const
+    Poco::Logger *) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
 
     if (disk->exists(path_to_clone))
     {
-        LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone));
-        disk->removeRecursive(path_to_clone);
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                        "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
+                        dir_path, getRelativePath(), path_to_clone, fullPath(disk, path_to_clone));
     }
 
-    disk->createDirectories(to);
-    volume->getDisk()->copy(getRelativePath(), disk, to);
+    volume->getDisk()->copyDirectoryContent(getRelativePath(), disk, path_to_clone);
     volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);

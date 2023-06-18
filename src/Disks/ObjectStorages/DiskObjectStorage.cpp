@@ -235,19 +235,23 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
-
-void DiskObjectStorage::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+void DiskObjectStorage::copyFile(
+    const String & from_file_path,
+    IDisk & to_disk,
+    const String & to_file_path,
+    const WriteSettings & settings)
 {
-    /// It's the same object storage disk
-    if (this == to_disk.get())
+    if (this == &to_disk)
     {
+        /// It may use s3-server-side copy
         auto transaction = createObjectStorageTransaction();
-        transaction->copyFile(from_path, to_path);
+        transaction->copyFile(from_file_path, to_file_path);
         transaction->commit();
     }
     else
     {
-        IDisk::copy(from_path, to_disk, to_path);
+        /// Copy through buffers
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
     }
 }
 
