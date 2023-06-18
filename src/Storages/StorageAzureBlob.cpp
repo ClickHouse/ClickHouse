@@ -86,7 +86,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
 
 bool isConnectionString(const std::string & candidate)
 {
-    return candidate.starts_with("DefaultEndpointsProtocol");
+    return !candidate.starts_with("http");
 }
 
 }
@@ -320,52 +320,52 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
     }
     else
     {
+        std::shared_ptr<Azure::Storage::StorageSharedKeyCredential> storage_shared_key_credential;
+        std::unique_ptr<BlobServiceClient> blob_service_client;
         if (configuration.account_name.has_value() && configuration.account_key.has_value())
         {
-            auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
-            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
-            try
-            {
-                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
-            {
-                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-                {
-                    auto final_url = configuration.connection_url
-                        + (configuration.connection_url.back() == '/' ? "" : "/")
-                        + configuration.container;
-
-                    result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-                }
-                else
-                {
-                    throw;
-                }
-            }
+            storage_shared_key_credential
+                = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
         }
         else
         {
-            auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
-            try
-            {
-                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
-            {
-                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-                {
-                    auto final_url = configuration.connection_url
-                        + (configuration.connection_url.back() == '/' ? "" : "/")
-                        + configuration.container;
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
+        }
 
-                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+
+        try
+        {
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
+            result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+            {
+                std::string final_url;
+                size_t pos = configuration.connection_url.find("?");
+                if (pos != std::string::npos)
+                {
+                    auto url_without_sas = configuration.connection_url.substr(0, pos);
+                    final_url = url_without_sas
+                        + (url_without_sas.back() == '/' ? "" : "/")
+                        + configuration.container
+                        + configuration.connection_url.substr(pos);
                 }
                 else
-                {
-                    throw;
-                }
+                    final_url = configuration.connection_url
+                    + (configuration.connection_url.back() == '/' ? "" : "/")
+                    + configuration.container;
+
+                if (storage_shared_key_credential)
+                    result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+                else
+                    result = std::make_unique<BlobContainerClient>(final_url);
+            }
+            else
+            {
+                throw;
             }
         }
     }
