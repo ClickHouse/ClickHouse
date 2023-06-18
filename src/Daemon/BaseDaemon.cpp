@@ -42,7 +42,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
@@ -55,7 +54,6 @@
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
-#include <Common/FieldVisitorToString.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -446,21 +444,12 @@ private:
             ContextPtr query_context = thread_ptr->getQueryContext();
             if (query_context)
             {
-                WriteBufferFromOwnString out;
-                const Settings & query_settings = query_context->getSettingsRef();
-                bool first = true;
-                for (const auto & setting : query_settings.allChanged())
-                {
-                    if (!first)
-                        out << ", ";
-                    out << setting.getName() << " = " << applyVisitor(FieldVisitorToString(), setting.getValue());
-                    first = false;
-                }
+                String changed_settings = query_context->getSettingsRef().toString();
 
-                if (first)
+                if (changed_settings.empty())
                     LOG_FATAL(log, "No settings were changed");
                 else
-                    LOG_FATAL(log, "Changed settings: {}", out.str());
+                    LOG_FATAL(log, "Changed settings: {}", changed_settings);
             }
         }
 
