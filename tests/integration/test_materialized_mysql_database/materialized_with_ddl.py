@@ -423,7 +423,7 @@ def drop_table_with_materialized_mysql_database(
     mysql_node.query("DROP DATABASE test_database_drop")
 
 
-def create_table_like_with_materialize_mysql_database(
+def create_table_like_with_materialized_mysql_database(
     clickhouse_node, mysql_node, service_name
 ):
     mysql_node.query("DROP DATABASE IF EXISTS create_like")
@@ -1050,6 +1050,8 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
 
 
 def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_checksum")
+    mysql_node.query("DROP DATABASE IF EXISTS test_checksum")
     mysql_node.query("CREATE DATABASE test_checksum")
     mysql_node.query("CREATE TABLE test_checksum.t (a INT PRIMARY KEY, b varchar(200))")
     clickhouse_node.query(
@@ -1079,6 +1081,21 @@ def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name
         clickhouse_node,
         "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
         "1\t1111\n2\t2222\n3\t3333\n",
+    )
+
+    clickhouse_node.query("DROP DATABASE test_checksum")
+    mysql_node.query("SET GLOBAL binlog_checksum=NONE")
+    clickhouse_node.query(
+        "CREATE DATABASE test_checksum ENGINE = MaterializeMySQL('{}:3306', 'test_checksum', 'root', 'clickhouse')".format(
+            service_name
+        )
+    )
+    check_query(clickhouse_node, "SHOW TABLES FROM test_checksum FORMAT TSV", "t\n")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(4, '4444')")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
+        "1\t1111\n2\t2222\n3\t3333\n4\t4444\n",
     )
 
     clickhouse_node.query("DROP DATABASE test_checksum")
@@ -1476,6 +1493,9 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
         "1\t\U0001F984\n2\t\u2601\n",
     )
 
+    clickhouse_node.query("DROP DATABASE utf8mb4_test")
+    mysql_node.query("DROP DATABASE utf8mb4_test")
+
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS system_parts_test")
@@ -1504,6 +1524,9 @@ def system_parts_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("OPTIMIZE TABLE system_parts_test.test")
     check_active_parts(1)
 
+    clickhouse_node.query("DROP DATABASE system_parts_test")
+    mysql_node.query("DROP DATABASE system_parts_test")
+
 
 def multi_table_update_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS multi_table_update")
@@ -1529,6 +1552,8 @@ def multi_table_update_test(clickhouse_node, mysql_node, service_name):
 
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
+    clickhouse_node.query("DROP DATABASE multi_table_update")
+    mysql_node.query("DROP DATABASE multi_table_update")
 
 
 def system_tables_test(clickhouse_node, mysql_node, service_name):
@@ -1549,50 +1574,53 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
         "intDiv(id, 4294967)\tid\tid\n",
     )
 
+    clickhouse_node.query("DROP DATABASE system_tables_test")
+    mysql_node.query("DROP DATABASE system_tables_test")
 
-def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS materialize_with_column_comments_test")
+
+def materialized_with_column_comments_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS materialized_with_column_comments_test")
     clickhouse_node.query(
-        "DROP DATABASE IF EXISTS materialize_with_column_comments_test"
+        "DROP DATABASE IF EXISTS materialized_with_column_comments_test"
     )
-    mysql_node.query("CREATE DATABASE materialize_with_column_comments_test")
+    mysql_node.query("CREATE DATABASE materialized_with_column_comments_test")
     mysql_node.query(
-        "CREATE TABLE materialize_with_column_comments_test.test (id int NOT NULL PRIMARY KEY, value VARCHAR(255) COMMENT 'test comment') ENGINE=InnoDB"
+        "CREATE TABLE materialized_with_column_comments_test.test (id int NOT NULL PRIMARY KEY, value VARCHAR(255) COMMENT 'test comment') ENGINE=InnoDB"
     )
     clickhouse_node.query(
-        "CREATE DATABASE materialize_with_column_comments_test ENGINE = MaterializedMySQL('{}:3306', 'materialize_with_column_comments_test', 'root', 'clickhouse')".format(
+        "CREATE DATABASE materialized_with_column_comments_test ENGINE = MaterializedMySQL('{}:3306', 'materialized_with_column_comments_test', 'root', 'clickhouse')".format(
             service_name
         )
     )
     check_query(
         clickhouse_node,
-        "DESCRIBE TABLE materialize_with_column_comments_test.test",
+        "DESCRIBE TABLE materialized_with_column_comments_test.test",
         "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\ttest comment\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n",
     )
     mysql_node.query(
-        "ALTER TABLE materialize_with_column_comments_test.test MODIFY value VARCHAR(255) COMMENT 'comment test'"
+        "ALTER TABLE materialized_with_column_comments_test.test MODIFY value VARCHAR(255) COMMENT 'comment test'"
     )
     check_query(
         clickhouse_node,
-        "DESCRIBE TABLE materialize_with_column_comments_test.test",
+        "DESCRIBE TABLE materialized_with_column_comments_test.test",
         "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n",
     )
     mysql_node.query(
-        "ALTER TABLE materialize_with_column_comments_test.test ADD value2 int COMMENT 'test comment 2'"
+        "ALTER TABLE materialized_with_column_comments_test.test ADD value2 int COMMENT 'test comment 2'"
     )
     check_query(
         clickhouse_node,
-        "DESCRIBE TABLE materialize_with_column_comments_test.test",
+        "DESCRIBE TABLE materialized_with_column_comments_test.test",
         "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\nvalue2\tNullable(Int32)\t\t\ttest comment 2\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n",
     )
-    clickhouse_node.query("DROP DATABASE materialize_with_column_comments_test")
-    mysql_node.query("DROP DATABASE materialize_with_column_comments_test")
+    clickhouse_node.query("DROP DATABASE materialized_with_column_comments_test")
+    mysql_node.query("DROP DATABASE materialized_with_column_comments_test")
 
 
-def materialize_with_enum8_test(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS materialize_with_enum8_test")
-    clickhouse_node.query("DROP DATABASE IF EXISTS materialize_with_enum8_test")
-    mysql_node.query("CREATE DATABASE materialize_with_enum8_test")
+def materialized_with_enum8_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")
+    mysql_node.query("CREATE DATABASE materialized_with_enum8_test")
     enum8_values_count = 127
     enum8_values = ""
     enum8_values_with_backslash = ""
@@ -1604,46 +1632,46 @@ def materialize_with_enum8_test(clickhouse_node, mysql_node, service_name):
         "\\'" + str(enum8_values_count) + "\\' = " + str(enum8_values_count)
     )
     mysql_node.query(
-        "CREATE TABLE materialize_with_enum8_test.test (id int NOT NULL PRIMARY KEY, value ENUM("
+        "CREATE TABLE materialized_with_enum8_test.test (id int NOT NULL PRIMARY KEY, value ENUM("
         + enum8_values
         + ")) ENGINE=InnoDB"
     )
     mysql_node.query(
-        "INSERT INTO materialize_with_enum8_test.test (id, value) VALUES (1, '1'),(2, '2')"
+        "INSERT INTO materialized_with_enum8_test.test (id, value) VALUES (1, '1'),(2, '2')"
     )
     clickhouse_node.query(
-        "CREATE DATABASE materialize_with_enum8_test ENGINE = MaterializedMySQL('{}:3306', 'materialize_with_enum8_test', 'root', 'clickhouse')".format(
+        "CREATE DATABASE materialized_with_enum8_test ENGINE = MaterializedMySQL('{}:3306', 'materialized_with_enum8_test', 'root', 'clickhouse')".format(
             service_name
         )
     )
     check_query(
         clickhouse_node,
-        "SELECT value FROM materialize_with_enum8_test.test ORDER BY id",
+        "SELECT value FROM materialized_with_enum8_test.test ORDER BY id",
         "1\n2\n",
     )
     mysql_node.query(
-        "INSERT INTO materialize_with_enum8_test.test (id, value) VALUES (3, '127')"
+        "INSERT INTO materialized_with_enum8_test.test (id, value) VALUES (3, '127')"
     )
     check_query(
         clickhouse_node,
-        "SELECT value FROM materialize_with_enum8_test.test ORDER BY id",
+        "SELECT value FROM materialized_with_enum8_test.test ORDER BY id",
         "1\n2\n127\n",
     )
     check_query(
         clickhouse_node,
-        "DESCRIBE TABLE materialize_with_enum8_test.test",
+        "DESCRIBE TABLE materialized_with_enum8_test.test",
         "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum8("
         + enum8_values_with_backslash
         + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n",
     )
-    clickhouse_node.query("DROP DATABASE materialize_with_enum8_test")
-    mysql_node.query("DROP DATABASE materialize_with_enum8_test")
+    clickhouse_node.query("DROP DATABASE materialized_with_enum8_test")
+    mysql_node.query("DROP DATABASE materialized_with_enum8_test")
 
 
-def materialize_with_enum16_test(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS materialize_with_enum16_test")
-    clickhouse_node.query("DROP DATABASE IF EXISTS materialize_with_enum16_test")
-    mysql_node.query("CREATE DATABASE materialize_with_enum16_test")
+def materialized_with_enum16_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS materialized_with_enum16_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS materialized_with_enum16_test")
+    mysql_node.query("CREATE DATABASE materialized_with_enum16_test")
     enum16_values_count = 600
     enum16_values = ""
     enum16_values_with_backslash = ""
@@ -1655,40 +1683,40 @@ def materialize_with_enum16_test(clickhouse_node, mysql_node, service_name):
         "\\'" + str(enum16_values_count) + "\\' = " + str(enum16_values_count)
     )
     mysql_node.query(
-        "CREATE TABLE materialize_with_enum16_test.test (id int NOT NULL PRIMARY KEY, value ENUM("
+        "CREATE TABLE materialized_with_enum16_test.test (id int NOT NULL PRIMARY KEY, value ENUM("
         + enum16_values
         + ")) ENGINE=InnoDB"
     )
     mysql_node.query(
-        "INSERT INTO materialize_with_enum16_test.test (id, value) VALUES (1, '1'),(2, '2')"
+        "INSERT INTO materialized_with_enum16_test.test (id, value) VALUES (1, '1'),(2, '2')"
     )
     clickhouse_node.query(
-        "CREATE DATABASE materialize_with_enum16_test ENGINE = MaterializedMySQL('{}:3306', 'materialize_with_enum16_test', 'root', 'clickhouse')".format(
+        "CREATE DATABASE materialized_with_enum16_test ENGINE = MaterializedMySQL('{}:3306', 'materialized_with_enum16_test', 'root', 'clickhouse')".format(
             service_name
         )
     )
     check_query(
         clickhouse_node,
-        "SELECT value FROM materialize_with_enum16_test.test ORDER BY id",
+        "SELECT value FROM materialized_with_enum16_test.test ORDER BY id",
         "1\n2\n",
     )
     mysql_node.query(
-        "INSERT INTO materialize_with_enum16_test.test (id, value) VALUES (3, '500')"
+        "INSERT INTO materialized_with_enum16_test.test (id, value) VALUES (3, '500')"
     )
     check_query(
         clickhouse_node,
-        "SELECT value FROM materialize_with_enum16_test.test ORDER BY id",
+        "SELECT value FROM materialized_with_enum16_test.test ORDER BY id",
         "1\n2\n500\n",
     )
     check_query(
         clickhouse_node,
-        "DESCRIBE TABLE materialize_with_enum16_test.test",
+        "DESCRIBE TABLE materialized_with_enum16_test.test",
         "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum16("
         + enum16_values_with_backslash
         + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n",
     )
-    clickhouse_node.query("DROP DATABASE materialize_with_enum16_test")
-    mysql_node.query("DROP DATABASE materialize_with_enum16_test")
+    clickhouse_node.query("DROP DATABASE materialized_with_enum16_test")
+    mysql_node.query("DROP DATABASE materialized_with_enum16_test")
 
 
 def alter_enum8_to_enum16_test(clickhouse_node, mysql_node, service_name):
@@ -2015,6 +2043,18 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
         )
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    # Check empty table overrides
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 ()
+    """
+    )
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+    show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
+    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
+
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
 
 
@@ -2265,3 +2305,34 @@ def dropddl(clickhouse_node, mysql_node, mysql_host):
     )
     mysql_node.query(f"DROP DATABASE {db}")
     clickhouse_node.query(f"DROP DATABASE {db}")
+
+
+def named_collections(clickhouse_node, mysql_node, service_name):
+    db = "named_collections"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, name VARCHAR(64), val INT)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.t1 (id, name, val) VALUES (1, 'a', 1), (2, 'b', 2)"
+    )
+
+    clickhouse_node.query(
+        f"""CREATE NAMED COLLECTION {db} AS
+            user = 'root',
+            password = 'clickhouse',
+            host = '{service_name}',
+            port = 3306,
+            database = '{db}'
+            """
+    )
+    clickhouse_node.query(f"CREATE DATABASE {db} ENGINE = MaterializedMySQL({db})")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
