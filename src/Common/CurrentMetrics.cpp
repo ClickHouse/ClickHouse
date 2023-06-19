@@ -93,8 +93,8 @@
     M(ThreadPoolFSReaderThreadsActive, "Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
-    M(DiskObjectStorageAsyncThreads, "Number of threads in the async thread pool for DiskObjectStorage.") \
-    M(DiskObjectStorageAsyncThreadsActive, "Number of threads in the async thread pool for DiskObjectStorage running a task.") \
+    M(DiskObjectStorageAsyncThreads, "Obsolete metric, shows nothing.") \
+    M(DiskObjectStorageAsyncThreadsActive, "Obsolete metric, shows nothing.") \
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
     M(TablesLoaderThreads, "Number of threads in the tables loader thread pool.") \
