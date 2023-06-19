@@ -141,6 +141,8 @@
     M(MergeTreeOutdatedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
+    M(IDiskCopierThreads, "Number of threads for copying data between disks of different types.") \
+    M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \

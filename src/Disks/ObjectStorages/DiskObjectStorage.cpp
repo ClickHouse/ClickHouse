@@ -38,55 +38,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
 }
 
-namespace
-{
-
-/// Runs tasks asynchronously using thread pool.
-class AsyncThreadPoolExecutor : public Executor
-{
-public:
-    AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
-        : name(name_)
-        , pool(CurrentMetrics::DiskObjectStorageAsyncThreads, CurrentMetrics::DiskObjectStorageAsyncThreadsActive, thread_pool_size)
-    {}
-
-    std::future<void> execute(std::function<void()> task) override
-    {
-        auto promise = std::make_shared<std::promise<void>>();
-        pool.scheduleOrThrowOnError(
-            [promise, task]()
-            {
-                try
-                {
-                    task();
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("Failed to run async task");
-
-                    try
-                    {
-                        promise->set_exception(std::current_exception());
-                    }
-                    catch (...) {}
-                }
-            });
-
-        return promise->get_future();
-    }
-
-    void setMaxThreads(size_t threads)
-    {
-        pool.setMaxThreads(threads);
-    }
-
-private:
-    String name;
-    ThreadPool pool;
-};
-
-}
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
@@ -106,27 +57,20 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
-std::shared_ptr<Executor> DiskObjectStorage::getAsyncExecutor(const std::string & log_name, size_t size)
-{
-    static auto reader = std::make_shared<AsyncThreadPoolExecutor>(log_name, size);
-    return reader;
-}
-
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
     const String & object_storage_root_path_,
     const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
-    bool send_metadata_,
-    uint64_t thread_pool_size_)
-    : IDisk(name_, getAsyncExecutor(log_name, thread_pool_size_))
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix)
+    : IDisk(name_, config, config_prefix)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
-    , send_metadata(send_metadata_)
-    , threadpool_size(thread_pool_size_)
+    , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
@@ -235,7 +179,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
-void DiskObjectStorage::copyFile(
+void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
@@ -524,14 +468,15 @@ bool DiskObjectStorage::isWriteOnce() const
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
+    const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
         object_storage_root_path,
         getName(),
         metadata_storage,
         object_storage,
-        send_metadata,
-        threadpool_size);
+        Context::getGlobalContextInstance()->getConfigRef(),
+        config_prefix);
 }
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
@@ -605,13 +550,10 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 }
 
 void DiskObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String & config_prefix, const DisksMap & disk_map)
 {
-    const auto config_prefix = "storage_configuration.disks." + name;
     object_storage->applyNewSettings(config, config_prefix, context_);
-
-    if (AsyncThreadPoolExecutor * exec = dynamic_cast<AsyncThreadPoolExecutor *>(&getExecutor()))
-        exec->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
+    IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
 
 void DiskObjectStorage::restoreMetadataIfNeeded(

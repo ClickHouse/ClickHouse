@@ -75,7 +75,7 @@ private:
     void saveSchemaVersion(const int & version) const;
     void updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const;
     void migrateFileToRestorableSchema(const String & path) const;
-    void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
+    void migrateToRestorableSchemaRecursive(const String & path, ThreadPool & pool);
 
     void readRestoreInformation(RestoreInformation & restore_information);
     void restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information);

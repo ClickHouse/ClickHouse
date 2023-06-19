@@ -53,7 +53,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         disks.emplace(
             default_disk_name,
             std::make_shared<DiskLocal>(
-                default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
+                default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
     is_initialized = true;

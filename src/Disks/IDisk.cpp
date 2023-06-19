@@ -1,5 +1,4 @@
 #include "IDisk.h"
-#include "Disks/Executor.h"
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
@@ -80,12 +79,15 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
 
 using ResultsCollector = std::vector<std::future<void>>;
 
-void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, ThreadPool & pool, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
 {
     if (from_disk.isFile(from_path))
     {
-        auto result = exec.execute(
-            [&from_disk, from_path, &to_disk, to_path, &settings, thread_group = CurrentThread::getGroup()]()
+        auto promise = std::make_shared<std::promise<void>>();
+        auto future = promise->get_future();
+
+        pool.scheduleOrThrowOnError(
+            [&from_disk, from_path, &to_disk, to_path, &settings, promise, thread_group = CurrentThread::getGroup()]()
             {
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
@@ -96,9 +98,10 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
                     CurrentThread::attachToGroup(thread_group);
 
                 from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
+                promise->set_value();
             });
 
-        results.push_back(std::move(result));
+        results.push_back(std::move(future));
     }
     else
     {
@@ -111,13 +114,12 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
         }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true, settings);
+            asyncCopy(from_disk, it->path(), to_disk, dest, pool, results, true, settings);
     }
 }
 
 void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir)
 {
-    auto & exec = to_disk->getExecutor();
     ResultsCollector results;
 
     WriteSettings settings;
@@ -125,10 +127,8 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
     settings.s3_allow_parallel_part_upload = false;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir, settings);
+    asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, settings);
 
-    for (auto & result : results)
-        result.wait();
     for (auto & result : results)
         result.get();
 }
@@ -233,6 +233,11 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
+}
+
+void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
+{
+    copying_thread_pool.setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
 }

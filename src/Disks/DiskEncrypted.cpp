@@ -285,19 +285,20 @@ private:
 };
 
 DiskEncrypted::DiskEncrypted(
-    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_)
-    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), use_fake_transaction_)
+    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
+    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), config_, config_prefix_)
 {
 }
 
-DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_)
-    : IDisk(name_)
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_,
+                             const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_)
+    : IDisk(name_, config_, config_prefix_)
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
-    , use_fake_transaction(use_fake_transaction_)
+    , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
     delegate->createDirectories(disk_path);
 }
@@ -414,7 +415,7 @@ std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const st
 
 void DiskEncrypted::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
-    ContextPtr /*context*/,
+    ContextPtr context,
     const String & config_prefix,
     const DisksMap & disk_map)
 {
@@ -426,6 +427,7 @@ void DiskEncrypted::applyNewSettings(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging disk path on the fly is not supported. Disk {}", name);
 
     current_settings.set(std::move(new_settings));
+    IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
@@ -438,7 +440,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map, config.getBool(config_prefix + ".use_fake_transaction", true));
+        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(context, skip_access_check);
         return disk;
     };
