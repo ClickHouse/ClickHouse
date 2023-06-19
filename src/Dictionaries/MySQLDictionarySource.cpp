@@ -13,9 +13,17 @@
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/LocalDateTime.h>
+#include <Common/parseRemoteDescription.h>
+#include <Common/logger_useful.h>
+#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -30,7 +38,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
@@ -61,50 +69,86 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
-        auto has_config_key = [&](const String & key)
-        {
-            return dictionary_allowed_keys.contains(key) || key.starts_with("replica") || mysql_settings.has(key);
-        };
-        StorageMySQLConfiguration configuration;
-        auto named_collection = created_from_ddl
-                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key, mysql_settings)
-                              : std::nullopt;
+
+        std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
         if (named_collection)
         {
-            mysql_settings.applyChanges(named_collection->settings_changes);
-            configuration.set(named_collection->configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            auto allowed_arguments{dictionary_allowed_keys};
+            for (const auto & setting : mysql_settings.all())
+                allowed_arguments.insert(setting.getName());
+            validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(*named_collection, {}, allowed_arguments);
+
+            StorageMySQL::Configuration::Addresses addresses;
+            const auto addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
+            if (addresses_expr.empty())
+            {
+                const auto host = named_collection->getAnyOrDefault<String>({"host", "hostname"}, "");
+                const auto port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+                addresses = {std::make_pair(host, port)};
+            }
+            else
+            {
+                size_t max_addresses = global_context->getSettingsRef().glob_expansion_max_elements;
+                addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
+            }
+
+            for (auto & address : addresses)
+                global_context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+
+            dictionary_configuration.emplace(MySQLDictionarySource::Configuration{
+                .db = named_collection->getAnyOrDefault<String>({"database", "db"}, ""),
+                .table = named_collection->getOrDefault<String>("table", ""),
+                .query = named_collection->getOrDefault<String>("query", ""),
+                .where = named_collection->getOrDefault<String>("where", ""),
+                .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
+                .update_field = named_collection->getOrDefault<String>("update_field", ""),
+                .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
+                .dont_check_update_time = named_collection->getOrDefault<bool>("dont_check_update_time", false),
+            });
+
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings.isChanged("connect_timeout"))
                 mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
             if (!mysql_settings.isChanged("read_write_timeout"))
                 mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
+
+            for (const auto & setting : mysql_settings.all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    mysql_settings.set(setting_name, named_collection->get<String>(setting_name));
+            }
+
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(
+                createMySQLPoolWithFailover(
+                    dictionary_configuration->db,
+                    addresses,
+                    named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
+                    named_collection->getOrDefault<String>("password", ""),
+                    mysql_settings));
         }
         else
         {
-            configuration.database = config.getString(settings_config_prefix + ".db", "");
-            configuration.table = config.getString(settings_config_prefix + ".table", "");
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+            dictionary_configuration.emplace(MySQLDictionarySource::Configuration{
+                .db = config.getString(settings_config_prefix + ".db", ""),
+                .table = config.getString(settings_config_prefix + ".table", ""),
+                .query = config.getString(settings_config_prefix + ".query", ""),
+                .where = config.getString(settings_config_prefix + ".where", ""),
+                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
+                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+                .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
+            });
+
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(
+                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }
 
-        auto query = config.getString(settings_config_prefix + ".query", "");
-        if (query.empty() && configuration.table.empty())
+        if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
 
-        MySQLDictionarySource::Configuration dictionary_configuration
-        {
-            .db = configuration.database,
-            .table = configuration.table,
-            .query = query,
-            .where = config.getString(settings_config_prefix + ".where", ""),
-            .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
-        };
-
-        return std::make_unique<MySQLDictionarySource>(dict_struct, dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
+        return std::make_unique<MySQLDictionarySource>(dict_struct, *dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.");
@@ -118,15 +162,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/LocalDateTime.h>
-#    include <Common/logger_useful.h>
-#    include "readInvalidateQuery.h"
-#    include <mysqlxx/Exception.h>
-#    include <Core/Settings.h>
 
 namespace DB
 {
@@ -182,13 +217,13 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-Pipe MySQLDictionarySource::loadFromQuery(const String & query)
+QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(
+    return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
 
-Pipe MySQLDictionarySource::loadAll()
+QueryPipeline MySQLDictionarySource::loadAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -197,7 +232,7 @@ Pipe MySQLDictionarySource::loadAll()
     return loadFromQuery(load_all_query);
 }
 
-Pipe MySQLDictionarySource::loadUpdatedAll()
+QueryPipeline MySQLDictionarySource::loadUpdatedAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -207,14 +242,14 @@ Pipe MySQLDictionarySource::loadUpdatedAll()
     return loadFromQuery(load_update_query);
 }
 
-Pipe MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(query);
 }
 
-Pipe MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
@@ -226,7 +261,7 @@ bool MySQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
 
         invalidate_query_response = response;

@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #include <gtest/gtest.h>
@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <filesystem>
 
@@ -225,8 +226,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     String key = "1234567812345678";
     FileEncryption::Header header;
     header.algorithm = Algorithm::AES_128_CTR;
-    header.key_id = 1;
-    header.key_hash = calculateKeyHash(key);
+    header.key_fingerprint = calculateKeyFingerprint(key);
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
@@ -241,6 +241,23 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     rb.ignore(5);
     rb.ignore(5);
     ASSERT_EQ(rb.getPosition(), 15);
+
+    String res;
+    readStringUntilEOF(res, rb);
+    ASSERT_EQ(res, data.substr(15));
+    res.clear();
+
+    rb.seek(0, SEEK_SET);
+    ASSERT_EQ(rb.getPosition(), 0);
+    res.resize(5);
+    ASSERT_EQ(rb.read(res.data(), res.size()), 5);
+    ASSERT_EQ(res, data.substr(0, 5));
+    res.clear();
+
+    rb.seek(1, SEEK_CUR);
+    ASSERT_EQ(rb.getPosition(), 6);
+    readStringUntilEOF(res, rb);
+    ASSERT_EQ(res, data.substr(6));
 }
 
 #endif

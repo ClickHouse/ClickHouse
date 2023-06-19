@@ -9,13 +9,11 @@ namespace DB
 
 using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonthImpl>;
 
-void registerFunctionToMonth(FunctionFactory & factory)
+REGISTER_FUNCTION(ToMonth)
 {
     factory.registerFunction<FunctionToMonth>();
     /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToMonth>("MONTH", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("MONTH", "toMonth", FunctionFactory::CaseInsensitive);
 }
 
 }
-
-

@@ -460,8 +460,15 @@ set(ICUI18N_SOURCES
 
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
+
+if (ARCH_S390X)
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70b_dat.S" )
+else()
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S" )
+endif()
+
 set(ICUDATA_SOURCES
-    "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S"
+    "${ICUDATA_SOURCE_FILE}"
     "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
 )
 
@@ -480,10 +487,6 @@ target_include_directories(_icui18n SYSTEM PUBLIC "${ICU_SOURCE_DIR}/i18n/")
 
 target_compile_definitions(_icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
 target_compile_definitions(_icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
-
-if (COMPILER_CLANG)
-    target_compile_options(_icudata PRIVATE -Wno-unused-command-line-argument)
-endif ()
 
 add_library(_icu INTERFACE)
 target_link_libraries(_icu INTERFACE _icui18n _icuuc _icudata)

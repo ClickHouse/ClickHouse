@@ -3,15 +3,23 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// A Storage that allows reading from a single MergeTree data part.
 class StorageFromMergeTreeDataPart final : public IStorage
@@ -21,6 +29,7 @@ public:
     explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
+        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
         , storage(part_->storage)
         , partition_id(part_->info.partition_id)
     {
@@ -36,18 +45,34 @@ public:
 
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    Pipe read(
+    StorageSnapshotPtr getStorageSnapshot(
+        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    {
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        if (!hasDynamicSubcolumns(storage_columns))
+            return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+
+        auto object_columns = getConcreteObjectColumns(
+            parts.begin(), parts.end(),
+            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
+    }
+
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        unsigned num_streams) override
+        size_t num_streams) override
     {
-        QueryPlan query_plan = std::move(*MergeTreeDataSelectExecutor(storage)
+        query_plan.addStep(MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(
                                                   parts,
+                                                  alter_conversions,
                                                   column_names,
                                                   storage_snapshot,
                                                   query_info,
@@ -56,14 +81,13 @@ public:
                                                   num_streams,
                                                   nullptr,
                                                   analysis_result_ptr));
-
-        return query_plan.convertToPipe(
-            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
     bool supportsPrewhere() const override { return true; }
 
     bool supportsIndexForIn() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
@@ -88,14 +112,27 @@ public:
 
     bool materializeTTLRecalculateOnly() const
     {
+        if (parts.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
 
+    bool hasLightweightDeletedMask() const override
+    {
+        return !parts.empty() && parts.front()->hasLightweightDelete();
+    }
+
+    bool supportsLightweightDelete() const override
+    {
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+    }
+
 private:
-    MergeTreeData::DataPartsVector parts;
+    const MergeTreeData::DataPartsVector parts;
+    const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
-    String partition_id;
-    MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
+    const String partition_id;
+    const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

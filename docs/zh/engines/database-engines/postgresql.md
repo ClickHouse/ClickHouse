@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/database-engines/postgresql
 sidebar_position: 35
 sidebar_label: PostgreSQL
 ---
@@ -29,7 +30,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 
 ## 支持的数据类型 {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
+| PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
 | DATE             | [Date](../../sql-reference/data-types/date.md)               |
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
@@ -135,5 +136,3 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/database-engines/postgresql/) <!--hide-->

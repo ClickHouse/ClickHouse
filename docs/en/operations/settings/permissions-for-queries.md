@@ -1,9 +1,10 @@
 ---
+slug: /en/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: Permissions for Queries
 ---
 
-# Permissions for Queries {#permissions_for_queries}
+# Permissions for Queries
 
 Queries in ClickHouse can be divided into several types:
 
@@ -15,45 +16,54 @@ Queries in ClickHouse can be divided into several types:
 
 The following settings regulate user permissions by the type of query:
 
--   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+## readonly
+Restricts permissions for read data, write data, and change settings queries.
 
-`KILL QUERY` can be performed with any settings.
+When set to 1, allows:
 
-## readonly {#settings_readonly}
+- All types of read queries (like SELECT and equivalent queries).
+- Queries that modify only session context (like USE).
 
-Restricts permissions for reading data, write data and change settings queries.
+When set to 2, allows the above plus:
+- SET and CREATE TEMPORARY TABLE
 
-See how the queries are divided into types [above](#permissions_for_queries).
+  :::tip
+  Queries like EXISTS, DESCRIBE, EXPLAIN, SHOW PROCESSLIST, etc are equivalent to SELECT, because they just do select from system tables.
+  :::
 
 Possible values:
 
--   0 — All queries are allowed.
--   1 — Only read data queries are allowed.
--   2 — Read data and change settings queries are allowed.
+- 0 — Read, Write, and Change settings queries are allowed.
+- 1 — Only Read data queries are allowed.
+- 2 — Read data and Change settings queries are allowed.
 
+Default value: 0
+
+:::note
 After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
 
 When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
 
-Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
-from changing only specific settings, for details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
+Setting `readonly = 1` prohibits the user from changing settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
+:::
 
-Default value: 0
 
 ## allow_ddl {#settings_allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 
-See how the queries are divided into types [above](#permissions_for_queries).
-
 Possible values:
 
--   0 — DDL queries are not allowed.
--   1 — DDL queries are allowed.
-
-You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+- 0 — DDL queries are not allowed.
+- 1 — DDL queries are allowed.
 
 Default value: 1
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+:::note
+You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+:::
+
+
+:::note KILL QUERY
+`KILL QUERY` can be performed with any combination of readonly and allow_ddl settings.
+:::

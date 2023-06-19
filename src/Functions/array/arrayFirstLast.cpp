@@ -28,9 +28,6 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -43,6 +40,16 @@ struct ArrayFirstLastImpl
         return array_element;
     }
 
+    static ColumnPtr createNullableColumn(MutableColumnPtr && column, ColumnUInt8::MutablePtr && null_map)
+    {
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(column.get()))
+        {
+            nullable_column->applyNullMap(*null_map);
+            return std::move(column);
+        }
+        return ColumnNullable::create(std::move(column), std::move(null_map));
+    }
+
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         const auto * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
@@ -52,7 +59,7 @@ struct ArrayFirstLastImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
             {
@@ -94,7 +101,7 @@ struct ArrayFirstLastImpl
                 }
 
                 if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
-                    return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
+                    return createNullableColumn(std::move(out), std::move(col_null_map_to));
 
                 return out;
             }
@@ -106,7 +113,7 @@ struct ArrayFirstLastImpl
                 if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                 {
                     auto col_null_map_to = ColumnUInt8::create(out->size(), true);
-                    return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
+                    return createNullableColumn(std::move(out), std::move(col_null_map_to));
                 }
 
                 return out;
@@ -172,7 +179,7 @@ struct ArrayFirstLastImpl
         }
 
         if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
-            return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
+            return createNullableColumn(std::move(out), std::move(col_null_map_to));
 
         return out;
     }
@@ -194,7 +201,7 @@ struct NameArrayLastOrNull { static constexpr auto name = "arrayLastOrNull"; };
 using ArrayLastOrNullImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::Last, ArrayFirstLastElementNotExistsStrategy::Null>;
 using FunctionArrayLastOrNull = FunctionArrayMapped<ArrayLastOrNullImpl, NameArrayLastOrNull>;
 
-void registerFunctionArrayFirst(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFirst)
 {
     factory.registerFunction<FunctionArrayFirst>();
     factory.registerFunction<FunctionArrayFirstOrNull>();

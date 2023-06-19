@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/ExternalDistributed
 sidebar_position: 12
 sidebar_label: ExternalDistributed
 ---

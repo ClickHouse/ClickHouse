@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/install
 sidebar_position: 11
 sidebar_label: 安装部署
 ---
@@ -83,6 +84,17 @@ sudo /etc/init.d/clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
+For systems with `zypper` package manager (openSUSE, SLES):
+
+``` bash
+sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+sudo zypper install -y clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
+```
+
 <details markdown="1">
 
 <summary>Deprecated Method for installing rpm-packages</summary>
@@ -121,22 +133,34 @@ sudo yum install clickhouse-server clickhouse-client
 LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz"
 
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+case $(uname -m) in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+  *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
+esac
+
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+do
+  curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+    || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+done
+
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
 sudo /etc/init.d/clickhouse-server start
 
-tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
@@ -263,5 +287,3 @@ SELECT 1
 **恭喜，系统已经工作了!**
 
 为了继续进行实验，你可以尝试下载测试数据集或查看[教程](./tutorial.md)。
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

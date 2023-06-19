@@ -1,4 +1,5 @@
 #include <Interpreters/MetricLog.h>
+#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -50,7 +51,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        columns[column_idx++]->insert(current_metrics[i]);
+        columns[column_idx++]->insert(current_metrics[i].toUnderType());
 }
 
 
@@ -58,7 +59,7 @@ void MetricLog::startCollectMetric(size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    metric_flush_thread = ThreadFromGlobalPool([this] { metricThreadFunction(); });
+    metric_flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { metricThreadFunction(); });
 }
 
 
@@ -67,7 +68,8 @@ void MetricLog::stopCollectMetric()
     bool old_val = false;
     if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
         return;
-    metric_flush_thread.join();
+    if (metric_flush_thread)
+        metric_flush_thread->join();
 }
 
 
@@ -75,22 +77,6 @@ void MetricLog::shutdown()
 {
     stopCollectMetric();
     stopFlushThread();
-}
-
-
-static inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();
-}
-
-static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
 
@@ -109,11 +95,11 @@ void MetricLog::metricThreadFunction()
 
             MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-            elem.event_time_microseconds = time_in_microseconds(current_time);
-            elem.milliseconds = time_in_milliseconds(current_time) - time_in_seconds(current_time) * 1000;
+            elem.event_time_microseconds = timeInMicroseconds(current_time);
+            elem.milliseconds = timeInMilliseconds(current_time) - timeInSeconds(current_time) * 1000;
 
             elem.profile_events.resize(ProfileEvents::end());
-            for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+            for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
             {
                 const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
                 auto & old_value = prev_profile_events[i];

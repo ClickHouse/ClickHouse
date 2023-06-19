@@ -10,7 +10,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
 namespace DB
 {
 struct Settings;
@@ -41,7 +40,15 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 denominator_x = sx2 * sx2 / (nx * nx * (nx - 1));
         Float64 denominator_y = sy2 * sy2 / (ny * ny * (ny - 1));
 
-        return numerator / (denominator_x + denominator_y);
+        auto result = numerator / (denominator_x + denominator_y);
+
+        if (result <= 0 || std::isinf(result) || isNaN(result))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot calculate p_value, because the t-distribution \
+                has inappropriate value of degrees of freedom (={}). It should be > 0", result);
+
+        return result;
     }
 
     std::tuple<Float64, Float64> getResult() const
@@ -53,7 +60,17 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
 
-        return {t_stat, getPValue(getDegreesOfFreedom(), t_stat * t_stat)};
+        if (unlikely(!std::isfinite(t_stat)))
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+
+        auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
+        Float64 pvalue = 0;
+        if (t_stat > 0)
+            pvalue = 2 * boost::math::cdf<Float64>(students_t_distribution, -t_stat);
+        else
+            pvalue = 2 * boost::math::cdf<Float64>(students_t_distribution, t_stat);
+
+        return {t_stat, pvalue};
     }
 };
 
@@ -63,10 +80,10 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires zero or one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionTTest<WelchTTestData>>(argument_types, parameters);
 }

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/dictionaries
+---
 # system.dictionaries {#system_tables-dictionaries}
 
 Содержит информацию о [внешних словарях](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).

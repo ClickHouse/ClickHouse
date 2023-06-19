@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 COPYING_FAIL_PROBABILITY = 0.2
 MOVING_FAIL_PROBABILITY = 0.2
 
-cluster = ClickHouseCluster(__file__, name="copier_test")
+cluster = ClickHouseCluster(__file__)
 
 
 def generateRandomString(count):
@@ -565,13 +565,20 @@ def test_copy_with_recovering(started_cluster, use_sample_offset):
                 str(COPYING_FAIL_PROBABILITY),
                 "--experimental-use-sample-offset",
                 "1",
+                "--max-table-tries",
+                "10",
             ],
         )
     else:
         execute_task(
             started_cluster,
             Task1(started_cluster),
-            ["--copy-fault-probability", str(COPYING_FAIL_PROBABILITY)],
+            [
+                "--copy-fault-probability",
+                str(COPYING_FAIL_PROBABILITY),
+                "--max-table-tries",
+                "10",
+            ],
         )
 
 
@@ -606,7 +613,12 @@ def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(
         started_cluster,
         Task2(started_cluster, "test2"),
-        ["--copy-fault-probability", str(COPYING_FAIL_PROBABILITY)],
+        [
+            "--copy-fault-probability",
+            str(COPYING_FAIL_PROBABILITY),
+            "--max-table-tries",
+            "10",
+        ],
     )
 
 

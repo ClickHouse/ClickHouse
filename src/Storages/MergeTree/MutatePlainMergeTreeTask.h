@@ -9,6 +9,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 
+
 namespace DB
 {
 
@@ -22,27 +23,26 @@ class StorageMergeTree;
 class MutatePlainMergeTreeTask : public IExecutableTask
 {
 public:
-    template <class Callback>
     MutatePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        Callback && task_result_callback_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
         : storage(storage_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(std::forward<Callback>(task_result_callback_))
+        , task_result_callback(task_result_callback_)
     {
         for (auto & part : merge_mutate_entry->future_part->parts)
-            priority += part->getBytesOnDisk();
+            priority.value += part->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() override;
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
 private:
 
@@ -66,7 +66,7 @@ private:
     std::unique_ptr<Stopwatch> stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
-    UInt64 priority{0};
+    Priority priority;
 
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
@@ -74,9 +74,13 @@ private:
     std::function<void(const ExecutionStatus & execution_status)> write_part_log;
 
     IExecutableTask::TaskResultCallback task_result_callback;
-
-    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
+
+    ProfileEvents::Counters profile_counters;
+
+    ContextMutablePtr task_context;
+
+    ContextMutablePtr createTaskContext() const;
 };
 
 

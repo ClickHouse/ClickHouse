@@ -36,7 +36,10 @@ TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
     if (timer_fd != -1)
-        close(timer_fd);
+    {
+        int err = close(timer_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 void TimerDescriptor::reset() const

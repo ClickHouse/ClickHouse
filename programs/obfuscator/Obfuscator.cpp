@@ -24,16 +24,20 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
 #include <Common/DateLUT.h>
-#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
 #include <unistd.h>
@@ -42,6 +46,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
+#include <bit>
 
 
 static const char * documentation = R"(
@@ -95,6 +100,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -114,6 +122,12 @@ public:
 
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
     virtual void updateSeed() = 0;
+
+    /// Save into file. Binary, platform-dependent, version-dependent serialization.
+    virtual void serialize(WriteBuffer & out) const = 0;
+
+    /// Read from file
+    virtual void deserialize(ReadBuffer & in) = 0;
 
     virtual ~IModel() = default;
 };
@@ -173,7 +187,7 @@ static UInt64 transform(UInt64 x, UInt64 seed)
     if (x == 2 || x == 3)
         return x ^ (seed & 1);
 
-    size_t num_leading_zeros = __builtin_clzll(x);
+    size_t num_leading_zeros = std::countl_zero(x);
 
     return feistelNetwork(x, 64 - num_leading_zeros - 1, seed);
 }
@@ -189,6 +203,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -230,6 +246,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -258,9 +276,9 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = bit_cast<UInt>(x);
-    x_uint = feistelNetwork(x_uint, mantissa_num_bits, seed);
-    return bit_cast<Float>(x_uint);
+    UInt x_uint = std::bit_cast<UInt>(x);
+    x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
+    return std::bit_cast<Float>(x_uint);
 }
 
 
@@ -279,6 +297,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -311,6 +331,8 @@ class IdentityModel : public IModel
 public:
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -395,6 +417,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -431,6 +455,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -469,6 +495,8 @@ public:
 
     void train(const IColumn &) override {}
     void finalize() override {}
+    void serialize(WriteBuffer &) const override {}
+    void deserialize(ReadBuffer &) override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
@@ -481,13 +509,13 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             UInt32 src_datetime = src_data[i];
-            UInt32 src_date = date_lut.toDate(src_datetime);
+            UInt32 src_date = static_cast<UInt32>(date_lut.toDate(src_datetime));
 
             Int32 src_diff = src_datetime - src_prev_value;
-            Int32 res_diff = transformSigned(src_diff, seed);
+            Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
 
             UInt32 new_datetime = res_prev_value + res_diff;
-            UInt32 new_time = new_datetime - date_lut.toDate(new_datetime);
+            UInt32 new_time = new_datetime - static_cast<UInt32>(date_lut.toDate(new_datetime));
             res_data[i] = src_date + new_time;
 
             src_prev_value = src_datetime;
@@ -512,6 +540,26 @@ struct MarkovModelParameters
     size_t frequency_add;
     double frequency_desaturate;
     size_t determinator_sliding_window_size;
+
+    void serialize(WriteBuffer & out) const
+    {
+        writeBinary(order, out);
+        writeBinary(frequency_cutoff, out);
+        writeBinary(num_buckets_cutoff, out);
+        writeBinary(frequency_add, out);
+        writeBinary(frequency_desaturate, out);
+        writeBinary(determinator_sliding_window_size, out);
+    }
+
+    void deserialize(ReadBuffer & in)
+    {
+        readBinary(order, in);
+        readBinary(frequency_cutoff, in);
+        readBinary(num_buckets_cutoff, in);
+        readBinary(frequency_add, in);
+        readBinary(frequency_desaturate, in);
+        readBinary(determinator_sliding_window_size, in);
+    }
 };
 
 
@@ -564,6 +612,39 @@ private:
             }
 
             return END;
+        }
+
+        void serialize(WriteBuffer & out) const
+        {
+            writeBinary(total, out);
+            writeBinary(count_end, out);
+
+            size_t size = buckets.size();
+            writeBinary(size, out);
+
+            for (const auto & elem : buckets)
+            {
+                writeBinary(elem.first, out);
+                writeBinary(elem.second, out);
+            }
+        }
+
+        void deserialize(ReadBuffer & in)
+        {
+            readBinary(total, in);
+            readBinary(count_end, in);
+
+            size_t size = 0;
+            readBinary(size, in);
+
+            buckets.reserve(size);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Buckets::value_type elem;
+                readBinary(elem.first, in);
+                readBinary(elem.second, in);
+                buckets.emplace(std::move(elem));
+            }
         }
     };
 
@@ -621,6 +702,37 @@ public:
     explicit MarkovModel(MarkovModelParameters params_)
         : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
+    void serialize(WriteBuffer & out) const
+    {
+        params.serialize(out);
+
+        size_t size = table.size();
+        writeBinary(size, out);
+
+        for (const auto & elem : table)
+        {
+            writeBinary(elem.getKey(), out);
+            elem.getMapped().serialize(out);
+        }
+    }
+
+    void deserialize(ReadBuffer & in)
+    {
+        params.deserialize(in);
+
+        size_t size = 0;
+        readBinary(size, in);
+
+        table.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            NGramHash key{};
+            readBinary(key, in);
+            Histogram & histogram = table[key];
+            histogram.deserialize(in);
+        }
+    }
+
     void consume(const char * data, size_t size)
     {
         /// First 'order' number of code points are pre-filled with BEGIN.
@@ -654,7 +766,6 @@ public:
                 break;
         }
     }
-
 
     void finalize()
     {
@@ -720,7 +831,7 @@ public:
             }
         }
 
-        if (params.frequency_desaturate)
+        if (params.frequency_desaturate > 0.0)
         {
             for (auto & elem : table)
             {
@@ -733,7 +844,7 @@ public:
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate;
+                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
@@ -768,7 +879,7 @@ public:
             }
 
             if (!it)
-                throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
             size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
@@ -878,6 +989,16 @@ public:
     {
         seed = hash(seed);
     }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        markov_model.serialize(out);
+    }
+
+    void deserialize(ReadBuffer & in) override
+    {
+        markov_model.deserialize(in);
+    }
 };
 
 
@@ -916,6 +1037,16 @@ public:
     {
         nested_model->updateSeed();
     }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        nested_model->serialize(out);
+    }
+
+    void deserialize(ReadBuffer & in) override
+    {
+        nested_model->deserialize(in);
+    }
 };
 
 
@@ -953,6 +1084,16 @@ public:
     void updateSeed() override
     {
         nested_model->updateSeed();
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        nested_model->serialize(out);
+    }
+
+    void deserialize(ReadBuffer & in) override
+    {
+        nested_model->deserialize(in);
     }
 };
 
@@ -997,7 +1138,7 @@ public:
         if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported data type");
     }
 };
 
@@ -1046,6 +1187,18 @@ public:
         for (auto & model : models)
             model->updateSeed();
     }
+
+    void serialize(WriteBuffer & out) const
+    {
+        for (const auto & model : models)
+            model->serialize(out);
+    }
+
+    void deserialize(ReadBuffer & in)
+    {
+        for (auto & model : models)
+            model->deserialize(in);
+    }
 };
 
 }
@@ -1068,8 +1221,10 @@ try
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
         ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
-        ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
+        ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows; the limit can be also greater than the number of source dataset - in this case it will process the dataset in a loop more than one time, using different seeds on every iteration, generating result as large as needed")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
+        ("save", po::value<std::string>(), "save the models after training to the specified file. You can use --limit 0 to skip the generation step. The file is using binary, platform-dependent, opaque serialization format. The model parameters are saved, while the seed is not.")
+        ("load", po::value<std::string>(), "load the models instead of training from the specified file. The table structure must match the saved file. The seed should be specified separately, while other model parameters are loaded.")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
         ("frequency-cutoff", po::value<UInt64>()->default_value(5), "frequency cutoff for markov model: remove all buckets with count less than specified")
         ("num-buckets-cutoff", po::value<UInt64>()->default_value(0), "cutoff for number of different possible continuations for a context: remove all histograms with less than specified number of buckets")
@@ -1084,7 +1239,6 @@ try
 
     if (options.count("help")
         || !options.count("seed")
-        || !options.count("structure")
         || !options.count("input-format")
         || !options.count("output-format"))
     {
@@ -1096,11 +1250,29 @@ try
         return 0;
     }
 
+    if (options.count("save") && options.count("load"))
+    {
+        std::cerr << "The options --save and --load cannot be used together.\n";
+        return 1;
+    }
+
     UInt64 seed = sipHash64(options["seed"].as<std::string>());
 
-    std::string structure = options["structure"].as<std::string>();
+    std::string structure;
+
+    if (options.count("structure"))
+        structure = options["structure"].as<std::string>();
+
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
+
+    std::string load_from_file;
+    std::string save_into_file;
+
+    if (options.count("load"))
+        load_from_file = options["load"].as<std::string>();
+    else if (options.count("save"))
+        save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
     if (options.count("limit"))
@@ -1117,32 +1289,52 @@ try
     markov_model_params.frequency_desaturate = options["frequency-desaturate"].as<double>();
     markov_model_params.determinator_sliding_window_size = options["determinator-sliding-window-size"].as<UInt64>();
 
-    // Create header block
-    std::vector<std::string> structure_vals;
-    boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
-
-    if (structure_vals.size() % 2 != 0)
-        throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
+    /// Create the header block
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = Context::createGlobal(shared_context.get());
+    auto context_const = WithContext(context).getContext();
+    context->makeGlobalContext();
 
     Block header;
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+    ColumnsDescription schema_columns;
+
+    if (structure.empty())
+    {
+        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
+        {
+            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+
+            /// stdin must be seekable
+            auto res = lseek(file->getFD(), 0, SEEK_SET);
+            if (-1 == res)
+                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+            return file;
+        };
+
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
+    }
+    else
+    {
+        schema_columns = parseColumnsListFromString(structure, context_const);
+    }
+
+    auto schema_columns_info = schema_columns.getOrdinary();
+
+    for (auto & info : schema_columns_info)
     {
         ColumnWithTypeAndName column;
-        column.name = structure_vals[i];
-        column.type = data_type_factory.get(structure_vals[i + 1]);
+        column.name = info.name;
+        column.type = info.type;
         column.column = column.type->createColumn();
         header.insert(std::move(column));
     }
 
-    SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
-
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
 
+    if (load_from_file.empty() || structure.empty())
     {
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
@@ -1156,6 +1348,9 @@ try
 
     /// Train step
     UInt64 source_rows = 0;
+
+    bool rewind_needed = false;
+    if (load_from_file.empty())
     {
         if (!silent)
             std::cerr << "Training models\n";
@@ -1173,11 +1368,71 @@ try
             if (!silent)
                 std::cerr << "Processed " << source_rows << " rows\n";
         }
+
+        obfuscator.finalize();
+        rewind_needed = true;
+    }
+    else
+    {
+        if (!silent)
+            std::cerr << "Loading models\n";
+
+        ReadBufferFromFile model_file_in(load_from_file);
+        CompressedReadBuffer model_in(model_file_in);
+
+        UInt8 version = 0;
+        readBinary(version, model_in);
+        if (version != 0)
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of the model file");
+
+        readBinary(source_rows, model_in);
+
+        Names data_types = header.getDataTypeNames();
+        size_t header_size = 0;
+        readBinary(header_size, model_in);
+        if (header_size != data_types.size())
+            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "The saved model was created for different number of columns");
+
+        for (size_t i = 0; i < header_size; ++i)
+        {
+            String type;
+            readBinary(type, model_in);
+            if (type != data_types[i])
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "The saved model was created for different types of columns");
+        }
+
+        obfuscator.deserialize(model_in);
     }
 
-    obfuscator.finalize();
+    if (!save_into_file.empty())
+    {
+        if (!silent)
+            std::cerr << "Saving models\n";
 
-    if (!limit)
+        WriteBufferFromFile model_file_out(save_into_file);
+        CompressedWriteBuffer model_out(model_file_out, CompressionCodecFactory::instance().get("ZSTD", 1));
+
+        /// You can change version on format change, it is currently set to zero.
+        UInt8 version = 0;
+        writeBinary(version, model_out);
+
+        writeBinary(source_rows, model_out);
+
+        /// We are writing the data types for validation, because the models serialization depends on the data types.
+        Names data_types = header.getDataTypeNames();
+        size_t header_size = data_types.size();
+        writeBinary(header_size, model_out);
+        for (const auto & type : data_types)
+            writeBinary(type, model_out);
+
+        /// Write the models.
+        obfuscator.serialize(model_out);
+
+        model_out.finalize();
+        model_file_out.finalize();
+    }
+
+    if (!options.count("limit"))
         limit = source_rows;
 
     /// Generation step
@@ -1187,7 +1442,8 @@ try
         if (!silent)
             std::cerr << "Generating data\n";
 
-        file_in.seek(0, SEEK_SET);
+        if (rewind_needed)
+            file_in.rewind();
 
         Pipe pipe(context->getInputFormat(input_format, file_in, header, max_block_size));
 
@@ -1220,6 +1476,7 @@ try
         out_executor.finish();
 
         obfuscator.updateSeed();
+        rewind_needed = true;
     }
 
     return 0;

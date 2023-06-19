@@ -5,6 +5,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -39,6 +40,7 @@ struct MergeInfo
     Float64 progress;
     UInt64 num_parts;
     UInt64 total_size_bytes_compressed;
+    UInt64 total_size_bytes_uncompressed;
     UInt64 total_size_marks;
     UInt64 total_rows_count;
     UInt64 bytes_read_uncompressed;
@@ -61,26 +63,6 @@ using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 struct Settings;
 
 
-/**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker to account all the memory used.
- */
-class MemoryTrackerThreadSwitcher : boost::noncopyable
-{
-public:
-    explicit MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_);
-    ~MemoryTrackerThreadSwitcher();
-private:
-    MergeListEntry & merge_list_entry;
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
-    UInt64 prev_untracked_memory_limit;
-    UInt64 prev_untracked_memory;
-    String prev_query_id;
-};
-
-using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
-
 struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
@@ -101,6 +83,7 @@ struct MergeListElement : boost::noncopyable
     std::atomic<bool> is_cancelled{};
 
     UInt64 total_size_bytes_compressed{};
+    UInt64 total_size_bytes_uncompressed{};
     UInt64 total_size_marks{};
     UInt64 total_rows_count{};
     std::atomic<UInt64> bytes_read_uncompressed{};
@@ -113,31 +96,27 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    MemoryTracker memory_tracker{VariableContext::Process};
-    /// Used to adjust ThreadStatus::untracked_memory_limit
-    UInt64 max_untracked_memory;
-    /// Used to avoid losing any allocation context
-    UInt64 untracked_memory = 0;
-    /// Used for identifying mutations/merges in trace_log
-    std::string query_id;
-
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
+    ThreadGroupPtr thread_group;
+
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const Settings & settings);
+        const ContextPtr & context);
 
     MergeInfo getInfo() const;
 
+    const MemoryTracker & getMemoryTracker() const { return thread_group->memory_tracker; }
+
     MergeListElement * ptr() { return this; }
 
-    ~MergeListElement();
-
     MergeListElement & ref() { return *this; }
+
+    ~MergeListElement();
 };
 
 /** Maintains a list of currently running merges.
@@ -195,6 +174,11 @@ public:
     void bookMergeWithTTL()
     {
         ++merges_with_ttl_counter;
+    }
+
+    void cancelMergeWithTTL()
+    {
+        --merges_with_ttl_counter;
     }
 
     size_t getMergesWithTTLCount() const

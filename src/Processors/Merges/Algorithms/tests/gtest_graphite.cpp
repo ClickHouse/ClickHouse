@@ -12,19 +12,11 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+
 
 using namespace DB;
-
-static int regAggregateFunctions = 0;
-
-void tryRegisterAggregateFunctions()
-{
-    if (!regAggregateFunctions)
-    {
-        registerAggregateFunctions();
-        regAggregateFunctions = 1;
-    }
-}
 
 static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & config_path)
 {
@@ -35,14 +27,18 @@ static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & confi
 
 static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s)
 {
+    /// NOTE: This code is a trash, because it's written in C.
+    /// We let it remain, because it's just some orphan old test.
+
     char tmp_file[19];
     strcpy(tmp_file, "/tmp/rollup-XXXXXX");
     int fd = mkstemp(tmp_file);
     if (fd == -1)
     {
-        throw std::runtime_error(strerror(errno));
+        throw std::runtime_error(errnoToString());
     }
-    try {
+    try
+    {
         if (write(fd, s.c_str(), s.size()) < s.size())
         {
             throw std::runtime_error("unable write to temp file");
@@ -51,21 +47,23 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         {
             throw std::runtime_error("unable write to temp file");
         }
-        close(fd);
+        int error = close(fd);
+        chassert(!error);
+
         auto config_path = std::string(tmp_file) + ".xml";
         if (std::rename(tmp_file, config_path.c_str()))
         {
             int err = errno;
-            remove(tmp_file);
-            throw std::runtime_error(strerror(err));
+            (void)remove(tmp_file);
+            throw std::runtime_error(errnoToString(err));
         }
         ConfigProcessor::LoadedConfig config = loadConfiguration(config_path);
-        remove(tmp_file);
+        (void)remove(tmp_file);
         return config;
     }
     catch (...)
     {
-        remove(tmp_file);
+        (void)remove(tmp_file);
         throw;
     }
 }

@@ -5,8 +5,9 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/logger_useful.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -18,6 +19,7 @@ class DNSResolver : private boost::noncopyable
 {
 public:
     using IPAddresses = std::vector<Poco::Net::IPAddress>;
+    using IPAddressesPtr = std::shared_ptr<IPAddresses>;
 
     static DNSResolver & instance();
 
@@ -36,8 +38,8 @@ public:
 
     std::vector<Poco::Net::SocketAddress> resolveAddressList(const std::string & host, UInt16 port);
 
-    /// Accepts host IP and resolves its host name
-    String reverseResolve(const Poco::Net::IPAddress & address);
+    /// Accepts host IP and resolves its host names
+    std::unordered_set<String> reverseResolve(const Poco::Net::IPAddress & address);
 
     /// Get this server host name
     String getHostName();
@@ -47,6 +49,9 @@ public:
 
     /// Drops all caches
     void dropCache();
+
+    /// Removes an entry from cache or does nothing
+    void removeHostFromCache(const std::string & host);
 
     /// Updates all known hosts in cache.
     /// Returns true if IP of any host has been changed or an element was dropped (too many failures)

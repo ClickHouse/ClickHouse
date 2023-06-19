@@ -1,4 +1,6 @@
+SET allow_experimental_analyzer = 1;
 SET optimize_monotonous_functions_in_order_by = 1;
+SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS test_order_by;
 

@@ -61,7 +61,7 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
                 "INSERT INTO test_table VALUES ('2019-08-16', {})".format(10 + i)
             )
 
-        pm.drop_instance_zk_connections(node1)
+        pm.drop_instance_zk_connections(node1, action="REJECT --reject-with tcp-reset")
 
         # drop all parts on the second replica
         node2.query_with_retry("ALTER TABLE test_table DROP PARTITION 201908")
@@ -78,6 +78,7 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
             node2,
             "SELECT value FROM system.zookeeper WHERE path='/clickhouse/tables/test1/replicated/replicas/node1' AND name='is_lost'",
             "1",
+            retry_count=40,
         )
 
         node2.wait_for_log_line("Will mark replica node1 as lost")

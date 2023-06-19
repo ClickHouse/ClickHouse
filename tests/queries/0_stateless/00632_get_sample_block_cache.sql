@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-s3-storage, no-asan
 
 SET joined_subquery_requires_alias = 0;
 
@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS dict_string;
 DROP TABLE IF EXISTS dict_ui64;
 DROP TABLE IF EXISTS video_views;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE video_views
 (
     entityIri String,

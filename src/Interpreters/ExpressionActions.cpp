@@ -47,8 +47,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ExpressionActions::~ExpressionActions() = default;
-
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
@@ -69,7 +67,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -160,8 +158,11 @@ static void setLazyExecutionInfo(
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
     /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
-    if (node_info.used_in_result || node_info.parents.empty())
+    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
+    {
         lazy_execution_info.can_be_lazy_executed = false;
+        return;
+    }
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
     for (const auto & parent : node_info.parents)
@@ -172,7 +173,7 @@ static void setLazyExecutionInfo(
         {
             /// Use set, because one node can be more than one argument.
             /// Example: expr1 AND expr2 AND expr1.
-            std::set<size_t> indexes;
+            std::unordered_set<size_t> indexes;
             for (size_t i = 0; i != parent->children.size(); ++i)
             {
                 if (node == parent->children[i])
@@ -294,7 +295,11 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             short_circuit_nodes[&node] = short_circuit_settings;
     }
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+    /// If there are no short-circuit functions, no need to do anything.
+    if (short_circuit_nodes.empty())
+        return {};
+
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -328,10 +333,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & index = actions_dag->getIndex();
+    const auto & outputs = actions_dag->getOutputs();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -421,9 +426,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(index.size());
+    result_positions.reserve(outputs.size());
 
-    for (const auto & node : index)
+    for (const auto & node : outputs)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 
@@ -531,9 +536,9 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
 
-            throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
-                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
+            throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
+                "Too many temporary non-const columns:{}. Maximum: {}",
+                list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
     }
 }
@@ -570,7 +575,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
-                throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
 
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
@@ -579,6 +584,12 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             {
                 /// Do not execute function if it's result is already known.
                 res_column.column = action.node->column->cloneResized(num_rows);
+                /// But still need to remove unused arguments.
+                for (const auto & argument : action.arguments)
+                {
+                    if (!argument.needed_later)
+                        columns[argument.pos] = {};
+                }
                 break;
             }
 
@@ -615,9 +626,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
-                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
             for (auto & column : columns)
                 if (column.column)
@@ -630,7 +641,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -785,10 +796,10 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
-    String res;
+    NameAndTypePair result;
 
     for (const auto & column : columns)
     {
@@ -802,14 +813,14 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
         if (!min_size || size < *min_size)
         {
             min_size = size;
-            res = column.name;
+            result = column;
         }
     }
 
     if (!min_size)
-        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
 
-    return res;
+    return result;
 }
 
 std::string ExpressionActions::dumpActions() const
@@ -835,6 +846,23 @@ std::string ExpressionActions::dumpActions() const
     ss << "\n";
 
     return ss.str();
+}
+
+void ExpressionActions::describeActions(WriteBuffer & out, std::string_view prefix) const
+{
+    bool first = true;
+
+    for (const auto & action : actions)
+    {
+        out << prefix << (first ? "Actions: " : "         ");
+        out << action.toString() << '\n';
+        first = false;
+    }
+
+    out << prefix << "Positions:";
+    for (const auto & pos : result_positions)
+        out << ' ' << pos;
+    out << '\n';
 }
 
 JSONBuilder::ItemPtr ExpressionActions::toTree() const
@@ -912,7 +940,8 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
                 {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
+                    auto set = column_set->getData();
+                    if (set && set->isCreated() && set->getTotalRowCount() == 0)
                         return true;
                 }
             }
@@ -925,7 +954,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {
     if (steps.empty())
-        throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add action to empty ExpressionActionsChain");
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
@@ -1003,7 +1032,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
@@ -1034,7 +1063,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
+    const ColumnsWithTypeAndName & required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
@@ -1042,11 +1071,8 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
-    for (const auto & [name, type] : result_names_and_types)
-        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
-        result_columns.emplace_back(nullptr, type, name);
+    result_columns = required_columns_;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
@@ -1071,8 +1097,8 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column_name);
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
 
     for (const auto & column : result_columns)
     {
@@ -1086,12 +1112,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

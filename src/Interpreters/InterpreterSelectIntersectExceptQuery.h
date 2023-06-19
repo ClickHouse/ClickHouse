@@ -24,11 +24,18 @@ public:
         ContextPtr context_,
         const SelectQueryOptions & options_);
 
+    InterpreterSelectIntersectExceptQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        const SelectQueryOptions & options_);
+
     BlockIO execute() override;
 
     Block getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }

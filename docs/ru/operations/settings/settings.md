@@ -479,7 +479,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
-Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
+Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
 
 Возможные значения:
 
@@ -527,7 +527,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 -   [Использование вложенных структур](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
-## input_format_with_names_use_header {#settings-input-format-with-names-use-header}
+## input_format_with_names_use_header {#input_format_with_names_use_header}
 
 Включает или отключает проверку порядка столбцов при вставке данных.
 
@@ -535,8 +535,38 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNames](../../interfaces/formats.md#customseparatedwithnames)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+## input_format_with_types_use_header {#input_format_with_types_use_header}
+
+Определяет, должен ли синтаксический анализатор формата проверять, соответствуют ли типы данных из входных данных типам данных из целевой таблицы.
+
+Поддерживаемые форматы:
+
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
 
 Возможные значения:
 
@@ -626,8 +656,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.
 
-:::danger "Внимание"
+:::warning "Внимание"
     Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
+:::
 
 Возможные значения:
 
@@ -968,7 +999,7 @@ log_query_threads=1
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
 
-Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.md).
+Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.mdx).
 
 Возможные значения:
 
@@ -1091,6 +1122,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
     :::note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
     :::
+
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -1283,6 +1315,12 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 Значение по умолчанию: 7500.
 
 Чем меньше значение, тем чаще данные сбрасываются в таблицу. Установка слишком низкого значения приводит к снижению производительности.
+
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Таймаут для poll стримнга данных.
+
+Значение по умолчанию: 500.
 
 ## load_balancing {#settings-load_balancing}
 
@@ -1551,6 +1589,24 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
 
+## format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
+
+Если установлено значение true, разрешить строки в двойных кавычках.
+
+Включено по умолчанию.
+
+## input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
+
+Если включено, заменяет пустые поля ввода в CSV значениями по умолчанию. Для сложных выражений по умолчанию `input_format_defaults_for_omitted_fields` также должен быть включен.
+
+Включено по умолчанию.
+
+## input_format_csv_arrays_as_nested_csv {#input_format_csv_arrays_as_nested_csv}
+
+При чтении массива из CSV ожидайте, что его элементы были сериализованы во вложенный CSV, а затем помещены в строку. Пример: "[""Hello"", ""world"", ""42"""" TV""]". Скобки вокруг массива могут быть опущены.
+
+По умолчанию отключены.
+
 ## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
@@ -1626,6 +1682,50 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Использовать в качестве разделителя строк для CSV формата CRLF (DOS/Windows стиль) вместо LF (Unix стиль).
+
+## input_format_csv_detect_header {#input_format_csv_detect_header}
+
+Обнаружить заголовок с именами и типами в формате CSV.
+ 
+Значение по умолчанию - `true`.
+
+## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
+
+Количество строк, пропускаемых в начале данных в формате ввода CSV.
+
+Значение по умолчанию: `0`.
+
+## input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+
+Удалить пробелы и символы табуляции из строк без кавычек.
+
+Значение по умолчанию: `true`.
+
+**Примеры**
+
+Запрос
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+```
+
+Результат
+
+```text
+"string"
+```
+
+Запрос
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
+```
+
+Результат
+
+```text
+"  string  "
+```
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -1955,7 +2055,7 @@ SELECT * FROM test_table
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
+Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/optimize.md) не выполняет мёрж.
 
 По умолчанию, `OPTIMIZE` завершается успешно и в тех случаях, когда он ничего не сделал. Настройка позволяет отделить подобные случаи и включает генерирование исключения с поясняющим сообщением.
 
@@ -1963,6 +2063,21 @@ SELECT * FROM test_table
 
 -   1 — генерирование исключения включено.
 -   0 — генерирование исключения выключено.
+
+Значение по умолчанию: 0.
+
+## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
+
+Включает или отключает оптимизацию для запроса [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md), когда есть только один парт с level > 0 и неистекший TTL.
+
+- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
+
+По умолчанию, `OPTIMIZE TABLE ... FINAL` перезапишет даже один парт.
+
+Возможные значения:
+
+-   1 - Включена
+-   0 - Выключена
 
 Значение по умолчанию: 0.
 
@@ -2082,8 +2197,9 @@ SELECT * FROM test_table
 
 Устанавливает приоритет ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) для потоков, исполняющих запросы. Планировщик ОС учитывает эти приоритеты при выборе следующего потока для исполнения на доступном ядре CPU.
 
-:::danger "Предупреждение"
+:::warning "Предупреждение"
     Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
+:::
 
 Допустимые значения:
 
@@ -2464,68 +2580,27 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_buffer_flush_schedule_pool_size).
 
 ## background_move_pool_size {#background_move_pool_size}
 
-Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_move_pool_size).
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 128.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_schedule_pool_size).
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_fetches_pool_size).
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_distributed_schedule_pool_size).
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
-
-**Смотрите также**
-
--   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
--   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
@@ -3172,16 +3247,6 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
-
-Возможные значения:
--   0 — использование типов данных для работы с географическими структурами не поддерживается.
--   1 — использование типов данных для работы с географическими структурами поддерживается.
-
-Значение по умолчанию: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
@@ -3225,12 +3290,6 @@ SELECT * FROM test2;
 Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
 
 Значение по умолчанию: `64`.
-
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Задает время в секундах, после которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) удаляется.
-
-Значение по умолчанию: `5`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
@@ -3341,6 +3400,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+
 ## http_connection_timeout {#http_connection_timeout}
 
 Тайм-аут для HTTP-соединения (в секундах).
@@ -3580,7 +3640,7 @@ SETTINGS index_granularity = 8192 │
 
 Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql.md). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
-## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+## optimize_use_projections {#optimize_use_projections}
 
 Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
 
@@ -3593,7 +3653,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)).
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [optimize_use_projections](#optimize_use_projections)).
 
 Возможные значения:
 
@@ -3602,7 +3662,7 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
-## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+## alter_sync {#alter-sync}
 
 Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
 
@@ -3758,14 +3818,14 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md). Если вы хотите использовать номера столбцов вместо названий в выражениях этих операторов, установите `enable_positional_arguments = 1`.
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Возможные значения:
 
 -   0 — Позиционные аргументы не поддерживаются.
 -   1 — Позиционные аргументы поддерживаются: можно использовать номера столбцов вместо названий столбцов.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -3775,8 +3835,6 @@ Exception: Total regexp lengths too large.
 CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SET enable_positional_arguments = 1;
 
 SELECT * FROM positional_arguments ORDER BY 2,3;
 ```
@@ -3790,6 +3848,19 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
+
+Включает или отключает возвращение результатов типа:
+-   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) и [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
+-   `DateTime64` с расширенным диапазоном (по сравнению с типом `DateTime`) для функций [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) и [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
+
+Возможные значения:
+
+-   0 — Функции возвращают результаты типа `Date` или `DateTime` для всех типов аргументов.
+-   1 — Функции возвращают результаты типа `Date32` или `DateTime64` для аргументов типа `Date32` или `DateTime64` и возвращают `Date` или `DateTime` в других случаях.
+
+Значение по умолчанию: `0`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -4026,3 +4097,55 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
 
 Значение по умолчанию: `''`.
+
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
+Если установлено значение `true` и пользователь хочет прервать запрос (например, с помощью `Ctrl+C` на клиенте), то запрос продолжает выполнение только для данных, которые уже были считаны из таблицы. После этого он вернет частичный результат запроса для той части таблицы, которая была прочитана. Чтобы полностью остановить выполнение запроса без частичного результата, пользователь должен отправить 2 запроса отмены.
+
+**Пример с выключенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000)
+
+Cancelling query.
+Ok.
+Query was cancelled.
+
+0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
+```
+
+**Пример с включенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true
+
+┌──────sum(number)─┐
+│ 1355411451286266 │
+└──────────────────┘
+
+1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
+```
+
+Возможные значения:: `true`, `false`
+
+Значение по умолчанию: `false`
+
+## rename_files_after_processing
+
+- **Тип:** Строка
+
+- **Значение по умолчанию:** Пустая строка
+
+Этот параметр позволяет задать паттерн для переименования файлов, обрабатываемых табличной функцией `file`. Когда опция установлена, все файлы, прочитанные табличной функцией `file`, будут переименованы в соответствии с указанным шаблоном, если обработка и чтение файла завершились успешно.
+
+### Шаблон
+Шаблон поддерживает следующие виды плейсхолдеров:
+
+- `%f` — Исходное имя файла без расширения (например "sample").
+- `%e` — Оригинальное расширение файла с точкой (например ".csv").
+- `%t` — Текущее время (в микросекундах).
+- `%%` — Знак процента ("%").
+
+### Пример
+- Значение аргумента: `--rename_files_after_processing="processed_%f_%t%e"`
+
+- Запрос: `SELECT * FROM file('sample.csv')`
+
+Если чтение и обработка `sample.csv` прошли успешно, файл будет переименован в `processed_sample_1683473210851438.csv`.

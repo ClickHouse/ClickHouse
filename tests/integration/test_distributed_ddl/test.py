@@ -49,6 +49,7 @@ def test_default_database(test_cluster):
     test_cluster.ddl_check_query(
         instance,
         "CREATE TABLE null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null",
+        settings={"distributed_ddl_entry_format_version": 2},
     )
 
     contents = instance.query(
@@ -57,7 +58,9 @@ def test_default_database(test_cluster):
     assert TSV(contents) == TSV("ch1\tdefault\nch2\ttest2\nch3\tdefault\nch4\ttest2\n")
 
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE IF EXISTS null ON CLUSTER cluster2"
+        instance,
+        "DROP TABLE IF EXISTS null ON CLUSTER cluster2",
+        settings={"distributed_ddl_entry_format_version": 2},
     )
     test_cluster.ddl_check_query(
         instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
@@ -415,7 +418,7 @@ def test_rename(test_cluster):
     for i in range(10):
         instance.query("insert into rename (id) values ({})".format(i))
 
-    # FIXME ddl_check_query doesnt work for replicated DDDL if replace_hostnames_with_ips=True
+    # FIXME ddl_check_query doesn't work for replicated DDDL if replace_hostnames_with_ips=True
     # because replicas use wrong host name of leader (and wrong path in zk) to check if it has executed query
     # so ddl query will always fail on some replicas even if query was actually executed by leader
     # Also such inconsistency in cluster configuration may lead to query duplication if leader suddenly changed
@@ -552,7 +555,9 @@ def test_replicated_without_arguments(test_cluster):
     )
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary"
+        instance,
+        "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
     )
     assert (
         "are supported only for ON CLUSTER queries with Atomic database engine"
@@ -578,6 +583,17 @@ def test_replicated_without_arguments(test_cluster):
         instance, "DROP DATABASE test_ordinary ON CLUSTER cluster SYNC"
     )
     test_cluster.pm_random_drops.push_rules(rules)
+
+
+def test_disabled_distributed_ddl(test_cluster):
+    instance = test_cluster.instances["ch1"]
+
+    assert (
+        "Distributed DDL queries are prohibited for the cluster"
+        in instance.query_and_get_error(
+            "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster_disabled_ddl'"
+        )
+    )
 
 
 if __name__ == "__main__":

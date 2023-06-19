@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/reference/groupbitor
 sidebar_position: 126
 ---
 

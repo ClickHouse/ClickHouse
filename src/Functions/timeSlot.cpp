@@ -1,16 +1,16 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToSomething.h>
+#include <Functions/FunctionDateOrDateTimeToDateTimeOrDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
 
-using FunctionTimeSlot = FunctionDateOrDateTimeToSomething<DataTypeDateTime, TimeSlotImpl>;
+using FunctionTimeSlot = FunctionDateOrDateTimeToDateTimeOrDateTime64<TimeSlotImpl>;
 
-void registerFunctionTimeSlot(FunctionFactory & factory)
+REGISTER_FUNCTION(TimeSlot)
 {
     factory.registerFunction<FunctionTimeSlot>();
 }

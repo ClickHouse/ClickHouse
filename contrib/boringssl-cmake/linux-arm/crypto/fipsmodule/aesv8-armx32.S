@@ -778,3 +778,4 @@ aes_hw_ctr32_encrypt_blocks:
 #endif
 #endif
 #endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits

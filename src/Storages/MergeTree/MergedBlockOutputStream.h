@@ -15,7 +15,7 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
+        const MergeTreeMutableDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
@@ -44,9 +44,10 @@ public:
         std::unique_ptr<Impl> impl;
 
         explicit Finalizer(std::unique_ptr<Impl> impl_);
-        ~Finalizer();
         Finalizer(Finalizer &&) noexcept;
         Finalizer & operator=(Finalizer &&) noexcept;
+        ~Finalizer();
+
 
         void finish();
     };
@@ -54,17 +55,16 @@ public:
     /// Finalize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
     Finalizer finalizePartAsync(
-            MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync,
-            const NamesAndTypesList * total_columns_list = nullptr,
-            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-            const WriteSettings & settings = {});
+        const MergeTreeMutableDataPartPtr & new_part,
+        bool sync,
+        const NamesAndTypesList * total_columns_list = nullptr,
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
     void finalizePart(
-            MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync,
-            const NamesAndTypesList * total_columns_list = nullptr,
-            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        const MergeTreeMutableDataPartPtr & new_part,
+        bool sync,
+        const NamesAndTypesList * total_columns_list = nullptr,
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -74,14 +74,14 @@ private:
 
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
-            const MergeTreeData::DataPartPtr & new_part,
-            MergeTreeData::DataPart::Checksums & checksums,
-            const WriteSettings & write_settings);
+        const MergeTreeMutableDataPartPtr & new_part,
+        MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
+    WriteSettings write_settings;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

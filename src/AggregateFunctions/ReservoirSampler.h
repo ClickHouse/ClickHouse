@@ -24,6 +24,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -101,6 +102,11 @@ public:
     size_t size() const
     {
         return total_values;
+    }
+
+    bool empty() const
+    {
+        return samples.empty();
     }
 
     T quantileNearest(double level)
@@ -184,14 +190,17 @@ public:
             /// When frequency is too low, replace just one random element with the corresponding probability.
             if (frequency * 2 >= sample_count)
             {
-                UInt64 rnd = genRandom(frequency);
+                UInt64 rnd = genRandom(static_cast<UInt64>(frequency));
                 if (rnd < sample_count)
                     samples[rnd] = b.samples[rnd];
             }
             else
             {
                 for (double i = 0; i < sample_count; i += frequency) /// NOLINT
-                    samples[i] = b.samples[i];
+                {
+                    size_t idx = static_cast<size_t>(i);
+                    samples[idx] = b.samples[idx];
+                }
             }
         }
     }
@@ -200,7 +209,14 @@ public:
     {
         DB::readIntBinary<size_t>(sample_count, buf);
         DB::readIntBinary<size_t>(total_values, buf);
-        samples.resize(std::min(total_values, sample_count));
+
+        size_t size = std::min(total_values, sample_count);
+        static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
+        if (unlikely(size > MAX_RESERVOIR_SIZE))
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
+
+        samples.resize(size);
 
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
@@ -237,14 +253,15 @@ private:
     bool sorted = false;
 
 
-    UInt64 genRandom(size_t lim)
+    UInt64 genRandom(UInt64 limit)
     {
-        assert(lim > 0);
+        assert(limit > 0);
+
         /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(rng.max()))
-            return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
+        if (limit <= static_cast<UInt64>(rng.max()))
+            return static_cast<UInt32>(rng()) % static_cast<UInt32>(limit);
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
     void sortIfNeeded()

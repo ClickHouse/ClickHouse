@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -14,9 +13,12 @@ void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionExecutable(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
+void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+void registerTableFunctionRedis(TableFunctionFactory & factory);
 
 void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 
@@ -24,6 +26,15 @@ void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
+void registerTableFunctionOSS(TableFunctionFactory & factory);
+void registerTableFunctionGCS(TableFunctionFactory & factory);
+void registerTableFunctionHudi(TableFunctionFactory & factory);
+#if USE_PARQUET
+void registerTableFunctionDeltaLake(TableFunctionFactory & factory);
+#endif
+#if USE_AVRO
+void registerTableFunctionIceberg(TableFunctionFactory & factory);
+#endif
 #endif
 
 #if USE_HDFS
@@ -39,6 +50,7 @@ void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
+void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -55,6 +67,12 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctionFormat(TableFunctionFactory & factory);
+
+void registerTableFunctionExplain(TableFunctionFactory & factory);
+
+#if USE_AZURE_BLOB_STORAGE
+void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory);
+#endif
 
 void registerTableFunctions();
 

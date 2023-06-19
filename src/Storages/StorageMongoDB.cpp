@@ -1,19 +1,23 @@
-#include "StorageMongoDB.h"
-#include "StorageMongoDBSocketFactory.h"
+#include <Storages/StorageMongoDB.h>
+#include <Storages/StorageMongoDBSocketFactory.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
-#include <Poco/Version.h>
-#include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/parseAddress.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MongoDBSource.h>
+#include <Processors/Sources/MongoDBSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -22,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
-    extern const int BAD_ARGUMENTS;
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -70,19 +73,91 @@ void StorageMongoDB::connectIfNotConnected()
         auto auth_db = database_name;
         if (auth_source != query_params.end())
             auth_db = auth_source->second;
-#if POCO_VERSION >= 0x01070800
+
         if (!username.empty() && !password.empty())
         {
             Poco::MongoDB::Database poco_db(auth_db);
             if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
         }
-#else
-        authenticate(*connection, database_name, username, password);
-#endif
+
         authenticated = true;
     }
 }
+
+
+class StorageMongoDBSink : public SinkToStorage
+{
+public:
+    explicit StorageMongoDBSink(
+        const std::string & collection_name_,
+        const std::string & db_name_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::shared_ptr<Poco::MongoDB::Connection> connection_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , collection_name(collection_name_)
+        , db_name(db_name_)
+        , metadata_snapshot{metadata_snapshot_}
+        , connection(connection_)
+        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
+    {
+    }
+
+    String getName() const override { return "StorageMongoDBSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        Poco::MongoDB::Database db(db_name);
+        Poco::MongoDB::Document::Vector documents;
+
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+        size_t num_rows = block.rows();
+        size_t num_cols = block.columns();
+
+        const auto columns = block.getColumns();
+        const auto data_types = block.getDataTypes();
+        const auto data_names = block.getNames();
+
+        documents.reserve(num_rows);
+
+        for (const auto i : collections::range(0, num_rows))
+        {
+            Poco::MongoDB::Document::Ptr document = new Poco::MongoDB::Document();
+
+            for (const auto j : collections::range(0, num_cols))
+            {
+                WriteBufferFromOwnString ostr;
+                data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
+                document->add(data_names[j], ostr.str());
+            }
+
+            documents.push_back(std::move(document));
+        }
+
+        if (is_wire_protocol_old)
+        {
+            Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
+            insert_request->documents() = std::move(documents);
+            connection->sendRequest(*insert_request);
+        }
+        else
+        {
+            Poco::SharedPtr<Poco::MongoDB::OpMsgMessage> insert_request = db.createOpMsgMessage(collection_name);
+            insert_request->setCommandName(Poco::MongoDB::OpMsgMessage::CMD_INSERT);
+            insert_request->documents() = std::move(documents);
+            connection->sendRequest(*insert_request);
+        }
+    }
+
+private:
+    String collection_name;
+    String db_name;
+    StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<Poco::MongoDB::Connection> connection;
+
+    const bool is_wire_protocol_old;
+};
 
 
 Pipe StorageMongoDB::read(
@@ -92,7 +167,7 @@ Pipe StorageMongoDB::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned)
+    size_t /*num_streams*/)
 {
     connectIfNotConnected();
 
@@ -105,52 +180,56 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(connection, database_name, collection_name, Poco::MongoDB::Document{}, sample_block, max_block_size));
 }
 
-
-StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
-    StorageMongoDBConfiguration configuration;
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
-    {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-        configuration.set(common_configuration);
+    connectIfNotConnected();
+    return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
+}
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "options")
-                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, options.", arg_name);
-        }
+StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+{
+    Configuration configuration;
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    {
+        validateNamedCollection(
+            *named_collection,
+            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
+            {"options"});
+
+        configuration.host = named_collection->getAny<String>({"host", "hostname"});
+        configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+        configuration.username = named_collection->getAny<String>({"user", "username"});
+        configuration.password = named_collection->get<String>("password");
+        configuration.database = named_collection->getAny<String>({"database", "db"});
+        configuration.table = named_collection->getAny<String>({"collection", "table"});
+        configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 6)
-            throw Exception(
-                "Storage MongoDB requires from 5 to 6 parameters: MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage MongoDB requires from 5 to 6 parameters: "
+                            "MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         /// 27017 is the default MongoDB port.
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 27017);
+        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
 
         configuration.host = parsed_host_port.first;
         configuration.port = parsed_host_port.second;
-        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
+        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
         if (engine_args.size() >= 6)
-            configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
-
+            configuration.options = checkAndGetLiteralArgument<String>(engine_args[5], "database");
     }
 
     context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));

@@ -2,9 +2,10 @@
 
 #include <memory>
 
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Formats/MarkInCompressedFile.h>
 
@@ -26,7 +27,7 @@ struct MarksWeightFunction
 
     size_t operator()(const MarksInCompressedFile & marks) const
     {
-        return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
+        return marks.approximateMemoryUsage() + MARK_CACHE_OVERHEAD;
     }
 };
 
@@ -34,14 +35,17 @@ struct MarksWeightFunction
 /** Cache of 'marks' for StorageMergeTree.
   * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
   */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
+class MarkCache : public CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
 {
 private:
-    using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
+    using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
     explicit MarkCache(size_t max_size_in_bytes)
         : Base(max_size_in_bytes) {}
+
+    MarkCache(const String & mark_cache_policy, size_t max_size_in_bytes)
+        : Base(mark_cache_policy, max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file)

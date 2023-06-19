@@ -30,7 +30,7 @@ faster_queries = 0
 slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
-unstable_partial_queries = 0
+unstable_backward_incompatible_queries = 0
 
 # max seconds to run one query by itself, not counting preparation
 allowed_single_run_time = 2
@@ -41,24 +41,9 @@ color_good = "#b0d050"
 header_template = """
 <!DOCTYPE html>
 <html lang="en">
-<link rel="preload" as="font" href="https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2" type="font/woff2" crossorigin="anonymous"/>
 <style>
-@font-face {{
-    font-family:'Yandex Sans Display Web';
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
-    font-weight:400;
-    font-style:normal;
-    font-stretch:normal;
-    font-display: swap;
-}}
-
 body {{
-    font-family: "Yandex Sans Display Web", Arial, sans-serif;
+    font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif;
     background: #EEE;
 }}
 
@@ -393,13 +378,13 @@ if args.report == "main":
             ]
         )
 
-    def add_partial():
+    def add_backward_incompatible():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:
             return
 
-        global unstable_partial_queries, slow_average_tests, tables
-        text = tableStart("Partial Queries")
+        global unstable_backward_incompatible_queries, slow_average_tests, tables
+        text = tableStart("Backward-incompatible queries")
         columns = ["Median time, s", "Relative time variance", "Test", "#", "Query"]
         text += tableHeader(columns)
         attrs = ["" for c in columns]
@@ -407,7 +392,7 @@ if args.report == "main":
             anchor = f"{currentTableAnchor()}.{row[2]}.{row[3]}"
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
-                unstable_partial_queries += 1
+                unstable_backward_incompatible_queries += 1
                 errors_explained.append(
                     [
                         f"<a href=\"#{anchor}\">The query no. {row[3]} of test '{row[2]}' has excessive variance of run time. Keep it below 10%</a>"
@@ -429,7 +414,7 @@ if args.report == "main":
         text += tableEnd()
         tables.append(text)
 
-    add_partial()
+    add_backward_incompatible()
 
     def add_changes():
         rows = tsvRows("report/changed-perf.tsv")
@@ -641,12 +626,14 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        if slower_queries > 3:
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
+        # False positives rate should be < 1%: https://shorturl.at/CDEK8
+        if slower_queries > 5:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
-    if unstable_partial_queries:
-        very_unstable_queries += unstable_partial_queries
+    if unstable_backward_incompatible_queries:
+        very_unstable_queries += unstable_backward_incompatible_queries
         status = "failure"
 
     # Don't show mildly unstable queries, only the very unstable ones we
@@ -685,7 +672,6 @@ if args.report == "main":
     )
 
 elif args.report == "all-queries":
-
     print((header_template.format()))
 
     add_tested_commits()

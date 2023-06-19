@@ -11,11 +11,13 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/zookeeper_config.xml", "configs/remote_servers.xml"],
     with_zookeeper=True,
+    use_keeper=False,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/zookeeper_config.xml", "configs/remote_servers.xml"],
     with_zookeeper=True,
+    use_keeper=False,
 )
 
 
@@ -35,7 +37,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
 
 
 # Create table with default zookeeper.

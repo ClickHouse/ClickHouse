@@ -76,7 +76,7 @@ struct DataTypeDecimalTrait
     T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
-            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
         const UInt32 scale_delta = scale - x.scale; /// scale_delta >= 0
         return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_delta);
     }
@@ -90,24 +90,56 @@ struct DataTypeDecimalTrait
   * Sign of `fractional` is expected to be positive, otherwise result is undefined.
   * If `scale` is to big (scale > max_precision<DecimalType::NativeType>), result is undefined.
   */
-template <typename DecimalType>
-inline DecimalType decimalFromComponentsWithMultiplier(
-        const typename DecimalType::NativeType & whole,
-        const typename DecimalType::NativeType & fractional,
-        typename DecimalType::NativeType scale_multiplier)
+
+template <typename DecimalType, bool throw_on_error>
+inline bool decimalFromComponentsWithMultiplierImpl(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
 {
     using T = typename DecimalType::NativeType;
     const auto fractional_sign = whole < 0 ? -1 : 1;
 
     T whole_scaled = 0;
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    {
+        if constexpr (throw_on_error)
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        return false;
+    }
 
     T value;
     if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    {
+        if constexpr (throw_on_error)
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        return false;
+    }
 
-    return DecimalType(value);
+    result = DecimalType(value);
+    return true;
+}
+
+template <typename DecimalType>
+inline DecimalType decimalFromComponentsWithMultiplier(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    DecimalType result;
+    decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
+    return result;
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponentsWithMultiplier(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
+{
+    return decimalFromComponentsWithMultiplierImpl<DecimalType, false>(whole, fractional, scale_multiplier, result);
 }
 
 template <typename DecimalType>
@@ -116,6 +148,15 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponentsWithMultiplier(
+    const DecimalComponents<DecimalType> & components,
+    typename DecimalType::NativeType scale_multiplier,
+    DecimalType & result)
+{
+    return tryGetDecimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier, result);
 }
 
 
@@ -134,6 +175,18 @@ inline DecimalType decimalFromComponents(
     return decimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, scaleMultiplier<T>(scale));
 }
 
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponents(
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    UInt32 scale,
+    DecimalType & result)
+{
+    using T = typename DecimalType::NativeType;
+
+    return tryGetDecimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, scaleMultiplier<T>(scale), result);
+}
+
 /** Make a decimal value from whole and fractional components with given scale.
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
@@ -143,6 +196,15 @@ inline DecimalType decimalFromComponents(
         UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
+}
+
+template <typename DecimalType>
+inline bool tryGetDecimalFromComponents(
+    const DecimalComponents<DecimalType> & components,
+    UInt32 scale,
+    DecimalType & result)
+{
+    return tryGetDecimalFromComponents<DecimalType>(components.whole, components.fractional, scale, result);
 }
 
 /** Split decimal into whole and fractional parts with given scale_multiplier.
@@ -156,7 +218,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
-    if (fractional < T(0))
+    if (whole && fractional < T(0))
         fractional *= T(-1);
 
     return {whole, fractional};
@@ -179,7 +241,7 @@ inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_t scale)
+inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
         return decimal.value;
@@ -199,7 +261,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
-        if (result < T(0))
+        if (decimal.value / scale_multiplier && result < T(0))
             result = -result;
 
     return result;
@@ -211,7 +273,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-inline typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, size_t scale)
+inline typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
         return 0;
@@ -221,7 +283,7 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
 
 /// Decimal to integer/float conversion
 template <typename To, typename DecimalType, typename ReturnType>
-ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
+ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
 {
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
@@ -239,7 +301,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
             if (whole < 0)
             {
                 if constexpr (throw_exception)
-                    throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
                 else
                     return ReturnType(true);
             }
@@ -259,7 +321,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
         if (whole < min_to || whole > max_to)
         {
             if constexpr (throw_exception)
-                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
             else
                 return ReturnType(true);
         }
@@ -272,7 +334,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 
 
 template <typename To, typename DecimalType>
-To convertTo(const DecimalType & decimal, size_t scale)
+To convertTo(const DecimalType & decimal, UInt32 scale)
 {
     To result;
     convertToImpl<To, DecimalType, void>(decimal, scale, result);
@@ -280,7 +342,7 @@ To convertTo(const DecimalType & decimal, size_t scale)
 }
 
 template <typename To, typename DecimalType>
-bool tryConvertTo(const DecimalType & decimal, size_t scale, To & result)
+bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
 }

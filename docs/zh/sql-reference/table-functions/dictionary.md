@@ -1,1 +1,0 @@
-../../../en/sql-reference/table-functions/dictionary.md

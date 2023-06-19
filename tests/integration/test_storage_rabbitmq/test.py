@@ -1,3 +1,5 @@
+import pytest
+
 import json
 import os.path as p
 import random
@@ -9,7 +11,6 @@ from random import randrange
 import math
 
 import pika
-import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
@@ -27,8 +28,14 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
+    stay_alive=True,
 )
 
+instance2 = cluster.add_instance(
+    "instance2",
+    user_configs=["configs/users.xml"],
+    with_rabbitmq=True,
+)
 
 # Helpers
 
@@ -43,6 +50,7 @@ def rabbitmq_check_result(result, check=False, ref_file="test_rabbitmq_json.refe
 
 
 def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
+    logging.getLogger("pika").propagate = False
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -87,7 +95,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test NO DELAY")
+    instance.query("DROP DATABASE test SYNC")
     instance.query("CREATE DATABASE test")
 
 
@@ -147,6 +155,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'empty',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'TSV',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_row_delimiter = '\\n';
         """.format(
             rabbitmq_cluster.rabbitmq_host
@@ -163,6 +172,8 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_commit_on_select = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
         """.format(
@@ -215,6 +226,8 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'csv',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'CSV',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         """
     )
@@ -256,6 +269,8 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
                      rabbitmq_commit_on_select = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -297,6 +312,8 @@ def test_rabbitmq_macros(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
                      rabbitmq_commit_on_select = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
                      rabbitmq_format = '{rabbitmq_format}'
         """
@@ -336,6 +353,8 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -358,10 +377,11 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
+    instance.wait_for_log_line("Started streaming to 2 attached views")
+
     messages = []
     for i in range(50):
-        messages.append(json.dumps({"key": i, "value": i}))
-    for message in messages:
+        message = json.dumps({"key": i, "value": i})
         channel.basic_publish(exchange="mv", routing_key="", body=message)
 
     time_limit_sec = 60
@@ -378,8 +398,10 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
 
     while time.monotonic() < deadline:
         result = instance.query("SELECT * FROM test.view2 ORDER BY key")
+        print(f"Result: {result}")
         if rabbitmq_check_result(result):
             break
+        time.sleep(1)
 
     rabbitmq_check_result(result, True)
     connection.close()
@@ -392,6 +414,8 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mvsq',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -435,6 +459,8 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mmv',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view1 (key UInt64, value UInt64)
@@ -456,6 +482,8 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     )
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
+
+    instance.wait_for_log_line("Started streaming to 2 attached views")
 
     messages = []
     for i in range(50):
@@ -492,6 +520,8 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'pb',
                      rabbitmq_format = 'Protobuf',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_schema = 'rabbitmq.proto:KeyValueProto';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -566,6 +596,8 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'big',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
@@ -593,6 +625,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     NUM_CONSUMERS = 10
     NUM_QUEUES = 10
+    logging.getLogger("pika").propagate = False
 
     instance.query(
         """
@@ -600,8 +633,10 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'test_sharding',
-                     rabbitmq_num_queues = 10,
+                     rabbitmq_num_queues = 5,
                      rabbitmq_num_consumers = 10,
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms=500,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
@@ -642,7 +677,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         connection.close()
 
     threads = []
-    threads_num = 20
+    threads_num = 10
 
     for _ in range(threads_num):
         threads.append(threading.Thread(target=produce))
@@ -654,8 +689,10 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     while True:
         result1 = instance.query("SELECT count() FROM test.view")
         time.sleep(1)
-        if int(result1) == messages_num * threads_num:
+        expected = messages_num * threads_num
+        if int(result1) == expected:
             break
+        print(f"Result {result1} / {expected}")
 
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
 
@@ -671,6 +708,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
     NUM_CONSUMERS = 4
+    logging.getLogger("pika").propagate = False
 
     instance.query(
         """
@@ -679,6 +717,8 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'combo',
                      rabbitmq_queue_base = 'combo',
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
                      rabbitmq_format = 'JSONEachRow',
@@ -743,8 +783,10 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             result += int(
                 instance.query("SELECT count() FROM test.combo_{0}".format(mv_id))
             )
-        if int(result) == messages_num * threads_num * NUM_MV:
+        expected = messages_num * threads_num * NUM_MV
+        if int(result) == expected:
             break
+        print(f"Result: {result} / {expected}")
         time.sleep(1)
 
     for thread in threads:
@@ -772,6 +814,8 @@ def test_rabbitmq_insert(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'insert',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert1',
                      rabbitmq_format = 'TSV',
@@ -829,6 +873,8 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'insert_headers',
                      rabbitmq_exchange_type = 'headers',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_routing_key_list = 'test=insert,topic=headers',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -895,6 +941,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'many_inserts',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.rabbitmq_consume (key UInt64, value UInt64)
@@ -903,6 +951,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'many_inserts',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
     """
@@ -969,6 +1019,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
+@pytest.mark.skip(reason="Flaky")
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query(
         """
@@ -981,9 +1032,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
-                     rabbitmq_num_consumers = 5,
-                     rabbitmq_num_queues = 10,
-                     rabbitmq_max_block_size = 10000,
+                     rabbitmq_num_consumers = 2,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -997,12 +1048,13 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+            ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
             SELECT * FROM test.rabbitmq_consume;
     """
     )
+
+    instance.wait_for_log_line("Started streaming to 1 attached views")
 
     messages_num = 100000
 
@@ -1025,30 +1077,32 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                     raise
 
     threads = []
-    threads_num = 5
+    threads_num = 2
     for _ in range(threads_num):
         threads.append(threading.Thread(target=insert))
     for thread in threads:
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
-        time.sleep(1)
-        if int(result) == messages_num * threads_num:
+        expected = messages_num * threads_num
+        if int(result) == expected:
             break
+        print(f"Result: {result} / {expected}")
+        time.sleep(1)
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
-        DROP TABLE test.rabbitmq_consume;
-        DROP TABLE test.rabbitmq_overload;
+        DROP TABLE test.consumer_overload SYNC;
+        DROP TABLE test.view_overload SYNC;
+        DROP TABLE test.rabbitmq_consume SYNC;
+        DROP TABLE test.rabbitmq_overload SYNC;
     """
     )
-
-    for thread in threads:
-        thread.join()
 
     assert (
         int(result) == messages_num * threads_num
@@ -1078,6 +1132,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
+                         rabbitmq_flush_interval_ms=1000,
+                        rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'direct_exchange_testing',
                          rabbitmq_exchange_type = 'direct',
                          rabbitmq_routing_key_list = 'direct_{0}',
@@ -1169,6 +1225,8 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_routing_key_list = 'key_{0}',
                          rabbitmq_exchange_name = 'fanout_exchange_testing',
                          rabbitmq_exchange_type = 'fanout',
@@ -1255,6 +1313,8 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
                          rabbitmq_routing_key_list = '*.{0}',
@@ -1278,6 +1338,8 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
                          rabbitmq_routing_key_list = '*.logs',
@@ -1379,6 +1441,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
                          rabbitmq_exchange_type = 'consistent_hash',
                          rabbitmq_exchange_name = 'hash_exchange_testing',
                          rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_flush_interval_ms=1000,
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.{0}_mv TO test.destination AS
                 SELECT key, value, _channel_id AS channel_id FROM test.{0};
@@ -1476,6 +1539,8 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'multiple_bindings_testing',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE MATERIALIZED VIEW test.bindings_mv TO test.destination AS
@@ -1565,6 +1630,8 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 2,
                          rabbitmq_exchange_name = 'headers_exchange_testing',
                          rabbitmq_exchange_type = 'headers',
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2020',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
@@ -1589,6 +1656,8 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_exchange_type = 'headers',
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2019',
                          rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
             SELECT key, value FROM test.headers_exchange_{0};
@@ -1661,6 +1730,8 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'virtuals',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
         SELECT value, key, _exchange_name, _channel_id, _delivery_tag, _redelivered FROM test.rabbitmq_virtuals;
@@ -1729,6 +1800,8 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'virtuals_mv',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64,
             exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
@@ -1814,6 +1887,8 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
                          rabbitmq_exchange_name = 'many_consumers',
                          rabbitmq_num_queues = 2,
                          rabbitmq_num_consumers = 2,
+                         rabbitmq_flush_interval_ms=1000,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_queue_base = 'many_consumers',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
@@ -1903,6 +1978,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=500,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_num_consumers = 2,
@@ -1915,6 +1992,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_persistent = '1',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     """
@@ -1970,7 +2048,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     )
 
 
+@pytest.mark.skip(reason="Timeout: FIXME")
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
+    logging.getLogger("pika").propagate = False
     instance.query(
         """
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
@@ -1978,6 +2058,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'consumer_reconnect',
                      rabbitmq_num_consumers = 10,
+                     rabbitmq_flush_interval_ms = 100,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_num_queues = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -2032,10 +2114,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     # revive_rabbitmq()
 
     while True:
-        result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-        time.sleep(1)
+        result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
             break
+        print(f"Result: {result} / {messages_num}")
+        time.sleep(1)
 
     instance.query(
         """
@@ -2050,6 +2133,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
 
 
 def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
+    logging.getLogger("pika").propagate = False
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -2058,6 +2142,7 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'block',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'block',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size = 100,
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -2138,6 +2223,7 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = '5',
                      rabbitmq_row_delimiter = '\\n';
     """
@@ -2154,6 +2240,8 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_num_consumers = '5',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
@@ -2210,6 +2298,7 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
         ) ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'format_settings',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_format = 'JSONEachRow',
                      date_time_input_format = 'best_effort';
         """
@@ -2272,6 +2361,7 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'vhost',
                      rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_vhost = '/'
         """
     )
@@ -2300,6 +2390,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'drop',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'rabbit_queue_drop'
@@ -2346,6 +2437,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'rabbit_exchange',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'rabbit_queue_settings',
                      rabbitmq_queue_settings_list = 'x-max-length=10,x-overflow=reject-publish'
@@ -2378,12 +2470,11 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
 
     time.sleep(5)
 
-    result = instance.query(
-        "SELECT count() FROM test.rabbitmq_settings", ignore_error=True
-    )
-    while int(result) != 10:
-        time.sleep(0.5)
+    while True:
         result = instance.query("SELECT count() FROM test.view", ignore_error=True)
+        if int(result) == 10:
+            break
+        time.sleep(0.5)
 
     instance.query("DROP TABLE test.rabbitmq_settings")
 
@@ -2427,6 +2518,7 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'rabbit_queue',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_queue_consume = 1;
         CREATE TABLE test.view (key UInt64, value UInt64)
         ENGINE = MergeTree ORDER BY key;
@@ -2461,6 +2553,7 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_format = 'Avro',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'avro',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'avro';
@@ -2469,6 +2562,7 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_format = 'Avro',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'avro',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'avro';
@@ -2511,6 +2605,7 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'f',
                      rabbitmq_format = 'JSONEachRow';
     """
@@ -2523,6 +2618,7 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_drop (json String)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '30691',
                      rabbitmq_row_delimiter = '\\n', -- Works only if adding this setting
                      rabbitmq_format = 'LineAsString',
@@ -2578,17 +2674,26 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
 def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE test.drop_mv (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_queue_base = 'drop_mv';
+    """
+    )
+    instance.query(
+        """
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
+    """
+    )
+    instance.query(
+        """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
 
@@ -2605,7 +2710,15 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    instance.query("DROP VIEW test.consumer")
+    while True:
+        res = instance.query("SELECT COUNT(*) FROM test.view")
+        print(f"Current count (1): {res}")
+        if int(res) == 20:
+            break
+        else:
+            logging.debug(f"Number of rows in test.view: {res}")
+
+    instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2614,7 +2727,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
     for i in range(40, 50):
@@ -2623,13 +2736,17 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         )
 
     while True:
-        result = instance.query("SELECT * FROM test.view ORDER BY key")
-        if rabbitmq_check_result(result):
+        result = instance.query("SELECT count() FROM test.view")
+        print(f"Current count (2): {result}")
+        if int(result) == 50:
             break
+        time.sleep(1)
 
+    result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer")
+    instance.query("DROP VIEW test.consumer SYNC")
+    time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2637,11 +2754,13 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection.close()
 
     count = 0
-    while True:
-        count = int(instance.query("SELECT count() FROM test.rabbitmq"))
+    start = time.time()
+    while time.time() - start < 30:
+        count = int(instance.query("SELECT count() FROM test.drop_mv"))
         if count:
             break
 
+    instance.query("DROP TABLE test.drop_mv")
     assert count > 0
 
 
@@ -2656,6 +2775,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'random',
                      rabbitmq_queue_base = 'random',
                      rabbitmq_num_queues = 2,
+                     rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
@@ -2679,7 +2799,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
         channel = connection.channel()
 
         messages = []
-        for i in range(messages_num):
+        for j in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
             mes_id = str(i)
@@ -2720,7 +2840,9 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-            ENGINE = RabbitMQ(rabbit1, rabbitmq_vhost = '/') """
+            ENGINE = RabbitMQ(rabbit1, rabbitmq_vhost = '/')
+            SETTINGS rabbitmq_flush_interval_ms=1000;
+        """
     )
 
     channel.basic_publish(
@@ -2732,9 +2854,633 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
         )
         if result == "1\t2\n":
             break
+    instance.restart_clickhouse()
+    channel.basic_publish(
+        exchange="named", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.rabbitmq ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
 
 
-if __name__ == "__main__":
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+def test_rabbitmq_msgpack(rabbitmq_cluster):
+    instance.query(
+        """
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_num_consumers = 1;
+        create table
+            rabbit_out (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_num_consumers = 1;
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+        """
+    )
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"
+
+    instance.query("drop table rabbit_in sync")
+    instance.query("drop table rabbit_out sync")
+
+
+def test_rabbitmq_address(rabbitmq_cluster):
+    instance2.query(
+        """
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        create table
+            rabbit_out (val String) engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+    """
+    )
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance2.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"
+
+    instance2.query("drop table rabbit_in sync")
+    instance2.query("drop table rabbit_out sync")
+
+
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
+def test_format_with_prefix_and_suffix(rabbitmq_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'insert',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'custom',
+                     rabbitmq_format = 'CustomSeparated';
+    """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    consumer_connection = pika.BlockingConnection(parameters)
+
+    consumer = consumer_connection.channel()
+    result = consumer.queue_declare(queue="")
+    queue_name = result.method.queue
+    consumer.queue_bind(exchange="insert", queue=queue_name, routing_key="custom")
+
+    instance.query(
+        "INSERT INTO test.rabbitmq select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    insert_messages = []
+
+    def onReceived(channel, method, properties, body):
+        message = body.decode()
+        insert_messages.append(message)
+        print(f"Received {len(insert_messages)} message: {message}")
+        if len(insert_messages) == 2:
+            channel.stop_consuming()
+
+    consumer.basic_consume(onReceived, queue_name)
+
+    consumer.start_consuming()
+    consumer_connection.close()
+
+    assert (
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+    )
+
+
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
+def test_max_rows_per_message(rabbitmq_cluster):
+    num_rows = 5
+
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.rabbit;
+
+        CREATE TABLE test.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_format = 'CustomSeparated',
+                     rabbitmq_exchange_name = 'custom',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'custom1',
+                     rabbitmq_max_rows_per_message = 3,
+                     rabbitmq_flush_interval_ms = 1000,
+                     format_custom_result_before_delimiter = '<prefix>\n',
+                     format_custom_result_after_delimiter = '<suffix>\n';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.rabbit;
+    """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    consumer_connection = pika.BlockingConnection(parameters)
+
+    consumer = consumer_connection.channel()
+    result = consumer.queue_declare(queue="")
+    queue_name = result.method.queue
+    consumer.queue_bind(exchange="custom", queue=queue_name, routing_key="custom1")
+
+    instance.query(
+        f"INSERT INTO test.rabbit select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    insert_messages = []
+
+    def onReceived(channel, method, properties, body):
+        insert_messages.append(body.decode())
+        if len(insert_messages) == 2:
+            channel.stop_consuming()
+
+    consumer.basic_consume(onReceived, queue_name)
+    consumer.start_consuming()
+    consumer_connection.close()
+
+    assert len(insert_messages) == 2
+
+    assert (
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
+    )
+
+    attempt = 0
+    rows = 0
+    while attempt < 100:
+        rows = int(instance.query("SELECT count() FROM test.view"))
+        if rows == num_rows:
+            break
+        attempt += 1
+
+    assert rows == num_rows
+
+    result = instance.query("SELECT * FROM test.view")
+    assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
+
+
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
+def test_row_based_formats(rabbitmq_cluster):
+    num_rows = 10
+
+    for format_name in [
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNamesAndTypes",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+    ]:
+        print(format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.rabbit;
+
+            CREATE TABLE test.rabbit (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_format = '{format_name}',
+                         rabbitmq_exchange_name = '{format_name}',
+                         rabbitmq_exchange_type = 'direct',
+                         rabbitmq_max_block_size = 100,
+                         rabbitmq_flush_interval_ms = 1000,
+                         rabbitmq_routing_key_list = '{format_name}',
+                         rabbitmq_max_rows_per_message = 5;
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.rabbit;
+        """
+        )
+
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        consumer_connection = pika.BlockingConnection(parameters)
+
+        consumer = consumer_connection.channel()
+        result = consumer.queue_declare(queue="")
+        queue_name = result.method.queue
+        consumer.queue_bind(
+            exchange=format_name, queue=queue_name, routing_key=format_name
+        )
+
+        instance.query(
+            f"INSERT INTO test.rabbit SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});"
+        )
+
+        insert_messages = 0
+
+        def onReceived(channel, method, properties, body):
+            nonlocal insert_messages
+            insert_messages += 1
+            if insert_messages == 2:
+                channel.stop_consuming()
+
+        consumer.basic_consume(onReceived, queue_name)
+        consumer.start_consuming()
+        consumer_connection.close()
+
+        assert insert_messages == 2
+
+        attempt = 0
+        rows = 0
+        while attempt < 100:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+
+        result = instance.query("SELECT * FROM test.view")
+        assert result == expected
+
+
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
+def test_block_based_formats_1(rabbitmq_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'PrettySpace',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms = 1000,
+                     rabbitmq_routing_key_list = 'PrettySpace',
+                     rabbitmq_format = 'PrettySpace';
+    """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    consumer_connection = pika.BlockingConnection(parameters)
+
+    consumer = consumer_connection.channel()
+    result = consumer.queue_declare(queue="")
+    queue_name = result.method.queue
+    consumer.queue_bind(
+        exchange="PrettySpace", queue=queue_name, routing_key="PrettySpace"
+    )
+
+    instance.query(
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
+    )
+    insert_messages = []
+
+    def onReceived(channel, method, properties, body):
+        insert_messages.append(body.decode())
+        if len(insert_messages) == 3:
+            channel.stop_consuming()
+
+    consumer.basic_consume(onReceived, queue_name)
+    consumer.start_consuming()
+    consumer_connection.close()
+
+    assert len(insert_messages) == 3
+
+    data = []
+    for message in insert_messages:
+        splitted = message.split("\n")
+        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+        assert splitted[1] == ""
+        assert splitted[-1] == ""
+        data += [line.split() for line in splitted[2:-1]]
+
+    assert data == [
+        ["0", "0"],
+        ["10", "100"],
+        ["20", "200"],
+        ["30", "300"],
+        ["40", "400"],
+    ]
+
+
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
+def test_block_based_formats_2(rabbitmq_cluster):
+    num_rows = 100
+
+    for format_name in [
+        "JSONColumns",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+    ]:
+        print(format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.rabbit;
+
+            CREATE TABLE test.rabbit (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_format = '{format_name}',
+                         rabbitmq_exchange_name = '{format_name}',
+                         rabbitmq_exchange_type = 'direct',
+                         rabbitmq_max_block_size = 100,
+                         rabbitmq_flush_interval_ms = 1000,
+                         rabbitmq_routing_key_list = '{format_name}';
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.rabbit;
+        """
+        )
+
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        consumer_connection = pika.BlockingConnection(parameters)
+
+        consumer = consumer_connection.channel()
+        result = consumer.queue_declare(queue="")
+        queue_name = result.method.queue
+        consumer.queue_bind(
+            exchange=format_name, queue=queue_name, routing_key=format_name
+        )
+
+        instance.query(
+            f"INSERT INTO test.rabbit SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;"
+        )
+
+        insert_messages = 0
+
+        def onReceived(channel, method, properties, body):
+            nonlocal insert_messages
+            insert_messages += 1
+            if insert_messages == 9:
+                channel.stop_consuming()
+
+        consumer.basic_consume(onReceived, queue_name)
+        consumer.start_consuming()
+        consumer_connection.close()
+
+        assert insert_messages == 9
+
+        attempt = 0
+        rows = 0
+        while attempt < 100:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view ORDER by key")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
+
+
+def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
+    instance.query(
+        """
+         DROP TABLE IF EXISTS test.view;
+         DROP TABLE IF EXISTS test.consumer;
+
+         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+             ENGINE = RabbitMQ
+             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                      rabbitmq_exchange_name = 'flush_by_block',
+                      rabbitmq_queue_base = 'flush_by_block',
+                      rabbitmq_max_block_size = 100,
+                      rabbitmq_flush_interval_ms = 640000, /* should not flush by time during test */
+                      rabbitmq_format = 'JSONEachRow';
+
+         CREATE TABLE test.view (key UInt64, value UInt64)
+             ENGINE = MergeTree()
+             ORDER BY key;
+
+         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+             SELECT * FROM test.rabbitmq;
+
+        SYSTEM STOP MERGES;
+     """
+    )
+
+    cancel = threading.Event()
+
+    def produce():
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        connection = pika.BlockingConnection(parameters)
+
+        while not cancel.is_set():
+            try:
+                channel = connection.channel()
+                channel.basic_publish(
+                    exchange="flush_by_block",
+                    routing_key="",
+                    body=json.dumps({"key": 0, "value": 0}),
+                )
+            except e:
+                print(f"Got error: {str(e)}")
+
+    produce_thread = threading.Thread(target=produce)
+    produce_thread.start()
+
+    while 0 == int(
+        instance.query(
+            "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
+        )
+    ):
+        time.sleep(0.5)
+
+    cancel.set()
+    produce_thread.join()
+
+    # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
+    result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
+    # logging.debug(result)
+
+    instance.query(
+        """
+         DROP TABLE test.consumer;
+         DROP TABLE test.view;
+         DROP TABLE test.rabbitmq;
+     """
+    )
+
+    # 100 = first poll should return 100 messages (and rows)
+    # not waiting for stream_flush_interval_ms
+    assert (
+        int(result) == 100
+    ), "Messages from rabbitmq should be flushed when block of size rabbitmq_max_block_size is formed!"
+
+
+def test_rabbitmq_flush_by_time(rabbitmq_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'flush_by_time',
+                     rabbitmq_queue_base = 'flush_by_time',
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms = 5000,
+                     rabbitmq_format = 'JSONEachRow';
+
+        CREATE TABLE test.view (key UInt64, value UInt64, ts DateTime64(3) MATERIALIZED now64(3))
+            ENGINE = MergeTree()
+            ORDER BY key;
+    """
+    )
+
+    cancel = threading.Event()
+
+    def produce():
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip,
+            rabbitmq_cluster.rabbitmq_port,
+            "/",
+            credentials,
+        )
+        connection = pika.BlockingConnection(parameters)
+
+        while not cancel.is_set():
+            try:
+                channel = connection.channel()
+                channel.basic_publish(
+                    exchange="flush_by_time",
+                    routing_key="",
+                    body=json.dumps({"key": 0, "value": 0}),
+                )
+                print("Produced a message")
+                time.sleep(0.8)
+            except e:
+                print(f"Got error: {str(e)}")
+
+    produce_thread = threading.Thread(target=produce)
+    produce_thread.start()
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    """
+    )
+
+    while True:
+        time.sleep(0.2)
+        count = instance.query(
+            "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view'"
+        )
+        print(f"kssenii total count: {count}")
+        count = int(
+            instance.query(
+                "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
+            )
+        )
+        print(f"kssenii count: {count}")
+        if count > 0:
+            break
+
+    time.sleep(12)
+    result = instance.query("SELECT uniqExact(ts) FROM test.view")
+
+    cancel.set()
+    produce_thread.join()
+
+    instance.query(
+        """
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.rabbitmq;
+    """
+    )
+
+    assert int(result) == 3

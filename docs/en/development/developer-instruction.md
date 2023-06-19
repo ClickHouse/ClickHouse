@@ -1,4 +1,5 @@
 ---
+slug: /en/development/developer-instruction
 sidebar_position: 61
 sidebar_label: Getting Started
 description: Prerequisites and an overview of how to build ClickHouse
@@ -6,7 +7,7 @@ description: Prerequisites and an overview of how to build ClickHouse
 
 # Getting Started Guide for Building ClickHouse
 
-The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+The building of ClickHouse is supported on Linux, FreeBSD and macOS.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
@@ -38,8 +39,14 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
+
+Or (if you'd like to use sparse checkout for submodules and avoid checking out unneeded files):
+
+    git clone git@github.com:your_github_username/ClickHouse.git
+    cd ClickHouse
+    ./contrib/update-submodules.sh
 
 Note: please, substitute *your_github_username* with what is appropriate!
 
@@ -66,11 +73,11 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone --recursive --shallow-submodules https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
-You can also add original ClickHouse repo’s address to your local repository to pull updates from there:
+You can also add original ClickHouse repo address to your local repository to pull updates from there:
 
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
@@ -119,16 +126,9 @@ On CentOS, RedHat run `sudo yum install cmake ninja-build`.
 
 If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
-For installing CMake and Ninja on Mac OS X first install Homebrew and then install everything else via brew:
-
-    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-    brew install cmake ninja
-
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
-
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers Clang starting from version 15 is supported for building ClickHouse.
 
 Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
@@ -137,9 +137,6 @@ On Ubuntu/Debian you can use the automatic installation script (check [official 
 ```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
-
-Mac OS X build is also supported. Just run `brew install llvm`
-
 
 ## The Building Process {#the-building-process}
 
@@ -155,7 +152,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-13 CXX=clang++-13`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-16 CXX=clang++-16`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -177,7 +174,7 @@ If you require to build all the binaries (utilities and tests), you should run n
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` parameter:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
@@ -187,7 +184,7 @@ If you get the message: `ninja: error: loading 'build.ninja': No such file or di
 
 Upon the successful start of the building process, you’ll see the build progress - the number of processed tasks and the total number of tasks.
 
-While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
+While building messages about LLVM library may show up. They affect nothing and are safe to be ignored.
 
 Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
@@ -203,7 +200,7 @@ In this case, ClickHouse will use config files located in the current directory.
 
 To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
-If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
+If you get `Connection refused` message on macOS or FreeBSD, try specifying host address 127.0.0.1:
 
     clickhouse client --host 127.0.0.1
 
@@ -222,7 +219,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 ## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
+If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
 
 KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
 
@@ -269,10 +266,25 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
 Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
 
-A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
+A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
 
 Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
+
+## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
+
+You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
+
+You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
+
+Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
+
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
+```
+-DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+```
+
+In case of problems with any of the development options, you are on your own!

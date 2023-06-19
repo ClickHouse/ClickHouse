@@ -11,7 +11,7 @@ class WriteBuffer;
 class CustomSeparatedRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    CustomSeparatedRowOutputFormat(const Block & header_, WriteBuffer & out_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
+    CustomSeparatedRowOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
 
     String getName() const override { return "CustomSeparatedRowOutputFormat"; }
 

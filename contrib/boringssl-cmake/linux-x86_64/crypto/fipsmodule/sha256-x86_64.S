@@ -3970,3 +3970,4 @@ sha256_block_data_order_avx:
 .cfi_endproc	
 .size	sha256_block_data_order_avx,.-sha256_block_data_order_avx
 #endif
+.section	.note.GNU-stack,"",@progbits

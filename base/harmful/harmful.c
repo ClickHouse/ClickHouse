@@ -31,7 +31,8 @@ TRAP(argp_state_help)
 TRAP(argp_usage)
 TRAP(asctime)
 TRAP(clearenv)
-TRAP(crypt)
+// Redefined at contrib/libbcrypt/crypt_blowfish/wrapper.c:186
+// TRAP(crypt)
 TRAP(ctime)
 TRAP(cuserid)
 TRAP(drand48)
@@ -259,5 +260,36 @@ TRAP(mq_timedreceive)
 /// These functions are also unused by ClickHouse.
 TRAP(wordexp)
 TRAP(wordfree)
+
+/// C11 threading primitives are not supported by ThreadSanitizer.
+/// Also we should avoid using them for compatibility with old libc.
+TRAP(thrd_create)
+TRAP(thrd_equal)
+TRAP(thrd_current)
+TRAP(thrd_sleep)
+TRAP(thrd_yield)
+TRAP(thrd_exit)
+TRAP(thrd_detach)
+TRAP(thrd_join)
+
+TRAP(mtx_init)
+TRAP(mtx_lock)
+TRAP(mtx_timedlock)
+TRAP(mtx_trylock)
+TRAP(mtx_unlock)
+TRAP(mtx_destroy)
+TRAP(call_once)
+
+TRAP(cnd_init)
+TRAP(cnd_signal)
+TRAP(cnd_broadcast)
+TRAP(cnd_wait)
+TRAP(cnd_timedwait)
+TRAP(cnd_destroy)
+
+TRAP(tss_create)
+TRAP(tss_get)
+TRAP(tss_set)
+TRAP(tss_delete)
 
 #endif

@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/entropy
 sidebar_position: 302
 ---
 
-# entropy {#entropy}
+# entropy
 
 Calculates [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) of a column of values.
 
@@ -14,11 +15,11 @@ entropy(val)
 
 **Arguments**
 
--   `val` — Column of values of any type.
+- `val` — Column of values of any type.
 
 **Returned value**
 
--   Shannon entropy.
+- Shannon entropy.
 
 Type: [Float64](../../../sql-reference/data-types/float.md).
 

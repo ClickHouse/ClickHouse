@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/mergetree-family/replacingmergetree
 sidebar_position: 33
 sidebar_label: ReplacingMergeTree
 ---
@@ -28,19 +29,65 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
-    :::note "Внимание"
-    Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
-    :::
-**Параметры ReplacingMergeTree**
+:::warning "Внимание"
+Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
+:::
 
--   `ver` — столбец с номером версии. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
+## Параметры ReplacingMergeTree
 
-    При слиянии `ReplacingMergeTree` оставляет только строку для каждого уникального ключа сортировки:
+### ver
+
+`ver` — столбец с номером версии. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
+
+При слиянии `ReplacingMergeTree` оставляет только строку для каждого уникального ключа сортировки:
 
     - Последнюю в выборке, если `ver` не задан. Под выборкой здесь понимается набор строк в наборе кусков данных, участвующих в слиянии. Последний по времени создания кусок (последняя вставка) будет последним в выборке. Таким образом, после дедупликации для каждого значения ключа сортировки останется самая последняя строка из самой последней вставки.
-    - С максимальной версией, если `ver` задан.
+    - С максимальной версией, если `ver` задан. Если `ver` одинаковый у нескольких строк, то для них используется правило -- если `ver` не задан, т.е. в результате слияния останется самая последняя строка из самой последней вставки.
 
-**Секции запроса**
+Пример: 
+
+```sql
+-- without ver - the last inserted 'wins'
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM myFirstReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ second  │ 2020-01-01 00:00:00 │
+└─────┴─────────┴─────────────────────┘
+
+
+-- with ver - the row with the biggest ver 'wins'
+CREATE TABLE mySecondReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree(eventTime)
+ORDER BY key;
+
+INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM mySecondReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ first   │ 2020-01-01 01:01:01 │
+└─────┴─────────┴─────────────────────┘
+```
+
+## Секции запроса
 
 При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md), что и при создании таблицы `MergeTree`.
 
@@ -48,9 +95,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Внимание"
-    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-    :::
+:::warning "Внимание"
+Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
+:::
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

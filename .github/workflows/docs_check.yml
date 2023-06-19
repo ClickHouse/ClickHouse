@@ -13,18 +13,20 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths:
-      - 'docs/**'
-      - 'website/**'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'SECURITY.md'
       - 'docker/docs/**'
+      - 'docs/**'
+      - 'utils/check-style/aspell-ignore/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -33,17 +35,16 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
@@ -51,17 +52,16 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
@@ -69,18 +69,17 @@ jobs:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Download changed aarch64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}
       - name: Download changed amd64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}
@@ -89,7 +88,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
@@ -102,19 +101,21 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{ runner.temp }}/style_check
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
           EOF
       - name: Download changed images
         # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
         continue-on-error: true
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Style Check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -122,10 +123,8 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   DocsCheck:
     needs: DockerHubPush
@@ -138,15 +137,14 @@ jobs:
           REPO_COPY=${{runner.temp}}/docs_check/ClickHouse
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Docs Check
         run: |
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -155,10 +153,8 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:
@@ -167,12 +163,12 @@ jobs:
       - DocsCheck
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
+          python3 merge_pr.py --check-approved

@@ -1,9 +1,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
+#include <Core/Field.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 
@@ -39,13 +44,50 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context)
 {
     if (storage_def.settings)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            bool found_disk_setting = false;
+            bool found_storage_policy_setting = false;
+
+            auto changes = storage_def.settings->changes;
+            for (auto & [name, value] : changes)
+            {
+                CustomType custom;
+                if (name == "disk")
+                {
+                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+                    {
+                        auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+                        if (ast && isDiskFunction(ast))
+                        {
+                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context);
+                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            value = disk_name;
+                        }
+                    }
+
+                    if (has("storage_policy"))
+                        resetToDefault("storage_policy");
+
+                    found_disk_setting = true;
+                }
+                else if (name == "storage_policy")
+                    found_storage_policy_setting = true;
+
+                if (found_disk_setting && found_storage_policy_setting)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
+                }
+
+            }
+
+            applyChanges(changes);
         }
         catch (Exception & e)
         {
@@ -73,10 +115,9 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 {
-    if (number_of_free_entries_in_pool_to_execute_mutation >
-        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
+    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -85,11 +126,10 @@ void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
             number_of_free_entries_in_pool_to_execute_mutation,
-            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
+            background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge >
-        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -98,7 +138,16 @@ void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             number_of_free_entries_in_pool_to_lower_max_size_of_merge,
-            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
+            background_pool_tasks);
+    }
+
+    // Zero index_granularity is nonsensical.
+    if (index_granularity < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "index_granularity: value {} makes no sense",
+            index_granularity);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.

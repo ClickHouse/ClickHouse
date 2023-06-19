@@ -132,6 +132,7 @@ public:
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
+    UInt64 getNumberOfDefaultRows() const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -139,7 +140,8 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -149,7 +151,6 @@ public:
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
-    size_t getNumberOfDefaults() const { return _size - offsets->size(); }
     size_t getNumberOfTrailingDefaults() const
     {
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;
@@ -215,6 +216,7 @@ public:
 
     Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
+    Iterator getIterator(size_t n) const;
 
 private:
     using Inserter = std::function<void(IColumn &)>;

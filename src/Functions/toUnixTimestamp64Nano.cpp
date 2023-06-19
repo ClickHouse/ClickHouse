@@ -4,7 +4,7 @@
 namespace DB
 {
 
-void registerToUnixTimestamp64Nano(FunctionFactory & factory)
+REGISTER_FUNCTION(ToUnixTimestamp64Nano)
 {
     factory.registerFunction("toUnixTimestamp64Nano",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(

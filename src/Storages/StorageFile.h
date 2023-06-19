@@ -1,20 +1,17 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-
-#include <Common/logger_useful.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Common/FileRenamer.h>
 
 #include <atomic>
 #include <shared_mutex>
-
 
 namespace DB
 {
 
 class StorageFile final : public IStorage
 {
-friend class partitionedstoragefilesink;
-
 public:
     struct CommonArguments : public WithContext
     {
@@ -25,6 +22,8 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
+
+        const std::string rename_after_processing;
     };
 
     /// From file descriptor
@@ -47,12 +46,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool async_insert) override;
 
     void truncate(
         const ASTPtr & /*query*/,
@@ -69,11 +69,15 @@ public:
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
-    /// Check if the format is column-oriented.
-    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// Check if the format supports reading only some subset of columns.
+    /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -86,12 +90,24 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
 
 private:
     void setStorageMetadata(CommonArguments args);
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context);
+
+    static void addColumnsToCache(
+        const Strings & paths,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -125,6 +141,11 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
+
+    // Counts the number of readers
+    std::atomic<int32_t> readers_counter = 0;
+    FileRenamer file_renamer;
+    bool was_renamed = false;
 };
 
 }

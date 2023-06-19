@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/ontime
 sidebar_position: 21
 sidebar_label: OnTime
 ---
@@ -399,5 +400,3 @@ LIMIT 10;
 -   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure
 sidebar_position: 44
 sidebar_label: "Ключ и поля словаря"
 ---
@@ -58,6 +59,7 @@ ClickHouse поддерживает следующие виды ключей:
 
 :::danger "Обратите внимание"
     Ключ не надо дополнительно описывать в атрибутах.
+:::
 
 ### Числовой ключ {#ext_dict-numeric-key}
 

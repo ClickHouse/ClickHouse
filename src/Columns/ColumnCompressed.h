@@ -64,7 +64,7 @@ public:
         return ColumnCompressed::create(
             size,
             bytes,
-            [column = std::move(column)]{ return column; });
+            [my_column = std::move(column)]{ return my_column; });
     }
 
     /// Helper methods for compression.
@@ -117,6 +117,7 @@ public:
     void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
+    UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
 protected:
@@ -128,7 +129,7 @@ protected:
 private:
     [[noreturn]] static void throwMustBeDecompressed()
     {
-        throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnCompressed must be decompressed before use");
     }
 };
 

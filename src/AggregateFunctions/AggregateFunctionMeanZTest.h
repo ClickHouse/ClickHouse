@@ -36,7 +36,7 @@ private:
 
 public:
     AggregateFunctionMeanZTest(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMeanZTest<Data>>({arguments}, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMeanZTest<Data>>({arguments}, params, createResultType())
     {
         pop_var_x = params.at(0).safeGet<Float64>();
         pop_var_y = params.at(1).safeGet<Float64>();
@@ -49,7 +49,9 @@ public:
 
         if (pop_var_x < 0.0 || pop_var_y < 0.0)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Population variance parameters must be larger than or equal to zero in aggregate function {}.", Data::name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Population variance parameters must be larger than or equal to zero "
+                            "in aggregate function {}.", Data::name);
         }
 
         if (confidence_level <= 0.0 || confidence_level >= 1.0)
@@ -63,7 +65,7 @@ public:
         return Data::name;
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types
         {

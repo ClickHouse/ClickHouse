@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/update
 sidebar_position: 47
 sidebar_label: "Обновление ClickHouse"
 ---

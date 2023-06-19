@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS test.basic_00040;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE MATERIALIZED VIEW test.basic_00040
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 POPULATE AS

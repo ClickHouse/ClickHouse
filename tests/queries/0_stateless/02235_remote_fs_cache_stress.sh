@@ -63,7 +63,7 @@ SELECT indexOf(['a', 'b', NULL], toLowCardinality('a'));
 """
 }
 
-for i in `seq 1 32`; do go | grep -q "Exception" && echo 'FAIL' || echo 'OK' ||: & done
+for _ in `seq 1 32`; do go | grep -q "Exception" && echo 'FAIL' || echo 'OK' ||: & done
 
 wait
 

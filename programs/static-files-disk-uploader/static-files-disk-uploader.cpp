@@ -58,7 +58,9 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
     }
     else
     {
-        auto src_buf = createReadBufferFromFileBase(file_path, {}, fs::file_size(file_path));
+        ReadSettings read_settings{};
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
         /// test mode for integration tests.
@@ -146,7 +148,7 @@ try
     po::options_description description("Allowed options", getTerminalWidth());
     description.add_options()
         ("help,h", "produce help message")
-        ("metadata-path", po::value<std::string>(), "Metadata path (select data_paths from system.tables where name='table_name'")
+        ("metadata-path", po::value<std::string>(), "Metadata path (SELECT data_paths FROM system.tables WHERE name = 'table_name' AND database = 'database_name')")
         ("test-mode", "Use test mode, which will put data on given url via PUT")
         ("link", "Create symlinks instead of copying")
         ("url", po::value<std::string>(), "Web server url for test mode")
@@ -160,7 +162,7 @@ try
     if (options.empty() || options.count("help"))
     {
         std::cout << description << std::endl;
-        exit(0);
+        exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     String metadata_path;
@@ -200,6 +202,6 @@ try
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(false);
+    std::cerr << DB::getCurrentExceptionMessage(false) << '\n';
     return 1;
 }

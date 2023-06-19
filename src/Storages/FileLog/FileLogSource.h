@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 
@@ -10,7 +10,7 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogSource : public SourceWithProgress
+class FileLogSource : public ISource
 {
 public:
     FileLogSource(

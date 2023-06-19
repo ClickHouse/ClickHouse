@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/ObjectUtils.h>
@@ -9,12 +10,15 @@
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
-
-#include <Common/FieldVisitorToString.h>
+#include <Columns/ColumnString.h>
+#include <Functions/FunctionsConversion.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
+#include <magic_enum.hpp>
+#include <memory>
+#include <string>
 
 namespace DB
 {
@@ -24,72 +28,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-using Node = typename ColumnObject::Subcolumns::Node;
-
-/// Finds a subcolumn from the same Nested type as @entry and inserts
-/// an array with default values with consistent sizes as in Nested type.
-bool tryInsertDefaultFromNested(
-    const std::shared_ptr<Node> & entry, const ColumnObject::Subcolumns & subcolumns)
-{
-    if (!entry->path.hasNested())
-        return false;
-
-    const Node * current_node = subcolumns.findLeaf(entry->path);
-    const Node * leaf = nullptr;
-    size_t num_skipped_nested = 0;
-
-    while (current_node)
-    {
-        /// Try to find the first Nested up to the current node.
-        const auto * node_nested = subcolumns.findParent(current_node,
-            [](const auto & candidate) { return candidate.isNested(); });
-
-        if (!node_nested)
-            break;
-
-        /// If there are no leaves, skip current node and find
-        /// the next node up to the current.
-        leaf = subcolumns.findLeaf(node_nested,
-            [&](const auto & candidate)
-            {
-                return candidate.data.size() == entry->data.size() + 1;
-            });
-
-        if (leaf)
-            break;
-
-        current_node = node_nested->parent;
-        ++num_skipped_nested;
-    }
-
-    if (!leaf)
-        return false;
-
-    auto last_field = leaf->data.getLastField();
-    if (last_field.isNull())
-        return false;
-
-    const auto & least_common_type = entry->data.getLeastCommonType();
-    size_t num_dimensions = getNumberOfDimensions(*least_common_type);
-    assert(num_skipped_nested < num_dimensions);
-
-    /// Replace scalars to default values with consistent array sizes.
-    size_t num_dimensions_to_keep = num_dimensions - num_skipped_nested;
-    auto default_scalar = num_skipped_nested
-        ? createEmptyArrayField(num_skipped_nested)
-        : getBaseTypeOfArray(least_common_type)->getDefault();
-
-    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
-    entry->data.insert(std::move(default_field));
-    return true;
-}
-
 }
 
 template <typename Parser>
@@ -120,29 +60,25 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     auto & [paths, values] = *result;
     assert(paths.size() == values.size());
 
-    HashSet<StringRef, StringRefHash> paths_set;
-    size_t column_size = column_object.size();
-
+    size_t old_column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
         auto field_info = getFieldInfo(values[i]);
+        if (field_info.need_fold_dimension)
+            values[i] = applyVisitor(FieldVisitorFoldDimension(field_info.num_dimensions), std::move(values[i]));
         if (isNothing(field_info.scalar_type))
             continue;
-
-        if (!paths_set.insert(paths[i].getPath()).second)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Object has ambiguous path: {}", paths[i].getPath());
 
         if (!column_object.hasSubcolumn(paths[i]))
         {
             if (paths[i].hasNested())
-                column_object.addNestedSubcolumn(paths[i], field_info, column_size);
+                column_object.addNestedSubcolumn(paths[i], field_info, old_column_size);
             else
-                column_object.addSubcolumn(paths[i], column_size);
+                column_object.addSubcolumn(paths[i], old_column_size);
         }
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
-        assert(subcolumn.size() == column_size);
+        assert(subcolumn.size() == old_column_size);
 
         subcolumn.insert(std::move(values[i]), std::move(field_info));
     }
@@ -151,9 +87,9 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     const auto & subcolumns = column_object.getSubcolumns();
     for (const auto & entry : subcolumns)
     {
-        if (!paths_set.has(entry->path.getPath()))
+        if (entry->data.size() == old_column_size)
         {
-            bool inserted = tryInsertDefaultFromNested(entry, subcolumns);
+            bool inserted = column_object.tryInsertDefaultFromNested(entry);
             if (!inserted)
                 entry->data.insertDefault();
         }
@@ -193,24 +129,70 @@ void SerializationObject<Parser>::deserializeTextCSV(IColumn & column, ReadBuffe
 }
 
 template <typename Parser>
-template <typename TSettings, typename TStatePtr>
-void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings & settings, const TStatePtr & state) const
+template <typename TSettings>
+void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings & settings) const
 {
     if (settings.position_independent_encoding)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "DataTypeObject doesn't support serialization with position independent encoding");
-
-    if (state)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "DataTypeObject doesn't support serialization with non-trivial state");
 }
 
 template <typename Parser>
+struct SerializationObject<Parser>::SerializeStateObject : public ISerialization::SerializeBinaryBulkState
+{
+    DataTypePtr nested_type;
+    SerializationPtr nested_serialization;
+    SerializeBinaryBulkStatePtr nested_state;
+};
+
+template <typename Parser>
+struct SerializationObject<Parser>::DeserializeStateObject : public ISerialization::DeserializeBinaryBulkState
+{
+    BinarySerializationKind kind;
+    DataTypePtr nested_type;
+    SerializationPtr nested_serialization;
+    DeserializeBinaryBulkStatePtr nested_state;
+};
+
+template <typename Parser>
 void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    checkSerializationIsSupported(settings, state);
+    checkSerializationIsSupported(settings);
+    if (state)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DataTypeObject doesn't support serialization with non-trivial state");
+
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    if (!column_object.isFinalized())
+    {
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkStatePrefix(*finalized, settings, state);
+        return;
+    }
+
+    settings.path.push_back(Substream::ObjectStructure);
+    auto * stream = settings.getter(settings.path);
+
+    if (!stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
+
+    auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
+
+    writeIntBinary(static_cast<UInt8>(BinarySerializationKind::TUPLE), *stream);
+    writeStringBinary(tuple_type->getName(), *stream);
+
+    auto state_object = std::make_shared<SerializeStateObject>();
+    state_object->nested_type = tuple_type;
+    state_object->nested_serialization = tuple_type->getDefaultSerialization();
+
+    settings.path.back() = Substream::ObjectData;
+    state_object->nested_serialization->serializeBinaryBulkStatePrefix(*tuple_column, settings, state_object->nested_state);
+
+    state = std::move(state_object);
+    settings.path.pop_back();
 }
 
 template <typename Parser>
@@ -218,7 +200,12 @@ void SerializationObject<Parser>::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    checkSerializationIsSupported(settings, state);
+    checkSerializationIsSupported(settings);
+    auto * state_object = checkAndGetState<SerializeStateObject>(state);
+
+    settings.path.push_back(Substream::ObjectData);
+    state_object->nested_serialization->serializeBinaryBulkStateSuffix(settings, state_object->nested_state);
+    settings.path.pop_back();
 }
 
 template <typename Parser>
@@ -226,7 +213,56 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
-    checkSerializationIsSupported(settings, state);
+    checkSerializationIsSupported(settings);
+    if (state)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DataTypeObject doesn't support serialization with non-trivial state");
+
+    settings.path.push_back(Substream::ObjectStructure);
+    auto * stream = settings.getter(settings.path);
+    settings.path.pop_back();
+
+    if (!stream)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read kind of binary serialization of DataTypeObject, because its stream is missing");
+
+    UInt8 kind_raw;
+    readIntBinary(kind_raw, *stream);
+    auto kind = magic_enum::enum_cast<BinarySerializationKind>(kind_raw);
+    if (!kind)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+
+    auto state_object = std::make_shared<DeserializeStateObject>();
+    state_object->kind = *kind;
+
+    if (state_object->kind == BinarySerializationKind::TUPLE)
+    {
+        String data_type_name;
+        readStringBinary(data_type_name, *stream);
+        state_object->nested_type = DataTypeFactory::instance().get(data_type_name);
+        state_object->nested_serialization = state_object->nested_type->getDefaultSerialization();
+
+        if (!isTuple(state_object->nested_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Data of type Object should be written as Tuple, got: {}", data_type_name);
+    }
+    else if (state_object->kind == BinarySerializationKind::STRING)
+    {
+        state_object->nested_type = std::make_shared<DataTypeString>();
+        state_object->nested_serialization = std::make_shared<SerializationString>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+    }
+
+    settings.path.push_back(Substream::ObjectData);
+    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state);
+    settings.path.pop_back();
+
+    state = std::move(state_object);
 }
 
 template <typename Parser>
@@ -237,36 +273,31 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    checkSerializationIsSupported(settings, state);
+    checkSerializationIsSupported(settings);
     const auto & column_object = assert_cast<const ColumnObject &>(column);
+    auto * state_object = checkAndGetState<SerializeStateObject>(state);
 
     if (!column_object.isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
-
-    settings.path.push_back(Substream::ObjectStructure);
-    if (auto * stream = settings.getter(settings.path))
-        writeVarUInt(column_object.getSubcolumns().size(), *stream);
-
-    const auto & subcolumns = column_object.getSubcolumns();
-    for (const auto & entry : subcolumns)
     {
-        settings.path.back() = Substream::ObjectStructure;
-        settings.path.back().object_key_name = entry->path.getPath();
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkWithMultipleStreams(*finalized, offset, limit, settings, state);
+        return;
+    }
 
-        const auto & type = entry->data.getLeastCommonType();
-        if (auto * stream = settings.getter(settings.path))
-        {
-            entry->path.writeBinary(*stream);
-            writeStringBinary(type->getName(), *stream);
-        }
+    auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 
-        settings.path.back() = Substream::ObjectElement;
-        if (auto * stream = settings.getter(settings.path))
-        {
-            auto serialization = type->getDefaultSerialization();
-            serialization->serializeBinaryBulkWithMultipleStreams(
-                entry->data.getFinalizedColumn(), offset, limit, settings, state);
-        }
+    if (!state_object->nested_type->equals(*tuple_type))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Types of internal column of Object mismatched. Expected: {}, Got: {}",
+            state_object->nested_type->getName(), tuple_type->getName());
+    }
+
+    settings.path.push_back(Substream::ObjectData);
+    if (auto * stream = settings.getter(settings.path))
+    {
+        state_object->nested_serialization->serializeBinaryBulkWithMultipleStreams(
+            *tuple_column, offset, limit, settings, state_object->nested_state);
     }
 
     settings.path.pop_back();
@@ -280,54 +311,20 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    checkSerializationIsSupported(settings, state);
+    checkSerializationIsSupported(settings);
     if (!column->empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "DataTypeObject cannot be deserialized to non-empty column");
 
     auto mutable_column = column->assumeMutable();
-    auto & column_object = typeid_cast<ColumnObject &>(*mutable_column);
+    auto & column_object = assert_cast<ColumnObject &>(*mutable_column);
+    auto * state_object = checkAndGetState<DeserializeStateObject>(state);
 
-    size_t num_subcolumns = 0;
-    settings.path.push_back(Substream::ObjectStructure);
-    if (auto * stream = settings.getter(settings.path))
-        readVarUInt(num_subcolumns, *stream);
-
-    settings.path.back() = Substream::ObjectElement;
-    for (size_t i = 0; i < num_subcolumns; ++i)
-    {
-        PathInData key;
-        String type_name;
-
-        settings.path.back() = Substream::ObjectStructure;
-        if (auto * stream = settings.getter(settings.path))
-        {
-            key.readBinary(*stream);
-            readStringBinary(type_name, *stream);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read structure of DataTypeObject, because its stream is missing");
-        }
-
-        settings.path.back() = Substream::ObjectElement;
-        settings.path.back().object_key_name = key.getPath();
-
-        if (auto * stream = settings.getter(settings.path))
-        {
-            auto type = DataTypeFactory::instance().get(type_name);
-            auto serialization = type->getDefaultSerialization();
-            ColumnPtr subcolumn_data = type->createColumn();
-            serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn_data, limit, settings, state, cache);
-            column_object.addSubcolumn(key, subcolumn_data->assumeMutable());
-        }
-        else
-        {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read subcolumn '{}' of DataTypeObject, because its stream is missing", key.getPath());
-        }
-    }
+    settings.path.push_back(Substream::ObjectData);
+    if (state_object->kind == BinarySerializationKind::STRING)
+        deserializeBinaryBulkFromString(column_object, limit, settings, *state_object, cache);
+    else
+        deserializeBinaryBulkFromTuple(column_object, limit, settings, *state_object, cache);
 
     settings.path.pop_back();
     column_object.checkConsistency();
@@ -336,25 +333,68 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &) const
+void SerializationObject<Parser>::deserializeBinaryBulkFromString(
+    ColumnObject & column_object,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeStateObject & state,
+    SubstreamsCache * cache) const
+{
+    ColumnPtr column_string = state.nested_type->createColumn();
+    state.nested_serialization->deserializeBinaryBulkWithMultipleStreams(
+        column_string, limit, settings, state.nested_state, cache);
+
+    ConvertImplGenericFromString<ColumnString>::executeImpl(*column_string, column_object, *this, column_string->size());
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeBinaryBulkFromTuple(
+    ColumnObject & column_object,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeStateObject & state,
+    SubstreamsCache * cache) const
+{
+    ColumnPtr column_tuple = state.nested_type->createColumn();
+    state.nested_serialization->deserializeBinaryBulkWithMultipleStreams(
+        column_tuple, limit, settings, state.nested_state, cache);
+
+    auto [tuple_paths, tuple_types] = flattenTuple(state.nested_type);
+    auto flattened_tuple = flattenTuple(column_tuple);
+    const auto & tuple_columns = assert_cast<const ColumnTuple &>(*flattened_tuple).getColumns();
+
+    assert(tuple_paths.size() == tuple_types.size());
+    size_t num_subcolumns = tuple_paths.size();
+
+    if (tuple_columns.size() != num_subcolumns)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Inconsistent type ({}) and column ({}) while reading column of type Object",
+            state.nested_type->getName(), column_tuple->getName());
+
+    for (size_t i = 0; i < num_subcolumns; ++i)
+        column_object.addSubcolumn(tuple_paths[i], tuple_columns[i]->assumeMutable());
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &) const
+void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
@@ -370,16 +410,71 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
     writeChar('{', ostr);
     for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
     {
+        const auto & entry = *it;
         if (it != subcolumns.begin())
             writeCString(",", ostr);
 
-        writeDoubleQuoted((*it)->path.getPath(), ostr);
+        writeDoubleQuoted(entry->path.getPath(), ostr);
         writeChar(':', ostr);
-
-        auto serialization = (*it)->data.getLeastCommonType()->getDefaultSerialization();
-        serialization->serializeTextJSON((*it)->data.getFinalizedColumn(), row_num, ostr, settings);
+        serializeTextFromSubcolumn(entry->data, row_num, ostr, settings);
     }
     writeChar('}', ostr);
+}
+
+template <typename Parser>
+template <bool pretty_json>
+void SerializationObject<Parser>::serializeTextFromSubcolumn(
+    const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const auto & least_common_type = subcolumn.getLeastCommonType();
+
+    if (subcolumn.isFinalized())
+    {
+        const auto & finalized_column = subcolumn.getFinalizedColumn();
+        auto info = least_common_type->getSerializationInfo(finalized_column);
+        auto serialization = least_common_type->getSerialization(*info);
+        if constexpr (pretty_json)
+            serialization->serializeTextJSONPretty(finalized_column, row_num, ostr, settings, indent);
+        else
+            serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
+        return;
+    }
+
+    size_t ind = row_num;
+    if (ind < subcolumn.getNumberOfDefaultsInPrefix())
+    {
+        /// Suboptimal, but it should happen rarely.
+        auto tmp_column = subcolumn.getLeastCommonType()->createColumn();
+        tmp_column->insertDefault();
+
+        auto info = least_common_type->getSerializationInfo(*tmp_column);
+        auto serialization = least_common_type->getSerialization(*info);
+        if constexpr (pretty_json)
+            serialization->serializeTextJSONPretty(*tmp_column, 0, ostr, settings, indent);
+        else
+            serialization->serializeTextJSON(*tmp_column, 0, ostr, settings);
+        return;
+    }
+
+    ind -= subcolumn.getNumberOfDefaultsInPrefix();
+    for (const auto & part : subcolumn.getData())
+    {
+        if (ind < part->size())
+        {
+            auto part_type = getDataTypeByColumn(*part);
+            auto info = part_type->getSerializationInfo(*part);
+            auto serialization = part_type->getSerialization(*info);
+            if constexpr (pretty_json)
+                serialization->serializeTextJSONPretty(*part, ind, ostr, settings, indent);
+            else
+                serialization->serializeTextJSON(*part, ind, ostr, settings);
+            return;
+        }
+
+        ind -= part->size();
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for text serialization is out of range", row_num);
 }
 
 template <typename Parser>
@@ -417,6 +512,30 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
     serializeTextImpl(column, row_num, ostr_str, settings);
     writeCSVString(ostr_str.str(), ostr);
 }
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    const auto & subcolumns = column_object.getSubcolumns();
+
+    writeCString("{\n", ostr);
+    for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
+    {
+        const auto & entry = *it;
+        if (it != subcolumns.begin())
+            writeCString(",\n", ostr);
+
+        writeChar(' ', (indent + 1) * 4, ostr);
+        writeDoubleQuoted(entry->path.getPath(), ostr);
+        writeCString(": ", ostr);
+        serializeTextFromSubcolumn<true>(entry->data, row_num, ostr, settings, indent + 1);
+    }
+    writeChar('\n', ostr);
+    writeChar(' ', indent * 4, ostr);
+    writeChar('}', ostr);
+}
+
 
 SerializationPtr getObjectSerialization(const String & schema_format)
 {

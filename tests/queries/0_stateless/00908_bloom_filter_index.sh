@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx2;"
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx2;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx3;"
 
 
 # NGRAM BF
@@ -20,7 +20,7 @@ CREATE TABLE bloom_filter_idx
     INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 $CLICKHOUSE_CLIENT -n --query="
 CREATE TABLE bloom_filter_idx2
@@ -30,7 +30,7 @@ CREATE TABLE bloom_filter_idx2
     INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx VALUES
@@ -87,11 +87,11 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filte
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%2\\\\%2%' ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%2\\\\%2%' ORDER BY k FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%_\\\\%2\\\\__\\\\' ORDER BY k"
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%_\\\\%2\\\\__\\\\' ORDER BY k FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%_\\\\%2\\\\__\\\\\\\\' ORDER BY k"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%_\\\\%2\\\\__\\\\\\\\' ORDER BY k FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2\\\\' ORDER BY k"
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2\\\\' ORDER BY k FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2\\\\\\\\' ORDER BY k"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2\\\\\\\\' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2_' ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2_' ORDER BY k FORMAT JSON" | grep "rows_read"
@@ -113,7 +113,7 @@ CREATE TABLE bloom_filter_idx3
     INDEX bf (s, lower(s)) TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx3 VALUES
 (0, 'ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).'),

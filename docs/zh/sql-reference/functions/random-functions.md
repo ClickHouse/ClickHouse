@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/random-functions
+---
 # 随机函数 {#sui-ji-han-shu}
 
 随机函数使用非加密方式生成伪随机数字。
@@ -17,5 +20,3 @@
 ## randConstant {#randconstant}
 
 返回一个UInt32类型的随机数字，该函数不同之处在于仅为每个数据块参数一个随机数。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/random_functions/) <!--hide-->

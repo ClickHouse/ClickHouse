@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/table-functions/numbers
 sidebar_position: 39
 sidebar_label: numbers
 ---
 
-# numbers {#numbers}
+# numbers
 
 `numbers(N)` – Returns a table with the single ‘number’ column (UInt64) that contains integers from 0 to N-1.
 `numbers(N, M)` - Returns a table with the single ‘number’ column (UInt64) that contains integers from N to (N + M - 1).
@@ -24,4 +25,3 @@ Examples:
 -- Generate a sequence of dates from 2010-01-01 to 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
-

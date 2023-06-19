@@ -1,10 +1,10 @@
 ---
-sidebar_position: 70
+slug: /en/development/tests
+sidebar_position: 71
 sidebar_label: Testing
+title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 ---
-
-# ClickHouse Testing 
 
 ## Functional Tests
 
@@ -16,6 +16,11 @@ Tests are located in `queries` directory. There are two subdirectories: `statele
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
 
+:::note
+A common mistake when testing data types `DateTime` and `DateTime64` is assuming that the server uses a specific time zone (e.g. "UTC"). This is not the case, time zones in CI test runs
+are deliberately randomized. The easiest workaround is to specify the time zone for test values explicitly, e.g. `toDateTime64(val, 3, 'Europe/Amsterdam')`.
+:::
+
 ### Running a Test Locally {#functional-test-locally}
 
 Start the ClickHouse server locally, listening on the default port (9000). To
@@ -26,6 +31,9 @@ folder and run the following command:
 PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
+Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which
+are located near the test file itself (so for `queries/0_stateless/foo.sql` output will be in `queries/0_stateless/foo.stdout`).
+
 For more options, see `tests/clickhouse-test --help`. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`. There are also options to run tests in parallel or in randomized order.
 
 ### Adding a New Test
@@ -34,11 +42,58 @@ To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` director
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
+### Restricting test runs
+
+A test can have zero or more _test tags_ specifying restrictions for test runs.
+
+For `.sh` tests tags are written as a comment on the second line:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+```
+
+For `.sql` tests tags are placed in the first line as a SQL comment:
+
+```sql
+-- Tags: no-fasttest
+SELECT 1
+```
+
+|Tag name | What it does | Usage example |
+|---|---|---|
+| `disabled`|  Test is not run ||
+| `long` | Test's execution time is extended from 1 to 10 minutes ||
+| `deadlock` | Test is run in a loop for a long time ||
+| `race` | Same as `deadlock`. Prefer `deadlock` ||
+| `shard` | Server is required to listen to `127.0.0.*` ||
+| `distributed` | Same as `shard`. Prefer `shard` ||
+| `global` | Same as `shard`. Prefer `shard` ||
+| `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
+| `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
+| `no-replicated-database` |||
+| `no-ordinary-database` |||
+| `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
+| `no-parallel-replicas` |||
+| `no-debug` |||
+| `no-stress` |||
+| `no-polymorphic-parts` |||
+| `no-random-settings` |||
+| `no-random-merge-tree-settings` |||
+| `no-backward-compatibility-check` |||
+| `no-cpu-x86_64` |||
+| `no-cpu-aarch64` |||
+| `no-cpu-ppc64le` |||
+| `no-s3-storage` |||
+
+In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
+For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
+
 ### Choosing the Test Name
 
 The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
-
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
 
 ### Checking for an Error that Must Occur
 
@@ -81,11 +136,11 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 
 ## Performance Tests {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
+Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Performance tests are located at `tests/performance/`. Each test is represented by an `.xml` file with a description of the test case. Tests are run with `docker/test/performance-comparison` tool . See the readme file for invocation.
 
 Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. Also, it is recommended to write performance tests when you add or modify SQL functions which are relatively isolated and not too obscure. It always makes sense to use `perf top` or other `perf` tools during your tests.
 
 ## Test Tools and Scripts {#test-tools-and-scripts}
 
@@ -139,11 +194,11 @@ If the system clickhouse-server is already running and you do not want to stop i
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
--   cross-compile for Darwin x86_64 (Mac OS X)
--   cross-compile for FreeBSD x86_64
--   cross-compile for Linux AArch64
--   build on Ubuntu with libraries from system packages (discouraged)
--   build with shared linking of libraries (discouraged)
+- cross-compile for Darwin x86_64 (macOS)
+- cross-compile for FreeBSD x86_64
+- cross-compile for Linux AArch64
+- build on Ubuntu with libraries from system packages (discouraged)
+- build with shared linking of libraries (discouraged)
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 
@@ -192,7 +247,7 @@ ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/L
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
-Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
+Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
 
 Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
@@ -202,7 +257,7 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
 
 ## Stress test
 
@@ -228,7 +283,7 @@ Our Security Team did some basic overview of ClickHouse capabilities from the se
 
 We run `clang-tidy` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
 
-We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. 
+We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory.
 
 If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
 
@@ -244,7 +299,7 @@ In debug build we also involve a customization of libc that ensures that no "har
 
 Debug assertions are used extensively.
 
-In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurally. It allows to use exceptions in release build but make it an assertion in debug build.
+In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurely. It allows to use exceptions in release build but make it an assertion in debug build.
 
 Debug version of jemalloc is used for debug builds.
 Debug version of libc++ is used for debug builds.
@@ -253,7 +308,7 @@ Debug version of libc++ is used for debug builds.
 
 Data stored on disk is checksummed. Data in MergeTree tables is checksummed in three ways simultaneously* (compressed data blocks, uncompressed data blocks, the total checksum across blocks). Data transferred over network between client and server or between servers is also checksummed. Replication ensures bit-identical data on replicas.
 
-It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presense of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presence of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
 
 ClickHouse provides diagnostics that will help ops engineers to find faulty hardware.
 
@@ -281,10 +336,6 @@ We also track test coverage but only for functional tests and only for clickhous
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
-## Testflows
-
-[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
-
 ## Test Automation {#test-automation}
 
 We run tests with [GitHub Actions](https://github.com/features/actions).
@@ -293,5 +344,3 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
-
-[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

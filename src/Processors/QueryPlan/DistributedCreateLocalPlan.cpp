@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+
+#include "config_version.h"
 #include <Common/checkStackSize.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 namespace DB
 {
@@ -39,26 +43,65 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
-    UInt32 shard_num,
-    UInt32 shard_count,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator)
+    size_t shard_num,
+    size_t shard_count,
+    size_t replica_num,
+    size_t replica_count,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+    UUID group_uuid)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
-    auto interpreter = InterpreterSelectQuery(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    auto new_context = Context::createCopy(context);
 
-    interpreter.setProperClientInfo();
+    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
+    /// Do not apply AST optimizations, because query
+    /// is already optimized and some optimizations
+    /// can be applied only for non-distributed tables
+    /// and we can produce query, inconsistent with remote plans.
+    auto select_query_options = SelectQueryOptions(processed_stage)
+        .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
+        .ignoreASTOptimizations();
+
+    /// There are much things that are needed for coordination
+    /// during reading with parallel replicas
     if (coordinator)
     {
-        interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+        new_context->parallel_reading_coordinator = coordinator;
+        new_context->getClientInfo().interface = ClientInfo::Interface::LOCAL;
+        new_context->getClientInfo().collaborate_with_initiator = true;
+        new_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        new_context->getClientInfo().count_participating_replicas = replica_count;
+        new_context->getClientInfo().number_of_current_replica = replica_num;
+        new_context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
+        new_context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
+        new_context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+        new_context->setParallelReplicasGroupUUID(group_uuid);
+        new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
+        {
+            coordinator->handleInitialAllRangesAnnouncement(announcement);
+        });
+        new_context->setMergeTreeReadTaskCallback([coordinator](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
         {
             return coordinator->handleRequest(request);
         });
     }
 
-    interpreter.buildQueryPlan(*query_plan);
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
+        interpreter.buildQueryPlan(*query_plan);
+    }
+
     addConvertingActions(*query_plan, header);
     return query_plan;
 }

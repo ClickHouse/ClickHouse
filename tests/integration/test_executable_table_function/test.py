@@ -163,6 +163,19 @@ def test_executable_function_input_multiple_pipes_python(started_cluster):
     assert actual == expected
 
 
+def test_executable_function_input_slow_python_timeout_increased(started_cluster):
+    skip_test_msan(node)
+    query = "SELECT * FROM executable('input_slow.py', 'TabSeparated', 'value String', {source}, SETTINGS {settings})"
+    settings = "command_termination_timeout = 26, command_read_timeout = 26000, command_write_timeout = 26000"
+    assert node.query(query.format(source="(SELECT 1)", settings=settings)) == "Key 1\n"
+    assert (
+        node.query(
+            query.format(source="(SELECT id FROM test_data_table)", settings=settings)
+        )
+        == "Key 0\nKey 1\nKey 2\n"
+    )
+
+
 def test_executable_storage_no_input_bash(started_cluster):
     skip_test_msan(node)
     node.query("DROP TABLE IF EXISTS test_table")

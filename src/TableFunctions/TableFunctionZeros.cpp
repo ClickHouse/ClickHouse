@@ -2,7 +2,7 @@
 #include <TableFunctions/TableFunctionZeros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/System/StorageSystemZeros.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -34,7 +34,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
         auto arguments = function->arguments->children;
 
         if (arguments.size() != 1)
-            throw Exception("Table function '" + getName() + "' requires 'length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length'.", getName());
 
 
         UInt64 length = evaluateArgument(context, arguments[0]);
@@ -43,19 +43,41 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
         res->startup();
         return res;
     }
-    throw Exception("Table function '" + getName() + "' requires 'limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit'.", getName());
 }
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionZeros<true>>();
-    factory.registerFunction<TableFunctionZeros<false>>();
+    factory.registerFunction<TableFunctionZeros<true>>({.documentation = {
+            .description=R"(
+                Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
+                This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
+                In contrast to the `zeros_mt`, this table function is using single thread for data generation.
+                Example:
+                [example:1]
+                This query will test the speed of `randomPrintableASCII` function using single thread.
+                See also the `system.zeros` table.)",
+            .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
+    }});
+
+    factory.registerFunction<TableFunctionZeros<false>>({.documentation = {
+            .description=R"(
+                Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
+                This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
+                In contrast to the `zeros`, this table function is using multiple threads for data generation, according to the `max_threads` setting.
+                Example:
+                [example:1]
+                This query will test the speed of `randomPrintableASCII` function using multiple threads.
+                See also the `system.zeros` table.
+                )",
+            .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
+}});
 }
 
 template <bool multithreaded>
 UInt64 TableFunctionZeros<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
+    return checkAndGetLiteralArgument<UInt64>(evaluateConstantExpressionOrIdentifierAsLiteral(argument, context), "length");
 }
 
 }

@@ -10,7 +10,10 @@ node1 = cluster.add_instance(
     "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/named_collections.xml"], with_postgres_cluster=True
+    "node2",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/settings.xml"],
+    with_postgres_cluster=True,
 )
 
 
@@ -19,6 +22,7 @@ def started_cluster():
     try:
         cluster.start()
         node1.query("CREATE DATABASE test")
+        node2.query("CREATE DATABASE test")
         yield cluster
 
     finally:
@@ -57,6 +61,16 @@ def test_postgres_select_insert(started_cluster):
     # Triggers issue https://github.com/ClickHouse/ClickHouse/issues/26088
     # for i in range(1, 1000):
     #     assert (node1.query(check1)).rstrip() == '10000', f"Failed on {i}"
+
+    result = node1.query(
+        f"""
+        INSERT INTO TABLE FUNCTION {table}
+        SELECT number, concat('name_', toString(number)), 3 from numbers(1000000)"""
+    )
+    check1 = f"SELECT count() FROM {table}"
+    check2 = f"SELECT count() FROM (SELECT * FROM {table} LIMIT 10)"
+    assert (node1.query(check1)).rstrip() == "1010000"
+    assert (node1.query(check2)).rstrip() == "10"
 
     cursor.execute(f"DROP TABLE {table_name} ")
 
@@ -109,7 +123,9 @@ def test_postgres_conversions(started_cluster):
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
                 i Char(2)[][][][],                          -- Nullable(String)
-                k Char(2)[]                                 -- Nullable(String)
+                j Char(2)[],                                -- Nullable(String)
+                k UUID[],                                   -- Nullable(UUID)
+                l UUID[][]                                  -- Nullable(UUID)
            )"""
     )
 
@@ -119,15 +135,18 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "a\tArray(Date)\t\t\t\t\t\n"
-        + "b\tArray(DateTime64(6))\t\t\t\t\t\n"
-        + "c\tArray(Array(Float32))\t\t\t\t\t\n"
-        + "d\tArray(Array(Float64))\t\t\t\t\t\n"
-        + "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
-        + "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
-        + "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
-        + "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
-        + "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
-        + "k\tArray(Nullable(String))"
+        "b\tArray(DateTime64(6))\t\t\t\t\t\n"
+        "c\tArray(Array(Float32))\t\t\t\t\t\n"
+        "d\tArray(Array(Float64))\t\t\t\t\t\n"
+        "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
+        "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
+        "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
+        "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
+        "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
+        "j\tArray(Nullable(String))\t\t\t\t\t\n"
+        "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
+        "l\tArray(Array(Nullable(UUID)))"
+        ""
     )
     assert result.rstrip() == expected
 
@@ -143,7 +162,9 @@ def test_postgres_conversions(started_cluster):
         "[[[[['winx', 'winx', 'winx']]]]], "
         "[[[1, NULL], [NULL, 1]], [[NULL, NULL], [NULL, NULL]], [[4, 4], [5, 5]]], "
         "[[[[NULL]]]], "
-        "[]"
+        "[], "
+        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
+        "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]]"
         ")"
     )
 
@@ -153,15 +174,17 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "['2000-05-12','2000-05-12']\t"
-        + "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
-        + "[[1.12345],[1.12345],[1.12345]]\t"
-        + "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
-        + "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
+        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
+        "[[1.12345],[1.12345],[1.12345]]\t"
+        "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
+        "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
         "[[[1,1],[1,1]],[[3,3],[3,3]],[[4,4],[5,5]]]\t"
         "[[[[['winx','winx','winx']]]]]\t"
         "[[[1,NULL],[NULL,1]],[[NULL,NULL],[NULL,NULL]],[[4,4],[5,5]]]\t"
         "[[[[NULL]]]]\t"
-        "[]\n"
+        "[]\t"
+        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
+        "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\n"
     )
     assert result == expected
 
@@ -169,7 +192,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
 
-def test_non_default_scema(started_cluster):
+def test_non_default_schema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema_with_dots")
 
@@ -194,7 +217,9 @@ def test_non_default_scema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(100)")
     assert result == expected
 
-    table_function = """postgresql('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema')"""
+    parameters = "'postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema'"
+    table_function = f"postgresql({parameters})"
+    table_engine = f"PostgreSQL({parameters})"
     result = node1.query(f"SELECT * FROM {table_function}")
     assert result == expected
 
@@ -220,10 +245,19 @@ def test_non_default_scema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(200)")
     assert result == expected
 
+    node1.query(f"CREATE TABLE test.test_pg_auto_schema_engine ENGINE={table_engine}")
+    node1.query(f"CREATE TABLE test.test_pg_auto_schema_function AS {table_function}")
+
+    expected = "a\tNullable(Int32)\t\t\t\t\t\n"
+    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_engine") == expected
+    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_function") == expected
+
     cursor.execute("DROP SCHEMA test_schema CASCADE")
     cursor.execute('DROP SCHEMA "test.nice.schema" CASCADE')
     node1.query("DROP TABLE test.test_pg_table_schema")
     node1.query("DROP TABLE test.test_pg_table_schema_with_dots")
+    node1.query("DROP TABLE test.test_pg_auto_schema_engine")
+    node1.query("DROP TABLE test.test_pg_auto_schema_function")
 
 
 def test_concurrent_queries(started_cluster):
@@ -378,7 +412,7 @@ def test_postgres_distributed(started_cluster):
         """
         CREATE TABLE test_shards2
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('PostgreSQL', postgres4, description='postgres{1|2}:5432,postgres{3|4}:5432'); """
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, addresses_expr='postgres{1|2}:5432,postgres{3|4}:5432'); """
     )
 
     result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")
@@ -433,6 +467,7 @@ def test_datetime_with_timezone(started_cluster):
 
 def test_postgres_ndim(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
+
     cursor.execute("DROP TABLE IF EXISTS arr1, arr2")
 
     cursor.execute("CREATE TABLE arr1 (a Integer[])")
@@ -451,6 +486,20 @@ def test_postgres_ndim(started_cluster):
     )
     assert result.strip() == "Array(Array(Nullable(Int32)))"
     cursor.execute("DROP TABLE arr1, arr2")
+
+    cursor.execute("DROP SCHEMA IF EXISTS ndim_schema CASCADE")
+    cursor.execute("CREATE SCHEMA ndim_schema")
+    cursor.execute("CREATE TABLE ndim_schema.arr1 (a integer[])")
+    cursor.execute("INSERT INTO ndim_schema.arr1 SELECT '{{1}, {2}}'")
+    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
+    cursor.execute("CREATE TABLE ndim_schema.arr2 AS SELECT * FROM ndim_schema.arr1")
+    result = node1.query(
+        """SELECT toTypeName(a) FROM postgresql(postgres1, schema='ndim_schema', table='arr2')"""
+    )
+    assert result.strip() == "Array(Array(Nullable(Int32)))"
+
+    cursor.execute("DROP TABLE ndim_schema.arr1, ndim_schema.arr2")
+    cursor.execute("DROP SCHEMA ndim_schema CASCADE")
 
 
 def test_postgres_on_conflict(started_cluster):
@@ -623,6 +672,55 @@ def test_uuid(started_cluster):
         "select toTypeName(u) from postgresql(postgres1, table='test')"
     )
     assert result.strip() == "Nullable(UUID)"
+
+
+def test_auto_close_connection(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=False
+    )
+    cursor = conn.cursor()
+    database_name = "auto_close_connection_test"
+
+    cursor.execute(f"DROP DATABASE IF EXISTS {database_name}")
+    cursor.execute(f"CREATE DATABASE {database_name}")
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip,
+        started_cluster.postgres_port,
+        database=True,
+        database_name=database_name,
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE test_table (key integer, value integer)")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+    """
+    )
+
+    result = node2.query(
+        "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+        user="default",
+    )
+
+    result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    """
+    )
+
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+        )
+    )
+
+    # Connection from python + pg_stat table also has a connection at the moment of current query
+    assert count == 2
 
 
 if __name__ == "__main__":

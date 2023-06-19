@@ -1,11 +1,12 @@
 #include <iostream>
 #include <filesystem>
 #include <boost/program_options.hpp>
+#include <Common/filesystemHelpers.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     #include <syscall.h>
     #include <linux/capability.h>
 #endif
@@ -19,7 +20,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/getResource.h>
 #include <base/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -221,6 +222,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user to create")
             ("group", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_GROUP), "clickhouse group to create")
+            ("noninteractive,y", "run non-interactively")
+            ("link", "create symlink to the binary instead of copying to binary-path")
         ;
 
         po::variables_map options;
@@ -266,8 +269,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Copy binary to the destination directory.
 
-        /// TODO An option to link instead of copy - useful for developers.
-
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path bin_dir = prefix / options["binary-path"].as<std::string>();
 
@@ -280,76 +281,136 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool old_binary_exists = fs::exists(main_bin_path);
         bool already_installed = false;
 
-        /// Check if the binary is the same file (already installed).
-        if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+        if (options.count("link"))
         {
-            already_installed = true;
-            fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
-        }
-        /// Check if binary has the same content.
-        else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
-        {
-            fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
-                main_bin_path.string());
-
-            if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+            if (old_binary_exists)
             {
-                already_installed = true;
-                fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
-                    main_bin_path.string(), binary_self_canonical_path.string());
-            }
-        }
+                bool is_symlink = FS::isSymlink(main_bin_path);
+                fs::path points_to;
+                if (is_symlink)
+                    points_to = fs::weakly_canonical(FS::readSymlink(main_bin_path));
 
-        if (already_installed)
-        {
-            if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+                if (is_symlink && points_to == binary_self_canonical_path)
+                {
+                    already_installed = true;
+                }
+                else
+                {
+                    if (!is_symlink)
+                    {
+                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                                   main_bin_path.string(), main_bin_old_path.string());
+                        fs::rename(main_bin_path, main_bin_old_path);
+                    }
+                    else if (points_to != main_bin_path)
+                    {
+                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                                   main_bin_path.string(), points_to.string(), binary_self_canonical_path.string());
+                        fs::remove(main_bin_path);
+                    }
+                }
+            }
+
+            if (!already_installed)
+            {
+                if (!fs::exists(bin_dir))
+                {
+                    fmt::print("Creating binary directory {}.\n", bin_dir.string());
+                    fs::create_directories(bin_dir);
+                }
+
+                fmt::print("Creating symlink {} to {}.\n", main_bin_path.string(), binary_self_canonical_path.string());
+                fs::create_symlink(binary_self_canonical_path, main_bin_path);
+
+                if (0 != chmod(binary_self_canonical_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    throwFromErrno(fmt::format("Cannot chmod {}", binary_self_canonical_path.string()), ErrorCodes::SYSTEM_ERROR);
+            }
         }
         else
         {
-            if (!fs::exists(bin_dir))
+            bool is_symlink = FS::isSymlink(main_bin_path);
+
+            if (!is_symlink)
             {
-                fmt::print("Creating binary directory {}.\n", bin_dir.string());
-                fs::create_directories(bin_dir);
+                /// Check if the binary is the same file (already installed).
+                if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+                {
+                    already_installed = true;
+                    fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
+                }
+                /// Check if binary has the same content.
+                else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
+                {
+                    fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
+                        main_bin_path.string());
+
+                    if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+                    {
+                        already_installed = true;
+                        fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
+                            main_bin_path.string(), binary_self_canonical_path.string());
+                    }
+                }
             }
 
-            size_t available_space = fs::space(bin_dir).available;
-            if (available_space < binary_size)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
-                    bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
-
-            fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
-
-            try
+            if (already_installed)
             {
-                ReadBufferFromFile in(binary_self_path.string());
-                WriteBufferFromFile out(main_bin_tmp_path.string());
-                copyData(in, out);
-                out.sync();
-
-                if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
-
-                out.finalize();
+                if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
             }
-            catch (const Exception & e)
+            else
             {
-                if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
-                throw;
+                if (!fs::exists(bin_dir))
+                {
+                    fmt::print("Creating binary directory {}.\n", bin_dir.string());
+                    fs::create_directories(bin_dir);
+                }
+
+                size_t available_space = fs::space(bin_dir).available;
+                if (available_space < binary_size)
+                    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
+                        bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
+
+                fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
+
+                try
+                {
+                    String source = binary_self_path.string();
+                    String destination = main_bin_tmp_path.string();
+
+                    /// Try to make a hard link first, as an optimization.
+                    /// It is possible if the source and the destination are on the same filesystems.
+                    if (0 != link(source.c_str(), destination.c_str()))
+                    {
+                        ReadBufferFromFile in(binary_self_path.string());
+                        WriteBufferFromFile out(main_bin_tmp_path.string());
+                        copyData(in, out);
+                        out.sync();
+                        out.finalize();
+                    }
+
+                    if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                        throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
+                        std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
+                    throw;
+                }
+
+                if (old_binary_exists)
+                {
+                    fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
+                            main_bin_path.string(), main_bin_old_path.string());
+
+                    /// There is file exchange operation in Linux but it's not portable.
+                    fs::rename(main_bin_path, main_bin_old_path);
+                }
+
+                fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
+                fs::rename(main_bin_tmp_path, main_bin_path);
             }
-
-            if (old_binary_exists)
-            {
-                fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
-                        main_bin_path.string(), main_bin_old_path.string());
-
-                /// There is file exchange operation in Linux but it's not portable.
-                fs::rename(main_bin_path, main_bin_old_path);
-            }
-
-            fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
-            fs::rename(main_bin_tmp_path, main_bin_path);
         }
 
         /// Create symlinks.
@@ -368,6 +429,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
+            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)
@@ -377,12 +439,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = fs::is_symlink(symlink_path);
+                bool is_symlink = FS::isSymlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
-                if (is_symlink && points_to == main_bin_path)
+                if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                 {
                     need_to_create = false;
                 }
@@ -444,8 +506,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
                 fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
                 std::string ulimits_content = fmt::format(
-                    "{0}\tsoft\tnofile\t262144\n"
-                    "{0}\thard\tnofile\t262144\n", user);
+                    "{0}\tsoft\tnofile\t1048576\n"
+                    "{0}\thard\tnofile\t1048576\n", user);
 
                 fs::create_directories(ulimits_dir);
 
@@ -706,8 +768,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
+        bool noninteractive = (debian_frontend_var && debian_frontend_var == std::string_view("noninteractive"))
+                              || options.count("noninteractive");
+
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
 
@@ -789,7 +853,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
           *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
           */
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
             " && command -v capsh >/dev/null"
@@ -886,12 +950,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file)
+    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries)
     {
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            UInt64 pid;
+            Int32 pid;
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
@@ -926,22 +990,9 @@ namespace
 
         if (!user.empty())
         {
-#if defined(OS_FREEBSD)
-            command = fmt::format("su -m '{}' -c '{}'", user, command);
-#else
-            bool may_need_sudo = geteuid() != 0;
-            if (may_need_sudo)
-            {
-                struct passwd *p = getpwuid(geteuid());
-                // Only use sudo when we are not the given user
-                if (p == nullptr || std::string(p->pw_name) != user)
-                    command = fmt::format("sudo -u '{}' {}", user, command);
-            }
-            else
-            {
-                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
-            }
-#endif
+            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
+            /// that's why we are using it instead of the 'clickhouse su' tool.
+            command = fmt::format("sudo -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
@@ -950,8 +1001,7 @@ namespace
         /// Wait to start.
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to start\n");
             if (fs::exists(pid_file))
@@ -962,7 +1012,7 @@ namespace
             sleepForSeconds(1);
         }
 
-        if (try_num == num_tries)
+        if (try_num == max_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
 
@@ -993,9 +1043,9 @@ namespace
         return 0;
     }
 
-    UInt64 isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file)
     {
-        UInt64 pid = 0;
+        int pid = 0;
 
         if (fs::exists(pid_file))
         {
@@ -1063,18 +1113,12 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file, bool force, bool do_not_kill)
+    bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
     {
-        if (force && do_not_kill)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
-
-        UInt64 pid = isRunning(pid_file);
+        int pid = isRunning(pid_file);
 
         if (!pid)
-            return 0;
-
-        int signal = force ? SIGKILL : SIGTERM;
-        const char * signal_name = force ? "kill" : "terminate";
+            return true;
 
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
@@ -1082,8 +1126,7 @@ namespace
             throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
             if (!isRunning(pid_file))
@@ -1091,46 +1134,51 @@ namespace
                 fmt::print("Server stopped\n");
                 break;
             }
-            sleepForSeconds(1);
+            sleepForMilliseconds(wait_ms);
         }
 
-        if (try_num == num_tries)
+        return try_num < max_tries;
+    }
+
+    int stop(const fs::path & pid_file, bool force, bool do_not_kill, unsigned max_tries)
+    {
+        if (force && do_not_kill)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
+
+        int signal = force ? SIGKILL : SIGTERM;
+        const char * signal_name = force ? "kill" : "terminate";
+
+        if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
+            return 0;
+
+        int pid = isRunning(pid_file);
+        if (!pid)
+            return 0;
+
+        if (do_not_kill)
         {
-            if (do_not_kill)
-            {
-                fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
-                return 1;
-            }
-
-            fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-            if (0 == kill(pid, 9))
-                fmt::print("Sent kill signal (pid = {}).\n", pid);
-            else
-                throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
-
-            /// Wait for the process (100 seconds).
-            constexpr size_t num_kill_check_tries = 1000;
-            constexpr size_t kill_check_delay_ms = 100;
-            for (size_t i = 0; i < num_kill_check_tries; ++i)
-            {
-                fmt::print("Waiting for server to be killed\n");
-                if (!isRunning(pid_file))
-                {
-                    fmt::print("Server exited\n");
-                    break;
-                }
-                sleepForMilliseconds(kill_check_delay_ms);
-            }
-
-            if (isRunning(pid_file))
-            {
-                throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after {} tries (delay: {} ms)",
-                    num_kill_check_tries, kill_check_delay_ms);
-            }
+            fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
+            return 1;
         }
 
-        return 0;
+        /// Send termination signal again, the server will receive it and immediately terminate.
+        fmt::print("Will send the termination signal again to force the termination (pid = {}).\n", pid);
+        if (sendSignalAndWaitForStop(pid_file, signal, std::min(10U, max_tries), 1000, signal_name))
+            return 0;
+
+        /// Send kill signal. Total wait is 100 seconds.
+        constexpr size_t num_kill_check_tries = 1000;
+        constexpr size_t kill_check_delay_ms = 100;
+        fmt::print("Will terminate forcefully (pid = {}).\n", pid);
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
+            return 0;
+
+        if (!isRunning(pid_file))
+            return 0;
+
+        throw Exception(ErrorCodes::CANNOT_KILL,
+            "The server process still exists after {} tries (delay: {} ms)",
+            num_kill_check_tries, kill_check_delay_ms);
     }
 }
 
@@ -1147,6 +1195,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1164,8 +1213,9 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {
@@ -1186,6 +1236,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
             ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server to finish after sending TERM (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1202,7 +1253,8 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 
         bool force = options["force"].as<bool>();
         bool do_not_kill = options["do-not-kill"].as<bool>();
-        return stop(pid_file, force, do_not_kill);
+        unsigned max_tries = options["max-tries"].as<unsigned>();
+        return stop(pid_file, force, do_not_kill, max_tries);
     }
     catch (...)
     {
@@ -1261,6 +1313,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
             ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
             ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1281,10 +1334,11 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         bool force = options["force"].as<bool>();
         bool do_not_kill = options["do-not-kill"].as<bool>();
-        if (int res = stop(pid_file, force, do_not_kill))
-            return res;
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        if (int res = stop(pid_file, force, do_not_kill, max_tries))
+            return res;
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {

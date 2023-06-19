@@ -141,7 +141,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 
     if (function_node.name == "if")
     {
-        if (function_node.arguments->children.size() != 2)
+        if (function_node.arguments->children.size() != 3)
             return;
 
         const ASTLiteral * literal1 = function_node.arguments->children[1]->as<ASTLiteral>();

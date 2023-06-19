@@ -1,0 +1,4 @@
+Tuple(LowCardinality(String), LowCardinality(UInt8))
+Tuple(LowCardinality(String), LowCardinality(UInt8))
+Tuple(LowCardinality(String), LowCardinality(UInt8))
+Tuple(LowCardinality(String), LowCardinality(UInt8))

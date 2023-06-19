@@ -15,9 +15,12 @@ class ASTQueryWithOutput : public IAST
 {
 public:
     ASTPtr out_file;
+    bool is_into_outfile_with_stdout = false;
+    bool is_outfile_append = false;
     ASTPtr format;
     ASTPtr settings_ast;
     ASTPtr compression;
+    ASTPtr compression_level;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

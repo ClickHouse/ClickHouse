@@ -3,6 +3,8 @@
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
 
+        <create_snapshot_on_exit>true</create_snapshot_on_exit>
+
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>100000</session_timeout_ms>

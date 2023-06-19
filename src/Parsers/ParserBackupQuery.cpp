@@ -1,5 +1,6 @@
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -21,75 +22,7 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    bool parseType(IParser::Pos & pos, Expected & expected, ElementType & type, bool & is_temp_db)
-    {
-        is_temp_db = false;
-        if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected))
-        {
-            type = ElementType::TABLE;
-            return true;
-        }
-        if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
-        {
-            type = ElementType::TABLE;
-            is_temp_db = true;
-            return true;
-        }
-        if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
-        {
-            type = ElementType::DATABASE;
-            return true;
-        }
-        if (ParserKeyword{"ALL TEMPORARY TABLES"}.ignore(pos, expected))
-        {
-            type = ElementType::DATABASE;
-            is_temp_db = true;
-            return true;
-        }
-        if (ParserKeyword{"ALL DATABASES"}.ignore(pos, expected))
-        {
-            type = ElementType::ALL_DATABASES;
-            return true;
-        }
-        return false;
-    }
-
-    bool parseName(IParser::Pos & pos, Expected & expected, ElementType type, bool is_temp_db, DatabaseAndTableName & name)
-    {
-        name.first.clear();
-        name.second.clear();
-        switch (type)
-        {
-            case ElementType::TABLE:
-            {
-                if (is_temp_db)
-                {
-                    ASTPtr ast;
-                    if (!ParserIdentifier{}.parse(pos, ast, expected))
-                        return false;
-                    name.second = getIdentifierName(ast);
-                    return true;
-                }
-                return parseDatabaseAndTableName(pos, expected, name.first, name.second);
-            }
-
-            case ElementType::DATABASE:
-            {
-                if (is_temp_db)
-                    return false;
-                ASTPtr ast;
-                if (!ParserIdentifier{}.parse(pos, ast, expected))
-                    return false;
-                name.first = getIdentifierName(ast);
-                return true;
-            }
-
-            default:
-                return false;
-        }
-    }
-
-    bool parsePartitions(IParser::Pos & pos, Expected & expected, ASTs & partitions)
+    bool parsePartitions(IParser::Pos & pos, Expected & expected, std::optional<ASTs> & partitions)
     {
         if (!ParserKeyword{"PARTITION"}.ignore(pos, expected) && !ParserKeyword{"PARTITIONS"}.ignore(pos, expected))
             return false;
@@ -110,71 +43,141 @@ namespace
         return true;
     }
 
-    bool parseExceptList(IParser::Pos & pos, Expected & expected, bool parse_except_tables, std::set<String> & except_list)
-    {
-        if (!ParserKeyword{parse_except_tables ? "EXCEPT TABLES" : "EXCEPT"}.ignore(pos, expected))
-            return false;
-
-        std::set<String> result;
-        auto parse_list_element = [&]
-        {
-            ASTPtr ast;
-            if (!ParserIdentifier{}.parse(pos, ast, expected))
-                return false;
-            result.insert(getIdentifierName(ast));
-            return true;
-        };
-        if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
-            return false;
-
-        except_list = std::move(result);
-        return true;
-    }
-
-    bool parseElement(IParser::Pos & pos, Expected & expected, Element & entry)
+    bool parseExceptDatabases(IParser::Pos & pos, Expected & expected, std::set<String> & except_databases)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            ElementType type;
-            bool is_temp_db = false;
-            if (!parseType(pos, expected, type, is_temp_db))
+            if (!ParserKeyword{"EXCEPT DATABASE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT DATABASES"}.ignore(pos, expected))
                 return false;
 
-            DatabaseAndTableName name;
-            if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !is_temp_db))
+            std::set<String> result;
+            auto parse_list_element = [&]
             {
-                if (!parseName(pos, expected, type, is_temp_db, name))
+                ASTPtr ast;
+                if (!ParserIdentifier{}.parse(pos, ast, expected))
                     return false;
-            }
+                result.insert(getIdentifierName(ast));
+                return true;
+            };
+            if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
+                return false;
 
-            DatabaseAndTableName new_name = name;
-            if (ParserKeyword{"AS"}.ignore(pos, expected))
+            except_databases = std::move(result);
+            return true;
+        });
+    }
+
+    bool parseExceptTables(IParser::Pos & pos, Expected & expected, const std::optional<String> & database_name, std::set<DatabaseAndTableName> & except_tables)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"EXCEPT TABLE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT TABLES"}.ignore(pos, expected))
+                return false;
+
+            std::set<DatabaseAndTableName> result;
+            auto parse_list_element = [&]
             {
-                if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !is_temp_db))
+                DatabaseAndTableName table_name;
+                if (database_name)
                 {
-                    if (!parseName(pos, expected, type, is_temp_db, new_name))
+                    ASTPtr ast;
+                    if (!ParserIdentifier{}.parse(pos, ast, expected))
+                        return false;
+                    table_name.first = *database_name;
+                    table_name.second = getIdentifierName(ast);
+                }
+                else
+                {
+                    if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
                         return false;
                 }
-            }
 
-            ASTs partitions;
-            if (type == ElementType::TABLE)
-                parsePartitions(pos, expected, partitions);
+                result.emplace(std::move(table_name));
+                return true;
+            };
+            if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
+                return false;
 
-            std::set<String> except_list;
-            if ((type == ElementType::DATABASE) || (type == ElementType::ALL_DATABASES))
-            {
-                bool parse_except_tables = ((type == ElementType::DATABASE) && !is_temp_db);
-                parseExceptList(pos, expected, parse_except_tables, except_list);
-            }
-
-            entry.type = type;
-            entry.name = std::move(name);
-            entry.new_name = std::move(new_name);
-            entry.is_temp_db = is_temp_db;
-            entry.partitions = std::move(partitions);
-            entry.except_list = std::move(except_list);
+            except_tables = std::move(result);
             return true;
+        });
+    }
+
+    bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected) ||
+                ParserKeyword{"VIEW"}.ignore(pos, expected))
+            {
+                element.type = ElementType::TABLE;
+                if (!parseDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
+                    return false;
+
+                element.new_database_name = element.database_name;
+                element.new_table_name = element.table_name;
+                if (ParserKeyword("AS").ignore(pos, expected))
+                {
+                    if (!parseDatabaseAndTableName(pos, expected, element.new_database_name, element.new_table_name))
+                        return false;
+                }
+
+                parsePartitions(pos, expected, element.partitions);
+                return true;
+            }
+
+            if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
+            {
+                element.type = ElementType::TEMPORARY_TABLE;
+
+                ASTPtr ast;
+                if (!ParserIdentifier{}.parse(pos, ast, expected))
+                    return false;
+                element.table_name = getIdentifierName(ast);
+                element.new_table_name = element.table_name;
+
+                if (ParserKeyword("AS").ignore(pos, expected))
+                {
+                    ast = nullptr;
+                    if (!ParserIdentifier{}.parse(pos, ast, expected))
+                        return false;
+                    element.new_table_name = getIdentifierName(ast);
+                }
+
+                return true;
+            }
+
+            if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
+            {
+                element.type = ElementType::DATABASE;
+
+                ASTPtr ast;
+                if (!ParserIdentifier{}.parse(pos, ast, expected))
+                    return false;
+                element.database_name = getIdentifierName(ast);
+                element.new_database_name = element.database_name;
+
+                if (ParserKeyword("AS").ignore(pos, expected))
+                {
+                    ast = nullptr;
+                    if (!ParserIdentifier{}.parse(pos, ast, expected))
+                        return false;
+                    element.new_database_name = getIdentifierName(ast);
+                }
+
+                parseExceptTables(pos, expected, element.database_name, element.except_tables);
+                return true;
+            }
+
+            if (ParserKeyword{"ALL"}.ignore(pos, expected))
+            {
+                element.type = ElementType::ALL;
+                parseExceptDatabases(pos, expected, element.except_databases);
+                parseExceptTables(pos, expected, {}, element.except_tables);
+                return true;
+            }
+
+            return false;
         });
     }
 
@@ -205,7 +208,11 @@ namespace
 
     bool parseBackupName(IParser::Pos & pos, Expected & expected, ASTPtr & backup_name)
     {
-        return ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected);
+        if (!ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected))
+            return false;
+
+        backup_name->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+        return true;
     }
 
     bool parseBaseBackupSetting(IParser::Pos & pos, Expected & expected, ASTPtr & base_backup_name)
@@ -353,10 +360,15 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->kind = kind;
     query->elements = std::move(elements);
     query->cluster = std::move(cluster);
-    query->backup_name = std::move(backup_name);
+
+    if (backup_name)
+        query->set(query->backup_name, backup_name);
+
     query->settings = std::move(settings);
-    query->base_backup_name = std::move(base_backup_name);
     query->cluster_host_ids = std::move(cluster_host_ids);
+
+    if (base_backup_name)
+        query->set(query->base_backup_name, base_backup_name);
 
     return true;
 }

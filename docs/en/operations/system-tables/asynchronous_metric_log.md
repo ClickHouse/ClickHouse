@@ -1,14 +1,17 @@
-# asynchronous_metric_log {#system-tables-async-log}
+---
+slug: /en/operations/system-tables/asynchronous_metric_log
+---
+# asynchronous_metric_log
 
 Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.
 
 Columns:
 
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
--   `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**
 
@@ -35,5 +38,3 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 
 - [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background.
 - [system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/asynchronous_metric_log) <!--hide-->

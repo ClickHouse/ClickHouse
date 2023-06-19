@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/
 sidebar_label: "Движки таблиц"
 sidebar_position: 26
 ---

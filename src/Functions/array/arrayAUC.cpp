@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <vector>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include "arrayScalarProduct.h"
@@ -86,12 +85,12 @@ public:
     static DataTypePtr getReturnType(const DataTypePtr & /* score_type */, const DataTypePtr & label_type)
     {
         if (!(isNumber(label_type) || isEnum(label_type)))
-            throw Exception(std::string(NameArrayAUC::name) + " label must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} label must have numeric type.", std::string(NameArrayAUC::name));
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    template <typename T, typename U>
+    template <typename ResultType, typename T, typename U>
     static ResultType apply(
         const T * scores,
         const U * labels,
@@ -140,7 +139,7 @@ public:
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
 using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
-void registerFunctionArrayAUC(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAUC)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }

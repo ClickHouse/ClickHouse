@@ -69,7 +69,7 @@ ColumnsDescription MeiliSearchColumnDescriptionFetcher::fetchColumnsDescription(
     JSON jres = JSON(response).begin();
 
     if (jres.getName() == "message")
-        throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
+        throw Exception::createRuntime(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
 
     NamesAndTypesList list;
 
@@ -84,4 +84,4 @@ ColumnsDescription MeiliSearchColumnDescriptionFetcher::fetchColumnsDescription(
     return ColumnsDescription(list);
 }
 
-};
+}

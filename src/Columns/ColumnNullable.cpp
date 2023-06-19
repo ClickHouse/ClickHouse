@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -24,6 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -34,10 +36,18 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     nested_column = getNestedColumn().convertToFullColumnIfConst();
 
     if (!getNestedColumn().canBeInsideNullable())
-        throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
 
     if (isColumnConst(*null_map))
-        throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
+}
+
+StringRef ColumnNullable::getDataAt(size_t n) const
+{
+    if (!isNullAt(n))
+        return getNestedColumn().getDataAt(n);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {} in case if value is NULL", getName());
 }
 
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
@@ -53,8 +63,8 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     WeakHash32 old_hash = hash;
     nested_column->updateWeakHash32(hash);
@@ -204,7 +214,7 @@ void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
 {
     getNestedColumn().insertRangeFrom(src, start, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length, 0);
+    getNullMapData().resize_fill(getNullMapData().size() + length);
 }
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
@@ -273,22 +283,12 @@ llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, l
 
     b.CreateCondBr(lhs_or_rhs_are_null, lhs_or_rhs_are_null_block, lhs_rhs_are_not_null_block);
 
-    // if (unlikely(lval_is_null || rval_is_null))
-    // {
-    //     if (lval_is_null && rval_is_null)
-    //         return 0;
-    //     else
-    //         return lval_is_null ? null_direction_hint : -null_direction_hint;
-    // }
-
     b.SetInsertPoint(lhs_or_rhs_are_null_block);
     auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
     llvm::Value * lhs_and_rhs_are_null = b.CreateAnd(lhs_is_null_value, rhs_is_null_value);
     llvm::Value * lhs_is_null_result = b.CreateSelect(lhs_is_null_value, nan_direction_hint, b.CreateNeg(nan_direction_hint));
     llvm::Value * lhs_or_rhs_are_null_block_result = b.CreateSelect(lhs_and_rhs_are_null, lhs_equals_rhs_result, lhs_is_null_result);
     b.CreateBr(join_block);
-
-    // getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 
     b.SetInsertPoint(lhs_rhs_are_not_null_block);
     llvm::Value * lhs_rhs_are_not_null_block_result
@@ -644,9 +644,9 @@ ColumnPtr ColumnNullable::compress() const
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_compressed), null_map = std::move(null_map_compressed)]
+        [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
-            return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
+            return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
         });
 }
 
@@ -715,27 +715,35 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMapImpl(const NullMap & map)
 {
-    NullMap & arr1 = getNullMapData();
-    const NullMap & arr2 = map.getData();
+    NullMap & arr = getNullMapData();
 
-    if (arr1.size() != arr2.size())
-        throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
+    if (arr.size() != map.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of ColumnNullable objects");
 
-    for (size_t i = 0, size = arr1.size(); i < size; ++i)
-        arr1[i] |= negative ^ arr2[i];
+    for (size_t i = 0, size = arr.size(); i < size; ++i)
+        arr[i] |= negative ^ map[i];
 }
 
-
-void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMap(const NullMap & map)
 {
     applyNullMapImpl<false>(map);
 }
 
-void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<false>(map.getData());
+}
+
+void ColumnNullable::applyNegatedNullMap(const NullMap & map)
 {
     applyNullMapImpl<true>(map);
+}
+
+void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<true>(map.getData());
 }
 
 
@@ -747,8 +755,8 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())
-        throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
-            ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
+        throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
+                        "Logical error: Sizes of nested column and null map of Nullable column are not equal");
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
@@ -774,6 +782,29 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     return ColumnNullable::create(new_values, new_null_map);
 }
 
+ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
+{
+    auto res = nested_column->cloneEmpty();
+    const auto & null_map_data = getNullMapData();
+    size_t start = 0;
+    size_t end = null_map->size();
+    while (start < nested_column->size())
+    {
+        size_t next_null_index = start;
+        while (next_null_index < end && !null_map_data[next_null_index])
+            ++next_null_index;
+
+        if (next_null_index != start)
+            res->insertRangeFrom(*nested_column, start, next_null_index - start);
+
+        if (next_null_index < end)
+            res->insertDefault();
+
+        start = next_null_index + 1;
+    }
+    return res;
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -783,6 +814,37 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnLowCardinalityNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->lowCardinality())
+        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
+
+    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->canBeInsideNullable())
+        return makeNullable(column);
+
+    return column;
 }
 
 }

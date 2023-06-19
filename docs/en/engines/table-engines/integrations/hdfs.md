@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/integrations/hdfs
 sidebar_position: 6
 sidebar_label: HDFS
 ---
 
-# HDFS {#table_engines-hdfs}
+# HDFS
 
 This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
@@ -16,10 +17,17 @@ ENGINE = HDFS(URI, format)
 **Engine Parameters**
 
 - `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
--  `format` - specifies one of the available file formats. To perform
+- `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
+- [PARTITION BY expr]
+
+### PARTITION BY
+
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 **Example:**
 
@@ -50,20 +58,24 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel.
--   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
+- Reads and writes can be parallel.
+- Not supported:
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  
+  :::note Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 **Globs in path**
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
--   `*` — Substitutes any number of any characters except `/` including empty string.
--   `?` — Substitutes any single character.
--   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--   `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
@@ -71,12 +83,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -98,7 +110,7 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::warning    
+:::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
@@ -133,7 +145,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -144,7 +156,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | rpc\_client\_connect\_timeout                         | 600 * 1000              |
 | rpc\_client\_read\_timeout                            | 3600 * 1000             |
 | rpc\_client\_write\_timeout                           | 3600 * 1000             |
-| rpc\_client\_socekt\_linger\_timeout                  | -1                      |
+| rpc\_client\_socket\_linger\_timeout                  | -1                      |
 | rpc\_client\_connect\_retry                           | 10                      |
 | rpc\_client\_timeout                                  | 3600 * 1000             |
 | dfs\_default\_replica                                 | 3                       |
@@ -164,7 +176,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | output\_write\_timeout                                | 3600 * 1000             |
 | output\_close\_timeout                                | 3600 * 1000             |
 | output\_packetpool\_size                              | 1024                    |
-| output\_heeartbeat\_interval                          | 10 * 1000               |
+| output\_heartbeat\_interval                          | 10 * 1000               |
 | dfs\_client\_failover\_max\_attempts                  | 15                      |
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
@@ -183,10 +195,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 #### ClickHouse extras {#clickhouse-extras}
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                  | -                    |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
-|hadoop\_kerberos\_kinit\_command                       | kinit                   |
 |libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
@@ -200,8 +211,7 @@ Note that due to libhdfs3 limitations only old-fashioned approach is supported,
 datanode communications are not secured by SASL (`HADOOP_SECURE_DN_USER` is a reliable indicator of such
 security approach). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` for reference.
 
-If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_kerberos_kinit_command` is specified, `kinit` will be invoked. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case. `kinit` tool and krb5 configuration files are required.
-
+If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_security_kerberos_ticket_cache_path` are specified, Kerberos authentication will be used. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case.
 ## HDFS Namenode HA support {#namenode-ha}
 
 libhdfs3 support HDFS namenode HA.
@@ -220,11 +230,15 @@ libhdfs3 support HDFS namenode HA.
 
 ## Virtual Columns {#virtual-columns}
 
--   `_path` — Path to the file.
--   `_file` — Name of the file.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
+
+## Storage Settings {#storage-settings}
+
+- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 
--   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

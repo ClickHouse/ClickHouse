@@ -1,3 +1,4 @@
+#include <exception>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -5,6 +6,8 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -19,7 +22,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -49,35 +51,36 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
 
+void CreatingSetStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
+}
+
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set)
+    if (subquery_for_set.set_in_progress)
         settings.out << "Set: ";
-    // else if (subquery_for_set.join)
-    //     settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set)
+    if (subquery_for_set.set_in_progress)
         map.add("Set", description);
-    // else if (subquery_for_set.join)
-    //     map.add("Join", description);
 }
 
 
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
     if (input_streams_.empty())
-        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     input_streams = std::move(input_streams_);
-    output_stream = input_streams.front();
+    output_stream = DataStream{input_streams.front().header};
 
     for (size_t i = 1; i < input_streams.size(); ++i)
         if (input_streams[i].header)
@@ -88,7 +91,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
-        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     auto main_pipeline = std::move(pipelines.front());
     if (pipelines.size() == 1)
@@ -119,8 +122,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
@@ -129,18 +131,23 @@ void addCreatingSetsStep(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, set] : subqueries_for_sets)
+    for (auto & [description, subquery_for_set] : subqueries_for_sets)
     {
-        if (!set.source)
+        if (!subquery_for_set.hasSource())
+        {
+            subquery_for_set.promise_to_fill_set.set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::LOGICAL_ERROR, "Subquery for set {} has no source", subquery_for_set.key)));
             continue;
+        }
 
-        auto plan = std::move(set.source);
+        auto plan = subquery_for_set.detachSource();
 
+        const Settings & settings = context->getSettingsRef();
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
                 description,
-                std::move(set),
-                limits,
+                std::move(subquery_for_set),
+                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
                 context);
         creating_set->setStepDescription("Create set for subquery");
         plan->addStep(std::move(creating_set));
@@ -158,6 +165,14 @@ void addCreatingSetsStep(
     auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
+}
+
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
+{
+    if (!prepared_sets || prepared_sets->empty())
+        return;
+
+    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
 }
 
 }

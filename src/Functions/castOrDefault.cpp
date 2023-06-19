@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -52,6 +53,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -194,6 +196,7 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -242,7 +245,8 @@ private:
         {
             if (additional_argument_index < arguments.size())
             {
-                time_zone = extractTimeZoneNameFromColumn(*arguments[additional_argument_index].column);
+                time_zone = extractTimeZoneNameFromColumn(arguments[additional_argument_index].column.get(),
+                                                          arguments[additional_argument_index].name);
                 ++additional_argument_index;
             }
         }
@@ -332,6 +336,8 @@ struct NameToDecimal64OrDefault { static constexpr auto name = "toDecimal64OrDef
 struct NameToDecimal128OrDefault { static constexpr auto name = "toDecimal128OrDefault"; };
 struct NameToDecimal256OrDefault { static constexpr auto name = "toDecimal256OrDefault"; };
 struct NameToUUIDOrDefault { static constexpr auto name = "toUUIDOrDefault"; };
+struct NameToIPv4OrDefault { static constexpr auto name = "toIPv4OrDefault"; };
+struct NameToIPv6OrDefault { static constexpr auto name = "toIPv6OrDefault"; };
 
 using FunctionToUInt8OrDefault = FunctionCastOrDefaultTyped<DataTypeUInt8, NameToUInt8OrDefault>;
 using FunctionToUInt16OrDefault = FunctionCastOrDefaultTyped<DataTypeUInt16, NameToUInt16OrDefault>;
@@ -360,8 +366,10 @@ using FunctionToDecimal128OrDefault = FunctionCastOrDefaultTyped<DataTypeDecimal
 using FunctionToDecimal256OrDefault = FunctionCastOrDefaultTyped<DataTypeDecimal<Decimal256>, NameToDecimal256OrDefault>;
 
 using FunctionToUUIDOrDefault = FunctionCastOrDefaultTyped<DataTypeUUID, NameToUUIDOrDefault>;
+using FunctionToIPv4OrDefault = FunctionCastOrDefaultTyped<DataTypeIPv4, NameToIPv4OrDefault>;
+using FunctionToIPv6OrDefault = FunctionCastOrDefaultTyped<DataTypeIPv6, NameToIPv6OrDefault>;
 
-void registerFunctionCastOrDefault(FunctionFactory & factory)
+REGISTER_FUNCTION(CastOrDefault)
 {
     factory.registerFunction<FunctionCastOrDefault>();
 
@@ -392,6 +400,8 @@ void registerFunctionCastOrDefault(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256OrDefault>();
 
     factory.registerFunction<FunctionToUUIDOrDefault>();
+    factory.registerFunction<FunctionToIPv4OrDefault>();
+    factory.registerFunction<FunctionToIPv6OrDefault>();
 }
 
 }

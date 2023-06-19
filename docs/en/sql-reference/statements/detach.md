@@ -1,16 +1,16 @@
 ---
+slug: /en/sql-reference/statements/detach
 sidebar_position: 43
 sidebar_label: DETACH
+title: "DETACH Statement"
 ---
-
-# DETACH Statement {#detach}
 
 Makes the server "forget" about the existence of a table, a materialized view, or a dictionary.
 
 **Syntax**
 
 ``` sql
-DETACH TABLE|VIEW|DICTIONARY [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY]
+DETACH TABLE|VIEW|DICTIONARY [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 ```
 
 Detaching does not delete the data or metadata of a table, a materialized view or a dictionary. If an entity was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view/dictionary again. If an entity was detached `PERMANENTLY`, there will be no automatic recall.
@@ -22,7 +22,9 @@ System log tables can be also attached back (e.g. `query_log`, `text_log`, etc).
 
 Note that you can not detach permanently the table which is already detached (temporary). But you can attach it back and then detach permanently again.
 
-Also you can not [DROP](../../sql-reference/statements/drop#drop-table) the detached table, or [CREATE TABLE](../../sql-reference/statements/create/table.md) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](../../sql-reference/statements/rename.md) query.
+Also you can not [DROP](../../sql-reference/statements/drop.md#drop-table) the detached table, or [CREATE TABLE](../../sql-reference/statements/create/table.md) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](../../sql-reference/statements/rename.md) query.
+
+The `SYNC` modifier executes the action without delay.
 
 **Example**
 
@@ -70,5 +72,5 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 
 **See Also**
 
--   [Materialized View](../../sql-reference/statements/create/view.md#materialized)
--   [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Materialized View](../../sql-reference/statements/create/view.md#materialized)
+- [Dictionaries](../../sql-reference/dictionaries/index.md)

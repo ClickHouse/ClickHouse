@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -57,7 +58,7 @@ public:
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
-        const Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        const Int32 scale_diff = static_cast<Int32>(typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale);
         if (scale_diff == 0)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -70,7 +71,7 @@ public:
             {
                 Int64 result_value = source_data[i];
                 if (common::mulOverflow(result_value, scale_multiplier, result_value))
-                    throw Exception("Decimal overflow in " + getName(), ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal overflow in {}", getName());
 
                 result_data[i] = result_value;
             }
@@ -84,6 +85,13 @@ public:
 
         return res_column;
     }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
+    {
+        return {.is_monotonic = true, .is_always_monotonic = true};
+    }
 };
 
 
@@ -92,11 +100,13 @@ class FunctionFromUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
+    const bool allow_nonconst_timezone_arguments;
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
-    {
-    }
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context)
+        : target_scale(target_scale_)
+        , name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -106,7 +116,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
         if (!isInteger(arguments[0].type))
@@ -114,7 +124,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
 
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
@@ -126,7 +136,7 @@ public:
         const auto & col = *src.column;
 
         if (!checkAndGetColumn<ColumnVector<T>>(col))
-            return 0;
+            return false;
 
         auto & result_data = result_column->getData();
 
@@ -135,12 +145,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return 1;
+        return true;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
+        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, static_cast<UInt32>(target_scale));
 
         if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
               || (executeType<UInt16>(result_column, arguments, input_rows_count))

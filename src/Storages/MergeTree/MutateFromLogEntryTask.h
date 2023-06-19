@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 namespace DB
 {
@@ -18,13 +19,20 @@ public:
         ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
         StorageReplicatedMergeTree & storage_,
         Callback && task_result_callback_)
-        : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
+        : ReplicatedMergeMutateTaskBase(
+            &Poco::Logger::get(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
+            storage_,
+            selected_entry_,
+            task_result_callback_)
+        {}
 
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
 private:
+
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -32,7 +40,7 @@ private:
         return mutate_task->execute();
     }
 
-    UInt64 priority{0};
+    Priority priority;
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};
@@ -47,7 +55,6 @@ private:
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
-    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 

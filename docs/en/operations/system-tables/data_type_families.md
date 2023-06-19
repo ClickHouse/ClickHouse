@@ -1,12 +1,15 @@
-# data_type_families {#system_tables-data_type_families}
+---
+slug: /en/operations/system-tables/data_type_families
+---
+# data_type_families
 
 Contains information about supported [data types](../../sql-reference/data-types/index.md).
 
 Columns:
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — Data type name.
--   `case_insensitive` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Property that shows whether you can use a data type name in a query in case insensitive manner or not. For example, `Date` and `date` are both valid.
--   `alias_to` ([String](../../sql-reference/data-types/string.md)) — Data type name for which `name` is an alias.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Data type name.
+- `case_insensitive` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Property that shows whether you can use a data type name in a query in case insensitive manner or not. For example, `Date` and `date` are both valid.
+- `alias_to` ([String](../../sql-reference/data-types/string.md)) — Data type name for which `name` is an alias.
 
 **Example**
 
@@ -31,6 +34,4 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 
 **See Also**
 
--   [Syntax](../../sql-reference/syntax.md) — Information about supported syntax.
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/data_type_families) <!--hide-->
+- [Syntax](../../sql-reference/syntax.md) — Information about supported syntax.

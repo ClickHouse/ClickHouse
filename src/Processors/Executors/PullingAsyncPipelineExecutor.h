@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -32,8 +33,11 @@ public:
     bool pull(Chunk & chunk, uint64_t milliseconds = 0);
     bool pull(Block & block, uint64_t milliseconds = 0);
 
-    /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
+    /// Stop execution of all processors. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
+
+    /// Stop processors which only read data from source.
+    void cancelReading();
 
     /// Get totals and extremes. Returns empty chunk if doesn't have any.
     Chunk getTotals();
@@ -48,6 +52,11 @@ public:
 
     /// Internal executor data.
     struct Data;
+
+private:
+    using CancelFunc = std::function<void()>;
+
+    void cancelWithExceptionHandling(CancelFunc && cancel_func);
 
 private:
     QueryPipeline & pipeline;

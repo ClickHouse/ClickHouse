@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingavg
 sidebar_position: 114
 ---
 
-# groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+# groupArrayMovingAvg
 
 Calculates the moving average of input values.
 
@@ -15,12 +16,12 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Arguments**
 
--   `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
--   `window_size` — Size of the calculation window.
+- `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `window_size` — Size of the calculation window.
 
 **Returned values**
 
--   Array of the same size and type as the input data.
+- Array of the same size and type as the input data.
 
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
 

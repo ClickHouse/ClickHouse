@@ -9,6 +9,7 @@ namespace DB
     {
         extern const int NO_AVAILABLE_DATA;
         extern const int INCORRECT_DATA;
+        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 }
 
@@ -74,7 +75,6 @@ public:
     using key_type = Key;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
-    using cell_type = Cell;
 
     class Reader final : private Cell::State
     {
@@ -95,7 +95,7 @@ public:
                 DB::readVarUInt(size, in);
 
                 if (size > capacity)
-                    throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
+                    throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
 
                 is_initialized = true;
             }
@@ -115,7 +115,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
 
             return cell.getValue();
         }
@@ -247,39 +247,6 @@ public:
         }
     }
 
-
-    /// Same, but return false if it's full.
-    bool ALWAYS_INLINE tryEmplace(Key x, iterator & it, bool & inserted)
-    {
-        Cell * res = findCell(x);
-        it = iteratorTo(res);
-        inserted = res == buf + m_size;
-        if (inserted)
-        {
-            if (res == buf + capacity)
-                return false;
-
-            new(res) Cell(x, *this);
-            ++m_size;
-        }
-        return true;
-    }
-
-
-    /// Copy the cell from another hash table. It is assumed that there was no such key in the table yet.
-    void ALWAYS_INLINE insertUnique(const Cell * cell)
-    {
-        memcpy(&buf[m_size], cell, sizeof(*cell));
-        ++m_size;
-    }
-
-    void ALWAYS_INLINE insertUnique(Key x)
-    {
-        new(&buf[m_size]) Cell(x, *this);
-        ++m_size;
-    }
-
-
     iterator ALWAYS_INLINE find(Key x)                 { return iteratorTo(findCell(x)); }
     const_iterator ALWAYS_INLINE find(Key x) const     { return iteratorTo(findCell(x)); }
 
@@ -313,9 +280,11 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
+        if (new_size > 1000'000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized small table is suspiciously large: {}", new_size);
 
         if (new_size > capacity)
-            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
 
         for (size_t i = 0; i < new_size; ++i)
             buf[i].read(rb);
@@ -333,7 +302,7 @@ public:
         DB::readText(new_size, rb);
 
         if (new_size > capacity)
-            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
 
         for (size_t i = 0; i < new_size; ++i)
         {
@@ -380,37 +349,3 @@ template
     size_t capacity
 >
 using SmallSet = SmallTable<Key, HashTableCell<Key, HashUnused>, capacity>;
-
-
-template
-<
-    typename Key,
-    typename Cell,
-    size_t capacity
->
-class SmallMapTable : public SmallTable<Key, Cell, capacity>
-{
-public:
-    using key_type = Key;
-    using mapped_type = typename Cell::mapped_type;
-    using value_type = typename Cell::value_type;
-    using cell_type = Cell;
-
-    mapped_type & ALWAYS_INLINE operator[](Key x)
-    {
-        typename SmallMapTable::iterator it;
-        bool inserted;
-        this->emplace(x, it, inserted);
-        new (&it->getMapped()) mapped_type();
-        return it->getMapped();
-    }
-};
-
-
-template
-<
-    typename Key,
-    typename Mapped,
-    size_t capacity
->
-using SmallMap = SmallMapTable<Key, HashMapCell<Key, Mapped, HashUnused>, capacity>;
