@@ -253,6 +253,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 {
     return std::make_unique<WriteBufferFromS3>(
         client,
+        client, // already has long timeout
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
         DBMS_DEFAULT_BUFFER_SIZE,
