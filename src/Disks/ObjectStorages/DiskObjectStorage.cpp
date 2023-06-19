@@ -19,12 +19,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric DiskObjectStorageAsyncThreads;
-    extern const Metric DiskObjectStorageAsyncThreadsActive;
-}
-
 
 namespace DB
 {
