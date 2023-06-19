@@ -386,19 +386,19 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
-    M(FilesystemCacheLockKeyMilliseconds, "Lock cache key time") \
-    M(FilesystemCacheLockMetadataMilliseconds, "Lock filesystem cache metadata time") \
-    M(FilesystemCacheLockCacheMilliseconds, "Lock filesystem cache time") \
-    M(FilesystemCacheReserveMilliseconds, "Filesystem cache space reservation time") \
-    M(FilesystemCacheGetOrSetMilliseconds, "Filesystem cache getOrSet() time") \
-    M(FilesystemCacheGetMilliseconds, "Filesystem cache get() time") \
-    M(FileSegmentWaitMilliseconds, "Wait on DOWNLOADING state") \
-    M(FileSegmentCompleteMilliseconds, "Duration of FileSegment::complete() in filesystem cache") \
-    M(FileSegmentLockMilliseconds, "Lock file segment time") \
-    M(FileSegmentWriteMilliseconds, "File segment write() time") \
-    M(FileSegmentUseMilliseconds, "File segment use() time") \
-    M(FileSegmentRemoveMilliseconds, "File segment remove() time") \
-    M(FileSegmentHolderCompleteMilliseconds, "File segments holder complete() time") \
+    M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
+    M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
+    M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
+    M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time") \
+    M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time") \
+    M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time") \
+    M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state") \
+    M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache") \
+    M(FileSegmentLockMicroseconds, "Lock file segment time") \
+    M(FileSegmentWriteMicroseconds, "File segment write() time") \
+    M(FileSegmentUseMicroseconds, "File segment use() time") \
+    M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
+    M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -420,7 +420,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
-    M(FileSegmentWriteMicroseconds, "Metric per file segment. Time spend writing cache") \
     M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
     M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
     M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \

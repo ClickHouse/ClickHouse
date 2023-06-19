@@ -22,10 +22,10 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
-    extern const Event FilesystemCacheLockCacheMilliseconds;
-    extern const Event FilesystemCacheReserveMilliseconds;
-    extern const Event FilesystemCacheGetOrSetMilliseconds;
-    extern const Event FilesystemCacheGetMilliseconds;
+    extern const Event FilesystemCacheLockCacheMicroseconds;
+    extern const Event FilesystemCacheReserveMicroseconds;
+    extern const Event FilesystemCacheGetOrSetMicroseconds;
+    extern const Event FilesystemCacheGetMicroseconds;
 }
 
 namespace
@@ -136,7 +136,7 @@ void FileCache::initialize()
 
 CacheGuard::Lock FileCache::lockCache() const
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockCacheMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.lock();
 }
 
@@ -425,7 +425,7 @@ FileSegmentsHolderPtr FileCache::set(
 FileSegmentsHolderPtr
 FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
     assertInitialized();
 
@@ -461,7 +461,7 @@ FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_siz
 
 FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheGetMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetMicroseconds);
 
     assertInitialized();
 
@@ -577,7 +577,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheReserveMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
     auto cache_lock = lockCache();

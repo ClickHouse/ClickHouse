@@ -17,12 +17,12 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-    extern const Event FileSegmentWaitMilliseconds;
-    extern const Event FileSegmentCompleteMilliseconds;
-    extern const Event FileSegmentLockMilliseconds;
-    extern const Event FileSegmentWriteMilliseconds;
-    extern const Event FileSegmentUseMilliseconds;
-    extern const Event FileSegmentHolderCompleteMilliseconds;
+    extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentCompleteMicroseconds;
+    extern const Event FileSegmentLockMicroseconds;
+    extern const Event FileSegmentWriteMicroseconds;
+    extern const Event FileSegmentUseMicroseconds;
+    extern const Event FileSegmentHolderCompleteMicroseconds;
 }
 
 namespace DB
@@ -113,7 +113,7 @@ String FileSegment::getPathInLocalCache() const
 
 FileSegmentGuard::Lock FileSegment::lockFileSegment() const
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentLockMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -334,7 +334,7 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentWriteMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
 
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
@@ -441,7 +441,7 @@ FileSegment::State FileSegment::wait(size_t offset)
     if (download_state == State::DOWNLOADING)
     {
         LOG_TEST(log, "{} waiting on: {}, current downloader: {}", getCallerId(), range().toString(), downloader_id);
-        ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentWaitMilliseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWaitMicroseconds);
 
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
@@ -595,7 +595,7 @@ void FileSegment::completePartAndResetDownloader()
 
 void FileSegment::complete()
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentCompleteMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
     if (isCompleted())
         return;
@@ -886,7 +886,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::use()
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentUseMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
 
     if (!cache)
     {
@@ -910,7 +910,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 
 FileSegmentsHolder::~FileSegmentsHolder()
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FileSegmentHolderCompleteMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
     if (!complete_on_dtor)
         return;

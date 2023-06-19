@@ -112,7 +112,7 @@ public:
 private:
     CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    CacheMetadataGuard guard;
+    mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };
