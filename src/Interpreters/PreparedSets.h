@@ -34,9 +34,7 @@ class FutureSet
 public:
     virtual ~FutureSet() = default;
 
-    virtual bool isReady() const = 0;
     virtual SetPtr get() const = 0;
-
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
     virtual DataTypes getTypes() const = 0;
@@ -50,7 +48,6 @@ class FutureSetFromStorage : public FutureSet
 public:
     FutureSetFromStorage(SetPtr set_);
 
-    bool isReady() const override;
     SetPtr get() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     DataTypes getTypes() const override;
@@ -91,8 +88,7 @@ class FutureSetFromSubquery : public FutureSet, public std::enable_shared_from_t
 public:
     FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, bool transform_null_in_);
 
-    bool isReady() const override;
-    SetPtr get() const override { return subquery.set; }
+    SetPtr get() const override;
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 

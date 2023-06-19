@@ -137,7 +137,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
 
     for (auto & [description, future_set] : subqueries_for_sets)
     {
-        if (future_set->isReady())
+        if (future_set->get())
             continue;
 
         auto plan = future_set->build(context);
@@ -172,7 +172,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
 
     for (auto & [description, future_set] : step.subqueries_for_sets)
     {
-        if (future_set->isReady())
+        if (future_set->get())
             continue;
 
         auto plan = future_set->build(step.context);
