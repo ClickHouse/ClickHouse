@@ -557,7 +557,7 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -646,6 +646,9 @@ public:
     /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
     void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// This method should not be here, but async loading of Outdated parts is implemented in MergeTreeData
+    virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
+
     /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
     void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
 
@@ -676,6 +679,7 @@ public:
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
+    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
 
     size_t clearEmptyParts();
 
@@ -1060,6 +1064,9 @@ public:
 
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
+
+    /// TODO: make enabled by default in the next release if no problems found.
+    bool allowRemoveStaleMovingParts() const;
 
 protected:
     friend class IMergeTreeDataPart;
