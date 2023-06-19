@@ -467,6 +467,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
                         dir_path, getRelativePath(), path_to_clone, fullPath(disk, path_to_clone));
     }
 
+    disk->createDirectories(to);
     volume->getDisk()->copyDirectoryContent(getRelativePath(), disk, path_to_clone);
     volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
 

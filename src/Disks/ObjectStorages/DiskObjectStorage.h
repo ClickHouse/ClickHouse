@@ -33,8 +33,8 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        bool send_metadata_,
-        uint64_t thread_pool_size_);
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -200,8 +200,6 @@ public:
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
 
-    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
-
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
 
@@ -227,7 +225,6 @@ private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
     const bool send_metadata;
-    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

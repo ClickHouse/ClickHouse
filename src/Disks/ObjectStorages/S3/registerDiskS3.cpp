@@ -150,17 +150,14 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             }
         }
 
-        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
-        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
-
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
             uri.key,
             type == "s3" ? "DiskS3" : "DiskS3Plain",
             std::move(metadata_storage),
             std::move(s3_storage),
-            send_metadata,
-            copy_thread_pool_size);
+            config,
+            config_prefix);
 
         s3disk->startup(context, skip_access_check);
 

@@ -6,7 +6,7 @@
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Disks/Executor.h>
+#include <Common/CurrentMetrics.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -33,6 +33,12 @@ namespace Poco
         /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric IDiskCopierThreads;
+    extern const Metric IDiskCopierThreadsActive;
 }
 
 namespace DB
@@ -110,9 +116,9 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+    explicit IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , executor(executor_)
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
@@ -376,7 +382,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map);
 
     /// Quite leaky abstraction. Some disks can use additional disk to store
     /// some parts of metadata. In general case we have only one disk itself and
@@ -456,9 +462,6 @@ protected:
 
     const String name;
 
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
-
     /// Base implementation of the function copy().
     /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
     /// A derived class may override copy() to provide a faster implementation.
@@ -467,7 +470,7 @@ protected:
     virtual void checkAccessImpl(const String & path);
 
 private:
-    std::shared_ptr<Executor> executor;
+    ThreadPool copying_thread_pool;
     bool is_custom_disk = false;
 
     /// Check access to the disk.
