@@ -89,6 +89,8 @@ public:
 
 protected:
     PeekableReadBuffer * buf;
+
+private:
     bool current_row_has_missing_fields = false;
 };
 

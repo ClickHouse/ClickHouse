@@ -22,6 +22,8 @@ Hello	4	String4
 Hello	5	String5
 Hello	6	String6
 === Test input_format_csv_missing_as_default
+	0	0	33	\N	55	Default
+	0	0	33	\N	55	Default
 Hello	0	0	33	\N	55	Default
 Hello	0	0	33	\N	55	Default
 Hello	1	3	2	\N	55	Default
