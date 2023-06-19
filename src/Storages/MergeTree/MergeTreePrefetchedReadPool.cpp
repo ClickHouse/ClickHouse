@@ -494,7 +494,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
     ThreadsTasks result_threads_tasks;
     for (size_t i = 0, part_idx = 0; i < threads && part_idx < parts_infos.size(); ++i)
     {
-        ssize_t need_marks = min_marks_per_thread;
+        int64_t need_marks = min_marks_per_thread;
 
         /// Priority is given according to the prefetch number for each thread,
         /// e.g. the first task of each thread has the same priority and is greater
