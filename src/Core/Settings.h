@@ -1005,7 +1005,7 @@ class IColumn;
     M(Bool, regexp_dict_allow_hyperscan, true, "Allow regexp_tree dictionary using Hyperscan library.", 0) \
     \
     M(Bool, dictionary_use_async_executor, false, "Execute a pipeline for reading from a dictionary with several threads. It's supported only by DIRECT dictionary with CLICKHOUSE source.", 0) \
-    M(Bool, input_format_csv_ignore_extra_columns, false, "Ignore extra columns in CSV input (if your file has more columns than expected)", 0) \
+    M(Bool, input_format_csv_ignore_extra_columns, false, "Ignore extra columns in CSV input (if file has more columns than expected)", 0) \
     M(Bool, input_format_csv_missing_as_default, false, "Treat missing fields in CSV input as default values", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS

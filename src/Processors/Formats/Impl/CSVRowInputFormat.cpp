@@ -346,7 +346,7 @@ bool CSVFormatReader::readField(
         while (checkChar(format_settings.csv.delimiter, *buf))
         {
             skipField();
-            skipWhitespacesAndTabs(*buf);
+            skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         }
     }
     return res;
