@@ -299,14 +299,13 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        auto hash = ast_node->getTreeHash();
-        auto key = PreparedSetKey::forSubquery(hash);
+        auto key = ast_node->getTreeHash();
+        const auto & sets = prepared_sets->getNormalSets();
+        auto it = sets.find(key);
+        if (it != sets.end() && !it->second.empty())
+            return it->second.at(0);
 
-        for (const auto & [k, v] : prepared_sets->getSets())
-        {
-            if (k.ast_hash == hash)
-                return v;
-        }
+        return prepared_sets->findSubquery(key);
     }
     else if (dag_node)
     {
@@ -324,9 +323,9 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
-        return prepared_sets->getFuture(PreparedSetKey::forLiteral(ast_node->getTreeHash(), data_types));
+        return prepared_sets->find(ast_node->getTreeHash(), data_types);
     }
     else if (dag_node)
     {
@@ -369,14 +368,17 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
         auto tree_hash = ast_node->getTreeHash();
-        for (const auto & [key, future_set] : prepared_sets->getSets())
-        {
-            if (key.ast_hash == tree_hash && types_match(key.types))
+        const auto & sets = prepared_sets->getNormalSets();
+        auto it = sets.find(tree_hash);
+        if (it == sets.end())
+            return nullptr;
+
+        for (const auto & future_set : it->second)
+            if (types_match(future_set->getTypes()))
                 return future_set;
-        }
     }
     else
     {

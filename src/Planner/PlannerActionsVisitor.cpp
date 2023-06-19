@@ -651,14 +651,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
                 element_type = low_cardinality_type->getDictionaryType();
     }
 
-    auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
+    auto set_key = in_second_argument->getTreeHash();
+    auto set = planner_context->getPreparedSets().find(set_key, set_element_types);
 
-
-    auto set = planner_context->getPreparedSets().getFuture(set_key);
     if (!set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "No set is registered for key {}",
-            set_key.toString());
+            PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
     column.name = planner_context->createSetKey(in_second_argument);

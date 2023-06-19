@@ -449,8 +449,8 @@ FutureSetPtr makeExplicitSet(
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
             element_type = low_cardinality_type->getDictionaryType();
 
-    auto set_key = PreparedSetKey::forLiteral(right_arg->getTreeHash(), set_element_types);
-    if (auto set = prepared_sets.getFuture(set_key))
+    auto set_key = right_arg->getTreeHash();
+    if (auto set = prepared_sets.find(set_key, set_element_types))
         return set; /// Already prepared.
 
     Block block;
@@ -1397,18 +1397,17 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
         //std::cerr << queryToString(right_in_operand) << std::endl;
 
-        PreparedSetKey set_key;
+        PreparedSets::Hash set_key;
         if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
             InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
             auto query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
-            // std::cerr << "============== " << interpreter.getQueryTree()->dumpTree() << std::endl;
-            set_key = PreparedSetKey::forSubquery(query_tree->getTreeHash());
+            set_key = query_tree->getTreeHash();
         }
         else
-            set_key = PreparedSetKey::forSubquery(right_in_operand->getTreeHash());
+            set_key = right_in_operand->getTreeHash();
 
         // std::cerr << set_key.toString() << std::endl;
         // std::cerr << data.prepared_sets->getSets().size() << std::endl;
@@ -1416,7 +1415,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         // for (const auto & [k, v] : data.prepared_sets->getSets())
         //     std::cerr << "... " << k.toString();
 
-        if (auto set = data.prepared_sets->getFuture(set_key))
+        if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;
 
         FutureSetPtr external_table_set;
@@ -1449,7 +1448,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         // String set_id = right_in_operand->getColumnName();
         //bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
         SubqueryForSet subquery_for_set; // = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
-        subquery_for_set.key = set_key.toString(); //right_in_operand->getColumnName();
+        subquery_for_set.key = PreparedSets::toString(set_key, {}); //right_in_operand->getColumnName();
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

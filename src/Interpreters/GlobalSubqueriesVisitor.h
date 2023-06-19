@@ -189,11 +189,11 @@ public:
                 // auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
                 // subquery_for_set.createSource(*interpreter, external_storage);
                 auto key = subquery_or_table_name->getColumnName();
-                auto set_key = PreparedSetKey::forSubquery(database_and_table_name->getTreeHash());
+                auto set_key = database_and_table_name->getTreeHash();
 
                 // std::cerr << "====== Adding key " << set_key.toString() << std::endl;
 
-                if (!prepared_sets->getFuture(set_key))
+                if (!prepared_sets->findSubquery(set_key))
                 {
                     SubqueryForSet subquery_for_set;
                     subquery_for_set.key = std::move(key);
