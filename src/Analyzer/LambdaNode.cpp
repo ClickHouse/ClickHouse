@@ -1,5 +1,6 @@
 #include <Analyzer/LambdaNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -9,9 +10,10 @@
 namespace DB
 {
 
-LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_)
+LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_)
     : IQueryTreeNode(children_size)
     , argument_names(std::move(argument_names_))
+    , result_type(std::move(result_type_))
 {
     auto arguments_list_node = std::make_shared<ListNode>();
     auto & nodes = arguments_list_node->getNodes();
@@ -62,7 +64,7 @@ void LambdaNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const
 {
-    return std::make_shared<LambdaNode>(argument_names, getExpression());
+    return std::make_shared<LambdaNode>(argument_names, getExpression(), result_type);
 }
 
 ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const

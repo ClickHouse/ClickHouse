@@ -1,12 +1,14 @@
 -- Tags: no-fasttest
 
+SET send_logs_level = 'fatal';
+
 drop table if exists rmt;
 drop table if exists rmt2;
 
 -- Disable compact parts, because we need hardlinks in mutations.
 create table rmt (n int, m int, k int) engine=ReplicatedMergeTree('/test/02432/{database}', '1') order by tuple()
     settings storage_policy = 's3_cache', allow_remote_fs_zero_copy_replication=1,
-        max_part_removal_threads=10, concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
+        concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
         max_replicated_merges_in_queue=0, max_replicated_mutations_in_queue=0, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
 insert into rmt(n, m) values (1, 42);
@@ -36,7 +38,7 @@ select count(), sum(n), sum(m) from rmt;
 -- New table can assign merges/mutations and can remove old parts
 create table rmt2 (n int, m int, k String) engine=ReplicatedMergeTree('/test/02432/{database}', '2') order by tuple()
     settings storage_policy = 's3_cache', allow_remote_fs_zero_copy_replication=1,
-        max_part_removal_threads=10, concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
+        concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1,
         min_bytes_for_wide_part=0, min_rows_for_wide_part=0, max_replicated_merges_in_queue=1,
         old_parts_lifetime=0;
 
@@ -64,4 +66,3 @@ drop table rmt2;
 system flush logs;
 select count() > 0 from system.text_log where yesterday() <= event_date and logger_name like '%' || currentDatabase() || '%' and message like '%Removing % parts from filesystem (concurrently): Parts:%';
 select count() > 1, countDistinct(thread_id) > 1 from system.text_log where yesterday() <= event_date and logger_name like '%' || currentDatabase() || '%' and message like '%Removing % parts in blocks range%';
-

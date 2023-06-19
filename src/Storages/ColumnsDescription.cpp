@@ -383,15 +383,6 @@ NamesAndTypesList ColumnsDescription::getEphemeral() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getWithDefaultExpression() const
-{
-    NamesAndTypesList ret;
-    for (const auto & col : columns)
-        if (col.default_desc.expression)
-            ret.emplace_back(col.name, col.type);
-    return ret;
-}
-
 NamesAndTypesList ColumnsDescription::getAll() const
 {
     NamesAndTypesList ret;
@@ -657,6 +648,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() &&
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+}
+
+bool ColumnsDescription::hasAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Alias;
 }
 
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const

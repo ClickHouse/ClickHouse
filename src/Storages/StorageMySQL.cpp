@@ -21,6 +21,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Databases/MySQL/FetchTablesColumnsList.h>
 
 
 namespace DB
@@ -30,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 static String backQuoteMySQL(const String & x)
@@ -65,12 +67,36 @@ StorageMySQL::StorageMySQL(
     , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
+ColumnsDescription StorageMySQL::getTableStructureFromData(
+    mysqlxx::PoolWithFailover & pool_,
+    const String & database,
+    const String & table,
+    const ContextPtr & context_)
+{
+    const auto & settings = context_->getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings.mysql_datatypes_support_level);
+
+    const auto columns = tables_and_columns.find(table);
+    if (columns == tables_and_columns.end())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
+                        (database.empty() ? "" : (backQuote(database) + "." + backQuote(table))));
+
+    return columns->second;
+}
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
@@ -226,7 +252,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     return std::make_shared<StorageMySQLSink>(
         *this,
@@ -238,7 +264,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, bool require_table)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
 {
     StorageMySQL::Configuration configuration;
 
@@ -255,9 +281,15 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
     {
-        configuration.host = named_collection.getOrDefault<String>("host", named_collection.getOrDefault<String>("hostname", ""));
+        configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
         configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+    }
+    else
+    {
+        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 3306);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -283,7 +315,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
     {
-        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings);
+        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
     else
     {
@@ -348,6 +380,7 @@ void registerStorageMySQL(StorageFactory & factory)
     },
     {
         .supports_settings = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

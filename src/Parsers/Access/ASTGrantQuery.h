@@ -26,6 +26,8 @@ public:
     bool admin_option = false;
     bool replace_access = false;
     bool replace_granted_roles = false;
+    bool current_grants = false;
+
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;

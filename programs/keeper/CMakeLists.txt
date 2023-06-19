@@ -69,6 +69,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/ProtocolServerAdapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusMetricsWriter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/waitServersToFinish.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTPRequestHandlerFactoryMain.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/HTTPServer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/ReadHeaders.cpp
@@ -111,15 +112,31 @@ if (BUILD_STANDALONE_KEEPER)
         clickhouse-keeper.cpp
     )
 
+    # List of resources for clickhouse-keeper client
+    if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+        list(APPEND CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/KeeperClient.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/Commands.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/Parser.cpp
+
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Client/LineReader.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Client/ReplxxLineReader.cpp
+        )
+    endif()
+
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
-    target_compile_definitions (clickhouse-keeper PRIVATE -DKEEPER_STANDALONE_BUILD)
+    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_PROGRAM_STANDALONE_BUILD)
     target_compile_definitions (clickhouse-keeper PUBLIC -DWITHOUT_TEXT_LOG)
 
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../src") # uses includes from src directory
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src/Core/include") # uses some includes from core
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src") # uses some includes from common
+
+    if (ENABLE_CLICKHOUSE_KEEPER_CLIENT AND TARGET ch_rust::skim)
+        target_link_libraries(clickhouse-keeper PRIVATE ch_rust::skim)
+    endif()
 
     target_link_libraries(clickhouse-keeper
         PRIVATE

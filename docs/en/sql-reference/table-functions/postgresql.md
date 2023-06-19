@@ -16,12 +16,12 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 **Arguments**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `schema` — Non-default table schema. Optional.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — Non-default table schema. Optional.
 
 **Returned Value**
 
@@ -129,8 +129,8 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
--   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
--   [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
+- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
 ## Related content
 

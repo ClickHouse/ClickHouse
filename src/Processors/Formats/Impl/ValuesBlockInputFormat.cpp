@@ -45,7 +45,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
     const Block & header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IInputFormat(header_, *buf_), buf(std::move(buf_)),
+    : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),

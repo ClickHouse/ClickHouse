@@ -6,13 +6,22 @@ sidebar_label: SHOW
 
 # SHOW Statements
 
-## SHOW CREATE TABLE
+N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+is turned on,
+[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
+is turned on and user has
+[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
+
+## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single column of type String containing the CREATE query used for creating the specified object.
+
+`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
@@ -94,23 +103,7 @@ Result:
 
 **See also**
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
-
-## SHOW PROCESSLIST
-
-``` sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
-
-The `SELECT * FROM system.processes` query returns data about all the current queries.
-
-Tip (execute in the console):
-
-``` bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
+- [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW TABLES
 
@@ -193,8 +186,8 @@ Result:
 
 **See also**
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+- [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+- [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW COLUMNS
 
@@ -242,7 +235,7 @@ Result:
 
 **See also**
 
--    [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
 
 ## SHOW DICTIONARIES
 
@@ -275,6 +268,77 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
+## SHOW INDEX
+
+Displays a list of primary and data skipping indexes of a table.
+
+```sql
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
+equivalent. If no database is specified, the query assumes the current database as database.
+
+The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
+
+`SHOW INDEX` produces a result table with the following structure:
+- table - The name of the table (String)
+- non_unique - 0 if the index can contain duplicates, 1 otherwise (UInt8)
+- key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
+- seq_in_index - Currently unused
+- column_name - Currently unused
+- collation - The sorting of the column in the index, `A` if ascending, `D` if descending, `NULL` if unsorted (Nullable(String))
+- cardinality - Currently unused
+- sub_part - Currently unused
+- packed - Currently unused
+- null - Currently unused
+- index_type - The index type, e.g. `primary`, `minmax`, `bloom_filter` etc. (String)
+- comment - Currently unused
+- index_comment - Currently unused
+- visible - If the index is visible to the optimizer, always `YES` (String)
+- expression - The index expression (String)
+
+**Examples**
+
+Getting information about all indexes in table 'tbl'
+
+```sql
+SHOW INDEX FROM 'tbl'
+```
+
+Result:
+
+``` text
+┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
+│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ bloom_filter │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ d, b       │
+│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ a, c, d    │
+│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, d, e    │
+│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ primary      │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, a       │
+│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ set          │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ e          │
+└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
+```
+
+**See also**
+
+- [system.tables](../../operations/system-tables/tables.md)
+- [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md)
+
+## SHOW PROCESSLIST
+
+``` sql
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+```
+
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+
+The `SELECT * FROM system.processes` query returns data about all the current queries.
+
+Tip (execute in the console):
+
+``` bash
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+```
+
 ## SHOW GRANTS
 
 Shows privileges for a user.
@@ -290,8 +354,6 @@ If user is not specified, the query returns privileges for the current user.
 ## SHOW CREATE USER
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
-
-`SHOW CREATE USER` does not output user passwords.
 
 **Syntax**
 
@@ -558,7 +620,7 @@ Result:
 
 **See Also**
 
--   [system.settings](../../operations/system-tables/settings.md) table
+- [system.settings](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES
 
@@ -570,4 +632,4 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 
 **See Also**
 
--   [system.table_engines](../../operations/system-tables/table_engines.md) table
+- [system.table_engines](../../operations/system-tables/table_engines.md) table

@@ -10,7 +10,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
@@ -22,6 +21,8 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
+
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -92,10 +93,7 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `hasKeys`", name);
     }
 
-    Pipe read(const Names &, size_t, size_t) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `read`", name);
-    }
+    Pipe read(const Names & columns, size_t max_block_size, size_t num_streams) const override;
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
@@ -103,16 +101,50 @@ public:
         const Columns & key_columns,
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override
-        {
-            return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
-        }
+    {
+        return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
+    }
 
     Columns getColumns(
         const Strings & attribute_names,
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const override;
+        const Columns & default_values_columns) const override
+    {
+        return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, std::nullopt);
+    }
+
+    ColumnPtr getColumnAllValues(
+        const std::string & attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr & default_values_column,
+        size_t limit) const override
+    {
+        return getColumnsAllValues(
+            Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}), limit)[0];
+    }
+
+    Columns getColumnsAllValues(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns,
+        size_t limit) const override
+    {
+        return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, limit);
+    }
+
+    Columns getColumnsImpl(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns,
+        std::optional<size_t> collect_values_limit) const;
 
 private:
     const DictionaryStructure structure;
@@ -139,11 +171,14 @@ private:
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        const std::unordered_map<String, ColumnPtr> & defaults) const;
+        const std::unordered_map<String, ColumnPtr> & defaults,
+        std::optional<size_t> collect_values_limit) const;
+
+    class AttributeCollector;
 
     bool setAttributes(
         UInt64 id,
-        std::unordered_map<String, Field> & attributes_to_set,
+        AttributeCollector & attributes_to_set,
         const String & data,
         std::unordered_set<UInt64> & visited_nodes,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,

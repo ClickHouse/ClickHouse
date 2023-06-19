@@ -16,6 +16,7 @@ struct ReplicatedTableStatus
 
     ReplicatedMergeTreeQueue::Status queue;
     UInt32 parts_to_check;
+    String zookeeper_name;
     String zookeeper_path;
     String replica_name;
     String replica_path;

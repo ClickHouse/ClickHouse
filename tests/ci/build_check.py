@@ -9,7 +9,12 @@ import time
 from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
-from commit_status_helper import get_commit_filtered_statuses, get_commit
+from commit_status_helper import (
+    NotSet,
+    get_commit_filtered_statuses,
+    get_commit,
+    post_commit_status,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -232,10 +237,10 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL: {url}")
 
 
-def mark_failed_reports_pending(build_name: str, sha: str) -> None:
+def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
     try:
         gh = GitHub(get_best_robot_token())
-        commit = get_commit(gh, sha)
+        commit = get_commit(gh, pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
         report_status = [
             name
@@ -248,8 +253,13 @@ def mark_failed_reports_pending(build_name: str, sha: str) -> None:
                     "Commit already have failed status for '%s', setting it to 'pending'",
                     report_status,
                 )
-                commit.create_status(
-                    "pending", status.url, "Set to pending on rerun", report_status
+                post_commit_status(
+                    commit,
+                    "pending",
+                    status.target_url or NotSet,
+                    "Set to pending on rerun",
+                    report_status,
+                    pr_info,
                 )
     except:  # we do not care about any exception here
         logging.info("Failed to get or mark the reports status as pending, continue")
@@ -285,7 +295,7 @@ def main():
     check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
 
     # If it's a latter running, we need to mark possible failed status
-    mark_failed_reports_pending(build_name, pr_info.sha)
+    mark_failed_reports_pending(build_name, pr_info)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -333,6 +343,15 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished with %s, log path %s", success, log_path)
+    if not success:
+        # We check if docker works, because if it's down, it's infrastructure
+        try:
+            subprocess.check_call("docker info", shell=True)
+        except subprocess.CalledProcessError:
+            logging.error(
+                "The dockerd looks down, won't upload anything and generate report"
+            )
+            sys.exit(1)
 
     # FIXME performance
     performance_urls = []

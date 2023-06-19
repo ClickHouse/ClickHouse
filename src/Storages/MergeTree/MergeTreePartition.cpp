@@ -84,7 +84,15 @@ namespace
         }
         void operator() (const UUID & x) const
         {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            auto tmp_x = x.toUnderType();
+            char * start = reinterpret_cast<char *>(&tmp_x);
+            char * end = start + sizeof(tmp_x);
+            std::reverse(start, end);
+            operator()(tmp_x);
+#else
             operator()(x.toUnderType());
+#endif
         }
         void operator() (const IPv4 & x) const
         {
