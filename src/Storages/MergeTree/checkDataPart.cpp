@@ -139,10 +139,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
+                auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+                auto file_name = stream_name + ".bin";
 
                 if (!data_part_storage.exists(file_name))
-                    file_name = sipHash128String(file_name);
+                    file_name = sipHash128String(stream_name) + ".bin";
 
                 if (!data_part_storage.exists(file_name))
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,

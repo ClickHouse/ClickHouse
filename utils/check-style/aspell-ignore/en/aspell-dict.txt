@@ -26,6 +26,7 @@ AlertManager
 Alexey
 AnyEvent
 AppleClang
+Approximative
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -1005,6 +1006,7 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
+approximative
 argMax
 argMin
 argmax
@@ -1081,6 +1083,7 @@ avgweighted
 avro
 avx
 aws
+azureBlobStorage
 backend
 backoff
 backticks
@@ -1342,6 +1345,7 @@ detectLanguageUnknown
 determinator
 deterministically
 dictGet
+dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
@@ -2042,6 +2046,7 @@ reconnection
 recurse
 redash
 reddit
+redis
 redisstreams
 refcounter
 regexpExtract
@@ -2418,6 +2423,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unintuitive
 uniq
 uniqCombined
 uniqExact
