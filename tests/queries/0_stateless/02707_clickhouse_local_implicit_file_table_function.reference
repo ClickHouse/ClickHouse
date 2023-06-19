@@ -1,0 +1,9 @@
+Test 1: check explicit and implicit call of the file table function
+explicit:
+4
+implicit:
+4
+Test 2: check Filesystem database
+4
+Test 3: check show database with Filesystem
+test02707

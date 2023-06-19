@@ -1493,6 +1493,9 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
         "1\t\U0001F984\n2\t\u2601\n",
     )
 
+    clickhouse_node.query("DROP DATABASE utf8mb4_test")
+    mysql_node.query("DROP DATABASE utf8mb4_test")
+
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS system_parts_test")
@@ -1521,6 +1524,9 @@ def system_parts_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("OPTIMIZE TABLE system_parts_test.test")
     check_active_parts(1)
 
+    clickhouse_node.query("DROP DATABASE system_parts_test")
+    mysql_node.query("DROP DATABASE system_parts_test")
+
 
 def multi_table_update_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS multi_table_update")
@@ -1546,6 +1552,8 @@ def multi_table_update_test(clickhouse_node, mysql_node, service_name):
 
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
+    clickhouse_node.query("DROP DATABASE multi_table_update")
+    mysql_node.query("DROP DATABASE multi_table_update")
 
 
 def system_tables_test(clickhouse_node, mysql_node, service_name):
@@ -1565,6 +1573,9 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
         "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'",
         "intDiv(id, 4294967)\tid\tid\n",
     )
+
+    clickhouse_node.query("DROP DATABASE system_tables_test")
+    mysql_node.query("DROP DATABASE system_tables_test")
 
 
 def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_name):
@@ -2032,6 +2043,18 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
         )
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    # Check empty table overrides
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 ()
+    """
+    )
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+    show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
+    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
+
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
 
 
@@ -2282,3 +2305,34 @@ def dropddl(clickhouse_node, mysql_node, mysql_host):
     )
     mysql_node.query(f"DROP DATABASE {db}")
     clickhouse_node.query(f"DROP DATABASE {db}")
+
+
+def named_collections(clickhouse_node, mysql_node, service_name):
+    db = "named_collections"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, name VARCHAR(64), val INT)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.t1 (id, name, val) VALUES (1, 'a', 1), (2, 'b', 2)"
+    )
+
+    clickhouse_node.query(
+        f"""CREATE NAMED COLLECTION {db} AS
+            user = 'root',
+            password = 'clickhouse',
+            host = '{service_name}',
+            port = 3306,
+            database = '{db}'
+            """
+    )
+    clickhouse_node.query(f"CREATE DATABASE {db} ENGINE = MaterializedMySQL({db})")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
