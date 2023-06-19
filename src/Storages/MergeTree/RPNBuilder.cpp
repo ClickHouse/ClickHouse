@@ -384,8 +384,11 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         if (node_without_alias->column)
         {
             auto future_set = tryGetSetFromDAGNode(node_without_alias);
+            if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+                return future_set;
+
             auto set_types = future_set->getTypes();
-            if (types_match(future_set->getTypes()))
+            if (types_match(set_types))
                 return future_set;
         }
     }
