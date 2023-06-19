@@ -9,8 +9,8 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheLockKeyMilliseconds;
-    extern const Event FilesystemCacheLockMetadataMilliseconds;
+    extern const Event FilesystemCacheLockKeyMicroseconds;
+    extern const Event FilesystemCacheLockMetadataMicroseconds;
 }
 
 namespace DB
@@ -76,7 +76,7 @@ LockedKeyPtr KeyMetadata::lock()
 
 LockedKeyPtr KeyMetadata::tryLock()
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockKeyMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
 
     auto locked = std::make_unique<LockedKey>(shared_from_this());
     if (key_state == KeyMetadata::KeyState::ACTIVE)
@@ -167,7 +167,7 @@ String CacheMetadata::getPathForKey(const Key & key) const
 
 CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
 {
-    ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMilliseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
 }
 
@@ -199,7 +199,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     {
         LockedKeyPtr locked_metadata;
         {
-            ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockKeyMilliseconds);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
             locked_metadata = std::make_unique<LockedKey>(key_metadata);
         }
 
@@ -237,7 +237,7 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
     {
         LockedKeyPtr locked_key;
         {
-            ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockKeyMilliseconds);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
             locked_key = std::make_unique<LockedKey>(key_metadata);
         }
 
@@ -270,7 +270,7 @@ void CacheMetadata::doCleanup()
 
         LockedKeyPtr locked_metadata;
         {
-            ProfileEventTimeIncrement<Milliseconds> watch(ProfileEvents::FilesystemCacheLockKeyMilliseconds);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
             locked_metadata = std::make_unique<LockedKey>(it->second);
         }
 
