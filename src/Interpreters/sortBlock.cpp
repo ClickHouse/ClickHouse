@@ -227,7 +227,7 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
             for (size_t j = 0; j < 4; ++j)
             {
                 __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
-                __m128i permutation_equals_vector = _mm_cmpeq_epi64(permutation_data_vector, permutation_compare_values_vectors[j]);
+                __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
                 permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
                 permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
             }
