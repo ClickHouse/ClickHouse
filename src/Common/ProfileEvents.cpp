@@ -386,6 +386,19 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    M(FilesystemCacheLockKeyMilliseconds, "Lock cache key time") \
+    M(FilesystemCacheLockMetadataMilliseconds, "Lock filesystem cache metadata time") \
+    M(FilesystemCacheLockCacheMilliseconds, "Lock filesystem cache time") \
+    M(FilesystemCacheReserveMilliseconds, "Filesystem cache space reservation time") \
+    M(FilesystemCacheGetOrSetMilliseconds, "Filesystem cache getOrSet() time") \
+    M(FilesystemCacheGetMilliseconds, "Filesystem cache get() time") \
+    M(FileSegmentWaitMilliseconds, "Wait on DOWNLOADING state") \
+    M(FileSegmentCompleteMilliseconds, "Duration of FileSegment::complete() in filesystem cache") \
+    M(FileSegmentLockMilliseconds, "Lock file segment time") \
+    M(FileSegmentWriteMilliseconds, "File segment write() time") \
+    M(FileSegmentUseMilliseconds, "File segment use() time") \
+    M(FileSegmentRemoveMilliseconds, "File segment remove() time") \
+    M(FileSegmentHolderCompleteMilliseconds, "File segments holder complete() time") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \

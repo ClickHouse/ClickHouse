@@ -110,6 +110,7 @@ public:
     void doCleanup();
 
 private:
+    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
     CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
