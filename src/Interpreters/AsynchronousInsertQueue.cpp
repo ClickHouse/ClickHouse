@@ -600,7 +600,6 @@ try
             total_rows, total_bytes, key.query_str);
 
         bool pulling_pipeline = false;
-        /// TODO: Not working. Is the context missing its getProcessListElement ???
         logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, internal);
     }
     catch (...)
