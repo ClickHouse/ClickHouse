@@ -90,6 +90,13 @@ UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
 }
 
+std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name) const
+{
+    auto objects = volume->getDisk()->getStorageObjects(fs::path(root_path) / part_dir / file_name);
+    chassert(objects.size() == 1);
+    return objects[0].remote_path;
+}
+
 String DataPartStorageOnDiskFull::getUniqueId() const
 {
     auto disk = volume->getDisk();
