@@ -406,7 +406,7 @@ try
     bool internal = false; // To enable logging this query
     bool async_insert = true;
 
-    /// Disabled query spans. Could be activated by initializating this to a SpanHolder
+    /// Disabled query spans. Could be activated by initializing this to a SpanHolder
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span{nullptr};
 
     /// 'resetParser' doesn't work for parallel parsing.
