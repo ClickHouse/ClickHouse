@@ -13,6 +13,11 @@ namespace ErrorCodes
 
 void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
+    /// Here the main goal is to do preFinalize calls for plain_file and marks_file
+    /// Before that all hashing and compression buffers have to be finalized
+    /// Otherwise some data might stuck in the buffers above plain_file and marks_file
+    /// Also the order is important
+
     compressed_hashing.finalize();
     compressor.finalize();
     plain_hashing.finalize();

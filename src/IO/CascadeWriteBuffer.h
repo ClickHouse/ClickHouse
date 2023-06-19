@@ -47,7 +47,7 @@ public:
 
 private:
 
-    void finalizeImpl() override { /* no op */ }
+    void finalizeImpl() override;
 
     WriteBuffer * setNextBuffer();
 
