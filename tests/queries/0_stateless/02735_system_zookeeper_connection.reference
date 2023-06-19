@@ -1,2 +1,2 @@
-default	::1	9181	0	0	1	0	3
-zookeeper2	::1	9181	0	0	0	0	0
+default	::1	9181	0	0	3	1	1
+zookeeper2	::1	9181	0	0	0	1
