@@ -305,6 +305,7 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
+        AsyncInsertFlush
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
