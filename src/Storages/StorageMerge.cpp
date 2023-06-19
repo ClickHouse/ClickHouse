@@ -614,7 +614,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
 
         if (!storage_snapshot->tryGetColumn(get_column_options, "_table"))
-            column_name_to_node.emplace("_table", std::make_shared<ConstantNode>(current_storage_id.table_name));
+        {
+            auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
+            table_name_node->setAlias("_table");
+            column_name_to_node.emplace("_table", table_name_node);
+        }
 
         if (!storage_snapshot->tryGetColumn(get_column_options, "_database"))
             column_name_to_node.emplace("_database", std::make_shared<ConstantNode>(current_storage_id.database_name));
