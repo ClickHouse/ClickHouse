@@ -1394,10 +1394,9 @@ void Client::readArguments(
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);
-                /// No password was provided by user. Add '\n' as implicit password,
-                /// which encodes that client should ask user for the password.
-                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
-                common_arguments.emplace_back("\n");
+                /// if the value of --password is omitted, the password will be asked before
+                /// connection start
+                common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
                 common_arguments.emplace_back(arg);
