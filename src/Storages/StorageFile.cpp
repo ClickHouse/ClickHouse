@@ -259,34 +259,39 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     return res;
 }
 
-std::unique_ptr<ReadBuffer> createReadBuffer(
-    const String & current_path,
-    bool use_table_fd,
-    const String & storage_name,
-    int table_fd,
-    const String & compression_method,
-    ContextPtr context)
+struct stat getFileStat(const String & current_path, bool use_table_fd, int table_fd, const String & storage_name)
 {
-    CompressionMethod method;
-
     struct stat file_stat{};
-
     if (use_table_fd)
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod("", compression_method);
     }
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod(current_path, compression_method);
     }
+
+    return file_stat;
+}
+
+std::unique_ptr<ReadBuffer> createReadBuffer(
+    const String & current_path,
+    const struct stat & file_stat,
+    bool use_table_fd,
+    int table_fd,
+    const String & compression_method,
+    ContextPtr context)
+{
+    CompressionMethod method;
+
+    if (use_table_fd)
+        method = chooseCompressionMethod("", compression_method);
+    else
+        method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
@@ -357,7 +362,8 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
+        auto file_stat = getFileStat("", true, table_fd, getName());
+        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -398,12 +404,29 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths.end())
-            return nullptr;
+        String path;
+        struct stat file_stat;
+        do
+        {
+            if (it == paths.end())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                        format);
+                return nullptr;
+            }
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+            path = *it++;
+            file_stat = getFileStat(path, false, -1, "File");
+        }
+        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
+
+        first = false;
+        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -692,7 +715,12 @@ public:
                 }
 
                 if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                {
+                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                        continue;
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                }
 
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
