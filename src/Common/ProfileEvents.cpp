@@ -381,6 +381,7 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
+    M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
