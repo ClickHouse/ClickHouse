@@ -438,6 +438,8 @@ private:
             }
         }
 
+        /// ClickHouse Keeper does not link to some part of Settings.
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
         {
@@ -452,6 +454,7 @@ private:
                     LOG_FATAL(log, "Changed settings: {}", changed_settings);
             }
         }
+#endif
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
